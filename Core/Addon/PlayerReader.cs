@@ -206,6 +206,19 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         return false;
     }
 
+    public bool TryGetForeverBags(out VisualBagSnapshot bags)
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars) &&
+            bars.Bags is { IsComplete: true } latest)
+        {
+            bags = latest;
+            return true;
+        }
+
+        bags = null!;
+        return false;
+    }
+
     public bool TryGetForeverSpellBook(out VisualSpellBookSnapshot spellBook)
     {
         if (TryGetForeverVisualVitals(out VisualBarSample bars) &&

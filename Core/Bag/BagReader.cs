@@ -26,9 +26,18 @@ public sealed class BagReader : IDisposable, IReader
 
     private readonly ItemDB ItemDB;
 
-    public List<BagItem> BagItems { get; } = new();
+    public Func<VisualBagSnapshot?>? ForeverBagsProvider { get; set; }
+    private readonly List<BagItem> bagItems = new();
+    public List<BagItem> BagItems
+    {
+        get { RequireForeverFresh(); return bagItems; }
+    }
 
-    public Bag[] Bags { get; } = new Bag[5];
+    private readonly Bag[] bags = new Bag[5];
+    public Bag[] Bags
+    {
+        get { RequireForeverFresh(); return bags; }
+    }
 
     public event Action? DataChanged;
     public event Action<BagItem, BagItemChange>? BagItemChange;
@@ -68,6 +77,97 @@ public sealed class BagReader : IDisposable, IReader
 
             Hash++;
         }
+    }
+
+    public void UpdateForever(VisualBagSnapshot? snapshot)
+    {
+        if (snapshot is not { IsComplete: true })
+        {
+            if (bagItems.Count > 0 || bags.Any(b => b.SlotCount > 0))
+            {
+                bagItems.Clear();
+                foreach (Bag bag in bags)
+                {
+                    bag.SlotCount = 0;
+                    bag.FreeSlot = 0;
+                }
+                Hash++;
+                DataChanged?.Invoke();
+            }
+            return;
+        }
+
+        bool changed = false;
+        HashSet<(int bag, int slot)> present = [];
+        for (int bag = 0; bag < VisualBagSnapshot.BagCount; bag++)
+        {
+            VisualBagHeader header = snapshot.GetBag(bag)!.Value;
+            Bag target = bags[bag];
+            BagType family = (BagType)header.Family;
+            if (target.SlotCount != header.SlotCount ||
+                target.FreeSlot != header.FreeSlots || target.BagType != family)
+                changed = true;
+            target.SlotCount = header.SlotCount;
+            target.FreeSlot = header.FreeSlots;
+            target.BagType = family;
+
+            for (int slot = 1; slot <= header.SlotCount; slot++)
+            {
+                VisualBagSlot cell = snapshot.GetSlot(bag, slot)!.Value;
+                if (cell.ItemId == 0)
+                    continue;
+                present.Add((bag, slot));
+                BagItem? existing = bagItems.FirstOrDefault(item =>
+                    item.Bag == bag && item.Slot == slot);
+                if (existing is not null && existing.Item.Entry == cell.ItemId)
+                {
+                    if (existing.Count != cell.Count)
+                    {
+                        if (cell.Count > existing.Count)
+                            HashNewOrStackGain++;
+                        existing.UpdateCount(cell.Count);
+                        BagItemChange?.Invoke(existing, Core.BagItemChange.Update);
+                        changed = true;
+                    }
+                    continue;
+                }
+                if (existing is not null)
+                {
+                    bagItems.Remove(existing);
+                    BagItemChange?.Invoke(existing, Core.BagItemChange.Remove);
+                }
+                Item item = ItemDB.Items.TryGetValue(cell.ItemId,
+                    out Item known) ? known : new Item
+                    { Entry = cell.ItemId, Name = "Unknown" };
+                // Item ownership/tradability flags are not in the visual grid.
+                BagItem added = new(bag, slot, cell.Count, item, flags: 0);
+                bagItems.Add(added);
+                BagItemChange?.Invoke(added, Core.BagItemChange.New);
+                HashNewOrStackGain++;
+                changed = true;
+            }
+        }
+
+        foreach (BagItem removed in bagItems.Where(item =>
+            !present.Contains((item.Bag, item.Slot))).ToArray())
+        {
+            bagItems.Remove(removed);
+            BagItemChange?.Invoke(removed, Core.BagItemChange.Remove);
+            changed = true;
+        }
+        if (changed)
+        {
+            Hash++;
+            DataChanged?.Invoke();
+        }
+    }
+
+    private void RequireForeverFresh()
+    {
+        if (ForeverBagsProvider is { } provider &&
+            provider() is not { IsComplete: true })
+            throw new InvalidOperationException(
+                "Forever bag data is unavailable or stale.");
     }
 
     private void ReadBagMeta(IAddonDataProvider reader, out bool changed)

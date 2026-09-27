@@ -499,6 +499,31 @@ local function createVisual()
         }
     end
 
+    frame.bagHeaders = {}
+    for bag = 0, 4 do
+        frame.bagHeaders[bag] = {
+            packed = addPixel(bag * 3, 500),
+            family = addPixel(bag * 3 + 1, 500),
+            marker = addPixel(bag * 3 + 2, 500),
+        }
+    end
+    frame.bagGrid = {}
+    for index = 0, 199 do
+        local column = index % 10
+        local row = math.floor(index / 10)
+        local function pixel(offset)
+            local p = frame:CreateTexture(nil, "ARTWORK")
+            p:SetSize(8, 8)
+            p:SetPoint("TOPLEFT", frame, "TOPLEFT",
+                column * 30 + offset, -520 - row * 8)
+            p:SetColorTexture(0, 0, 0, 1)
+            return p
+        end
+        frame.bagGrid[index] = {
+            id = pixel(0), count = pixel(10), marker = pixel(20),
+        }
+    end
+
     local function setIntPixel(pixel, value)
         value = math.floor(value)
         pixel:SetColorTexture(
@@ -565,15 +590,69 @@ local function createVisual()
         end)
     end
 
+    local function renderBags()
+        for bag = 0, 4 do
+            local header = frame.bagHeaders[bag]
+            header.packed:SetColorTexture(0, 0, 0, 1)
+            header.family:SetColorTexture(0, 0, 0, 1)
+            header.marker:SetColorTexture(0, 0, 0, 1)
+            local slots
+            pcall(function()
+                slots = readableNumber(C_Container.GetContainerNumSlots(bag))
+                local free, family = C_Container.GetContainerNumFreeSlots(bag)
+                free = readableNumber(free)
+                family = family == nil and 0 or readableNumber(family)
+                if not slots or not free or not family or slots < 0 or
+                    slots > 40 or free < 0 or free > slots or
+                    family < 0 or family > 16777215 then
+                    slots = nil
+                    return
+                end
+                local packed = slots + free * 64
+                setIntPixel(header.packed, packed)
+                setIntPixel(header.family, family)
+                setIntPixel(header.marker,
+                    (0xA5BA11 - bag - packed - family) % 16777216)
+            end)
+            for slot = 1, 40 do
+                local index = bag * 40 + slot - 1
+                local cell = frame.bagGrid[index]
+                cell.id:SetColorTexture(0, 0, 0, 1)
+                cell.count:SetColorTexture(0, 0, 0, 1)
+                cell.marker:SetColorTexture(0, 0, 0, 1)
+                if slots then pcall(function()
+                    local id, count = 0, 0
+                    if slot <= slots then
+                        local info = C_Container.GetContainerItemInfo(bag, slot)
+                        if info ~= nil then
+                            id = readableNumber(info.itemID)
+                            count = readableNumber(info.stackCount)
+                            if not id or not count or id <= 0 or
+                                id > 16777215 or count <= 0 or
+                                count > 65535 or id ~= math.floor(id) or
+                                count ~= math.floor(count) then return end
+                        end
+                    end
+                    setIntPixel(cell.id, id)
+                    setIntPixel(cell.count, count)
+                    setIntPixel(cell.marker,
+                        (0xA5BB11 - index - id - count) % 16777216)
+                end) end
+            end
+        end
+    end
+
     local elapsedSinceUpdate = 0
     local elapsedSinceActionGrid = 0
     local elapsedSinceSpellGrid = 0
     local elapsedSinceBindingGrid = 0
+    local elapsedSinceBagGrid = 0
     frame:SetScript("OnUpdate", function(_, elapsed)
         elapsedSinceUpdate = elapsedSinceUpdate + elapsed
         elapsedSinceActionGrid = elapsedSinceActionGrid + elapsed
         elapsedSinceSpellGrid = elapsedSinceSpellGrid + elapsed
         elapsedSinceBindingGrid = elapsedSinceBindingGrid + elapsed
+        elapsedSinceBagGrid = elapsedSinceBagGrid + elapsed
         if elapsedSinceUpdate < 0.1 then return end
         elapsedSinceUpdate = 0
         local ok = pcall(function()
@@ -722,6 +801,10 @@ local function createVisual()
                 90 / 255, 165 / 255, 90 / 255, 1)
             frame.actionStateValidPixel:SetColorTexture(
                 90 / 255, 136 / 255, 165 / 255, 1)
+        end
+        if elapsedSinceBagGrid >= 1 then
+            elapsedSinceBagGrid = 0
+            renderBags()
         end
 
         if elapsedSinceSpellGrid >= 0.5 then

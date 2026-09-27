@@ -395,6 +395,17 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   type, marker damage, and unsupported expressions. A live beta read after
   `/reload` decoded power type 0 and matching 49% power/mana, then rejected
   the stale capture.
+- The visual probe now exports five bag headers and 200 checked item cells
+  (40 per bag), including slot count, free slots, bag family, item ID, and
+  stack count. `BagReader` refreshes its item list from a complete fresh
+  snapshot and refuses stale queries. It does not mark items tradable because
+  soulbound, lock, and vendor flags are not in this channel. Synthetic tests
+  at three scales cover full inventory, a damaged item marker, adapter counts,
+  and stale rejection. An idle live beta read decoded 5/5 headers and 200/200
+  cells, with 13 occupied item slots and 15 regular free slots; the reader
+  agreed with those counts. A short live fight kept all 200 cells readable at
+  82% player and 44% target health, with 14 occupied slots and 14 regular free
+  slots; the reader matched the capture and rejected it after expiry.
 - The Forever dashboard was smoke-tested against the live beta on this machine.
   It returned HTTP 200 and displayed 100% player health, 100% power, and 0%
   target health with no target selected. The log confirmed WGC capture and the
@@ -473,7 +484,8 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
 2. Finish gameplay data and rules. Player health/power percentages, maxima,
    and checked primary mana percentage are live; exact current values remain
    protected. Provide pet/focus vitals only if the chosen profile needs them.
-   Port bag counts and design a combat-safe aura signal. Reject missing data
+   Bag IDs, counts, and free slots are live in combat. Design a
+   combat-safe aura signal. Reject missing data
    rather than reading Classic pixel cells. The 24-bit numeric protocol cannot
    encode protected values as-is.
 3. Validate Forever-specific world geometry before gameplay use. The installed
