@@ -89,6 +89,42 @@ public sealed class VisualCooldownGridSnapshot
         ? fills[slot - 1] : null;
 }
 
+public readonly record struct VisualBagHeader(
+    int Bag, int SlotCount, int FreeSlots, int Family);
+
+public readonly record struct VisualBagSlot(
+    int Bag, int Slot, int ItemId, int Count);
+
+public sealed class VisualBagSnapshot
+{
+    public const int BagCount = 5;
+    public const int SlotsPerBag = 40;
+    private readonly VisualBagHeader?[] headers;
+    private readonly VisualBagSlot?[] slots;
+    public int ReadableHeaders { get; }
+    public int ReadableSlots { get; }
+    public bool IsComplete => ReadableHeaders == BagCount &&
+        ReadableSlots == BagCount * SlotsPerBag;
+
+    internal VisualBagSnapshot(VisualBagHeader?[] headers,
+        VisualBagSlot?[] slots)
+    {
+        this.headers = headers;
+        this.slots = slots;
+        foreach (var header in headers)
+            if (header is not null) ReadableHeaders++;
+        foreach (var slot in slots)
+            if (slot is not null) ReadableSlots++;
+    }
+
+    public VisualBagHeader? GetBag(int bag) =>
+        bag is >= 0 and < BagCount ? headers[bag] : null;
+
+    public VisualBagSlot? GetSlot(int bag, int slot) =>
+        bag is >= 0 and < BagCount && slot is >= 1 and <= SlotsPerBag
+            ? slots[bag * SlotsPerBag + slot - 1] : null;
+}
+
 public enum VisualSpellIdSource : byte { SpellId = 1, ActionId = 2 }
 
 public readonly record struct VisualSpellBookEntry(
@@ -156,7 +192,8 @@ public readonly record struct VisualBarSample(
     VisualBindingSnapshot? Bindings = null,
     VisualActionStateSnapshot? ActionStates = null,
     VisualCooldownGridSnapshot? Cooldowns = null,
-    int? PlayerPowerType = null);
+    int? PlayerPowerType = null,
+    VisualBagSnapshot? Bags = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -250,10 +287,12 @@ public static class VisualBarReader
             pixels, width, height, whiteLeft, whiteY, scale);
         int? playerPowerType = TryReadPowerType(
             pixels, width, height, whiteLeft, whiteY, scale);
+        VisualBagSnapshot? bags = TryReadBags(
+            pixels, width, height, whiteLeft, whiteY, scale);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
             playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
-            actionStates, cooldowns, playerPowerType);
+            actionStates, cooldowns, playerPowerType, bags);
         return true;
     }
 
@@ -472,6 +511,60 @@ public static class VisualBarReader
         return value <= 255 &&
             marker == ((0xA56644 - value) & 0xFFFFFF)
             ? value : null;
+    }
+
+    private static VisualBagSnapshot? TryReadBags(Bgra32[] pixels,
+        int width, int height, int left, int whiteY, double scale)
+    {
+        int ReadAt(int x, int y)
+        {
+            if (x < 0 || x >= width || y < 0 || y >= height)
+                return -1;
+            Bgra32 p = pixels[y * width + x];
+            return (p.R << 16) | (p.G << 8) | p.B;
+        }
+
+        VisualBagHeader?[] headers = new VisualBagHeader?[VisualBagSnapshot.BagCount];
+        VisualBagSlot?[] slots = new VisualBagSlot?[
+            VisualBagSnapshot.BagCount * VisualBagSnapshot.SlotsPerBag];
+        int headerY = whiteY + (int)Math.Round(437 * scale);
+        for (int bag = 0; bag < headers.Length; bag++)
+        {
+            int x = left + (int)Math.Round((5 + bag * 60) * scale);
+            int packed = ReadAt(x, headerY);
+            int family = ReadAt(x + (int)Math.Round(20 * scale), headerY);
+            int marker = ReadAt(x + (int)Math.Round(40 * scale), headerY);
+            if (packed < 0 || family < 0 || marker < 0 || packed >= 4096 ||
+                family > 0xFFFFFF ||
+                marker != ((0xA5BA11 - bag - packed - family) & 0xFFFFFF))
+                continue;
+            int count = packed % 64;
+            int free = packed / 64;
+            if (count > VisualBagSnapshot.SlotsPerBag || free > count)
+                continue;
+            headers[bag] = new(bag, count, free, family);
+        }
+
+        for (int index = 0; index < slots.Length; index++)
+        {
+            int bag = index / VisualBagSnapshot.SlotsPerBag;
+            int slot = index % VisualBagSnapshot.SlotsPerBag + 1;
+            int col = index % 10;
+            int row = index / 10;
+            int y = whiteY + (int)Math.Round((456 + row * 8) * scale);
+            int x = left + (int)Math.Round((4 + col * 30) * scale);
+            int id = ReadAt(x, y);
+            int count = ReadAt(x + (int)Math.Round(10 * scale), y);
+            int marker = ReadAt(x + (int)Math.Round(20 * scale), y);
+            if (id < 0 || count < 0 || marker < 0 ||
+                marker != ((0xA5BB11 - index - id - count) & 0xFFFFFF) ||
+                (id == 0) != (count == 0) || count > 65535 ||
+                headers[bag] is not { } header ||
+                (slot > header.SlotCount && id != 0))
+                continue;
+            slots[index] = new(bag, slot, id, count);
+        }
+        return new(headers, slots);
     }
 
     private static int? TryReadMaximum(Bgra32[] pixels, int width, int height,

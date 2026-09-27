@@ -19,7 +19,7 @@ namespace Core;
 public sealed class ForeverVisualBarTracker
 {
     private const int MaxRoiWidth = 650;
-    private const int MaxRoiHeight = 850;
+    private const int MaxRoiHeight = 1000;
     private static readonly TimeSpan MaxSampleAge = TimeSpan.FromMilliseconds(750);
 
     private readonly IWowScreen screen;

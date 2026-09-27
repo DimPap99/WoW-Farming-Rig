@@ -322,6 +322,34 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                     { ReadableCount: VisualCooldownGridSnapshot.SlotCount } liveCooldowns &&
                 player.TryGetForeverCooldowns(out var cooldowns) &&
                 ReferenceEquals(cooldowns, liveCooldowns);
+            VisualBagSnapshot? liveBags = bars.Bags;
+            bool bagGridMatches = liveBags is { IsComplete: true } &&
+                player.TryGetForeverBags(out var currentBags) &&
+                ReferenceEquals(currentBags, liveBags);
+            int bagItemCount = 0;
+            int regularFreeSlots = 0;
+            bool bagReaderMatches = false;
+            ItemDB liveItemDB = new(config, new IconDB(
+                NullLogger<IconDB>.Instance, config, spellBook.SpellDB));
+            using BagReader liveBagReader = new(liveItemDB,
+                new EquipmentReader(liveItemDB));
+            liveBagReader.ForeverBagsProvider = () =>
+                player.TryGetForeverBags(out var latest) ? latest : null;
+            if (bagGridMatches)
+            {
+                for (int bag = 0; bag < VisualBagSnapshot.BagCount; bag++)
+                {
+                    VisualBagHeader header = liveBags!.GetBag(bag)!.Value;
+                    if (header.Family == 0)
+                        regularFreeSlots += header.FreeSlots;
+                    for (int slot = 1; slot <= header.SlotCount; slot++)
+                        if (liveBags.GetSlot(bag, slot) is { ItemId: > 0 })
+                            bagItemCount++;
+                }
+                liveBagReader.UpdateForever(liveBags);
+                bagReaderMatches = liveBagReader.BagItemCount() == bagItemCount &&
+                    liveBagReader.BagsFull() == (regularFreeSlots == 0);
+            }
             int usableActionCount = 0;
             int inRangeActionCount = 0;
             int outOfRangeActionCount = 0;
@@ -487,6 +515,10 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 !player.TryGetForeverActionStates(out _);
             bool staleCooldownGridRejected =
                 !player.TryGetForeverCooldowns(out _);
+            bool staleBagGridRejected = !player.TryGetForeverBags(out _);
+            bool staleBagReaderRejected = false;
+            try { _ = liveBagReader.BagItemCount(); }
+            catch (InvalidOperationException) { staleBagReaderRejected = true; }
             bool staleCooldownReadinessRejected =
                 resolvedSpellAction is { } staleSpell &&
                 !cooldownReader.IsForeverReady(staleSpell, spellBook);
@@ -539,6 +571,12 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"cooldownSlot1={bars.Cooldowns?.GetSlot(1)?.ToString("P0") ?? "missing"}, " +
                 $"cooldownSlot4={bars.Cooldowns?.GetSlot(4)?.ToString("P0") ?? "missing"}, " +
                 $"cooldownGridMatches={cooldownGridMatches}, " +
+                $"bags={bars.Bags?.ReadableHeaders.ToString() ?? "missing"}/5, " +
+                $"bagSlots={bars.Bags?.ReadableSlots.ToString() ?? "missing"}/200, " +
+                $"bagItemCount={bagItemCount}, regularFreeSlots={regularFreeSlots}, " +
+                $"bagGridMatches={bagGridMatches}, bagReaderMatches={bagReaderMatches}, " +
+                $"staleBagGridRejected={staleBagGridRejected}, " +
+                $"staleBagReaderRejected={staleBagReaderRejected}, " +
                 $"staleCooldownGridRejected={staleCooldownGridRejected}, " +
                 $"liveReadinessMatches={liveReadinessMatches}, " +
                 $"staleCooldownReadinessRejected={staleCooldownReadinessRejected}, " +
@@ -574,6 +612,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             return actionMatches && actionBarMatches && actionStatesMatch &&
                 usableReaderMatches && staleUsableReaderReset &&
                 staleActionStatesRejected && cooldownGridMatches &&
+                bagGridMatches && bagReaderMatches && staleBagGridRejected &&
+                staleBagReaderRejected &&
                 staleCooldownGridRejected && liveReadinessMatches &&
                 staleCooldownReadinessRejected && maximaMatch &&
                 powerTypeReadable && manaMatches &&
@@ -781,13 +821,17 @@ static bool BindingsChanged(VisualBindingSnapshot? previous,
 static int RunSelfTest()
 {
     KeyReader.RequireGameBindings = true;
-    SpellBookReader spellBookReader = new(new SpellDB(new DataConfig
-        { Root = Path.GetFullPath("Json"), Exp = "forever" }));
+    DataConfig dbc = new()
+        { Root = Path.GetFullPath("Json"), Exp = "forever" };
+    SpellBookReader spellBookReader = new(new SpellDB(dbc));
     KeyBindingsReader bindingReader = new(NullLogger<KeyBindingsReader>.Instance);
+    ItemDB itemDB = new(dbc, new IconDB(NullLogger<IconDB>.Instance,
+        dbc, spellBookReader.SpellDB));
+    using BagReader bagReader = new(itemDB, new EquipmentReader(itemDB));
     foreach (double scale in new[] { 0.75, 1.0, 1.25 })
     {
         const int width = 700;
-        const int height = 850;
+        const int height = 1000;
         const int left = 16;
         const int top = 70;
         Bgra32[] pixels = new Bgra32[width * height];
@@ -850,6 +894,15 @@ static int RunSelfTest()
         for (int slot = 1; slot <= VisualCooldownGridSnapshot.SlotCount; slot++)
             DrawCooldownSlot(slot, slot == 4 ? 1 : 0,
                 slot == 4 ? 7744 : 0, slot == 4 ? 0.4 : 0);
+        for (int bag = 0; bag < VisualBagSnapshot.BagCount; bag++)
+            DrawBagHeader(bag, bag == 0 ? 16 : 0,
+                bag == 0 ? 14 : 0, 0);
+        for (int bag = 0; bag < VisualBagSnapshot.BagCount; bag++)
+            for (int slot = 1; slot <= VisualBagSnapshot.SlotsPerBag; slot++)
+                DrawBagSlot(bag, slot, bag == 0 && slot == 1 ? 6948 :
+                    bag == 0 && slot == 2 ? 117 : 0,
+                    bag == 0 && slot == 1 ? 1 :
+                    bag == 0 && slot == 2 ? 3 : 0);
 
         if (!VisualBarReader.TryRead(pixels, width, height, out VisualBarSample result)
             || Math.Abs(result.PlayerHealth - 0.75) > 0.02
@@ -885,7 +938,13 @@ static int RunSelfTest()
             || cooldownGrid.GetSlot(4) is not { } cooldown4 ||
                 Math.Abs(cooldown4 - 0.4) > 0.02
             || cooldownGrid.GetSlot(1) != 0
-            || result.SpellBook is not { Count: 3, ReadableCount: 3 } spellBook
+            || result.Bags is not { IsComplete: true } bags ||
+                bags.GetBag(0) is not { SlotCount: 16, FreeSlots: 14,
+                    Family: 0 } ||
+                bags.GetSlot(0, 1) is not { ItemId: 6948, Count: 1 } ||
+                bags.GetSlot(0, 2) is not { ItemId: 117, Count: 3 } ||
+                bags.GetSlot(0, 3) is not { ItemId: 0, Count: 0 } ||
+            result.SpellBook is not { Count: 3, ReadableCount: 3 } spellBook
             || spellBook.GetSlot(1) is not { Source: VisualSpellIdSource.SpellId, Id: 6603 }
             || spellBook.GetSlot(2) is not { Source: VisualSpellIdSource.ActionId, Id: 270 }
             || spellBook.GetSlot(3) is not { Source: VisualSpellIdSource.SpellId, Id: 7744 })
@@ -893,6 +952,37 @@ static int RunSelfTest()
             Console.Error.WriteLine($"Visual reader self-test failed at UI scale {scale}.");
             return 1;
         }
+
+        DrawBagSlot(0, 2, 117, 3, corruptMarker: true);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var corruptBag) ||
+            corruptBag.Bags is not { ReadableSlots: 199, IsComplete: false })
+        {
+            Console.Error.WriteLine($"Forever bag checksum failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawBagSlot(0, 2, 117, 3);
+        VisualBagSnapshot? bagForProvider = bags;
+        bagReader.ForeverBagsProvider = () => bagForProvider;
+        bagReader.UpdateForever(bags);
+        if (bagReader.BagItemCount() != 2 || bagReader.BagsFull() ||
+            bagReader.ItemCount(117) != 3 ||
+            bagReader.Bags[0].FreeSlot != 14 ||
+            bagReader.BagItems.Any(item => item.IsTradable))
+        {
+            Console.Error.WriteLine($"Forever bag adapter failed at UI scale {scale}.");
+            return 1;
+        }
+        bagForProvider = null;
+        bool staleBagRejected = false;
+        try { _ = bagReader.ItemCount(117); }
+        catch (InvalidOperationException) { staleBagRejected = true; }
+        if (!staleBagRejected)
+        {
+            Console.Error.WriteLine($"Forever stale bag accepted at UI scale {scale}.");
+            return 1;
+        }
+        bagForProvider = bags;
 
         DrawWorldPixel(9, 1);
         DrawWorldPixel(10, 0xA56643);
@@ -1468,6 +1558,36 @@ static int RunSelfTest()
                     pixels[y * width + x] = x - left < fillWidth
                         ? new Bgra32 { G = 255, B = 255, A = 255 }
                         : new Bgra32 { A = 255 };
+        }
+
+        void DrawBagHeader(int bag, int slots, int free, int family)
+        {
+            int packed = slots + free * 64;
+            int y = top + (int)Math.Round(500 * scale);
+            int side = (int)Math.Round(10 * scale);
+            DrawEncodedRect(left + (int)Math.Round(bag * 60 * scale),
+                y, side, packed);
+            DrawEncodedRect(left + (int)Math.Round((bag * 60 + 20) * scale),
+                y, side, family);
+            DrawEncodedRect(left + (int)Math.Round((bag * 60 + 40) * scale),
+                y, side, (0xA5BA11 - bag - packed - family) & 0xFFFFFF);
+        }
+
+        void DrawBagSlot(int bag, int slot, int id, int count,
+            bool corruptMarker = false)
+        {
+            int index = bag * VisualBagSnapshot.SlotsPerBag + slot - 1;
+            int col = index % 10;
+            int row = index / 10;
+            int y = top + (int)Math.Round((520 + row * 8) * scale);
+            int side = (int)Math.Round(8 * scale);
+            DrawEncodedRect(left + (int)Math.Round(col * 30 * scale),
+                y, side, id);
+            DrawEncodedRect(left + (int)Math.Round((col * 30 + 10) * scale),
+                y, side, count);
+            DrawEncodedRect(left + (int)Math.Round((col * 30 + 20) * scale),
+                y, side, corruptMarker ? 0 :
+                    (0xA5BB11 - index - id - count) & 0xFFFFFF);
         }
 
         void DrawEncodedRect(int xStart, int yStart, int side, int encoded)

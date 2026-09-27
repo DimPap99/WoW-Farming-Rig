@@ -29,6 +29,7 @@ public sealed partial class AddonReader : IAddonReader
 
     private readonly SpellBookReader spellBookReader;
     private readonly KeyBindingsReader keyBindingsReader;
+    private readonly BagReader bagReader;
     private readonly ActionBarTextureReader textureReader;
 
     private bool awaitingReinitialization;
@@ -72,6 +73,7 @@ public sealed partial class AddonReader : IAddonReader
         this.playerReader = playerReader;
         this.spellBookReader = spellBookReader;
         this.keyBindingsReader = keyBindingsReader;
+        bagReader = sp.GetRequiredService<BagReader>();
         this.textureReader = textureReader;
         DataReady = resetEvent;
 
@@ -88,6 +90,9 @@ public sealed partial class AddonReader : IAddonReader
                 ? () => playerReader.TryGetForeverVisualVitals(out var bars)
                     ? bars : null
                 : null;
+        bagReader.ForeverBagsProvider = foreverVisualBars?.IsEnabled == true
+            ? () => playerReader.TryGetForeverBags(out var bags) ? bags : null
+            : null;
 
         GlobalTime = new(frames.Length - 2);
 
@@ -112,6 +117,7 @@ public sealed partial class AddonReader : IAddonReader
                 playerReader.TryGetForeverVisualVitals(out VisualBarSample bars);
             spellBookReader.UpdateForever(visualAvailable ? bars.SpellBook : null);
             keyBindingsReader.UpdateForever(visualAvailable ? bars.Bindings : null);
+            bagReader.UpdateForever(visualAvailable ? bars.Bags : null);
             return;
         }
 
