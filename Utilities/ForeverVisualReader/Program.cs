@@ -1,6 +1,7 @@
 using Core;
 using Core.Database;
 using Core.Goals;
+using Core.GOAP;
 
 using Game;
 
@@ -1552,6 +1553,17 @@ static int RunSelfTest()
             AddonReader.HasForeverControllerFrame(result with { LastCastEvent = null }))
         {
             Console.Error.WriteLine($"Forever controller frame gate failed at UI scale {scale}.");
+            return 1;
+        }
+        if (!ForeverGoapWorldState.TryBuild(result, out var worldState) ||
+            !worldState[1 << (int)GoapKey.hastarget] ||
+            !worldState[1 << (int)GoapKey.targetisalive] ||
+            !worldState[1 << (int)GoapKey.targethostile] ||
+            worldState[1 << (int)GoapKey.incombat] ||
+            worldState[1 << (int)GoapKey.withinpullrange] ||
+            ForeverGoapWorldState.TryBuild(result with { ActionStates = null }, out _))
+        {
+            Console.Error.WriteLine($"Forever GOAP state gate failed at UI scale {scale}.");
             return 1;
         }
 

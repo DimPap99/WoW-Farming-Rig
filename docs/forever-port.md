@@ -616,6 +616,69 @@ capture window. The Debug `Core` and `ForeverVisualReader` builds and the
 three-scale self-test passed. A full Release build was not established in this
 worktree because existing `dotnet` processes held reference/output DLLs open.
 
+The next controller slice keeps `ForeverDiagnosticController` as the dashboard
+startup guard. An explicit `Utilities/ForeverControllerTrial` command constructs
+the ordinary `BotController` only for a bounded Paladin trial. The normal
+session now registers one Forever goal instead of Classic route, pull, combat,
+death, loot, and recovery goals. Its GOAP facts come only from a complete fresh
+visual capture; unknown Classic facts remain false and cannot select Classic
+goals. The normal no-plan report, XP session persistence, slot texture checks,
+macro resolution, screenshot NPC scan, and remote path visualization are
+bypassed for this trial. Classic casting collaborators remain constructed, but
+the guarded Forever `CastingHandler` branch never calls them.
+
+The trial goal requires the exact two-anchor Tirisfal profile, a stable idle
+capture followed by a distinct fresh frame, a matching map/world position,
+Up Arrow as a verified MOVEFORWARD
+binding, a forward-facing route start, and complete paths from disk-only baked
+navmesh. It sends at most one 200 ms forward press, checks the displacement,
+waits at most 90 seconds for a person to select a living attackable target,
+and sends at most one Judgement through the checked cast gate. It then waits at
+most 90 seconds for a combat/dead-target observation and a safe idle recovery.
+Missing data, changed combat state, unexpected motion, unconfirmed cast, and
+timeouts fail closed. It does not auto-target, chase, sustain combat, heal,
+loot, or corpse run. It cannot establish an autonomous Forever bot yet.
+
+On 2026-09-27 the Debug `Core`, `ForeverVisualReader`, and
+`ForeverControllerTrial` builds passed (the existing DruidMountHandler pattern
+warning remains). The visual self-test passed at 75%, 100%, and 125% UI scale,
+including the new Forever GOAP fact check. `ForeverControllerTrial --check`
+constructed the normal controller against live WowB PID 21012, loaded the
+trial profile, and confirmed that its only registered goal was
+`ForeverTrialGoal`; no input was sent. The read-only route preflight refused
+the live position/facing. A separate live reader smoke found a complete
+controller frame, but the character had 62% health and a selected target;
+`--trial-check` also refused. No controller `--run` input was sent, and the
+bounded route/action/recovery run remains unverified. The normal Forever
+dashboard guard must remain until that live run passes.
+
+Remaining for autonomous play: verify the bounded controller run near its
+route start; add checked target acquisition and pursuit; add combat-safe spell
+selection and repeated action confirmation with low-health escape/healing;
+add death/ghost and post-fight recovery; then add loot, route continuation,
+and session accounting from Forever-backed signals. Each feature needs a
+bounded live test before the dashboard guard is removed. The current trial
+still emits warnings for absent Forever creature/talent DBC files while
+constructing shared services; these did not prevent the read-only controller
+check but cannot be treated as verified mob/skill data.
+
+Run the read-only controller wiring and route preflight with:
+
+```powershell
+dotnet run --project Utilities/ForeverControllerTrial/ForeverControllerTrial.csproj -- --check
+```
+
+When the client is at the first route anchor, facing the second, healthy,
+out of combat, and without a target, the explicit bounded controller run is:
+
+```powershell
+dotnet run --project Utilities/ForeverControllerTrial/ForeverControllerTrial.csproj -- --run
+```
+
+The run requires a person to select a safe target after the route step and
+finish the fight. It times out and releases its key after the stated limits;
+the dashboard remains guarded independently of this command.
+
 For API signatures, use Blizzard's generated UI documentation from the
 [`1.60.1 (70009)` UI-source snapshot](https://github.com/Gethe/wow-ui-source/tree/bd2470aed543f72697a044e989285b6c83e63f73/Interface/AddOns/Blizzard_APIDocumentationGenerated)
 and validate behavior in the actual beta client; the client may protect a

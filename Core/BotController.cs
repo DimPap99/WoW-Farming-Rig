@@ -138,9 +138,10 @@ public sealed partial class BotController : IBotController, IDisposable
         LogPlayerInfo(logger, playerReader.Version, playerReader.Faction, playerReader.Race, playerReader.Class);
 
         screenshotThread = new(ScreenshotThread);
-        screenshotThread.Start();
+        if (!playerReader.IsForeverVisual)
+            screenshotThread.Start();
 
-        if (pathViz is not NoPathVisualizer)
+        if (!playerReader.IsForeverVisual && pathViz is not NoPathVisualizer)
         {
             remotePathing = new(RemotePathingThread);
             remotePathing.Start();
@@ -158,7 +159,8 @@ public sealed partial class BotController : IBotController, IDisposable
     private void OnTextureChanged(int slot, int textureId)
     {
         // Only validate once after textures are initialized and profile is loaded
-        if (!texturesValidated && textureReader.IsInitialized && ClassConfig != null)
+        if (!playerReader.IsForeverVisual && !texturesValidated &&
+            textureReader.IsInitialized && ClassConfig != null)
         {
             texturesValidated = true;
             slotValidator.ValidateClassConfig(ClassConfig);
@@ -168,7 +170,7 @@ public sealed partial class BotController : IBotController, IDisposable
     private void OnMacroChanged(int slot, int nameHash)
     {
         // Re-resolve macro keys whenever macros change on the action bar
-        if (ClassConfig != null)
+        if (!playerReader.IsForeverVisual && ClassConfig != null)
         {
             ReResolveMacroKeys(ClassConfig, slot, nameHash);
         }
@@ -434,11 +436,12 @@ public sealed partial class BotController : IBotController, IDisposable
             // Validate action bar slots against expected spells
             // (may be deferred if textures aren't ready yet)
             texturesValidated = false;
-            slotValidator.ValidateClassConfig(ClassConfig);
+            if (!playerReader.IsForeverVisual)
+                slotValidator.ValidateClassConfig(ClassConfig);
 
             // Re-resolve macro keys if macro data already arrived
             // (will be deferred via OnMacroChanged if macros aren't ready yet)
-            if (macroReader.IsInitialized)
+            if (!playerReader.IsForeverVisual && macroReader.IsInitialized)
             {
                 ReResolveMacroKeys(ClassConfig);
             }

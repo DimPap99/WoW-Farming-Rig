@@ -79,10 +79,12 @@ public sealed partial class GoapAgent : IDisposable
                 // record. Reversed, the stop reads an empty record, takes the
                 // "moving by interact key" branch and never releases the key
                 // the character is actually running on.
-                stopMoving.Stop();
+                if (!playerReader.IsForeverVisual)
+                    stopMoving.Stop();
                 input.Reset();
 
-                if (classConfig.Mode is Mode.AttendedGrind or Mode.Grind)
+                if (!playerReader.IsForeverVisual &&
+                    classConfig.Mode is Mode.AttendedGrind or Mode.Grind)
                 {
                     sessionHandler.Stop("Stopped", false);
                 }
@@ -101,7 +103,8 @@ public sealed partial class GoapAgent : IDisposable
 
                 sessionPauseEvent.Set();
 
-                if (classConfig.Mode is Mode.AttendedGrind or Mode.Grind)
+                if (!playerReader.IsForeverVisual &&
+                    classConfig.Mode is Mode.AttendedGrind or Mode.Grind)
                 {
                     SessionStat.Start();
                     sessionHandler.Start(classConfig.OverridePathFilename ?? classConfig.PathFilename);
@@ -263,7 +266,12 @@ public sealed partial class GoapAgent : IDisposable
 
             try
             {
-                WaitHandle.WaitAny(waitHandles);
+                if (playerReader.IsForeverVisual)
+                    addonReader.DataReady.Reset();
+                // Forever has no GlobalTime tick when the visual channel drops.
+                // Wake periodically so its bounded goal can expire and stop.
+                WaitHandle.WaitAny(waitHandles,
+                    playerReader.IsForeverVisual ? 250 : Timeout.Infinite);
                 sessionPauseEvent.Wait(cts.Token);
             }
             catch (OperationCanceledException)
@@ -299,6 +307,10 @@ public sealed partial class GoapAgent : IDisposable
     /// </summary>
     private void ReportNoPlan()
     {
+        // The Classic report reads target GUIDs, XP and other absent cells.
+        if (playerReader.IsForeverVisual)
+            return;
+
         if (!logger.IsEnabled(LogLevel.Warning))
         {
             return;
@@ -318,6 +330,14 @@ public sealed partial class GoapAgent : IDisposable
 
     private void UpdateWorldState()
     {
+        if (playerReader.IsForeverVisual)
+        {
+            WorldState = playerReader.TryGetForeverVisualVitals(out VisualBarSample sample) &&
+                ForeverGoapWorldState.TryBuild(sample, out BitVector32 state)
+                ? state : default;
+            return;
+        }
+
         AddonBits b = bits;
 
         bool dmgTaken = combatLog.DamageTakenCount() > 0;

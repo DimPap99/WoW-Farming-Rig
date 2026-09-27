@@ -1,0 +1,177 @@
+using Core;
+using Core.Goals;
+
+using Game;
+
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+using PPather.Navmesh;
+
+using SharedLib;
+
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Threading;
+
+// The dashboard keeps ForeverDiagnosticController. This explicit command
+// constructs the normal controller for a bounded trial only.
+bool run = args.Contains("--run");
+if (args.Any(a => a is not ("--check" or "--run" or "--pid") &&
+    !int.TryParse(a, out _)) ||
+    (run && args.Contains("--check")))
+{
+    Console.Error.WriteLine("Use --check or --run [--pid <WowB process ID>].");
+    return 1;
+}
+
+int pidIndex = Array.IndexOf(args, "--pid");
+int? requestedPid = null;
+if (pidIndex >= 0)
+{
+    if (pidIndex + 1 >= args.Length ||
+        !int.TryParse(args[pidIndex + 1], out int id) || id <= 0)
+    {
+        Console.Error.WriteLine("Use --pid with a positive WowB process ID.");
+        return 1;
+    }
+    requestedPid = id;
+}
+
+Process? wow = Process.GetProcessesByName("WowB")
+    .OrderByDescending(p => p.StartTime)
+    .FirstOrDefault(p => requestedPid is null || p.Id == requestedPid);
+if (wow is null)
+{
+    Console.Error.WriteLine("WowB is not running.");
+    return 2;
+}
+
+using CancellationTokenSource cts = new();
+Console.CancelKeyPress += (_, e) =>
+{
+    e.Cancel = true;
+    cts.Cancel();
+};
+
+try
+{
+    WowProcess process = new(cts, Options.Create(new StartupConfigPid { Id = wow.Id }));
+    if (process.FileVersion is not { Major: 1, Minor: >= 60 })
+    {
+        Console.Error.WriteLine("The selected client is not Forever.");
+        return 2;
+    }
+
+    IServiceCollection services = new ServiceCollection();
+    ILoggerFactory loggerFactory = LoggerFactory.Create(b =>
+        b.AddProvider(new TrialLoggerProvider()));
+    ILogger trialLogger = loggerFactory.CreateLogger("ControllerTrial");
+    services.AddSingleton(loggerFactory);
+    services.AddSingleton(trialLogger);
+    services.AddLogging();
+    services.AddSingleton(cts);
+    services.AddSingleton(process);
+    services.AddSingleton(process.FileVersion);
+    services.AddSingleton<AddonConfigurator>();
+    services.AddSingleton<IOptions<StartupConfigReader>>(Options.Create(new StartupConfigReader()));
+    services.AddSingleton<IOptions<StartupConfigDiagnostics>>(Options.Create(new StartupConfigDiagnostics()));
+    services.AddSingleton<IOptions<StartupConfigPathing>>(Options.Create(new StartupConfigPathing
+    {
+        Mode = nameof(StartupConfigPathing.Types.Local),
+        PathVisualizer = false
+    }));
+    services.AddSingleton<IOptions<StartupConfigNpcOverlay>>(Options.Create(new StartupConfigNpcOverlay()));
+    services.AddSingleton<IOptions<NavmeshBakeOptions>>(Options.Create(new NavmeshBakeOptions()));
+    services.AddSingleton<IOptions<NavmeshQueryOptions>>(Options.Create(new NavmeshQueryOptions()));
+    services.AddSingleton<IOptions<SplineFollowerOptions>>(Options.Create(new SplineFollowerOptions()));
+    services.AddCoreBase(trialLogger);
+    services.AddSingleton(new DataConfig
+    {
+        Root = Path.GetFullPath("Json"), Exp = "forever"
+    });
+    services.AddCoreNormal(trialLogger);
+
+    using ServiceProvider provider = services.BuildServiceProvider(
+        new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+
+    IWowScreen screen = provider.GetRequiredService<IWowScreen>();
+    ForeverVisualBarTracker tracker = provider.GetRequiredService<ForeverVisualBarTracker>();
+    bool ready = false;
+    for (int i = 0; i < 100 && !cts.IsCancellationRequested; i++)
+    {
+        screen.Update();
+        tracker.Update();
+        if (tracker.TryGetLatest(out VisualBarSample bars) &&
+            AddonReader.HasForeverControllerFrame(bars))
+        {
+            ready = true;
+            break;
+        }
+        Thread.Sleep(100);
+    }
+    if (!ready)
+    {
+        Console.Error.WriteLine("No complete fresh Forever controller frame; no input sent.");
+        return 2;
+    }
+
+    using BotController controller = ActivatorUtilities.CreateInstance<BotController>(provider);
+    if (!controller.LoadClassProfile("Paladin_Forever_Trial.json") ||
+        controller.GoapAgent?.AvailableGoals is not [ForeverTrialGoal goal])
+    {
+        Console.Error.WriteLine("Normal controller did not load the isolated trial goal.");
+        return 2;
+    }
+
+    Console.WriteLine("Normal Forever controller loaded with one bounded trial goal.");
+    if (!run)
+    {
+        Console.WriteLine(goal.TryReadOnlyRoutePreflight(out string reason)
+            ? "Route preflight passed."
+            : $"Route preflight refused: {reason}.");
+        Console.WriteLine("Read-only check passed; no game input sent.");
+        return 0;
+    }
+
+    controller.ToggleBotStatus();
+    DateTime deadline = DateTime.UtcNow.AddSeconds(195);
+    while (!cts.IsCancellationRequested && DateTime.UtcNow < deadline &&
+           goal.TrialStatus is not ("Passed" or "Failed"))
+        Thread.Sleep(100);
+    if (controller.IsBotActive)
+        controller.ToggleBotStatus();
+
+    Console.WriteLine($"Controller trial status: {goal.TrialStatus}. {goal.LastFailure}");
+    return goal.TrialStatus == "Passed" ? 0 : 3;
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"Controller trial refused: {ex.Message}");
+    return 2;
+}
+finally
+{
+    cts.Cancel();
+}
+
+sealed class TrialLoggerProvider : ILoggerProvider
+{
+    public ILogger CreateLogger(string categoryName) => new TrialLogger(categoryName);
+    public void Dispose() { }
+
+    private sealed class TrialLogger(string category) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel level) => level >= LogLevel.Warning;
+        public void Log<TState>(LogLevel level, EventId eventId, TState state,
+            Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (IsEnabled(level))
+                Console.Error.WriteLine($"[{category}] {formatter(state, exception)} {exception}");
+        }
+    }
+}

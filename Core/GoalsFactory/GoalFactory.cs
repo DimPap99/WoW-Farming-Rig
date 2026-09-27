@@ -37,13 +37,18 @@ public static class GoalFactory
         services.AddScoped<GoapAgentState>();
 
         services.AddScoped<CancellationTokenSource<GoapAgent>>();
-        services.AddScoped<IGrindSessionHandler, GrindSessionHandler>();
+        var playerReader = sp.GetRequiredService<PlayerReader>();
+        bool forever = playerReader.IsForeverVisual;
+        if (forever)
+            services.AddScoped<IGrindSessionHandler, NoGrindSessionHandler>();
+        else
+            services.AddScoped<IGrindSessionHandler, GrindSessionHandler>();
 
         // Always on, unlike the bag and coin trackers below: a level-up is one line every
         // few hours, not the per-item chatter LogBagChanges exists to silence.
         services.AddScoped<LevelChangeTracker>();
 
-        if (classConfig.LogBagChanges)
+        if (!forever && classConfig.LogBagChanges)
         {
             services.AddScoped<IBagChangeTracker, BagChangeTracker>();
             services.AddScoped<IMoneyChangeTracker, MoneyChangeTracker>();
@@ -55,7 +60,7 @@ public static class GoalFactory
         }
 
 
-        if (classConfig.Mode != Mode.Grind)
+        if (forever || classConfig.Mode != Mode.Grind)
         {
             services.AddScoped<IBlacklist, NoBlacklist>();
 
@@ -78,6 +83,31 @@ public static class GoalFactory
             services.AddScoped<GoapGoal, BlacklistTargetGoal>();
         }
 
+        if (forever)
+        {
+            if (!string.Equals(classConfig.FileName,
+                    "Paladin_Forever_Trial.json", StringComparison.OrdinalIgnoreCase))
+                throw new NotSupportedException("Only the guarded Forever Paladin trial profile is supported.");
+
+            // CastingHandler's Classic collaborators are constructed but never
+            // called by its Forever branch. Do not construct the Classic goal
+            // set, combat tracker, route navigator, or trainer planner.
+            services.AddScoped<PlayerDirection>();
+            services.AddScoped<StopMoving>();
+            services.AddScoped<ReactCastError>();
+            services.AddScoped<CastingHandlerInterruptWatchdog>();
+            services.AddScoped<CastingHandler>();
+            services.AddScoped<ApproachThrottle>();
+            services.AddScoped<IMountHandler, MountHandler>();
+            services.AddScoped<GoapGoal, ForeverTrialGoal>();
+            return services.BuildServiceProvider(
+                new ServiceProviderOptions
+                {
+                    ValidateOnBuild = true,
+                    ValidateScopes = true
+                });
+        }
+
         services.AddScoped<NpcNameTargeting>();
         services.AddScoped<CursorScan>();
 
@@ -94,8 +124,6 @@ public static class GoalFactory
         services.AddScoped<ThreatFinder>();
         services.AddScoped<TrainerPlanner>();
         services.AddScoped<ActionBarPopulator>();
-
-        var playerReader = sp.GetRequiredService<PlayerReader>();
 
         if (playerReader.Class is UnitClass.Druid)
         {
