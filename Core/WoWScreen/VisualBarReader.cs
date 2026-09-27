@@ -233,7 +233,10 @@ public readonly record struct VisualBarSample(
     VisualNearestCreatureSample? NearestCreaturePosition = null,
     VisualScreenPointSample? TargetScreenPosition = null,
     double? TargetDistanceSquared = null,
-    VisualNameplateProbeSample? NameplateProbe = null);
+    VisualNameplateProbeSample? NameplateProbe = null,
+    bool? SealOfRighteousnessActive = null,
+    VisualDeathEvent? LastDeathEvent = null,
+    VisualLootState? Loot = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -373,13 +376,17 @@ public static class VisualBarReader
                 : null;
         if (targetScreen is null && nameplateProbe is { Matched: true })
             targetScreen = TryReadTargetLocator(pixels, width, height, scale);
+        bool? sealActive = TryReadSealAura(pixels, width, height,
+            whiteLeft, whiteY, scale);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
             playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
             actionStates, cooldowns, playerPowerType, bags, playerIdentity,
             targetFlags, castEvent, targetIdentity, targetWorldPosition,
             targetMapPosition, nearestCreature, targetScreen,
-            targetDistanceSquared, nameplateProbe);
+            targetDistanceSquared, nameplateProbe, sealActive,
+            VisualLifecycleReader.ReadDeath(pixels, width, height, whiteLeft, whiteY, scale),
+            VisualLifecycleReader.ReadLoot(pixels, width, height, whiteLeft, whiteY, scale));
         return true;
     }
 
@@ -602,10 +609,28 @@ public static class VisualBarReader
         return new(status & 255, (status & 256) != 0);
     }
 
+    private static bool? TryReadSealAura(Bgra32[] pixels,
+        int width, int height, int left, int whiteY, double scale)
+    {
+        int state = ReadTargetProbePixel(pixels, width, height,
+            left, whiteY, scale, 28);
+        int marker = ReadTargetProbePixel(pixels, width, height,
+            left, whiteY, scale, 29);
+        if (marker != ((0xA5B5A9 - state) & 0xFFFFFF))
+            return null;
+        if (state is 0 or 1)
+            return state == 1;
+        return state == 2
+            ? VisualAuraReader.ContainsReference(pixels, width, height,
+                left, whiteY + (int)Math.Round(632 * scale), scale)
+            : null;
+    }
+
     private static VisualScreenPointSample? TryReadTargetLocator(
         Bgra32[] pixels, int width, int height, double scale)
     {
-        int offset = Math.Max(3, (int)Math.Round(5 * scale));
+        int offset = Math.Max(8, (int)Math.Round(12 * scale));
+        int blackOffset = Math.Max(4, (int)Math.Round(8 * scale));
         int count = 0, minX = width, maxX = 0, minY = height, maxY = 0;
         long sumX = 0, sumY = 0;
         for (int y = offset; y < height - offset; y++)
@@ -617,7 +642,11 @@ public static class VisualBarReader
                     !Magenta(pixels[y * width + x - offset]) ||
                     !Magenta(pixels[y * width + x + offset]) ||
                     !Magenta(pixels[(y - offset) * width + x]) ||
-                    !Magenta(pixels[(y + offset) * width + x]))
+                    !Magenta(pixels[(y + offset) * width + x]) ||
+                    !(Black(pixels[y * width + x - blackOffset]) &&
+                      Black(pixels[y * width + x + blackOffset]) ||
+                      Magenta(pixels[y * width + x - blackOffset]) &&
+                      Magenta(pixels[y * width + x + blackOffset])))
                     continue;
                 count++;
                 sumX += x;
@@ -628,14 +657,16 @@ public static class VisualBarReader
                 maxY = Math.Max(maxY, y);
             }
         }
-        if (count < 2 || maxX - minX > 8 * scale ||
-            maxY - minY > 8 * scale)
+        if (count < 2 || maxX - minX > 10 * scale ||
+            maxY - minY > 10 * scale)
             return null;
         return new((double)sumX / count / width,
             1 - (double)sumY / count / height);
 
         static bool Magenta(Bgra32 pixel) =>
             pixel.R >= 240 && pixel.G <= 20 && pixel.B >= 240;
+        static bool Black(Bgra32 pixel) =>
+            pixel.R <= 20 && pixel.G <= 20 && pixel.B <= 20;
     }
 
     private static VisualCooldownGridSnapshot? TryReadCooldownGrid(

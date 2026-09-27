@@ -518,6 +518,16 @@ public sealed partial class BotController : IBotController, IDisposable
     {
         cts.Cancel();
 
+        // Screen capture is owned by the outer service provider. Let the
+        // capture loop leave Update before that provider disposes the device.
+        if (Thread.CurrentThread != addonThread && addonThread.IsAlive)
+            addonThread.Join();
+        if (Thread.CurrentThread != screenshotThread && screenshotThread.IsAlive)
+            screenshotThread.Join();
+        if (remotePathing is { IsAlive: true } pathing &&
+            Thread.CurrentThread != pathing)
+            pathing.Join();
+
         npcNameOverlay?.Dispose();
         sessionScope?.Dispose();
     }

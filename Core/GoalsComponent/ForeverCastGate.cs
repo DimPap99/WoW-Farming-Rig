@@ -31,12 +31,11 @@ public static class ForeverCastGate
             sample.Position is not { UIMapId: 1420 } ||
             sample.WorldPosition is not { InstanceMapId: 0 } ||
             sample.LastCastEvent is null ||
-            sample.Bindings is not
-                { ReadableCount: VisualBindingSnapshot.Count } bindings ||
+            sample.Bindings is not { } bindings ||
             !ActionBarCooldownReader.IsForeverReady(sample, action, spellBook))
             return false;
 
-        if (action.Slot is < 1 or > 3 ||
+        if (action.Slot is < 1 or > 5 ||
             !MatchesTrialAction(action))
             return false;
 
@@ -51,18 +50,23 @@ public static class ForeverCastGate
             return false;
 
         if (action.SpellId == 635)
-            return !flags.Present && !flags.PlayerCombat &&
+            return sample.PlayerPower >= 0.12;
+
+        if (action.SpellId == 20287)
+            return sample.SealOfRighteousnessActive == false &&
+                sample.PlayerHealth >= 0.70 &&
                 sample.PlayerPower >= 0.25;
 
-        bool resourcesSafe = sample.PlayerHealth >= 0.70 &&
-            sample.PlayerPower >= (flags.PlayerCombat ? 0.25 : 0.60);
+        if (action.SpellId == 20271 && sample.SealOfRighteousnessActive != true)
+            return false;
+        bool resourcesSafe = flags.PlayerCombat
+            ? sample.PlayerHealth > 0
+            : sample.PlayerHealth >= 0.70 && sample.PlayerPower >= 0.60;
         return AddonReader.HasForeverTargetIdentity(sample) &&
             sample.TargetIdentity is { IsPlayer: false } identity &&
             sample.PlayerIdentity is { } player &&
             identity.Level <= player.Level + 1 &&
-            (flags.PlayerCombat
-                ? sample.TargetHealth > 0
-                : sample.TargetHealth >= 0.99) &&
+            sample.TargetHealth > 0 &&
             flags is
             { Present: true, Attackable: true, Dead: false } &&
             resourcesSafe &&
@@ -76,6 +80,7 @@ public static class ForeverCastGate
             (2, 20271, "Judgement") => true,
             (3, 679, "Holy Strike") => true,
             (3, 678, "Holy Strike") => true,
+            (5, 20287, "Seal of Righteousness") => true,
             _ => false
         };
 }

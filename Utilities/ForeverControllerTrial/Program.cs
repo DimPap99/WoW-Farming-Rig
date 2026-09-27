@@ -1,4 +1,5 @@
 using Core;
+using Core.Forever;
 using Core.Goals;
 
 using Game;
@@ -20,14 +21,15 @@ using System.Threading;
 // The dashboard keeps ForeverDiagnosticController. This explicit command
 // constructs the normal controller for a bounded trial only.
 bool run = args.Contains("--run");
-bool auto = args.Contains("--auto-check") || args.Contains("--auto-run");
-run |= args.Contains("--auto-run");
-if (args.Any(a => a is not ("--check" or "--run" or "--auto-check" or "--auto-run" or "--pid") &&
+bool sweep = args.Contains("--sweep");
+bool auto = args.Contains("--auto-check") || args.Contains("--auto-run") || sweep;
+run |= args.Contains("--auto-run") || sweep;
+if (args.Any(a => a is not ("--check" or "--run" or "--auto-check" or "--auto-run" or "--sweep" or "--pid") &&
     !int.TryParse(a, out _)) ||
     (run && (args.Contains("--check") || args.Contains("--auto-check"))) ||
     (auto && (args.Contains("--check") || args.Contains("--run"))))
 {
-    Console.Error.WriteLine("Use --check, --run, --auto-check or --auto-run [--pid <WowB process ID>].");
+    Console.Error.WriteLine("Use --check, --run, --auto-check, --auto-run or --sweep [--pid <WowB process ID>].");
     return 1;
 }
 
@@ -79,6 +81,11 @@ try
     services.AddSingleton(cts);
     services.AddSingleton(process);
     services.AddSingleton(process.FileVersion);
+    services.AddSingleton(new ForeverRunOptions
+    {
+        StopWhenNoTargets = sweep,
+        MaxCompletedCycles = sweep ? null : 1
+    });
     services.AddSingleton<AddonConfigurator>();
     services.AddSingleton<IOptions<StartupConfigReader>>(Options.Create(new StartupConfigReader()));
     services.AddSingleton<IOptions<StartupConfigDiagnostics>>(Options.Create(new StartupConfigDiagnostics()));
@@ -138,7 +145,21 @@ try
             Console.Error.WriteLine("Normal controller did not load the autonomous goal.");
             return 2;
         }
-        if (!automatic.TryReadOnlyPreflight(out string autoReason))
+        string autoReason = string.Empty;
+        bool autoReady = false;
+        for (int attempt = 0; attempt < 50 && !cts.IsCancellationRequested;
+             attempt++)
+        {
+            screen.Update();
+            tracker.Update();
+            if (automatic.TryReadOnlyPreflight(out autoReason))
+            {
+                autoReady = true;
+                break;
+            }
+            Thread.Sleep(100);
+        }
+        if (!autoReady)
         {
             Console.Error.WriteLine($"Autonomous preflight refused: {autoReason}. No input sent.");
             return 2;
@@ -148,24 +169,41 @@ try
             return 0;
 
         controller.ToggleBotStatus();
-        DateTime autoDeadline = DateTime.UtcNow.AddSeconds(170);
+        DateTime autoDeadline = DateTime.UtcNow.AddSeconds(sweep ? 600 : 170);
+        DateTime nextSnapshot = DateTime.MinValue;
         string autoLastStatus = string.Empty;
         while (!cts.IsCancellationRequested && DateTime.UtcNow < autoDeadline &&
-               automatic.Status != "Failed" && automatic.CompletedKills == 0)
+               automatic.Status is not ("Failed" or "Complete"))
         {
             string status = automatic.Status;
             if (status != autoLastStatus)
             {
-                Console.WriteLine($"Autonomous phase: {status}");
+                Console.WriteLine($"Autonomous phase: {status}; completed cycles={automatic.CompletedKills}, looted={automatic.CompletedLoots}");
                 autoLastStatus = status;
+            }
+            if (DateTime.UtcNow >= nextSnapshot)
+            {
+                if (tracker.TryGetLatest(out VisualBarSample current))
+                    Console.WriteLine($"  health={current.PlayerHealth:P0}, mana={current.PlayerPower:P0}, " +
+                        $"target={current.TargetHealth:P0}, flags={current.TargetFlags}, " +
+                        $"seal={current.SealOfRighteousnessActive}, marker={current.TargetScreenPosition}, " +
+                        $"range2/3={current.ActionStates?.GetSlot(2)?.InRange}/{current.ActionStates?.GetSlot(3)?.InRange}, " +
+                        $"cast={current.LastCastEvent}, death={current.LastDeathEvent}, loot={current.Loot}, " +
+                        $"frameReady={AddonReader.HasForeverTrialFrame(current)}");
+                else
+                    Console.WriteLine("  visual frame unavailable");
+                nextSnapshot = DateTime.UtcNow.AddSeconds(2);
             }
             Thread.Sleep(100);
         }
         if (controller.IsBotActive)
             controller.ToggleBotStatus();
-        Console.WriteLine($"Autonomous kills: {automatic.CompletedKills}; " +
+        Console.WriteLine($"Autonomous kills: {automatic.CompletedKills}; deaths observed: {automatic.ObservedDeaths}; " +
+            $"corpses looted: {automatic.CompletedLoots}; " +
             $"status: {automatic.Status}; {automatic.LastFailure}");
-        return automatic.CompletedKills > 0 ? 0 : 3;
+        if (DateTime.UtcNow >= autoDeadline)
+            Console.Error.WriteLine("Trial time limit reached before the sweep completed.");
+        return automatic.Status == "Complete" ? 0 : 3;
     }
 
     if (controller.GoapAgent?.AvailableGoals is not [ForeverTrialGoal goal])

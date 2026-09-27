@@ -3,6 +3,8 @@ using Core.Database;
 using Core.Goals;
 using Core.GOAP;
 
+using ForeverVisualReader;
+
 using Game;
 
 using Microsoft.Extensions.Logging.Abstractions;
@@ -49,6 +51,7 @@ if (args.Length == 1 && args[0] == "--self-test")
 bool readerSmoke = args.Length == 1 && args[0] == "--reader-smoke";
 bool targetAudit = args.Length == 1 && args[0] == "--target-audit";
 bool targetPositionAudit = args.Length == 1 && args[0] == "--target-position-audit";
+bool watchTargetMarker = args.Length == 1 && args[0] == "--watch-target-marker";
 bool trialInteractApproach = args.Length == 1 && args[0] == "--trial-interact-approach";
 bool routeProbe = args.Length == 1 && args[0] == "--route-probe";
 bool trialCheck = args.Length == 1 && args[0] == "--trial-check";
@@ -101,6 +104,9 @@ try
 
     if (targetPositionAudit)
         return await RunTargetAudit(screen, tracker, requirePosition: true);
+
+    if (watchTargetMarker)
+        return await WatchTargetMarker(screen, tracker, process.MainWindowHandle);
 
     if (trialInteractApproach)
         return await RunTrialInteractApproach(screen, tracker, process, cts);
@@ -215,6 +221,81 @@ finally
     await Task.Delay(200);
 }
 
+static async Task<int> WatchTargetMarker(WowScreenWGC screen,
+    ForeverVisualBarTracker tracker, IntPtr gameWindow)
+{
+    Console.WriteLine("Watching selected nameplate marker for 30 seconds; no game input is sent.");
+    using MarkerCoordinateOverlay overlay = new(gameWindow);
+    string last = string.Empty;
+    bool observed = false;
+    bool savedMiss = false;
+    int? lastX = null, lastY = null;
+    VisualTargetIdentity? lastIdentity = null;
+    for (int i = 0; i < 150; i++)
+    {
+        screen.Update();
+        tracker.Update();
+        string line;
+        if (tracker.TryGetLatest(out VisualBarSample bars) &&
+            bars.TargetScreenPosition is { } point &&
+            bars.TargetIdentity is { Present: true })
+        {
+            int x = (int)Math.Round(point.X * screen.ScreenImage.Width);
+            int y = (int)Math.Round((1 - point.Y) * screen.ScreenImage.Height);
+            line = $"X={x} Y={y} pixels ({point.X:P1} across, {point.Y:P1} up)";
+            overlay.Update(x, y);
+            lastX = x;
+            lastY = y;
+            lastIdentity = bars.TargetIdentity;
+            observed = true;
+        }
+        else
+        {
+            bool sameTarget = tracker.TryGetLatest(out VisualBarSample stale) &&
+                stale.TargetIdentity is { Present: true } identity &&
+                identity == lastIdentity;
+            if (sameTarget && lastX is { } x && lastY is { } y)
+            {
+                line = $"last X={x} Y={y} pixels (stale; marker not visible)";
+                overlay.Update(x, y, stale: true);
+            }
+            else
+            {
+                line = "Selected nameplate marker is not visible in this frame";
+                overlay.Update(null, null);
+                lastX = lastY = null;
+            }
+            if (observed && !savedMiss &&
+                tracker.TryGetLatest(out VisualBarSample missing) &&
+                missing.NameplateProbe is { Matched: true })
+            {
+                using Image<Bgra32> missed = new(screen.ScreenImage.Width,
+                    screen.ScreenImage.Height);
+                Bgra32[] capture = new Bgra32[missed.Width * missed.Height];
+                screen.ScreenImage.CopyPixelDataTo(capture);
+                missed.ProcessPixelRows(destination =>
+                {
+                    for (int row = 0; row < missed.Height; row++)
+                        capture.AsSpan(row * missed.Width, missed.Width)
+                            .CopyTo(destination.GetRowSpan(row));
+                });
+                string missPath = Path.Combine(Path.GetTempPath(),
+                    $"forever-marker-miss-{DateTime.Now:yyyyMMdd-HHmmss}.png");
+                missed.SaveAsPng(missPath);
+                Console.WriteLine($"Marker miss capture: {missPath}");
+                savedMiss = true;
+            }
+        }
+        if (line != last)
+        {
+            Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff} {line}");
+            last = line;
+        }
+        await Task.Delay(200);
+    }
+    return observed ? 0 : 2;
+}
+
 static void PrintBars(Bgra32[] pixels, int width, int height)
 {
     if (!VisualBarReader.TryRead(pixels, width, height, out VisualBarSample bars))
@@ -232,13 +313,15 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
     Console.WriteLine(PositionText(bars.Position));
     Console.WriteLine(WorldPositionText(bars.WorldPosition));
     Console.WriteLine($"selected nameplate={bars.NameplateProbe?.ToString() ?? "unavailable"}, " +
-        $"screen={bars.TargetScreenPosition?.ToString() ?? "unavailable"}");
+        $"screen={bars.TargetScreenPosition?.ToString() ?? "unavailable"}, " +
+        $"Seal of Righteousness={bars.SealOfRighteousnessActive?.ToString() ?? "unavailable"}");
     Console.WriteLine(CooldownText(bars.ActionCooldownFill));
     Console.WriteLine(ActionText(bars.WatchedAction));
     Console.WriteLine(ActionBarText(bars.ActionBar));
     Console.WriteLine(SpellBookText(bars.SpellBook));
     Console.WriteLine(BindingsText(bars.Bindings));
     Console.WriteLine($"last successful player cast={bars.LastCastEvent?.ToString() ?? "unavailable"}");
+    Console.WriteLine($"last target death={bars.LastDeathEvent?.ToString() ?? "unavailable"}; loot={bars.Loot?.ToString() ?? "unavailable"}");
 }
 
 static string PositionText(VisualPositionSample? position) => position is { } value
@@ -799,6 +882,38 @@ static async Task<int> RunRouteProbe(WowScreenWGC screen, ForeverVisualBarTracke
             $"world=({world.X:F2}, {world.Y:F2}, {world.Z:F2}); " +
             $"map/world error={mapError:F2} yd; mesh Z={startZ:F2}; " +
             $"tile={tileX},{tileZ}");
+
+        foreach (float heightHint in new[] { startZ, 0f })
+        for (int step = 0; step < 8; step++)
+        {
+            float angle = (float)map.Direction + step * MathF.Tau / 8;
+            Vector2 ahead = fromWorld + new Vector2(MathF.Cos(angle),
+                MathF.Sin(angle)) * 3;
+            bool straight = nav.TryWalkStraight(new(start.X, start.Y, 0), ahead,
+                out Vector3 walkEnd, out string walkReason);
+            var local = nav.FindPath(new Vector3(start.X, start.Y, heightHint),
+                new Vector3(ahead.X, ahead.Y, heightHint), null);
+            if (local is not { locations.Count: >= 2 })
+            {
+                Console.WriteLine($"Local Z={heightHint:F2} {step * 45,3}°: no path");
+                continue;
+            }
+            float length = 0;
+            for (int point = 1; point < local.locations.Count; point++)
+                length += Vector2.Distance(
+                    new(local.locations[point - 1].X,
+                        local.locations[point - 1].Y),
+                    new(local.locations[point].X,
+                        local.locations[point].Y));
+            Vector3 first = local.locations[0];
+            Vector3 last = local.locations[^1];
+            float startError = Vector2.Distance(new(first.X, first.Y), fromWorld);
+            float endError = Vector2.Distance(new(last.X, last.Y), ahead);
+            Console.WriteLine($"Local Z={heightHint:F2} {step * 45,3}°: length={length:F2}, " +
+                $"snap={startError:F2}/{endError:F2}, surface={first.Z:F2}/{last.Z:F2}, points={local.locations.Count}");
+            if (heightHint == 0)
+                Console.WriteLine($"  connected straight walk={straight}, Z={walkEnd.Z:F2}; {walkReason}");
+        }
 
         foreach (float radius in new[] { 12f, 24f })
         {
@@ -1580,7 +1695,7 @@ static int RunSelfTest()
     using BagReader bagReader = new(itemDB, new EquipmentReader(itemDB));
     foreach (double scale in new[] { 0.75, 1.0, 1.25 })
     {
-        const int width = 700;
+        const int width = 900;
         const int height = 1000;
         const int left = 16;
         const int top = 70;
@@ -1661,14 +1776,24 @@ static int RunSelfTest()
         DrawCastPixel(26, plateStatus);
         DrawCastPixel(27, (0xA5B488 - plateStatus - targetHash1 -
             targetHash2) & 0xFFFFFF);
-        int markerSize = (int)Math.Round(16 * scale);
-        int markerCore = Math.Max(2, (int)Math.Round(4 * scale));
+        DrawCastPixel(28, 1);
+        DrawCastPixel(29, 0xA5B5A8);
+        DrawLifecycle(205, [7, targetHash1, targetHash2,
+            (0xA5D611 - 7 - targetHash1 - targetHash2) & 0xFFFFFF]);
+        DrawLifecycle(225, [3, 3, 8, 2, 0, 1, targetHash1, targetHash2,
+            (0xA5D722 - 3 - 3 - 8 - 2 - 1 - targetHash1 - targetHash2) & 0xFFFFFF]);
+        int markerSize = (int)Math.Round(28 * scale);
+        int markerBlack = (int)Math.Round(22 * scale);
+        int markerCore = Math.Max(3, (int)Math.Round(6 * scale));
         for (int y = 600 - markerSize / 2; y < 600 + markerSize / 2; y++)
-            for (int x = 500 - markerSize / 2; x < 500 + markerSize / 2; x++)
+            for (int x = 780 - markerSize / 2; x < 780 + markerSize / 2; x++)
                 pixels[y * width + x] = new Bgra32
                     { R = 255, B = 255, A = 255 };
+        for (int y = 600 - markerBlack / 2; y < 600 + markerBlack / 2; y++)
+            for (int x = 780 - markerBlack / 2; x < 780 + markerBlack / 2; x++)
+                pixels[y * width + x] = new Bgra32 { A = 255 };
         for (int y = 600 - markerCore / 2; y < 600 + markerCore / 2; y++)
-            for (int x = 500 - markerCore / 2; x < 500 + markerCore / 2; x++)
+            for (int x = 780 - markerCore / 2; x < 780 + markerCore / 2; x++)
                 pixels[y * width + x] = new Bgra32
                     { G = 255, B = 255, A = 255 };
         DrawSpellGridSlot(1, VisualSpellIdSource.SpellId, 6603);
@@ -1736,8 +1861,9 @@ static int RunSelfTest()
             || Math.Abs(targetMapPosition.MapX - targetMapX / 16777215.0) > 0.00001
             || Math.Abs(targetMapPosition.MapY - targetMapY / 16777215.0) > 0.00001
             || result.NameplateProbe is not { Count: 1, Matched: true }
+            || result.SealOfRighteousnessActive != true
             || result.TargetScreenPosition is not { } targetScreen
-            || Math.Abs(targetScreen.X - 500.0 / width) > 0.01
+            || Math.Abs(targetScreen.X - 780.0 / width) > 0.01
             || Math.Abs(targetScreen.Y - 0.4) > 0.01
             || result.LastCastEvent is not { Sequence: 0, SpellId: 0 }
             || result.WatchedAction is not { Slot: 4, Kind: VisualActionKind.Spell, Id: 7744 }
@@ -1766,9 +1892,48 @@ static int RunSelfTest()
             || spellBook.GetSlot(2) is not { Source: VisualSpellIdSource.ActionId, Id: 270 }
             || spellBook.GetSlot(3) is not { Source: VisualSpellIdSource.SpellId, Id: 7744 })
         {
-            Console.Error.WriteLine($"Visual reader self-test failed at UI scale {scale}.");
+            Console.Error.WriteLine($"Visual reader self-test failed at UI scale {scale}; " +
+                $"Seal={result.SealOfRighteousnessActive?.ToString() ?? "missing"}.");
             return 1;
         }
+        using (SyntheticWowScreen capture = new(Image.LoadPixelData(pixels, width, height)))
+        {
+            ForeverVisualBarTracker fullScreen = new(capture,
+                new StartupClientVersion(new Version(1, 60, 1)));
+            fullScreen.Update();
+            if (!fullScreen.TryGetLatest(out var captured) ||
+                captured.TargetScreenPosition is not { } marker ||
+                Math.Abs(marker.X - 780.0 / width) > 0.01 ||
+                Math.Abs(marker.Y - 0.4) > 0.01)
+            {
+                Console.Error.WriteLine($"Full-viewport marker tracking failed at scale {scale}.");
+                return 1;
+            }
+        }
+
+        // The reference and aura textures share scale and rendering. A
+        // different icon must not match; a missing reference is unknown.
+        int auraTop = top + rowStep * 4 + (int)Math.Round(632 * scale);
+        Bgra32[] auraPixels = new Bgra32[width * height];
+        for (int index = 0; index <= 40; index += 40)
+            for (int y = 3; y <= 12; y++)
+                for (int x = 3; x <= 12; x++)
+                {
+                    int offset = (auraTop + (int)Math.Round((index / 21 * 18 + y) * scale)) * width +
+                        left + (int)Math.Round((index % 21 * 18 + x) * scale);
+                    auraPixels[offset] = new Bgra32((byte)(x * 15), (byte)(y * 15), 80);
+                }
+        if (VisualAuraReader.ContainsReference(auraPixels, width, height, left, auraTop, scale) != true)
+            return 1;
+        for (int y = 0; y < height; y++)
+            Array.Clear(auraPixels, y * width + left + (int)Math.Ceiling(18 * scale),
+                width - left - (int)Math.Ceiling(18 * scale));
+        if (VisualAuraReader.ContainsReference(auraPixels, width, height, left, auraTop, scale) != false)
+            return 1;
+        Array.Clear(auraPixels);
+        if (VisualAuraReader.ContainsReference(auraPixels, width, height, left, auraTop, scale) is not null)
+            return 1;
+
         if (!AddonReader.HasForeverControllerFrame(result) ||
             !AddonReader.HasForeverTargetIdentity(result) ||
             AddonReader.HasForeverTargetIdentity(result with { TargetIdentity = null }) ||
@@ -2497,9 +2662,13 @@ static int RunSelfTest()
                   TargetFlags = new(true, true, false, true, false) },
                 trialJudgement, spellBookReader) ||
             ForeverCastGate.CanPress(trialCastSample with
-                { PlayerHealth = 0.69, PlayerPower = 0.25,
+                { PlayerHealth = 0.69, PlayerPower = 1,
                   TargetHealth = 0.50,
-                  TargetFlags = new(true, true, false, true, false) },
+                  TargetFlags = new(true, true, false, false, false) },
+                trialJudgement, spellBookReader) ||
+            ForeverCastGate.CanPress(trialCastSample with { SealOfRighteousnessActive = false },
+                trialJudgement, spellBookReader) ||
+            ForeverCastGate.CanPress(trialCastSample with { SealOfRighteousnessActive = null },
                 trialJudgement, spellBookReader) ||
             ForeverCastGate.CanPress(trialCastSample with { TargetIdentity = null },
                 trialJudgement, spellBookReader) ||
@@ -2559,6 +2728,46 @@ static int RunSelfTest()
             return 1;
         }
 
+        // Events are latched independently of the currently selected target.
+        DrawWorldPixel(13, 32);
+        DrawWorldPixel(14, 0xA57755 - 32);
+        DrawPositionPixel(7, 0xFF0000);
+        DrawCastPixel(3, 0);
+        DrawCastPixel(4, 0);
+        DrawCastPixel(5, 0);
+        DrawCastPixel(6, 0xA58866);
+        VisualTargetIdentity deadTarget = new(targetHash1, targetHash2, targetLevel, false);
+        if (!VisualBarReader.TryRead(pixels, width, height, out var afterDeath) ||
+            afterDeath.LastDeathEvent is not { } death || !death.Confirms(deadTarget, 6) ||
+            death.Confirms(deadTarget, 7) ||
+            death.Confirms(deadTarget with { GuidHash2 = targetHash2 + 1 }, 6) ||
+            afterDeath.Loot is not { IsOpen: false, InitialSlots: 2, RemainingSlots: 0,
+                OpenSequence: 3, CloseSequence: 3, ClearedSequence: 8 })
+        {
+            Console.Error.WriteLine($"Death after target clearing / completed loot test failed at {scale}.");
+            return 1;
+        }
+        VisualLootState finishedLoot = afterDeath.Loot!.Value;
+        VisualLootState priorLoot = finishedLoot with
+            { OpenSequence = 2, CloseSequence = 2, ClearedSequence = 6 };
+        if (!finishedLoot.CompletedSince(priorLoot) ||
+            finishedLoot.CompletedSince(finishedLoot) ||
+            (finishedLoot with { RemainingSlots = 1 }).CompletedSince(priorLoot) ||
+            (finishedLoot with { IsOpen = true }).CompletedSince(priorLoot) ||
+            (finishedLoot with { ClearedSequence = 6 }).CompletedSince(priorLoot))
+        {
+            Console.Error.WriteLine($"Loot completion accepted stale/partial events at {scale}.");
+            return 1;
+        }
+        DrawLifecycle(205, [7, targetHash1, targetHash2, 0]);
+        DrawLifecycle(225, [3, 3, 8, 2, 0, 1, targetHash1, targetHash2, 0]);
+        if (!VisualBarReader.TryRead(pixels, width, height, out var corruptEvents) ||
+            corruptEvents.LastDeathEvent is not null || corruptEvents.Loot is not null)
+        {
+            Console.Error.WriteLine($"Corrupt lifecycle events accepted at {scale}.");
+            return 1;
+        }
+
         // A calibration mismatch or absent bars must never produce a sample.
         Draw(3, 0.65, new Bgra32 { R = 255, G = 255, A = 255 });
         if (VisualBarReader.TryRead(pixels, width, height, out _))
@@ -2606,6 +2815,13 @@ static int RunSelfTest()
             int yStart = top + (int)Math.Round(190 * scale);
             int side = (int)Math.Round(10 * scale);
             DrawEncodedRect(xStart, yStart, side, encoded);
+        }
+
+        void DrawLifecycle(int row, int[] values)
+        {
+            for (int i = 0; i < values.Length; i++)
+                DrawEncodedRect(left + (int)Math.Round((340 + i * 20) * scale),
+                    top + (int)Math.Round(row * scale), (int)Math.Round(10 * scale), values[i]);
         }
 
         void DrawActionGridSlot(int slot, int kind, int id)

@@ -3,4 +3,5 @@
 ## Notes: Local compatibility diagnostics for WoW Farming Rig
 ## SavedVariables: ForeverProbeResults, ForeverProbeCatalog
 
+ForeverEvents.lua
 ForeverProbe.lua

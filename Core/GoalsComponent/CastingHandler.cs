@@ -11,6 +11,8 @@ using static System.Math;
 
 namespace Core.Goals;
 
+public enum ForeverCastResult { NotReady, Succeeded, Failed }
+
 public sealed partial class CastingHandler
 {
 #if DEBUG
@@ -30,6 +32,7 @@ public sealed partial class CastingHandler
     private readonly ILogger<CastingHandler> logger;
     private readonly bool Log;
     private readonly ConfigurableInput input;
+    private readonly ExecGameCommand gameCommand;
 
     private readonly Wait wait;
     private readonly PlayerReader playerReader;
@@ -55,6 +58,7 @@ public sealed partial class CastingHandler
 
     private readonly ApproachThrottle approachThrottle;
     private bool foreverCastNeedsReset;
+    private long foreverLastCastSucceeded;
 
     public bool SpellInQueue()
     {
@@ -89,6 +93,7 @@ public sealed partial class CastingHandler
     public CastingHandler(
         ILogger<CastingHandler> logger,
         ConfigurableInput input,
+        ExecGameCommand gameCommand,
         ClassConfiguration classConfig,
         AddonBits bits,
         ActionBarBits<IUsableAction> usableAction,
@@ -108,6 +113,7 @@ public sealed partial class CastingHandler
     {
         this.logger = logger;
         this.input = input;
+        this.gameCommand = gameCommand;
 
         this.wait = wait;
         this.bits = bits;
@@ -832,7 +838,7 @@ public sealed partial class CastingHandler
     public bool Cast(KeyAction item, Func<bool> interrupt)
     {
         if (playerReader.IsForeverVisual)
-            return CastForever(item);
+            return TryCastForever(item, interrupt) == ForeverCastResult.Succeeded;
 
         CancellationToken token = CancellationToken.None;
 
@@ -901,48 +907,87 @@ public sealed partial class CastingHandler
         return true;
     }
 
-    private bool CastForever(KeyAction item)
+    public ForeverCastResult TryCastForever(KeyAction item, Func<bool> interrupt)
     {
+        if (foreverCastNeedsReset || interrupt())
+            return ForeverCastResult.Failed;
+        // Action/cooldown rows refresh every 500ms. A cast event can arrive
+        // before that row reflects its GCD; wait for the producer to refresh.
+        if (foreverLastCastSucceeded != 0 &&
+            GetElapsedTime(foreverLastCastSucceeded).TotalMilliseconds < 650)
+            return ForeverCastResult.NotReady;
         // This branch is limited to the guarded Forever Paladin profiles.
         // It never reads aura, GCD, current-action, cast-time, or UI-error cells.
         if (!(string.Equals(classConfig.FileName,
                   "Paladin_Forever_Trial.json", StringComparison.OrdinalIgnoreCase) ||
               string.Equals(classConfig.FileName,
                   "Paladin_Forever_Auto.json", StringComparison.OrdinalIgnoreCase)) ||
-            foreverCastNeedsReset ||
             !playerReader.TryGetForeverVisualVitals(out VisualBarSample before) ||
             !ForeverCastGate.CanPress(before, item, spellBookReader) ||
             before.LastCastEvent is not { } previousEvent)
-            return false;
+            return ForeverCastResult.NotReady;
 
         // A missed event, unreadable frame, or changed target after this point
         // latches the cast path closed for this session. Do not retry a press
         // whose outcome cannot be proved from the visual event.
         foreverCastNeedsReset = true;
         VisualTargetIdentity? targetIdentity = before.TargetIdentity;
-        input.PressFixed(item.ConsoleKey, 75, CancellationToken.None);
+        if (item.SpellId == 635)
+        {
+            // Explicit self target works even with a hostile target selected,
+            // independently of the client's auto-self-cast preference.
+            gameCommand.Run("/cast [@player] Holy Light(Rank 1)");
+        }
+        else
+        {
+            try { input.PressFixed(item.ConsoleKey, 75, CancellationToken.None); }
+            finally { input.SetKeyState(item.ConsoleKey, false, true); }
+        }
         item.SetClicked();
 
-        int timeoutMs = item.SpellId == 635 ? 5000 : 3000;
+        int timeoutMs = item.SpellId is 635 or 20287 ? 5000 : 3000;
         long start = GetTimestamp();
         while (GetElapsedTime(start).TotalMilliseconds < timeoutMs)
         {
+            if (interrupt())
+                return ForeverCastResult.Failed;
             if (!playerReader.TryGetForeverVisualVitals(out VisualBarSample current) ||
-                current.TargetFlags is not { PlayerDead: false } flags ||
-                flags.Present != current.TargetPresent ||
-                (item.SpellId == 635
-                    ? flags.Present || flags.PlayerCombat
-                    : !flags.Present || !flags.Attackable ||
-                      current.TargetIdentity is not { } currentTarget ||
-                      currentTarget != targetIdentity))
-                return false;
+                current.TargetFlags is not { } flags ||
+                flags.Present != current.TargetPresent)
+            {
+                Thread.Sleep(50);
+                continue;
+            }
+            if (flags.PlayerDead)
+                return ForeverCastResult.Failed;
 
             if (current.LastCastEvent is { } castEvent &&
-                castEvent.ConfirmsNewSuccess(previousEvent, item.SpellId))
+                castEvent.ConfirmsNewSuccess(previousEvent, item.SpellId) &&
+                (item.SpellId is 635 or 20287 ||
+                 current.TargetIdentity == targetIdentity ||
+                 targetIdentity is { } killed && current.LastDeathEvent is { } death &&
+                 death.Confirms(killed, before.LastDeathEvent?.Sequence ?? 0)))
             {
                 item.ConsumeCharge();
                 foreverCastNeedsReset = false;
-                return true;
+                foreverLastCastSucceeded = GetTimestamp();
+                return ForeverCastResult.Succeeded;
+            }
+
+            if (item.SpellId is not (635 or 20287) &&
+                flags.Present && current.TargetIdentity is { Present: true } currentTarget &&
+                currentTarget != targetIdentity)
+                return ForeverCastResult.Failed;
+
+            // The checked player aura is direct proof of this self buff even
+            // when the successful spellcast event arrives after the frame.
+            if (item.SpellId == 20287 &&
+                current.SealOfRighteousnessActive == true)
+            {
+                item.ConsumeCharge();
+                foreverCastNeedsReset = false;
+                foreverLastCastSucceeded = GetTimestamp();
+                return ForeverCastResult.Succeeded;
             }
 
             Thread.Sleep(50);
@@ -950,7 +995,7 @@ public sealed partial class CastingHandler
 
         logger.LogWarning("Forever cast success event was not observed for {Spell} ({SpellId})",
             item.Name, item.SpellId);
-        return false;
+        return ForeverCastResult.Failed;
     }
 
     public bool WaitForGCD(KeyAction item, bool spellQueue, bool ignoreRemainCast, CancellationToken token)

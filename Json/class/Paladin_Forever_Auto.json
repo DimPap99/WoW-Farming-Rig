@@ -1,5 +1,5 @@
 {
-  "Loot": false,
+  "Loot": true,
   "UseMount": false,
   "Paths": [],
   "Pull": { "Sequence": [] },
@@ -13,6 +13,22 @@
         "HasCastBar": true,
         "WhenUsable": true,
         "Requirements": ["Spell:635", "Health% < 90", "Mana% >= 25"]
+      },
+      {
+        "Name": "Seal of Righteousness",
+        "SpellId": 20287,
+        "Slot": 5,
+        "Key": "5",
+        "WhenUsable": true,
+        "Requirements": ["Spell:20287", "Mana% >= 25"]
+      },
+      {
+        "Name": "Judgement",
+        "SpellId": 20271,
+        "Slot": 2,
+        "Key": "2",
+        "WhenUsable": true,
+        "Requirements": ["Spell:20271", "TargetHealth% > 0"]
       },
       {
         "Name": "Holy Strike",
