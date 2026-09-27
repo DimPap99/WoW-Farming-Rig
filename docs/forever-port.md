@@ -97,6 +97,22 @@ adjacent tiles. The liquid check compares two installed ADTs with their raw
 MH2O masks and bakes one wet navmesh tile. These commands do not write a tile
 to the runtime cache or enable gameplay.
 
+The normal `BakeTool` now accepts the local Forever CASC source. Its `--adt`
+pair is world grid X,Y, so the file `Azeroth_32_48.adt` is selected with
+`--adt 48,32`:
+
+```powershell
+dotnet run --project Utilities/BakeTool -c Release -- --exp forever --root Json --continent Azeroth --adt 48,32 --casc-install "C:\Program Files (x86)\World of Warcraft" --casc-listfile "C:\path\to\community-listfile.csv"
+dotnet run --project Utilities/BakeTool -c Release -- --exp forever --root Json --continent Azeroth --area-grid --casc-install "C:\Program Files (x86)\World of Warcraft" --casc-listfile "C:\path\to\community-listfile.csv"
+```
+
+The sample ADT wrote 16 navmesh tiles to the local ignored cache. A disk-only
+pathfinder read them back and found a 29-point route while baking zero tiles.
+The Azeroth area grid and its 447 subzone bounds were generated under
+`Json/area_grid/forever` and `Json/subzones/forever`. The HTTP bake host does
+not yet configure a CASC source; `BakeTool` is the supported Forever bake entry
+point.
+
 ## Live findings from the beta client
 
 - `WOW_PROJECT_ID` equals `WOW_PROJECT_MAINLINE` (`1`), not Classic. The
@@ -279,11 +295,12 @@ to the runtime cache or enable gameplay.
 3. Import Forever-specific world geometry and build a matching navmesh. The
    geometry readers now accept a container-neutral `IGameFileSource`, and the
    supplier can be given one directly. `Utilities/ForeverCasc` provides a
-   local-only CASC source, but the bake host does not select it yet. Modern
+   local-only CASC source selected by `BakeTool` for Forever. Modern
    ADT object placements use FileDataIDs. Numeric WMO groups, doodad sets,
    transforms, and M2 collision are loaded; one read-only sample tile bake
-   passed. The bake host still does not select the CASC source. One in-memory
-   route query across adjacent tiles and a sampled wet tile passed; visual
+   passed. One ADT was baked through `BakeTool`; the HTTP bake host still needs
+   CASC configuration. One in-memory route query across adjacent tiles, a
+   disk-only readback route, and a sampled wet tile passed; visual
    placement against the client and broader liquid/collision coverage need
    validation before expanding coverage or using it for gameplay. The storage
    refactor builds and passes the navmesh coordinate/cost-zone/listfile tests,

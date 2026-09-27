@@ -1079,6 +1079,8 @@ public sealed class MPQTriangleSupplier
                 }
                 catch (Exception ex)
                 {
+                    if (RequiresCompleteGeometry)
+                        throw new InvalidDataException($"AreaData: failed reading {filename.ToString()}.", ex);
                     logger.LogWarning("AreaData: skipped {Filename}: {Message}", filename.ToString(), ex.Message);
                     continue;
                 }
