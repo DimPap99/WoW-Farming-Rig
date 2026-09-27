@@ -24,9 +24,6 @@ public static class TileGeometryExtractor
     /// </summary>
     public const float PaddingYd = 4f;
 
-    // Dev-baseline TriangleType has no lava/slime distinction; all liquid is
-    // Water. AreaMagmaSlime stays reserved for when the supplier learns to
-    // classify lethal liquids.
     private const TriangleType LiquidMask = TriangleType.Water;
 
     /// <summary>
@@ -159,7 +156,9 @@ public static class TileGeometryExtractor
                 if ((t.Flags & LiquidMask) != 0)
                 {
                     AppendTriangle(liquidVerts, liquidTris, v0, v1, v2);
-                    liquidAreas.Add(NavmeshSettings.AreaWater);
+                    liquidAreas.Add((t.Flags & TriangleType.MagmaSlime) != 0
+                        ? NavmeshSettings.AreaMagmaSlime
+                        : NavmeshSettings.AreaWater);
                 }
                 else
                 {

@@ -10,7 +10,8 @@ public enum TriangleType : byte
     Terrain = 1,
     Water = 2,
     Object = 4,
-    Model = 8
+    Model = 8,
+    MagmaSlime = 16 // modifier on Water for navmesh area classification
 }
 
 public static class TriangleType_Ext

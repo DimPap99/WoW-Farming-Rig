@@ -346,6 +346,12 @@ public sealed class MPQTriangleSupplier
             return;
         }
 
+        if (c.modernLiquidLayers.Length != 0)
+        {
+            AddModernLiquids(tc, c);
+            return;
+        }
+
         // paint the water
         for (int col = 0; col < LiquidData.HEIGHT_SIZE; col++)
         {
@@ -510,6 +516,45 @@ public sealed class MPQTriangleSupplier
             }
         }
         */
+    }
+
+    private static void AddModernLiquids(TriangleCollection tc, MapChunk chunk)
+    {
+        Span<int> vertices = stackalloc int[LiquidData.HEIGHT_SIZE * LiquidData.HEIGHT_SIZE];
+        foreach (ModernLiquidLayer layer in chunk.modernLiquidLayers)
+        {
+            int stride = layer.Width + 1;
+            for (int row = 0; row <= layer.Height; row++)
+            {
+                for (int col = 0; col <= layer.Width; col++)
+                {
+                    ChunkGetCoordForPoint(chunk, layer.OffsetY + row, layer.OffsetX + col,
+                        out float x, out float y, out _);
+                    int index = row * stride + col;
+                    vertices[index] = tc.AddVertex(x, y, layer.Heights[index]);
+                }
+            }
+
+            TriangleType type = layer.IsMagmaOrSlime
+                ? TriangleType.Water | TriangleType.MagmaSlime
+                : TriangleType.Water;
+            for (int row = 0; row < layer.Height; row++)
+            {
+                for (int col = 0; col < layer.Width; col++)
+                {
+                    int square = row * layer.Width + col;
+                    if ((layer.VisibleMask & (1UL << square)) == 0)
+                        continue;
+
+                    int a = vertices[row * stride + col];
+                    int b = vertices[(row + 1) * stride + col];
+                    int c = vertices[(row + 1) * stride + col + 1];
+                    int d = vertices[row * stride + col + 1];
+                    tc.AddTriangle(a, b, d, type);
+                    tc.AddTriangle(b, c, d, type);
+                }
+            }
+        }
     }
 
     private void AddNumericWmoDoodads(TriangleCollection tc, WMOInstance wi,
