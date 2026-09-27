@@ -35,7 +35,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
     public bool TryReadOnlyRoutePreflight(out string reason)
     {
         if (!player.TryGetForeverVisualVitals(out VisualBarSample bars) ||
-            !AddonReader.HasForeverControllerFrame(bars) ||
+            !AddonReader.HasForeverTrialFrame(bars) ||
             bars.Position is not { UIMapId: 1420 } ||
             bars.WorldPosition is not { InstanceMapId: 0 } ||
             bars.PlayerIdentity is not { ClassId: (int)UnitClass.Paladin } ||
@@ -111,7 +111,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
         try
         {
             if (!player.TryGetForeverVisualVitals(out VisualBarSample bars) ||
-                !AddonReader.HasForeverControllerFrame(bars))
+                !AddonReader.HasForeverTrialFrame(bars))
             {
                 if (phase == Phase.Initial && !TimedOut(10000))
                     return;
@@ -252,10 +252,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
     private bool RouteReady(VisualBarSample bars, out string reason)
     {
         reason = "unknown route condition";
-        if (config.Paths is not { Length: 1 } ||
-            config.Paths[0] is not
-                { PathFilename: "Forever_Tirisfal_LocalTrial.json", UIMapId: 1420,
-                  PathThereAndBack: false } ||
+        if (config.Paths is not { Length: 0 } ||
             config.Loot || config.UseMount ||
             bars.Position is not { } map || bars.WorldPosition is not { } world ||
             !maps.TryGet(1420, out WorldMapArea area) || area.MapID != 0 ||
@@ -265,38 +262,22 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
             return false;
         }
 
-        string path = Path.Combine(data.Path, "Forever_Tirisfal_LocalTrial.json");
-        Vector3[]? anchors = Newtonsoft.Json.JsonConvert.DeserializeObject<Vector3[]>(
-            File.ReadAllText(path));
-        if (anchors is not { Length: 2 })
-        {
-            reason = "trial route must have two anchors";
-            return false;
-        }
-
-        Vector3 first = WorldMapAreaDB.ToWorld_FlipXY(anchors[0], area);
-        Vector3 second = WorldMapAreaDB.ToWorld_FlipXY(anchors[1], area);
         Vector2 here = new((float)world.X, (float)world.Y);
-        Vector2 start = new(first.X, first.Y);
-        Vector2 end = new(second.X, second.Y);
         int? moveCode = bars.Bindings?.GetCode(2);
         var moveBinding = moveCode is > 0
             ? KeyReader.DecodeBinding(moveCode.Value) : null;
         Vector3 mapWorld = WorldMapAreaDB.ToWorld_FlipXY(
             new Vector3((float)(map.MapX * 100), (float)(map.MapY * 100), 0), area);
         Vector2 forward = new(MathF.Cos((float)map.Direction), MathF.Sin((float)map.Direction));
+        Vector2 ahead = here + forward * 3f;
         if (moveBinding is not { bindingId: BindingID.MOVEFORWARD } ||
             !((moveBinding.Value.key1 == ConsoleKey.UpArrow &&
                moveBinding.Value.mod1 == ModifierKey.None) ||
               (moveBinding.Value.key2 == ConsoleKey.UpArrow &&
                moveBinding.Value.mod2 == ModifierKey.None)) ||
-            Vector2.Distance(here, new(mapWorld.X, mapWorld.Y)) > 1f ||
-            Vector2.Distance(here, start) > 3f ||
-            Vector2.Distance(start, end) is < 5f or > 20f ||
-            AngularDifference(map.Direction,
-                Math.Atan2(end.Y - here.Y, end.X - here.X)) > 0.35)
+            Vector2.Distance(here, new(mapWorld.X, mapWorld.Y)) > 1f)
         {
-            reason = "position or facing does not match the route start";
+            reason = "position or forward binding is inconsistent";
             return false;
         }
 
@@ -312,25 +293,12 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
         }
 
         using NavmeshPathfinder nav = new(logger, null, cache, bake, new NavmeshQueryOptions());
-        if (!nav.TryGetHeight(here.X, here.Y, out float z) ||
-            !nav.TryGetHeight(end.X, end.Y, out float endZ))
+        if (!nav.TryGetHeight(here.X, here.Y, out float z))
         {
-            reason = "route endpoints are outside the baked mesh";
+            reason = "current position is outside the baked mesh";
             return false;
         }
 
-        var route = nav.FindPath(new(here.X, here.Y, z),
-            new(end.X, end.Y, endZ), null);
-        if (route is null || route.locations.Count < 2 || nav.LastStats.TilesBaked != 0 ||
-            PathLength(route.locations) > 20f ||
-            Vector2.Distance(new(route.locations[0].X, route.locations[0].Y), here) > 0.5f ||
-            Vector2.Distance(new(route.locations[^1].X, route.locations[^1].Y), end) > 0.5f)
-        {
-            reason = "route has no complete disk-only path";
-            return false;
-        }
-
-        Vector2 ahead = here + forward * 3f;
         if (!nav.TryGetHeight(ahead.X, ahead.Y, out float aheadZ) ||
             MathF.Abs(aheadZ - z) > 1.5f)
         {
