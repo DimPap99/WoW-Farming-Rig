@@ -512,7 +512,7 @@ Two consequences that do need handling:
 
 ## 14. Verification
 
-1. `dotnet build MasterOfPuppets.sln`.
+1. `dotnet build WoWFarmingRig.sln`.
 2. **Expression scope.** Parse `"Type:Humanoid && Level <= PlayerLevel + 2 && !Elite"` and
    assert the matched creature set against a known zone. Then assert `"Health% > 50"` in
    `Generate.Mobs` throws at parse time (`ExpressionParser.cs:176-178`), and that
@@ -615,7 +615,7 @@ longer knows. A large dz alone means nothing on a hillside. The signal is a larg
 
 ## 16. Verified so far
 
-`dotnet build MasterOfPuppets.sln` clean. The solution contains no test projects, so
+`dotnet build WoWFarmingRig.sln` clean. The solution contains no test projects, so
 `dotnet test` is a no-op; `CoreTests` is the harness.
 
 ```

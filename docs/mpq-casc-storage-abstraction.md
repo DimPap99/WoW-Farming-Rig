@@ -12,9 +12,21 @@
 > Vanilla/TBC/WotLK remain byte-identical; the original 4.3.4 Cataclysm client is supported
 > end to end: split-ADT parsing, all four continents baked (53,818 navmesh tiles), Leaflet
 > tiles for the rebuilt continents with Northrend/Outland inheriting precata art, and both
-> published to R2. Phases B (`IGameFileSource`) and C (CascLib, for the 4.4.x/5.5.x
-> re-releases) remain open. MoP 5.4.8 is MPQ and split-ADT too but is **untested** — it adds
+> published to R2. Phase B (`IGameFileSource`) is implemented but awaits its
+> MPQ byte-identity gate; Phase C (CascLib, for CASC clients) remains open.
+> MoP 5.4.8 is MPQ and split-ADT too but is **untested** — it adds
 > `holes_high_res` over `ofsHeight` in the MCNK header.
+
+> **Forever beta update (2026-09-27).** The container-neutral source is in the
+> geometry readers, and `MPQTriangleSupplier` accepts an injected source.
+> `CascGeometryListfile` maps geometry names to FileDataIDs. A local-only,
+> MIT-licensed TACTSharp prototype reads actual Forever WDT and ADT files
+> with CDN fallback disabled. The production CASC source is not integrated;
+> modern ADT object placements use FileDataIDs rather than the legacy name
+> tables. One MD21-wrapped M2 collision model parsed successfully by ID, but
+> WMO groups and doodads remain unsupported, so navigation is not ready.
+> The six-tile MPQ regression
+> corpus is absent from this workspace. See [Forever port](forever-port.md).
 
 ## Why
 
@@ -460,6 +472,12 @@ therefore yields zero triangles. Not a Cata issue — worth a look independently
 
 ### Phase B — storage abstraction (no behaviour change)
 
+**Implementation note (2026-09-27):** `IGameFileSource` now exists, `ArchiveSet`
+implements it, and the ADT/WDT/WMO/M2 readers accept it. The solution builds
+and `CoreTests navmesh` passes. The six-tile MPQ byte-identity gate is still
+pending because this workspace does not contain `Json/MPQ`; Phase B should not
+be considered fully verified until that corpus is run.
+
 Worth doing regardless, but no longer load-bearing: it is prep for Phase C, not for Cata
 geometry.
 
@@ -554,7 +572,7 @@ public static IGameFileSource Open(DataConfig cfg, ILogger logger)
 | phase | deliverable | risk | ships capability? |
 |---|---|---|---|
 | **A** ✅ | `MCIN`-optional MCNK walk + `_obj0` placement chunks in `MapTileFile`, stub-archive tolerance in `Archive`/`ArchiveSet` | **done** — corpus byte-identical, Cata verified against 3 zones | **yes — Cata-era geometry from a 4.3.4 MPQ client** |
-| B | `IGameFileSource`, `ArchiveSet` implements it, consumers retargeted | low — byte-identity gated | no (refactor) |
+| B | `IGameFileSource`, `ArchiveSet` implements it, consumers retargeted | implemented; byte-identity gate pending | no (refactor) |
 | C | `CascDll/` P/Invoke + `CascFileSource`, factory, config | medium — FileDataId naming, native DLL packaging, retail-era format drift | bakes directly from a Cata/MoP Classic install |
 | ~~D~~ | ~~DB2/DB6 for `WorldMapArea`~~ | — | **already done** — `json/dbc/legacy_cata/WorldMapArea.json` via `ReadDBC_CSV` |
 
@@ -714,7 +732,7 @@ CASC install rather than from an original 4.3.4 one.
   patches. Worth spot-checking a few tiles before treating a 4.3.4-baked mesh as
   authoritative for Cata Classic.
 - **MoP 5.4.8 — probed 2026-07-26, NOT supported; two concrete blockers.** See
-  [MoP findings](#mop-548--measured-not-yet-supported).
+  [MoP findings](#mop-548--measured-both-blockers-now-fixed).
 - **Listfile dependency (Phase C).** Do the Cata/MoP-Classic roots carry usable name hashes,
   or is a community listfile required? If required, it becomes a shipped data file with its
   own update story. Determine before committing to Phase C's scope.

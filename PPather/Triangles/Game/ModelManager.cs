@@ -19,17 +19,20 @@
  */
 
 using StormDll;
+using PPather.Storage;
 
 using System;
 using System.IO;
+using System.Collections.Generic;
 
 namespace Wmo;
 
 public sealed class ModelManager : Manager<Model>
 {
-    private readonly ArchiveSet archive;
+    private readonly IGameFileSource archive;
+    private readonly Dictionary<uint, Model> fileDataIdModels = new();
 
-    public ModelManager(ArchiveSet archive)
+    public ModelManager(IGameFileSource archive)
     {
         this.archive = archive;
     }
@@ -51,5 +54,22 @@ public sealed class ModelManager : Manager<Model>
 
         t = ModelFile.Read(archive, path);
         return true;
+    }
+
+    public Model AddAndLoadIfNeeded(uint fileDataId)
+    {
+        if (!fileDataIdModels.TryGetValue(fileDataId, out Model model))
+        {
+            model = ModelFile.Read(archive, fileDataId);
+            fileDataIdModels.Add(fileDataId, model);
+        }
+
+        return model;
+    }
+
+    public new void Clear()
+    {
+        base.Clear();
+        fileDataIdModels.Clear();
     }
 }

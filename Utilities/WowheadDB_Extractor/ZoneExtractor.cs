@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -41,7 +41,7 @@ namespace WowheadDB_Extractor
         }
 
         /// <summary>
-        /// Repo Json folder, found by walking up for MasterOfPuppets.sln instead of a
+        /// Repo Json folder, found by walking up for WoWFarmingRig.sln instead of a
         /// fixed "../../../../../Json". That relative path only resolves when the binary
         /// is launched from bin/Release/&lt;tfm&gt;; running via `dotnet run --project`
         /// puts the working directory at the project root instead, where the same climb
@@ -53,13 +53,13 @@ namespace WowheadDB_Extractor
         {
             // Not string? - this project has no #nullable context (CS8632).
             string dir = System.AppContext.BaseDirectory;
-            while (dir is not null && !File.Exists(Path.Combine(dir, "MasterOfPuppets.sln")))
+            while (dir is not null && !File.Exists(Path.Combine(dir, "WoWFarmingRig.sln")))
             {
                 dir = Path.GetDirectoryName(dir);
             }
 
             return dir ?? throw new DirectoryNotFoundException(
-                "MasterOfPuppets.sln not found above " + System.AppContext.BaseDirectory);
+                "WoWFarmingRig.sln not found above " + System.AppContext.BaseDirectory);
         }
 
         // Computed, not const: EXP is now runtime. Falling back to a const here would

@@ -114,11 +114,13 @@ public static class Program
 
         services.AddStartupConfigurations(configuration);
 
-        services.AddWoWProcess(log);
+        services.AddWoWProcess(log, out bool isForever);
 
         services.AddCoreBase(log);
 
-        if (AddonConfig.Exists() && FrameConfig.Exists())
+        // Forever uses a read-only visual channel; it does not have classic
+        // addon/frame configuration files to validate.
+        if (isForever || (AddonConfig.Exists() && FrameConfig.Exists()))
         {
             services.AddCoreNormal(log);
         }

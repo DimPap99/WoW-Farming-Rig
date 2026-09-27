@@ -5,8 +5,9 @@
 @inject IBotController botController
 @inject IJSRuntime JSRuntime
 @inject AddonConfigurator addonConfigurator
-@inject FrontendUpdate updater // TODO: this is a hack to instantiate this class
+@inject IServiceProvider services
 @inject StartupClientVersion client
+@inject ForeverVisualBarTracker visualBars
 
 @implements IDisposable
 
@@ -40,7 +41,65 @@
 
 <div class="container-fluid">
     <div class="row">
-        @if (AddonConfig.Exists() && FrameConfig.Exists())
+        @if (client.Version == ClientVersion.Forever)
+        {
+            <div class="col-sm">
+                <div class="card">
+                    <div class="card-header">WoW: Forever beta compatibility</div>
+                    <div class="card-body">
+                        <p>Read-only diagnostic mode. The bot cannot start yet: its gameplay data and navigation are not ported to Forever.</p>
+                        @if (visualBars.TryGetLatest(out var bars))
+                        {
+                            <p>Player health: @bars.PlayerHealth.ToString("P0")<br />
+                               Player power: @bars.PlayerPower.ToString("P0")<br />
+                               Target bar fill: @bars.TargetHealth.ToString("P0")<br />
+                               Target presence: @TargetPresenceText(bars.TargetPresent)</p>
+                            <p class="text-muted">Target health is usable only when target presence is confirmed.</p>
+                            @if (bars.WatchedAction is { } watchedAction)
+                            {
+                                <p>Watched slot @watchedAction.Slot: @watchedAction.Kind (ID @watchedAction.Id)</p>
+                            }
+                            else
+                            {
+                                <p class="text-muted">No valid watched-action ID marker yet.</p>
+                            }
+                            @if (bars.ActionBar is { } actionBar)
+                            {
+                                <p>Action bar: @actionBar.OccupiedCount occupied, @actionBar.ReadableCount / @VisualActionBarSnapshot.SlotCount readable slots</p>
+                            }
+                            else
+                            {
+                                <p class="text-muted">No valid full action-bar snapshot yet.</p>
+                            }
+                            @if (bars.ActionCooldownFill is { } cooldownFill)
+                            {
+                                <p>Watched action cooldown: @cooldownFill.ToString("P0") remaining</p>
+                                <p class="text-muted">This is a fraction of the spell's cooldown, not seconds. A 0% fill can also mean the watched slot has no active cooldown.</p>
+                            }
+                            else
+                            {
+                                <p class="text-muted">No valid action-cooldown marker yet.</p>
+                            }
+                            @if (bars.Position is { } position)
+                            {
+                                <p>Map @position.UIMapId: @position.MapX.ToString("F5"), @position.MapY.ToString("F5")<br />
+                                   Facing: @position.Direction.ToString("F2") radians</p>
+                            }
+                            else
+                            {
+                                <p class="text-muted">No valid position marker yet.</p>
+                            }
+                            <p class="text-muted">Visual calibration: @bars.Calibration.ToString("P0"). Data expires if screen capture stops.</p>
+                        }
+                        else
+                        {
+                            <p>No fresh visual data. In the game, type <code>/forevervisual</code> to show the diagnostic bars.</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+        else if (AddonConfig.Exists() && FrameConfig.Exists())
         {
             <div class="col-sm main-layout">
                 <div class="top-section">
@@ -129,11 +188,23 @@
 
 @code {
     private bool updateAvailable;
+    private System.Threading.Timer? foreverRefreshTimer;
+
+    private static string TargetPresenceText(bool? present) => present switch
+    {
+        true => "present",
+        false => "absent",
+        null => "unknown"
+    };
 
     protected override void OnInitialized()
     {
         botController.StatusChanged += OnStatusChanged;
         botController.ProfileLoaded += OnStatusChanged;
+        if (client.Version == ClientVersion.Forever)
+            foreverRefreshTimer = new(_ => OnStatusChanged(), null, 250, 250);
+        else
+            _ = services.GetService(typeof(FrontendUpdate));
 
         updateAvailable = addonConfigurator.UpdateAvailable();
     }
@@ -141,6 +212,8 @@
     public void Dispose()
     {
         botController.StatusChanged -= OnStatusChanged;
+        botController.ProfileLoaded -= OnStatusChanged;
+        foreverRefreshTimer?.Dispose();
     }
 
     private void OnStatusChanged()

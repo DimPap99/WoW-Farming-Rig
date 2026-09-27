@@ -167,8 +167,14 @@ public sealed class Program
         Microsoft.Extensions.Logging.ILogger log,
         IServiceCollection services)
     {
-        if (!services.AddWoWProcess(log))
+        if (!services.AddWoWProcess(log, out bool isForever))
             return false;
+
+        if (isForever)
+        {
+            log.LogError("WoW: Forever beta is diagnostic-only. Headless automation and input are disabled.");
+            return false;
+        }
 
         services.AddCoreBase(log);
         services.AddCoreNormal(log);

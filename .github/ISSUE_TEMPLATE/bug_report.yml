@@ -5,7 +5,7 @@ body:
 - type: markdown
   attributes:
     value: |
-      Please [search for existing issues](https://github.com/Xian55/WowClassicGrindBot/issues) before creating a new one.
+      Please [search for existing issues](https://github.com/DimPap99/WoW-Farming-Rig/issues) before creating a new one.
 
 - type: textarea
   attributes:
@@ -34,6 +34,10 @@ body:
       - Wrath of the Lich King Classic
       - Cataclysm Classic
       - Season of Mastery
+      - Mists of Pandaria Classic
+      - Cataclysm 4.3.4
+      - Mists of Pandaria 5.4.8
+      - WoW: Forever beta (diagnostics only)
   validations:
     required: true
 

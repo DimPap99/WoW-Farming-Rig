@@ -6,6 +6,9 @@ namespace Game;
 
 public interface IWowScreen : IRectProvider, IScreenImageProvider, IMinimapImageProvider, IDisposable
 {
+    // Advances only after a new full-screen image has been copied successfully.
+    long ScreenFrameId { get; }
+
     bool Enabled { get; set; }
 
     bool MinimapEnabled { get; set; }

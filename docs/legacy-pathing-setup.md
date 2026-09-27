@@ -3,7 +3,7 @@
 > **Deprecated.** Nothing needs these any more. The in-process **DotRecast navmesh**
 > engine is the default on every supported client, runs from pre-baked tiles, and needs
 > no game archives and no external service. See
-> [Pathfinders](../README.md#pathfinders) in the README.
+> [Navigation](navigation.md) in the current guide.
 
 These instructions are kept for two reasons:
 
@@ -31,7 +31,7 @@ Where to get the game archives. **They are not required to run the bot** — onl
 **WOTLK:**
 [**lichking.MPQ**](https://mega.nz/file/vDYWSTrK#fvaiuHpd-FTVsQT4ghGLK6QJLZyA87c1rlBEeu1_Btk) (2.5Gb)
 
-Copy these files under the **\Json\MPQ** folder (e.g., `C:\WowClassicGrindBot\Json\MPQ`)
+Copy these files under the **\Json\MPQ** folder (e.g., `C:\WoW-Farming-Rig\Json\MPQ`)
 
 **Cataclysm 4.3.4 (2011):** no separate download — copy the archives from your own client's
 `Data\` folder (`world.MPQ`, `world2.MPQ`, `art.MPQ`, `expansion1-3.MPQ`, `alternate.MPQ`).
@@ -53,7 +53,7 @@ Technical details about **V1:**
 
 ## V3 — AmeisenNavigation (external server)
 
-Since [PR 585](https://github.com/Xian55/WowClassicGrindBot/issues/585) using a different branch!
+Use the branch linked below for this legacy backend.
 
 - Download the navmesh files.
 
@@ -67,7 +67,6 @@ Since [PR 585](https://github.com/Xian55/WowClassicGrindBot/issues/585) using a 
 1. Get the [multi-version-guess-z-coord branch](https://github.com/Xian55/AmeisenNavigation/tree/feature/multi-version-guess-z-coord)
 1. Open the solution file.
 1. Unload **AmeisenNavigation.Exporter** project(right click -> unload project)
-1. ![image](https://github.com/Xian55/WowClassicGrindBot/assets/367101/df443648-bb57-4200-ac99-ee26e723f120)
 1. Select **AmeisenNavigation.Server** Press rebuild.
 1. Navigate to the `AmeisenNavigation.Server` build(ex. `AmeisenNavigation.Server\build\x64\Release`) location and find `config.cfg`
 1. Edit the last line of the file to look like `sMmapsPath=C:\mmaps`
@@ -85,4 +84,4 @@ Technical details about **V3:**
 ---
 
 Back to the [README](../README.md) &middot; current pathing is documented under
-[Pathfinders](../README.md#pathfinders).
+[Navigation](navigation.md).

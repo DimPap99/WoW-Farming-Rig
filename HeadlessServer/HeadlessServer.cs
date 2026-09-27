@@ -45,6 +45,14 @@ public sealed partial class HeadlessServer
 
     public void Run(ParserResult<RunOptions> options)
     {
+        // Defense in depth: even if a future host bypasses Program's Forever
+        // startup check, never reach InitState's flush-key input on this client.
+        if (botController is ForeverDiagnosticController)
+        {
+            logger.LogError("WoW: Forever beta is diagnostic-only; headless input is disabled.");
+            return;
+        }
+
         InitState();
 
         botController.LoadClassProfile(options.Value.ClassConfig!);

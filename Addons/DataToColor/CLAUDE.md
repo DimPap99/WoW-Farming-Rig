@@ -7,11 +7,12 @@ World of Warcraft uses **Lua 5.1** (all versions including Classic). The addon e
 We track each addon change per Pull Request. PR titles start with "Addon: [x.y.z] - TITLE".
 
 When a change happens in `*.lua` files, bump the patch version (if not already bumped) in
-**all four** TOCs - they are separate files and drift silently if one is missed:
+**all five** TOCs - they are separate files and drift silently if one is missed:
 - `Addons/DataToColor/DataToColor.toc` (legacy: 4.3.4 Cataclysm **and 5.4.8 MoP**)
 - `Addons/DataToColor/DataToColor_Classic.toc`
 - `Addons/DataToColor/DataToColor_TBC.toc`
 - `Addons/DataToColor/DataToColor_Wrath.toc`
+- `Addons/DataToColor/DataToColor_Camelot.toc` (WoW: Forever)
 
 ## Legacy clients (4.3.4 Cata, 5.4.8 MoP)
 

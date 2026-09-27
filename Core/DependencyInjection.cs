@@ -312,7 +312,10 @@ public static class DependencyInjection
 
         s.AddSingleton<ActionBarSlotValidator>();
 
-        s.AddSingleton<IBotController, BotController>();
+        s.AddSingleton<IBotController>(sp =>
+            sp.GetRequiredService<StartupClientVersion>().Version == ClientVersion.Forever
+                ? ActivatorUtilities.CreateInstance<ForeverDiagnosticController>(sp)
+                : ActivatorUtilities.CreateInstance<BotController>(sp));
         s.AddSingleton<IMailSettingsService, MailSettingsService>();
 
         return s;
@@ -322,6 +325,7 @@ public static class DependencyInjection
     {
         s.AddSingleton<ManualResetEventSlim>(x => new(false));
         s.AddSingleton<Wait>();
+        s.AddSingleton<ForeverVisualBarTracker>();
 
         s.AddSingleton<StartupClientVersion>();
         s.AddSingleton<DataConfig>(x => DataConfig.Load(
@@ -335,7 +339,14 @@ public static class DependencyInjection
 
         s.AddSingleton<ExecGameCommand>();
 
-        s.AddSingleton<DataFrame[]>(x => FrameConfig.LoadFrames());
+        s.AddSingleton<DataFrame[]>(x =>
+        {
+            // Forever's guarded addon has no classic pixel strip or frame config.
+            // The read-only capture path uses the full screen image instead.
+            if (x.GetRequiredService<StartupClientVersion>().Version == ClientVersion.Forever)
+                return [];
+            return FrameConfig.LoadFrames();
+        });
         s.AddSingleton<FrameConfigurator>();
 
         s.AddSingleton<INpcResetEvent, NpcResetEvent>();
@@ -369,9 +380,11 @@ public static class DependencyInjection
         var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
         var process = sp.GetRequiredService<WowProcess>();
         var frames = sp.GetRequiredService<DataFrame[]>();
+        bool forever = sp.GetRequiredService<StartupClientVersion>().Version == ClientVersion.Forever;
 
-        // Use WGC if configured and supported (Windows 10 2004+)
-        if (scr.ReaderType == AddonDataProviderType.WGC)
+        // Forever's visual channel must capture the game window even when the
+        // dashboard/browser has focus. The tested reader for that is WGC.
+        if (forever || scr.ReaderType == AddonDataProviderType.WGC)
         {
             if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041) &&
                 GraphicsCaptureInterop.IsSupported)
@@ -393,7 +406,11 @@ public static class DependencyInjection
 
 
     public static bool AddWoWProcess(
-        this IServiceCollection services, ILogger log)
+        this IServiceCollection services, ILogger log) =>
+        AddWoWProcess(services, log, out _);
+
+    public static bool AddWoWProcess(
+        this IServiceCollection services, ILogger log, out bool isForever)
     {
         services.AddSingleton<CancellationTokenSource>();
         services.AddSingleton<WowProcess>();
@@ -403,6 +420,7 @@ public static class DependencyInjection
             new ServiceProviderOptions { ValidateOnBuild = true });
 
         WowProcess process = sp.GetRequiredService<WowProcess>();
+        isForever = process.FileVersion is { Major: 1, Minor: >= 60 };
         if (log.IsEnabled(LogLevel.Information))
         {
             log.LogInformation("Pid: {Id}", process.Id);
@@ -410,6 +428,12 @@ public static class DependencyInjection
         }
 
         services.AddSingleton<Version>(x => process.FileVersion);
+
+        if (isForever)
+        {
+            log.LogInformation("Forever beta detected; skipping Classic addon/frame validation and cleanup");
+            return true;
+        }
 
         AddonConfigurator configurator = sp.GetRequiredService<AddonConfigurator>();
         Version? installVersion = configurator.GetInstallVersion();

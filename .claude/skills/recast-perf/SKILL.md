@@ -8,7 +8,7 @@ user-invocable: true
 
 How to change the navmesh bake pipeline without breaking it, and how to know whether a change was worth making. Those are two separate questions and this skill keeps them separate.
 
-The fork is `external/DotRecast` (submodule, `Xian55/DotRecast @ wow-mods`). We consume `DotRecast.Core`, `Recast` and `Detour` only — **not** `DetourCrowd`, `DetourTileCache` or `Detour.Dynamic`.
+The fork is `external/DotRecast` (the `wow-mods` submodule). We consume `DotRecast.Core`, `Recast` and `Detour` only — **not** `DetourCrowd`, `DetourTileCache` or `Detour.Dynamic`.
 
 ## The correctness gate
 
@@ -50,7 +50,7 @@ Structural gaps like these are translation artifacts, not version drift, so exac
 
 ## Traps that invalidate results
 
-1. **Stale Debug DotRecast.** `dotnet build MasterOfPuppets.sln -c Release` copies the *Debug* submodule DLLs into Benchmarks output. Everything measures 3-5x slower including untouched stages. `bench.ps1` refuses to run when it detects this; use `-Rebuild`. Release `DotRecast.Recast.dll` ~112-113 KB, Debug ~127 KB.
+1. **Stale Debug DotRecast.** `dotnet build WoWFarmingRig.sln -c Release` copies the *Debug* submodule DLLs into Benchmarks output. Everything measures 3-5x slower including untouched stages. `bench.ps1` refuses to run when it detects this; use `-Rebuild`. Release `DotRecast.Recast.dll` ~112-113 KB, Debug ~127 KB.
 2. **Ambient load swings +-10%**, wider than most individual wins. Interleave arms; never compare across hours.
 3. **Process-local tile residency contaminates A/B.** A route can *succeed* in one process and truncate in a fresh one purely because earlier queries left tiles resident. Restart between arms when residency could matter.
 4. **First run on a fresh server is not a measurement** — cold ADT loads dominate.

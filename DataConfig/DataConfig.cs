@@ -71,6 +71,7 @@ public sealed class DataConfig
                 or "legacy_vanilla" or "legacy_tbc" or "legacy_wrath" => "precata",
             "cata" or "legacy_cata" => "cata",
             "mop" or "legacy_mop" => "mop",
+            "forever" => "forever",
             _ => client.ToLowerInvariant(),
         };
     }

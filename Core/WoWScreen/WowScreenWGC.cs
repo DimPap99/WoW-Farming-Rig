@@ -59,6 +59,8 @@ public sealed partial class WowScreenWGC : IWowScreen, IAddonDataProvider, IGpuT
     private Rectangle screenRect;
 
     public Image<Bgra32> ScreenImage { get; init; }
+    private long screenFrameId;
+    public long ScreenFrameId => Interlocked.Read(ref screenFrameId);
 
     private readonly SixLabors.ImageSharp.Configuration ContiguousJpegConfiguration
         = new(new JpegConfigurationModule()) { PreferContiguousImageBuffers = true };
@@ -135,7 +137,13 @@ public sealed partial class WowScreenWGC : IWowScreen, IAddonDataProvider, IGpuT
         this.logger = logger;
         this.process = process;
 
+        if (process.MainWindowHandle == IntPtr.Zero)
+            throw new InvalidOperationException("The WoW window is not ready for capture yet.");
+
         GetRectangle(out screenRect);
+        if (screenRect.Width <= 0 || screenRect.Height <= 0)
+            throw new InvalidOperationException("The WoW window has no capture area yet.");
+
         clientOffset = NativeMethods.GetClientAreaOffset(process.MainWindowHandle);
         ScreenImage = new(ContiguousJpegConfiguration, screenRect.Width, screenRect.Height);
 
@@ -558,6 +566,7 @@ public sealed partial class WowScreenWGC : IWowScreen, IAddonDataProvider, IGpuT
 
         Span<byte> dest = MemoryMarshal.Cast<Bgra32, byte>(memory.Span);
         ScreenCaptureHelper.CopyRegion(fullFrame, rowPitch, clientOffset.X, clientOffset.Y, dest, screenRect.Width, screenRect.Height);
+        Interlocked.Increment(ref screenFrameId);
 
 #if SAVE_SCREEN_IMAGE
         ScreenImage.SaveAsJpeg("screen_wgc.jpg");

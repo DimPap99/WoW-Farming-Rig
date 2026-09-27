@@ -17,6 +17,7 @@ public sealed partial class AddonReader : IAddonReader
 {
     private readonly ILogger<AddonReader> logger;
     private readonly IAddonDataProvider reader;
+    private readonly ForeverVisualBarTracker? foreverVisualBars;
 
     private readonly PlayerReader playerReader;
     private readonly CreatureDB creatureDb;
@@ -59,10 +60,12 @@ public sealed partial class AddonReader : IAddonReader
         KeyBindingsReader keyBindingsReader,
         ActionBarTextureReader textureReader,
         DataFrame[] frames,
-        IServiceProvider sp)
+        IServiceProvider sp,
+        ForeverVisualBarTracker? foreverVisualBars = null)
     {
         this.logger = logger;
         this.reader = reader;
+        this.foreverVisualBars = foreverVisualBars;
         this.creatureDb = creatureDb;
         this.combatLog = combatLog;
         this.textReader = textReader;
@@ -79,6 +82,11 @@ public sealed partial class AddonReader : IAddonReader
 
     public void Update()
     {
+        // Run even when the classic pixel strip is absent: Forever's guarded
+        // addon does not currently emit GlobalTime, but its visual probe can be
+        // validated independently from the same captured frame.
+        foreverVisualBars?.Update();
+
         IAddonDataProvider reader = this.reader;
         reader.UpdateData();
 

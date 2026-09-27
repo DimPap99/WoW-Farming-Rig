@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 
 namespace StormDll;
 
-public sealed partial class ArchiveSet
+public sealed partial class ArchiveSet : PPather.Storage.IGameFileSource
 {
     /// <summary>
     /// Blizzard's incremental update archives, in both naming forms the clients
@@ -193,6 +193,8 @@ public sealed partial class ArchiveSet
         throw new FileNotFoundException($"{nameof(fileName)} - {fileName}");
     }
 
+    public Stream OpenRead(ReadOnlySpan<char> name) => GetStream(name);
+
     public bool Exists(ReadOnlySpan<char> fileName)
     {
         for (int i = 0; i < archives.Length; i++)
@@ -209,4 +211,6 @@ public sealed partial class ArchiveSet
         for (int i = 0; i < archives.Length; i++)
             archives[i].SFileCloseArchive();
     }
+
+    public void Dispose() => Close();
 }

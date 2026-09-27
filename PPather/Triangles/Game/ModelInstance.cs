@@ -44,7 +44,8 @@ public readonly struct ModelInstance
         dir = file.ReadVector3();
 
         w = 0;
-        scale = file.ReadUInt32() / 1024.0f;
+        scale = file.ReadUInt16() / 1024.0f;
+        _ = file.ReadUInt16(); // placement flags, not part of scale
     }
 
     public ModelInstance(Model m, Vector3 pos, Vector3 dir, float sc, float w)

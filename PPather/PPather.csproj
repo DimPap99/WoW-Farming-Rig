@@ -18,7 +18,7 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
 
-  <!-- DotRecast from the pinned submodule (Xian55/DotRecast @ wow-mods). -->
+  <!-- DotRecast from the pinned wow-mods submodule. -->
   <ItemGroup>
     <ProjectReference Include="..\external\DotRecast\src\DotRecast.Core\DotRecast.Core.csproj" />
     <ProjectReference Include="..\external\DotRecast\src\DotRecast.Recast\DotRecast.Recast.csproj" />

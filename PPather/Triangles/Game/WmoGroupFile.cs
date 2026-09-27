@@ -19,6 +19,7 @@
  */
 
 using PPather.Extensions;
+using PPather.Storage;
 
 using StormDll;
 
@@ -29,15 +30,15 @@ using System.Runtime.InteropServices;
 
 namespace Wmo;
 
-internal static class WmoGroupFile
+public static class WmoGroupFile
 {
-    public static void Load(ArchiveSet archive, ReadOnlySpan<char> name, WMORoot wmoRoot, WMOGroup g)
+    public static void Load(IGameFileSource archive, ReadOnlySpan<char> name, WMORoot wmoRoot, WMOGroup g)
     {
-        MpqFileStream mpq;
+        Stream mpq;
 
         try
         {
-            mpq = archive.GetStream(name);
+            mpq = archive.OpenRead(name);
         }
         catch
         {
@@ -48,50 +49,97 @@ internal static class WmoGroupFile
 
         // The native MPQ handle leaked whenever parsing threw; `using` releases
         // it on every path.
-        using MpqFileStream _ = mpq;
+        using Stream _ = mpq;
+        Load(mpq, wmoRoot, g);
+    }
 
+    /// <summary>Loads one full-detail group by its GFID FileDataID.</summary>
+    public static void Load(IGameFileSource archive, uint fileDataId, WMORoot wmoRoot, WMOGroup g)
+    {
+        if (!archive.SupportsFileDataIds)
+            throw new NotSupportedException("This game-file source has no FileDataID namespace.");
+
+        using Stream stream = archive.OpenRead(fileDataId);
+        Load(stream, wmoRoot, g);
+    }
+
+    private static void Load(Stream mpq, WMORoot wmoRoot, WMOGroup g)
+    {
         var pooler = ArrayPool<byte>.Shared;
-        byte[] buffer = pooler.Rent((int)mpq.Length);
-        mpq.ReadAllBytesTo(buffer);
-
-        using MemoryStream stream = new(buffer, 0, (int)mpq.Length, false);
-        using BinaryReader file = new(stream);
-
-        do
+        int length = checked((int)mpq.Length);
+        byte[] buffer = pooler.Rent(length);
+        try
         {
-            uint type = file.ReadUInt32();
-            uint size = file.ReadUInt32();
+            mpq.ReadExactly(buffer.AsSpan(0, length));
 
-            if (type == ChunkReader.MOGP)
+            using MemoryStream stream = new(buffer, 0, length, false);
+            using BinaryReader file = new(stream);
+            bool sawPolygons = false;
+            bool sawIndices = false;
+
+            do
             {
-                size = 68;
+                uint type = file.ReadUInt32();
+                uint size = file.ReadUInt32();
+
+                if (type == ChunkReader.MOGP)
+                    size = 68;
+
+                long nextPos = file.BaseStream.Position + size;
+                if (nextPos > stream.Length)
+                    throw new InvalidDataException("WMO group chunk extends beyond the file.");
+
+                switch (type)
+                {
+                    case ChunkReader.MOGP:
+                        HandleMOGP(file, wmoRoot, g, size);
+                        break;
+                    case ChunkReader.MOPY:
+                        sawPolygons = true;
+                        HandleMOPY(file, g, size);
+                        break;
+                    case ChunkReader.MPY2:
+                        sawPolygons = true;
+                        HandleMPY2(file, g, size);
+                        break;
+                    case ChunkReader.MOVI:
+                        sawIndices = true;
+                        HandleMOVI(file, g, size);
+                        break;
+                    case ChunkReader.MOVT:
+                        HandleMOVT(file, g, size);
+                        break;
+                    case ChunkReader.MLIQ:
+                        HandleMLIQ(file, g, size);
+                        break;
+                }
+
+                file.BaseStream.Seek(nextPos, SeekOrigin.Begin);
+            } while (!file.EOF());
+
+            if (sawIndices && !sawPolygons ||
+                sawPolygons && g.nTriangles != 0 && !sawIndices ||
+                sawIndices && g.triangles.Length != g.nTriangles * 3)
+            {
+                throw new InvalidDataException("WMO group is missing matching polygon flags or vertex indices.");
             }
 
-            long nextPos = file.BaseStream.Position + size;
+            if (sawIndices && g.nTriangles != 0 && g.vertices is null)
+                throw new InvalidDataException("WMO group has triangles but no vertices.");
 
-            switch (type)
+            if (sawIndices && g.vertices is not null)
             {
-                case ChunkReader.MOGP:
-                    HandleMOGP(file, wmoRoot, g, size);
-                    break;
-                case ChunkReader.MOPY:
-                    HandleMOPY(file, g, size);
-                    break;
-                case ChunkReader.MOVI:
-                    HandleMOVI(file, g, size);
-                    break;
-                case ChunkReader.MOVT:
-                    HandleMOVT(file, g, size);
-                    break;
-                case ChunkReader.MLIQ:
-                    HandleMLIQ(file, g, size);
-                    break;
+                foreach (ushort index in g.triangles)
+                {
+                    if (index >= g.nVertices)
+                        throw new InvalidDataException("WMO group triangle index exceeds the vertex count.");
+                }
             }
-
-            file.BaseStream.Seek(nextPos, SeekOrigin.Begin);
-        } while (!file.EOF());
-
-        pooler.Return(buffer);
+        }
+        finally
+        {
+            pooler.Return(buffer);
+        }
     }
 
     // MopyFlags
@@ -99,13 +147,29 @@ internal static class WmoGroupFile
     {
         g.nTriangles = size / 2;
         g.materials = new ushort[g.nTriangles];
-        file.Read(MemoryMarshal.Cast<ushort, byte>(g.materials.AsSpan()));
+        file.BaseStream.ReadExactly(MemoryMarshal.Cast<ushort, byte>(g.materials.AsSpan()));
+    }
+
+    // 10.0+ MPY2 replaces each two-byte MOPY record with a uint16 flag and
+    // uint16 material ID. The collision extractor uses only the flag bits.
+    private static void HandleMPY2(BinaryReader file, WMOGroup g, uint size)
+    {
+        if (size % 4 != 0)
+            throw new InvalidDataException("WMO MPY2 size is not a multiple of four bytes.");
+
+        g.nTriangles = size / 4;
+        g.materials = new ushort[g.nTriangles];
+        for (int i = 0; i < g.materials.Length; i++)
+        {
+            g.materials[i] = file.ReadUInt16();
+            _ = file.ReadUInt16(); // material ID, unused by collision extraction
+        }
     }
 
     private static void HandleMOVI(BinaryReader file, WMOGroup g, uint size)
     {
         g.triangles = new ushort[g.nTriangles * 3];
-        file.Read(MemoryMarshal.Cast<ushort, byte>(g.triangles.AsSpan()));
+        file.BaseStream.ReadExactly(MemoryMarshal.Cast<ushort, byte>(g.triangles.AsSpan()));
     }
 
     private static void HandleMOVT(BinaryReader file, WMOGroup g, uint size)
@@ -115,7 +179,7 @@ internal static class WmoGroupFile
         g.nVertices = size / 12;
         g.vertices = new float[g.nVertices * 3];
 
-        file.Read(MemoryMarshal.Cast<float, byte>(g.vertices.AsSpan()));
+        file.BaseStream.ReadExactly(MemoryMarshal.Cast<float, byte>(g.vertices.AsSpan()));
     }
 
     public static uint GetLiquidTypeId(uint mogpFlags, uint liquidTypeId)

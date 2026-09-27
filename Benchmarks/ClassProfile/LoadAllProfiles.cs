@@ -77,7 +77,7 @@ public class LoadAllProfiles
     private static void SetWorkingDirectory()
     {
         string? dir = AppContext.BaseDirectory;
-        while (dir is not null && !File.Exists(Path.Combine(dir, "MasterOfPuppets.sln")))
+        while (dir is not null && !File.Exists(Path.Combine(dir, "WoWFarmingRig.sln")))
             dir = Path.GetDirectoryName(dir);
 
         Directory.SetCurrentDirectory(

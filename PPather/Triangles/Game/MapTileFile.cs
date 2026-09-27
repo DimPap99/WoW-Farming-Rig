@@ -19,6 +19,7 @@
  */
 
 using PPather.Extensions;
+using PPather.Storage;
 
 using StormDll;
 
@@ -56,7 +57,7 @@ internal static partial class MapTileFile // adt file
     /// </summary>
     private const string ObjectFileSuffix = "_obj0.adt";
 
-    public static MapTile Read(ArchiveSet archive, ReadOnlySpan<char> name, WMOManager wmomanager, ModelManager modelmanager)
+    public static MapTile Read(IGameFileSource archive, ReadOnlySpan<char> name, WMOManager wmomanager, ModelManager modelmanager)
     {
         LiquidData[] LiquidDataChunk = [];
 
@@ -74,12 +75,12 @@ internal static partial class MapTileFile // adt file
         MapChunk[] chunks = new MapChunk[MapTile.SIZE * MapTile.SIZE];
         BitArray hasChunk = new(chunks.Length);
 
-        using MpqFileStream mpq = archive.GetStream(name);
+        using Stream mpq = archive.OpenRead(name);
         int length = (int)mpq.Length;
 
         var pooler = ArrayPool<byte>.Shared;
         byte[] buffer = pooler.Rent(length);
-        mpq.ReadAllBytesTo(buffer);
+        mpq.ReadExactly(buffer.AsSpan(0, length));
 
         using MemoryStream stream = new(buffer, 0, length, false);
         using BinaryReader file = new(stream);
@@ -110,9 +111,13 @@ internal static partial class MapTileFile // adt file
                     wmos = ChunkReader.ExtractFileNames(file, size);
                     break;
                 case ChunkReader.MDDF:
+                    if (size != 0 && models.Length == 0 && !archive.SupportsFileDataIds)
+                        throw new NotSupportedException($"{name.ToString()} has FileDataID-indexed MDDF placements; the legacy name-table parser cannot load its collision models.");
                     HandleMDDF(file, modelmanager, models, size, out modelis);
                     break;
                 case ChunkReader.MODF:
+                    if (size != 0 && wmos.Length == 0)
+                        throw new NotSupportedException($"{name.ToString()} has FileDataID-indexed MODF placements; the legacy name-table parser cannot load its collision WMOs.");
                     HandleMODF(file, wmos, wmomanager, size, out wmois);
                     break;
                 case ChunkReader.MH2O:
@@ -178,7 +183,7 @@ internal static partial class MapTileFile // adt file
     /// bake does not use - <c>MPQTriangleSupplier</c> culls against instance bounds
     /// instead - so they are skipped.
     /// </summary>
-    private static void ReadObjectFile(ArchiveSet archive, ReadOnlySpan<char> name,
+    private static void ReadObjectFile(IGameFileSource archive, ReadOnlySpan<char> name,
         WMOManager wmomanager, ModelManager modelmanager,
         ref ModelInstance[] modelis, ref WMOInstance[] wmois)
     {
@@ -197,12 +202,12 @@ internal static partial class MapTileFile // adt file
         string[] models = [];
         string[] wmos = [];
 
-        using MpqFileStream mpq = archive.GetStream(objName);
+        using Stream mpq = archive.OpenRead(objName);
         int length = (int)mpq.Length;
 
         var pooler = ArrayPool<byte>.Shared;
         byte[] buffer = pooler.Rent(length);
-        mpq.ReadAllBytesTo(buffer);
+        mpq.ReadExactly(buffer.AsSpan(0, length));
 
         using MemoryStream stream = new(buffer, 0, length, false);
         using BinaryReader file = new(stream);
@@ -222,9 +227,13 @@ internal static partial class MapTileFile // adt file
                     wmos = ChunkReader.ExtractFileNames(file, size);
                     break;
                 case ChunkReader.MDDF:
+                    if (size != 0 && models.Length == 0 && !archive.SupportsFileDataIds)
+                        throw new NotSupportedException($"{objName.ToString()} has FileDataID-indexed MDDF placements; the legacy name-table parser cannot load its collision models.");
                     HandleMDDF(file, modelmanager, models, size, out modelis);
                     break;
                 case ChunkReader.MODF:
+                    if (size != 0 && wmos.Length == 0)
+                        throw new NotSupportedException($"{objName.ToString()} has FileDataID-indexed MODF placements; the legacy name-table parser cannot load its collision WMOs.");
                     HandleMODF(file, wmos, wmomanager, size, out wmois);
                     break;
             }
@@ -250,19 +259,19 @@ internal static partial class MapTileFile // adt file
     /// <see cref="PPather.Navmesh.AreaGrid"/> cheaply and without touching (or
     /// crashing on) tile collision geometry.
     /// </summary>
-    public static void ReadAreaIds(ArchiveSet archive, ReadOnlySpan<char> name, Span<uint> areaIds)
+    public static void ReadAreaIds(IGameFileSource archive, ReadOnlySpan<char> name, Span<uint> areaIds)
     {
         Span<SMChunkInfo> mcin = stackalloc SMChunkInfo[MapTile.SIZE * MapTile.SIZE];
         Span<uint> mcnkOffsets = stackalloc uint[MapTile.SIZE * MapTile.SIZE];
         int mcnkCount = 0;
         bool haveMcin = false;
 
-        using MpqFileStream mpq = archive.GetStream(name);
+        using Stream mpq = archive.OpenRead(name);
         int length = (int)mpq.Length;
 
         var pooler = ArrayPool<byte>.Shared;
         byte[] buffer = pooler.Rent(length);
-        mpq.ReadAllBytesTo(buffer);
+        mpq.ReadExactly(buffer.AsSpan(0, length));
 
         using MemoryStream stream = new(buffer, 0, length, false);
         using BinaryReader file = new(stream);
@@ -398,10 +407,11 @@ internal static partial class MapTileFile // adt file
         modelis = new ModelInstance[nMDX];
         for (int i = 0; i < nMDX; i++)
         {
-            int id = file.ReadInt32();
+            uint id = file.ReadUInt32();
 
-            string path = models[id];
-            Model model = modelmanager.AddAndLoadIfNeeded(path);
+            Model model = models.Length == 0
+                ? modelmanager.AddAndLoadIfNeeded(id)
+                : modelmanager.AddAndLoadIfNeeded(models[checked((int)id)]);
             modelis[i] = new(file, model);
         }
     }

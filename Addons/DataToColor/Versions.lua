@@ -8,7 +8,6 @@ local UnitLevel = UnitLevel
 
 local UnitChannelInfo = UnitChannelInfo
 local UnitCastingInfo = UnitCastingInfo
-local GetSpellInfo = GetSpellInfo
 
 local WOW_PROJECT_ID = WOW_PROJECT_ID or -1 -- -1 = Legacy client (old retail)
 local WOW_PROJECT_CLASSIC = WOW_PROJECT_CLASSIC
@@ -17,12 +16,81 @@ local WOW_PROJECT_WRATH_CLASSIC = WOW_PROJECT_WRATH_CLASSIC
 local WOW_PROJECT_CATACLYSM_CLASSIC = WOW_PROJECT_CATACLYSM_CLASSIC
 local WOW_PROJECT_MAINLINE = WOW_PROJECT_MAINLINE
 
-local buildVersion = select(4, GetBuildInfo())
-local isVanilla = buildVersion < 20000
+local gameVersion, _, _, buildVersion = GetBuildInfo()
+local majorVersion, minorVersion = string.match(gameVersion or "", "^(%d+)%.(%d+)")
+local isForever = tonumber(majorVersion) == 1 and (tonumber(minorVersion) or 0) >= 60
+-- Forever's 16001 interface number looks like Vanilla, but its addon APIs are
+-- Mainline-family APIs. Keep Vanilla-only binding and compatibility paths off.
+local isVanilla = buildVersion < 20000 and not isForever
+
+-- Forever removed the global spell lookup but keeps the Mainline C_Spell API.
+-- The older addon modules still expect the seven-value modern global layout.
+local GetSpellInfo = GetSpellInfo
+if isForever and not GetSpellInfo and C_Spell and C_Spell.GetSpellInfo then
+  GetSpellInfo = function(spellIdentifier)
+    local info = C_Spell.GetSpellInfo(spellIdentifier)
+    if not info then return nil end
+    return info.name, nil, info.iconID, info.castTime,
+        info.minRange, info.maxRange, info.spellID
+  end
+  _G.GetSpellInfo = GetSpellInfo
+end
+
+-- The old addon speaks the global spellbook API, while Forever exposes the
+-- Mainline C_SpellBook API. Keep these adapters Forever-only so Classic clients
+-- retain their native return layouts. The guarded addon does not use them for
+-- automation yet; the live probe verifies their source functions are present.
+if isForever and C_SpellBook then
+  local playerBank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
+  local petBank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Pet or 1
+  local function bank(bookType)
+    if bookType == "pet" or bookType == petBank then
+      return petBank
+    end
+    return playerBank
+  end
+
+  if not _G.GetNumSpellTabs then
+    _G.GetNumSpellTabs = C_SpellBook.GetNumSpellBookSkillLines
+  end
+  if not _G.GetSpellTabInfo then
+    _G.GetSpellTabInfo = function(index)
+      local info = C_SpellBook.GetSpellBookSkillLineInfo(index)
+      if not info then return nil end
+      return info.name, info.iconID, info.itemIndexOffset,
+          info.numSpellBookItems, info.isGuild, info.offSpecID,
+          info.shouldHide, info.specID
+    end
+  end
+  if not _G.GetSpellBookItemInfo then
+    local itemTypes = { "SPELL", "FUTURESPELL", "PETACTION", "FLYOUT" }
+    _G.GetSpellBookItemInfo = function(index, bookType)
+      local info = C_SpellBook.GetSpellBookItemInfo(index, bank(bookType))
+      if not info then return nil end
+      -- A flyout has an actionID but no spellID on Forever. Preserve the
+      -- legacy second return value for both regular spells and flyouts.
+      return itemTypes[info.itemType] or "UNKNOWN", info.spellID or info.actionID
+    end
+  end
+  if not _G.GetSpellBookItemName then
+    _G.GetSpellBookItemName = function(index, bookType)
+      return C_SpellBook.GetSpellBookItemName(index, bank(bookType))
+    end
+  end
+  if not _G.GetSpellBookItemTexture then
+    _G.GetSpellBookItemTexture = function(index, bookType)
+      return C_SpellBook.GetSpellBookItemTexture(index, bank(bookType))
+    end
+  end
+end
+
+function DataToColor.IsForever()
+  return isForever
+end
 
 -- Is this a Legacy client (old retail, e.g., Cataclysm 4.3.4)?
 function DataToColor.IsLegacy()
-  return WOW_PROJECT_ID == -1
+  return WOW_PROJECT_ID == -1 and not isForever
 end
 
 function DataToColor.IsVanilla()
@@ -74,7 +142,9 @@ local Cata440 = DataToColor.IsClassic_Cata() and buildVersion >= 40400
 -- CLIENT VERSION ASSIGNMENT
 --------------------------------------------------------------------------------
 
-if DataToColor.IsLegacy() then
+if isForever then
+  DataToColor.ClientVersion = 20
+elseif DataToColor.IsLegacy() then
   DataToColor.ClientVersion = 90 + math.floor(buildVersion / 10000)
 else
   DataToColor.ClientVersion = WOW_PROJECT_ID
@@ -188,8 +258,10 @@ end
 -- silently reports the zero-cost mana default.
 ------------------------------------------------------------
 
-if GetSpellPowerCost then
-    DataToColor.GetSpellPowerCost = GetSpellPowerCost
+local getSpellPowerCost = GetSpellPowerCost or
+    (isForever and C_Spell and C_Spell.GetSpellPowerCost)
+if getSpellPowerCost then
+    DataToColor.GetSpellPowerCost = getSpellPowerCost
 elseif hasLongSpellInfo then
     -- Reused across calls: this runs per action bar slot on every
     -- ACTIONBAR_SLOT_CHANGED and the caller only reads it inside the loop.

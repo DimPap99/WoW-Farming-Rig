@@ -90,8 +90,8 @@ function Test-Tool {
 <#
     Guards the trap that silently invalidates every bake measurement.
 
-    DotRecast is a submodule and is NOT in MasterOfPuppets.sln, so
-    `dotnet build MasterOfPuppets.sln -c Release` copies the *Debug* DotRecast
+    DotRecast is a submodule and is NOT in WoWFarmingRig.sln, so
+    `dotnet build WoWFarmingRig.sln -c Release` copies the *Debug* DotRecast
     assemblies into the Benchmarks output. Everything then measures 3-5x slower,
     including stages that were never touched, and the numbers look like a
     catastrophic regression rather than a build problem.

@@ -1,6 +1,10 @@
 local Load = select(2, ...)
 local DataToColor = unpack(Load)
 
+if DataToColor.IsForever() then
+    return
+end
+
 local CreateFrame = CreateFrame
 local UIParent = UIParent
 local C_Timer = C_Timer

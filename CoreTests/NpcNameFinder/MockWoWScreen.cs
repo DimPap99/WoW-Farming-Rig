@@ -14,6 +14,7 @@ internal sealed class MockWoWScreen : IWowScreen
     public bool Enabled { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
 
     public Rectangle ScreenRect => throw new NotImplementedException();
+    public long ScreenFrameId => 0;
 
     public nint ProcessHwnd => throw new NotImplementedException();
 

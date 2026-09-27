@@ -425,6 +425,14 @@ end
 
 -- This function runs when addon is initialized/player logs in
 function DataToColor:OnInitialize()
+    -- Forever returns protected (secret) UnitHealth/UnitPower values even out of
+    -- combat. The pixel encoder cannot turn them into numbers, so do not start
+    -- its update loop or change the player's CVars until a supported reader exists.
+    if DataToColor.IsForever() then
+        DataToColor:Print("Forever detected. The addon is loaded, but pixel output is disabled: health and power are protected by this client.")
+        return
+    end
+
     DataToColor:CreateConstants()
     DataToColor:InitStorage()
     DataToColor:SetupRequirements()

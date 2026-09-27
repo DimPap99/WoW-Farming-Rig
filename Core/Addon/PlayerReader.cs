@@ -16,6 +16,7 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
     private readonly WorldMapAreaDB worldMapAreaDB;
     private readonly AreaDB areaDb;
     private readonly AddonBits bits;
+    private readonly ForeverVisualBarTracker? foreverVisualBars;
 
     public PlayerReader(
         IAddonDataProvider reader,
@@ -23,18 +24,20 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         AreaDB areaDb,
         AddonBits addonBits,
         SpellInRange spellInRange,
-        Stance stance)
+        Stance stance,
+        ForeverVisualBarTracker? foreverVisualBars = null)
     {
         this.worldMapAreaDB = mapAreaDB;
         this.areaDb = areaDb;
         this.reader = reader;
 
         bits = addonBits;
+        this.foreverVisualBars = foreverVisualBars;
         SpellInRange = spellInRange;
         Stance = stance;
 
         // TODO: inject! value type tho
-        CustomTrigger1 = new(reader.GetInt(74));
+        CustomTrigger1 = new(IsForever ? 0 : reader.GetInt(74));
     }
 
     public WorldMapArea WorldMapArea { get; private set; }
@@ -78,16 +81,94 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
     public float CorpseMapX => reader.GetFixed24(6);
     public float CorpseMapY => reader.GetFixed24(7);
 
-    public int HealthMax() => reader.GetInt(10);
-    public int HealthCurrent() => reader.GetInt(11);
-    public int HealthPercent() => (1 + HealthCurrent()) * 100 / (1 + HealthMax());
+    private int ClassicAbsoluteVital(int cell)
+    {
+        if (IsForever)
+            throw new NotSupportedException(
+                "Forever absolute vitals are not ported; legacy pixel cells are unavailable.");
 
-    public int PTMax() => reader.GetInt(12); // Maximum amount of Power Type (dynamic)
-    public int PTCurrent() => reader.GetInt(13); // Current amount of Power Type (dynamic)
-    public int PTPercentage() => PTCurrent() * 100 / PTMax(); // Power Type (dynamic) in terms of a percentage
+        return reader.GetInt(cell);
+    }
 
-    public int ManaMax() => reader.GetInt(14);
-    public int ManaCurrent() => reader.GetInt(15);
+    public int HealthMax() => ClassicAbsoluteVital(10);
+
+    // Read-only Forever percentage source. The sample expires with capture;
+    // callers that can tolerate missing data should use this Try method.
+    public bool TryGetForeverVisualVitals(out VisualBarSample bars)
+    {
+        if (foreverVisualBars is not null)
+            return foreverVisualBars.TryGetLatest(out bars);
+
+        bars = default;
+        return false;
+    }
+
+    public bool TryGetForeverPosition(out VisualPositionSample position)
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars) &&
+            bars.Position is { } latest)
+        {
+            position = latest;
+            return true;
+        }
+
+        position = default;
+        return false;
+    }
+
+    public bool TryGetForeverWatchedAction(out VisualActionSample action)
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars) &&
+            bars.WatchedAction is { } latest)
+        {
+            action = latest;
+            return true;
+        }
+
+        action = default;
+        return false;
+    }
+
+    public bool TryGetForeverActionBar(out VisualActionBarSnapshot actionBar)
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars) &&
+            bars.ActionBar is { } latest)
+        {
+            actionBar = latest;
+            return true;
+        }
+
+        actionBar = null!;
+        return false;
+    }
+
+    private bool IsForever => foreverVisualBars?.IsEnabled == true;
+
+    private VisualBarSample RequiredForeverVitals()
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars))
+            return bars;
+
+        throw new InvalidOperationException(
+            "Forever visual vitals are unavailable or stale; refusing legacy pixel data.");
+    }
+
+    private static int VisualPercent(double fraction) =>
+        (int)Math.Round(Math.Clamp(fraction, 0, 1) * 100, MidpointRounding.AwayFromZero);
+
+    public int HealthCurrent() => ClassicAbsoluteVital(11);
+    public int HealthPercent() => IsForever
+        ? VisualPercent(RequiredForeverVitals().PlayerHealth)
+        : (1 + HealthCurrent()) * 100 / (1 + HealthMax());
+
+    public int PTMax() => ClassicAbsoluteVital(12); // Maximum amount of Power Type (dynamic)
+    public int PTCurrent() => ClassicAbsoluteVital(13); // Current amount of Power Type (dynamic)
+    public int PTPercentage() => IsForever
+        ? VisualPercent(RequiredForeverVitals().PlayerPower)
+        : PTCurrent() * 100 / PTMax(); // Power Type (dynamic) in terms of a percentage
+
+    public int ManaMax() => ClassicAbsoluteVital(14);
+    public int ManaCurrent() => ClassicAbsoluteVital(15);
     public int ManaPercent() => (1 + ManaCurrent()) * 100 / (1 + ManaMax());
 
     public int MaxRune() => reader.GetInt(14);
@@ -96,12 +177,23 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
     public int FrostRune() => reader.GetInt(15) / 10 % 10;
     public int UnholyRune() => reader.GetInt(15) % 10;
 
-    public int TargetMaxHealth() => reader.GetInt(18);
-    public int TargetHealth() => reader.GetInt(19);
-    public int TargetHealthPercent() => (1 + TargetHealth()) * 100 / (1 + TargetMaxHealth());
+    public int TargetMaxHealth() => ClassicAbsoluteVital(18);
+    public int TargetHealth() => ClassicAbsoluteVital(19);
+    public int TargetHealthPercent()
+    {
+        if (!IsForever)
+            return (1 + TargetHealth()) * 100 / (1 + TargetMaxHealth());
 
-    public int PetMaxHealth() => reader.GetInt(38);
-    public int PetHealth() => reader.GetInt(39);
+        VisualBarSample bars = RequiredForeverVitals();
+        if (bars.TargetPresent != true)
+            throw new InvalidOperationException(
+                "Forever target health is unavailable: no confirmed target is present.");
+
+        return VisualPercent(bars.TargetHealth);
+    }
+
+    public int PetMaxHealth() => ClassicAbsoluteVital(38);
+    public int PetHealth() => ClassicAbsoluteVital(39);
     public int PetHealthPercent() => (1 + PetHealth()) * 100 / (1 + PetMaxHealth());
     public bool PetAlive() => PetHealth() > 0;
 
@@ -218,8 +310,8 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
     public int MouseOverId => reader.GetInt(86);
     public int MouseOverGuid => reader.GetInt(87);
 
-    public int FocusHealthMax() => reader.GetInt(89);
-    public int FocusHealthCurrent() => reader.GetInt(90);
+    public int FocusHealthMax() => ClassicAbsoluteVital(89);
+    public int FocusHealthCurrent() => ClassicAbsoluteVital(90);
     public int FocusHealthPercent() => (1 + FocusHealthCurrent()) * 100 / (1 + FocusHealthMax());
 
     public int LastCastGCD { get; private set; }
