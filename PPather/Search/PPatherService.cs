@@ -728,7 +728,10 @@ public sealed class PPatherService : IDisposable
         catch (Exception ex)
         {
             logger.LogError(ex, "Navmesh bake failed");
-            SetBakeMessage("failed: " + ex.Message, start);
+            Exception cause = ex is AggregateException aggregate
+                ? aggregate.Flatten().InnerExceptions[0]
+                : ex.GetBaseException();
+            SetBakeMessage("failed: " + cause.Message, start);
         }
         finally
         {
@@ -783,18 +786,22 @@ public sealed class PPatherService : IDisposable
                 }
             }
 
-            int bakedBefore = tiles.TilesBakedThisSession;
-
             tiles.BakeBatch(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(batch), token);
+
+            int nowOnDisk = 0;
+            foreach ((int tx, int tz) in batch)
+            {
+                if (tiles.IsTileOnDisk(tx, tz))
+                    nowOnDisk++;
+            }
 
             lock (bakeLock)
             {
                 bakeStatus.AdtDone++;
                 bakeStatus.TilesTotal += batch.Count;
 
-                // Count what actually baked, not what was asked for - tiles
-                // already on disk or known empty return immediately.
-                bakeStatus.TilesDone += tiles.TilesBakedThisSession - bakedBefore;
+                // Some requested tiles have no walkable polygons and write no file.
+                bakeStatus.TilesDone += nowOnDisk - onDisk;
                 bakeStatus.TilesAlreadyOnDisk += onDisk;
                 bakeStatus.ElapsedSeconds = GetElapsedTime(start).TotalSeconds;
                 bakeStatus.Message = $"{name} adt {ax},{ay}";

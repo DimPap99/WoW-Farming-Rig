@@ -105,7 +105,8 @@ public sealed class NavmeshTileCache : IDisposable
     // Disk-only misses. Written from every bake worker, so keep it atomic.
     private int missingOnDisk;
 
-    private readonly record struct TileRequest(int X, int Z, TaskCompletionSource? Done);
+    private readonly record struct TileRequest(int X, int Z, TaskCompletionSource? Done,
+        bool RequirePersistence);
 
     /// <summary>Raised after a tile lands in the mesh (viz). May fire on a worker thread.</summary>
     public Action<int, int, DtMeshData>? NotifyTileAdded;
@@ -281,7 +282,7 @@ public sealed class NavmeshTileCache : IDisposable
         foreach ((int tx, int tz) in batch)
         {
             token.ThrowIfCancellationRequested();
-            Request(tx, tz, waits, urgentQueue: false);
+            Request(tx, tz, waits, urgentQueue: false, requirePersistence: true);
         }
 
         if (waits.Count > 0)
@@ -337,7 +338,8 @@ public sealed class NavmeshTileCache : IDisposable
         }
     }
 
-    private void Request(int tx, int tz, List<Task>? waits, bool urgentQueue)
+    private void Request(int tx, int tz, List<Task>? waits, bool urgentQueue,
+        bool requirePersistence = false)
     {
         if (!NavmeshCoords.IsValidTile(tx, tz))
         {
@@ -373,7 +375,7 @@ public sealed class NavmeshTileCache : IDisposable
             }
         }
 
-        TileRequest request = new(tx, tz, done);
+        TileRequest request = new(tx, tz, done, requirePersistence);
         Channel<TileRequest> queue = urgentQueue ? urgent : background;
         queue.Writer.TryWrite(request);
     }
@@ -413,7 +415,7 @@ public sealed class NavmeshTileCache : IDisposable
 
         try
         {
-            DtMeshData? data = LoadOrBake(tx, tz);
+            DtMeshData? data = LoadOrBake(tx, tz, request.RequirePersistence);
 
             if (data == null)
             {
@@ -431,6 +433,8 @@ public sealed class NavmeshTileCache : IDisposable
                     if (!status.Succeeded())
                     {
                         logger.LogWarning("AddTile({TileX},{TileZ}) failed: {Status}", tx, tz, status);
+                        if (request.RequirePersistence)
+                            throw new InvalidDataException($"Baked tile ({tx},{tz}) could not be added to the navmesh: {status}.");
                         data = null;
                     }
                     else
@@ -461,6 +465,8 @@ public sealed class NavmeshTileCache : IDisposable
         catch (Exception ex)
         {
             logger.LogError(ex, "Baking tile ({TileX},{TileZ}) failed", tx, tz);
+            if (request.RequirePersistence)
+                request.Done?.TrySetException(ex);
         }
         finally
         {
@@ -473,7 +479,7 @@ public sealed class NavmeshTileCache : IDisposable
         }
     }
 
-    private DtMeshData? LoadOrBake(int tx, int tz)
+    private DtMeshData? LoadOrBake(int tx, int tz, bool requirePersistence = false)
     {
         string path = TilePath(tx, tz);
 
@@ -556,6 +562,8 @@ public sealed class NavmeshTileCache : IDisposable
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Failed persisting navmesh tile {Path}", path);
+                if (requirePersistence)
+                    throw new IOException($"Failed persisting navmesh tile {path}.", ex);
             }
         }
 
