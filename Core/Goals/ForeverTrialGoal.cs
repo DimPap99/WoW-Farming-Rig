@@ -74,6 +74,8 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
     private double direction;
     private long firstFrameId;
     private long pressFrameId;
+    private long candidateFrameId;
+    private VisualTargetIdentity? candidateIdentity;
     private bool sawCombat;
     private bool sawDeadTarget;
 
@@ -201,13 +203,31 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                         Fail("No safe selected target within the trial window");
                         return;
                     }
-                    if (flags.PlayerCombat || bars.PlayerHealth < 0.95 || bars.PlayerPower < 0.60)
+                    if (bars.PlayerHealth < 0.70 || bars.PlayerPower < 0.25)
                     {
-                        Fail("Combat or low resources before the trial cast");
+                        Fail("Low resources before the trial cast");
                         return;
                     }
                     if (flags is not { Present: true, Attackable: true, Dead: false } ||
                         bars.TargetHealth <= 0)
+                    {
+                        candidateIdentity = null;
+                        return;
+                    }
+                    if (bars.TargetIdentity is not { } selected)
+                        return;
+                    if (candidateIdentity is null)
+                    {
+                        candidateIdentity = selected;
+                        candidateFrameId = tracker.LatestFrameId;
+                        return;
+                    }
+                    if (candidateIdentity != selected)
+                    {
+                        Fail("Selected target changed before the trial cast");
+                        return;
+                    }
+                    if (tracker.LatestFrameId == candidateFrameId)
                         return;
 
                     KeyAction? judgement = config.Pull.Sequence.SingleOrDefault();
@@ -221,6 +241,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                         return;
                     }
                     logger.LogInformation("Forever trial Judgement confirmed");
+                    sawCombat |= flags.PlayerCombat;
                     Enter(Phase.AwaitRecovery);
                     break;
 
@@ -233,8 +254,8 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                     sawCombat |= flags.PlayerCombat;
                     sawDeadTarget |= flags.Present && flags.Dead;
                     if ((sawCombat || sawDeadTarget) && !flags.Present &&
-                        !flags.PlayerCombat && bars.PlayerHealth >= 0.95 &&
-                        bars.PlayerPower >= 0.60)
+                        !flags.PlayerCombat && bars.PlayerHealth >= 0.70 &&
+                        bars.PlayerPower >= 0.25)
                     {
                         Enter(Phase.Passed);
                         logger.LogInformation("Forever bounded route, action, and recovery trial passed");
@@ -331,7 +352,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
 
     private static bool IdleForMove(VisualBarSample bars, VisualTargetFlags flags) =>
         !flags.Present && !flags.PlayerCombat && !flags.PlayerDead &&
-        bars.PlayerHealth >= 0.95 && bars.PlayerPower >= 0.60;
+        bars.PlayerHealth >= 0.70 && bars.PlayerPower >= 0.60;
 
     private static double AngularDifference(double a, double b) =>
         Math.Abs(Math.Atan2(Math.Sin(a - b), Math.Cos(a - b)));

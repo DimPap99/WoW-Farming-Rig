@@ -232,6 +232,12 @@ public sealed partial class AddonReader : IAddonReader
     public static bool HasForeverControllerFrame(VisualBarSample bars) =>
         HasForeverTrialFrame(bars) && bars.Bags is { IsComplete: true };
 
+    public static bool HasForeverTargetIdentity(VisualBarSample bars) =>
+        HasForeverTrialFrame(bars) &&
+        bars.TargetFlags is { } flags &&
+        bars.TargetIdentity is { } identity &&
+        flags.Present == identity.Present;
+
     public void SessionReset()
     {
         combatLog.Reset();

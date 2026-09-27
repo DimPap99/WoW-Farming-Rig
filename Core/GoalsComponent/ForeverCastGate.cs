@@ -52,13 +52,20 @@ public static class ForeverCastGate
 
         if (action.SpellId == 635)
             return !flags.Present && !flags.PlayerCombat &&
-                sample.PlayerHealth >= 0.95 && sample.PlayerPower >= 0.60;
+                sample.PlayerHealth >= 0.70 && sample.PlayerPower >= 0.60;
 
-        return flags is
-            { Present: true, Attackable: true, Dead: false,
-              PlayerCombat: false } &&
-            sample.PlayerHealth >= 0.95 && sample.PlayerPower >= 0.60 &&
-            sample.TargetHealth > 0 &&
+        bool resourcesSafe = sample.PlayerHealth >= 0.70 &&
+            sample.PlayerPower >= (flags.PlayerCombat ? 0.25 : 0.60);
+        return AddonReader.HasForeverTargetIdentity(sample) &&
+            sample.TargetIdentity is { IsPlayer: false } identity &&
+            sample.PlayerIdentity is { } player &&
+            identity.Level <= player.Level + 1 &&
+            (flags.PlayerCombat
+                ? sample.TargetHealth > 0
+                : sample.TargetHealth >= 0.99) &&
+            flags is
+            { Present: true, Attackable: true, Dead: false } &&
+            resourcesSafe &&
             sample.ActionStates?.GetSlot(action.Slot) is { InRange: true };
     }
 
