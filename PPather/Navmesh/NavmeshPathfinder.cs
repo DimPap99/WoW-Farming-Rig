@@ -327,6 +327,63 @@ public sealed class NavmeshPathfinder : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Checks a short straight walk along connected ground. Only the start
+    /// surface is resolved; the destination stays on that surface's corridor.
+    /// A full route may exist even when this direct segment is blocked.
+    /// </summary>
+    public bool TryWalkStraight(Vector3 wowFrom, Vector2 destination,
+        out Vector3 endpoint, out string reason)
+    {
+        endpoint = default;
+        reason = string.Empty;
+        if (!float.IsFinite(wowFrom.X) || !float.IsFinite(wowFrom.Y) ||
+            !float.IsFinite(wowFrom.Z) || !float.IsFinite(destination.X) ||
+            !float.IsFinite(destination.Y))
+        {
+            reason = "non-finite walk coordinates";
+            return false;
+        }
+        Vector3 wowTo = new(destination.X, destination.Y, wowFrom.Z);
+        tiles.EnsureTilesForSegment(wowFrom, wowTo);
+        tiles.Lock.EnterReadLock();
+        try
+        {
+            filter.BeginQuery();
+            if (!resolver.TryResolve(wowFrom, null, out long startRef,
+                    out Vector3 start, ContinuityHint(wowFrom)))
+            {
+                reason = "current position has no walkable surface";
+                return false;
+            }
+            float snap = Vector2.Distance(new(start.X, start.Y), new(wowFrom.X, wowFrom.Y));
+            if (snap > 0.5f)
+            {
+                reason = $"current position is {snap:F2} yards from the walkable surface";
+                return false;
+            }
+            lastResolvedFrom = start;
+            Vector3 rcStart = NavmeshCoords.ToRc(start);
+            Vector3 rcEnd = NavmeshCoords.ToRc(new(destination.X, destination.Y, start.Z));
+            Span<long> corridor = stackalloc long[128];
+            DtStatus status = query.Raycast(startRef, rcStart, rcEnd, filter,
+                out float fraction, out _, corridor, out int count, corridor.Length);
+            if (!status.Succeeded() || count == 0 || count == corridor.Length || fraction < 1)
+            {
+                reason = $"straight walk meets a mesh boundary after {Math.Clamp(fraction, 0, 1):P0} of the segment";
+                return false;
+            }
+            if (!query.GetPolyHeight(corridor[count - 1], rcEnd, out float height).Succeeded())
+            {
+                reason = "walk endpoint has no surface height";
+                return false;
+            }
+            endpoint = new(destination.X, destination.Y, height);
+            return true;
+        }
+        finally { tiles.Lock.ExitReadLock(); }
+    }
+
     public Path? FindPath(Vector3 wowFrom, Vector3 wowTo, bool? startIndoors)
     {
         LastStats = default;
