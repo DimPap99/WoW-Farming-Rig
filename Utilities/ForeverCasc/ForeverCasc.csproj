@@ -8,5 +8,6 @@
     <ProjectReference Include="../../PPather/PPather.csproj" />
     <ProjectReference Include="../../external/TACTSharp/TACTSharp/TACTSharp.csproj" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <EmbeddedResource Include="LiquidMetadata70009.csv" />
   </ItemGroup>
 </Project>

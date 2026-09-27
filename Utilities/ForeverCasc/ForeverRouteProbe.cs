@@ -239,7 +239,7 @@ internal static class ForeverRouteProbe
         if (!status.Succeeded())
             throw new InvalidDataException($"Could not add tile {tileX},{tileZ}: {status.Value}.");
 
-        Console.WriteLine($"Azeroth tile {tileX},{tileZ}: {geometry.GroundTriangleCount} ground faces, {data.header.polyCount} polygons.");
+        Console.WriteLine($"Azeroth tile {tileX},{tileZ}: {geometry.GroundTriangleCount} ground faces, {geometry.LiquidTriangleCount} liquid faces, {data.header.polyCount} polygons.");
     }
 
     private static List<Sample> GetSamples(DtNavMesh mesh, int tileX, int tileZ)

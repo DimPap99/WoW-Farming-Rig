@@ -40,6 +40,7 @@ internal readonly struct MapChunk
     public readonly float[] water_height;
     public readonly byte[] water_flags;
     public readonly bool legacyWater;
+    internal readonly ModernLiquidLayer[] modernLiquidLayers;
 
 
     private static readonly int[] holetab = [
@@ -87,7 +88,8 @@ internal readonly struct MapChunk
 
     public MapChunk(float xbase, float ybase, float zbase,
         uint areaID, bool haswater, uint holes, ulong holesHighRes, float[] vertices,
-        float water_height1, float water_height2, float[] water_height, byte[] water_flags, bool legacyWater)
+        float water_height1, float water_height2, float[] water_height, byte[] water_flags,
+        bool legacyWater, ModernLiquidLayer[]? modernLiquidLayers = null)
     {
         this.xbase = xbase;
         this.ybase = ybase;
@@ -105,5 +107,6 @@ internal readonly struct MapChunk
         this.water_flags = water_flags;
 
         this.legacyWater = legacyWater;
+        this.modernLiquidLayers = modernLiquidLayers ?? [];
     }
 }

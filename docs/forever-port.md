@@ -86,14 +86,16 @@ dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)
 dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" --wdt-azeroth
 dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" --sample-bake-azeroth
 dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" --sample-route-azeroth
+dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" --sample-liquid-azeroth
 ```
 
 An optional fourth argument selects the product (default `wow_classic_beta`);
 an optional fifth argument selects the local cache directory. The sample bake
 reads collision geometry and builds one Detour tile in memory. The sample route
 checks WMO placement bounds, MCNK collision culling, and a path across two
-adjacent tiles. Neither command writes a tile to the runtime cache or enables
-gameplay.
+adjacent tiles. The liquid check compares two installed ADTs with their raw
+MH2O masks and bakes one wet navmesh tile. These commands do not write a tile
+to the runtime cache or enable gameplay.
 
 ## Live findings from the beta client
 
@@ -253,6 +255,12 @@ gameplay.
   model faces seen in the full ADT. This validates one local route and the
   placement bounding boxes, not visual alignment in the game or the collision
   quality of a full continent.
+  A read-only liquid check on Azeroth ADTs `32_48` and `30_50` found 2,360 and
+  8,182 visible liquid triangles, matching their raw MH2O masks. The latter
+  has up to three liquid layers per MCNK. Navmesh tile `126,60` extracted 338
+  liquid triangles and baked 11 water polygons. Forever liquid metadata is
+  pinned to build `1.60.1.70009`; the sample covered water, while live lava
+  and slime placement still need checking.
 
 ## Required work before attempting gameplay automation
 
@@ -275,9 +283,9 @@ gameplay.
    ADT object placements use FileDataIDs. Numeric WMO groups, doodad sets,
    transforms, and M2 collision are loaded; one read-only sample tile bake
    passed. The bake host still does not select the CASC source. One in-memory
-   route query across adjacent tiles passed; visual placement against the
-   client and liquid/collision flags need further validation before expanding
-   coverage or using it for gameplay. The storage
+   route query across adjacent tiles and a sampled wet tile passed; visual
+   placement against the client and broader liquid/collision coverage need
+   validation before expanding coverage or using it for gameplay. The storage
    refactor builds and passes the navmesh coordinate/cost-zone/listfile tests,
    but its six-tile MPQ byte-identity bake could not run here because this
    workspace has no `Json/MPQ` archive corpus. Do not reuse the

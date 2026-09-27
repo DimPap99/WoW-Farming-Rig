@@ -10,7 +10,7 @@ using WowTriangles;
 
 if (args.Length < 3 || args.Length > 5)
 {
-    Console.Error.WriteLine("Usage: ForeverCasc <install-dir> <geometry-listfile> <file-data-id-or-path|--wdt-azeroth|--sample-bake-azeroth|--sample-route-azeroth> [product] [cache-dir]");
+    Console.Error.WriteLine("Usage: ForeverCasc <install-dir> <geometry-listfile> <file-data-id-or-path|--wdt-azeroth|--sample-bake-azeroth|--sample-route-azeroth|--sample-liquid-azeroth> [product] [cache-dir]");
     return 2;
 }
 
@@ -29,6 +29,12 @@ try
         if (!hasSampleTile)
             throw new InvalidDataException("Azeroth WDT does not mark sample tile 32_48 present.");
         Console.WriteLine("Azeroth WDT parsed through PPather; sample tile 32_48 is present.");
+        return 0;
+    }
+
+    if (args[2] == "--sample-liquid-azeroth")
+    {
+        ForeverLiquidProbe.Run(source);
         return 0;
     }
 

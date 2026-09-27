@@ -34,6 +34,7 @@ public readonly struct LiquidData
 
     public readonly float[] water_height;
     public readonly byte[] water_flags;
+    internal readonly ModernLiquidLayer[] modernLayers;
 
     public LiquidData(
         uint offsetData1,
@@ -42,6 +43,18 @@ public readonly struct LiquidData
         MH2OData1 data1,
         float[] water_height,
         byte[] water_flags)
+        : this(offsetData1, used, offsetData2, data1, water_height, water_flags, [])
+    {
+    }
+
+    internal LiquidData(
+        uint offsetData1,
+        int used,
+        uint offsetData2,
+        MH2OData1 data1,
+        float[] water_height,
+        byte[] water_flags,
+        ModernLiquidLayer[] modernLayers)
     {
         this.offsetData1 = offsetData1;
         this.used = used;
@@ -50,5 +63,6 @@ public readonly struct LiquidData
 
         this.water_height = water_height;
         this.water_flags = water_flags;
+        this.modernLayers = modernLayers;
     }
 }

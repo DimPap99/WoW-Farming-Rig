@@ -121,7 +121,14 @@ internal static partial class MapTileFile // adt file
                     HandleMODF(file, wmos, wmomanager, size, out wmois);
                     break;
                 case ChunkReader.MH2O:
-                    HandleMH2O(file, out LiquidDataChunk);
+                    if (archive.SupportsFileDataIds)
+                    {
+                        if (archive is not ILiquidMetadataSource liquidMetadata)
+                            throw new NotSupportedException("Numeric ADT liquids require build-specific liquid metadata.");
+                        HandleNumericMH2O(file, size, liquidMetadata, out LiquidDataChunk);
+                    }
+                    else
+                        HandleMH2O(file, out LiquidDataChunk);
                     break;
             }
 
@@ -547,7 +554,11 @@ internal static partial class MapTileFile // adt file
         } while (!file.EOF());
 
         //set liquid info from the MH2O chunk since the old MCLQ is no more
-        if (liquidData.offsetData1 != 0)
+        if (liquidData.modernLayers.Length != 0)
+        {
+            haswater = true;
+        }
+        else if (liquidData.offsetData1 != 0)
         {
             haswater = (liquidData.used & 1) == 1;
 
@@ -562,7 +573,7 @@ internal static partial class MapTileFile // adt file
         return new(xbase, ybase, zbase,
             areaID, haswater, holes, holesHighRes,
             vertices, water_height1, water_height2,
-            water_height, water_flags, legacyWater);
+            water_height, water_flags, legacyWater, liquidData.modernLayers);
     }
 
     private static void HandleChunkMCVT(BinaryReader file, float xbase, float ybase, float zbase, float[] vertices)

@@ -479,7 +479,7 @@ public sealed class ChunkedTriangleCollection
                 out Vector3 v2,
                 out TriangleType flags);
 
-            if (flags is not TriangleType.Water && SegmentTriangleIntersect(from, to, v0, v1, v2, out Vector3 intersect))
+            if (!flags.Has(TriangleType.Water) && SegmentTriangleIntersect(from, to, v0, v1, v2, out Vector3 intersect))
             {
                 if (stepThreshold != 0)
                 {

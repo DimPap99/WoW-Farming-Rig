@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using PPather.Storage;
 using TACTSharp;
@@ -9,12 +11,15 @@ namespace ForeverCasc;
 /// Read-only CASC source for geometry in a locally installed WoW client.
 /// TACTSharp is kept outside PPather so the geometry layer remains container-neutral.
 /// </summary>
-public sealed class CascGameFileSource : IGameFileSource
+public sealed class CascGameFileSource : IGameFileSource, ILiquidMetadataSource
 {
+    public const string SupportedLiquidBuild = "1.60.1.70009";
+    private static readonly Dictionary<ushort, (byte SoundBank, byte VertexFormat, byte MaterialFlags)> liquidMetadata = LoadLiquidMetadata();
     private readonly BuildInstance build;
     private readonly CascGeometryListfile listfile;
     private readonly object gate = new();
     private bool disposed;
+    private readonly string clientVersion;
 
     public bool SupportsFileDataIds => true;
 
@@ -53,6 +58,7 @@ public sealed class CascGameFileSource : IGameFileSource
             if (selected is null)
                 throw new InvalidDataException($"Product '{product}' was not found in the local .build.info file.");
 
+            clientVersion = selected.Value.Version;
             build.cdn.ProductDirectory = selected.Value.CDNPath;
             build.LoadConfigs(selected.Value.BuildConfig, selected.Value.CDNConfig);
             build.Load();
@@ -73,6 +79,52 @@ public sealed class CascGameFileSource : IGameFileSource
             ThrowIfDisposed();
             return listfile.TryGetFileDataId(name, out uint id) && ExistsCore(id);
         }
+    }
+
+    public LiquidDescriptor ResolveLiquid(ushort liquidTypeId, ushort vertexFormatOrObjectId)
+    {
+        if (clientVersion != SupportedLiquidBuild)
+            throw new NotSupportedException($"Liquid metadata is pinned to build {SupportedLiquidBuild}, but the installed client is {clientVersion}.");
+        if (!liquidMetadata.TryGetValue(liquidTypeId, out var info))
+            throw new InvalidDataException($"LiquidType {liquidTypeId} is absent from the {SupportedLiquidBuild} metadata snapshot.");
+
+        byte vertexFormat = vertexFormatOrObjectId < 42
+            ? checked((byte)vertexFormatOrObjectId)
+            : info.VertexFormat;
+        if (liquidTypeId == 2 && vertexFormatOrObjectId >= 42)
+            vertexFormat = 2; // ocean depth format in the ADT reader
+        if (vertexFormat > 5 || info.SoundBank > 3)
+            throw new InvalidDataException($"LiquidType {liquidTypeId} has unsupported format or sound bank.");
+
+        return new(vertexFormat, info.SoundBank is 2 or 3,
+            (info.MaterialFlags & 0x2) != 0); // LiquidMaterial VisualOnly
+    }
+
+    private static Dictionary<ushort, (byte SoundBank, byte VertexFormat, byte MaterialFlags)> LoadLiquidMetadata()
+    {
+        using Stream stream = typeof(CascGameFileSource).Assembly.GetManifestResourceStream(
+            "ForeverCasc.LiquidMetadata70009.csv")
+            ?? throw new InvalidDataException("The Forever liquid metadata resource is missing.");
+        using StreamReader reader = new(stream);
+        Dictionary<ushort, (byte, byte, byte)> result = [];
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
+        {
+            if (line.Length == 0 || line[0] == '#' || line.StartsWith("typeId,", StringComparison.Ordinal))
+                continue;
+            string[] fields = line.Split(',');
+            if (fields.Length != 4)
+                throw new InvalidDataException("The Forever liquid metadata has a malformed row.");
+            ushort id = ushort.Parse(fields[0], CultureInfo.InvariantCulture);
+            byte soundBank = byte.Parse(fields[1], CultureInfo.InvariantCulture);
+            byte vertexFormat = byte.Parse(fields[2], CultureInfo.InvariantCulture);
+            byte materialFlags = byte.Parse(fields[3], CultureInfo.InvariantCulture);
+            if (!result.TryAdd(id, (soundBank, vertexFormat, materialFlags)))
+                throw new InvalidDataException($"LiquidType {id} appears twice in the metadata snapshot.");
+        }
+        if (result.Count == 0)
+            throw new InvalidDataException("The Forever liquid metadata snapshot is empty.");
+        return result;
     }
 
     public Stream OpenRead(ReadOnlySpan<char> name)
