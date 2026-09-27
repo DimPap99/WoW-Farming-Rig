@@ -75,6 +75,10 @@ public sealed partial class AddonReader : IAddonReader
         this.textureReader = textureReader;
         DataReady = resetEvent;
 
+        KeyReader.ForeverActionBarProvider = foreverVisualBars?.IsEnabled == true
+            ? () => playerReader.TryGetForeverActionBar(out var bar) ? bar : null
+            : null;
+
         GlobalTime = new(frames.Length - 2);
 
         readers = sp.GetServices<IReader>().ToImmutableArray();

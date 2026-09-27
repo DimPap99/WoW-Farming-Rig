@@ -377,6 +377,36 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             if (bindingMatches && visualBindings!.GetCode(33) == 0)
                 bindingMatches &= !KeyReader.ResolveFromSlot(new KeyAction { Slot = 49 });
 
+            KeyReader.ForeverActionBarProvider =
+                () => player.TryGetForeverActionBar(out var live) ? live : null;
+            bool spellActionResolved = false;
+            string? resolvedSpellName = null;
+            if (spellBookMatches && bindingMatches && bars.ActionBar is { } liveActions)
+                for (int slot = 1; slot <= VisualActionBarSnapshot.SlotCount; slot++)
+                {
+                    if (liveActions.GetSlot(slot) is not
+                            { Kind: VisualActionKind.Spell, Id: > 0 } barSpell ||
+                        !spellBook.HasExact(barSpell.Id) ||
+                        !spellBook.TryGetValue(barSpell.Id, out var spell))
+                        continue;
+
+                    KeyAction candidate = new() { Name = spell.Name };
+                    if (!KeyReader.ReadKey(NullLogger.Instance, candidate))
+                        continue;
+
+                    spellActionResolved = candidate.Slot > 0 &&
+                        liveActions.GetSlot(candidate.Slot) is
+                            { Kind: VisualActionKind.Spell, Id: > 0 } match &&
+                        spellBook.HasExact(match.Id) &&
+                        spellBook.TryGetValue(match.Id, out var matchedSpell) &&
+                        matchedSpell.Name == spell.Name;
+                    if (spellActionResolved)
+                    {
+                        resolvedSpellName = spell.Name;
+                        break;
+                    }
+                }
+
             bool absoluteRejected = false;
             try { _ = player.HealthCurrent(); }
             catch (NotSupportedException) { absoluteRejected = true; }
@@ -387,6 +417,9 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             catch (InvalidOperationException) { staleRejected = true; }
             bool staleActionRejected = !player.TryGetForeverWatchedAction(out _);
             bool staleActionBarRejected = !player.TryGetForeverActionBar(out _);
+            bool staleSpellActionRejected = resolvedSpellName is { } name &&
+                !KeyReader.ReadKey(NullLogger.Instance,
+                    new KeyAction { Name = name });
             bool staleWorldPositionRejected = !player.TryGetForeverWorldPosition(out _);
             bool staleSpellBookRejected = !player.TryGetForeverSpellBook(out _);
             bool staleBindingsRejected = !player.TryGetForeverBindings(out _);
@@ -399,6 +432,7 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 bindingReader.SecondaryBindings.Count == 0;
             staleBindingReaderReset &=
                 !KeyReader.ResolveFromSlot(new KeyAction { Slot = 1 });
+            KeyReader.ForeverActionBarProvider = null;
             bool stalePositionRejected = false;
             try { _ = player.WorldPos; }
             catch (InvalidOperationException) { stalePositionRejected = true; }
@@ -423,6 +457,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"staleSpellBookReaderReset={staleSpellBookReaderReset}, " +
                 $"bindings={BindingsText(visualBindings)}, " +
                 $"bindingMatches={bindingMatches}, " +
+                $"spellActionResolved={spellActionResolved}, " +
+                $"staleSpellActionRejected={staleSpellActionRejected}, " +
                 $"staleBindingsRejected={staleBindingsRejected}, " +
                 $"staleBindingReaderReset={staleBindingReaderReset}, " +
                 $"positionMatches={positionMatches}, " +
@@ -435,7 +471,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 worldPositionMatches && staleWorldPositionRejected &&
                 spellBookMatches && staleSpellBookRejected &&
                 staleSpellBookReaderReset &&
-                bindingMatches && staleBindingsRejected &&
+                bindingMatches && spellActionResolved &&
+                staleSpellActionRejected && staleBindingsRejected &&
                 staleBindingReaderReset &&
                 positionMatches && stalePositionRejected && staleMapIdCleared &&
                 staleMaximumRejected && absoluteRejected && staleRejected &&
@@ -776,6 +813,46 @@ static int RunSelfTest()
             Console.Error.WriteLine($"Forever spellbook adapter failed at UI scale {scale}.");
             return 1;
         }
+
+        string spellName = spellBookReader.SpellDB.Spells[7744].Name;
+        KeyReader.ForeverActionBarProvider = () => actionBar;
+        if (KeyReader.ReadKey(NullLogger.Instance,
+                new KeyAction { Name = spellName }))
+        {
+            Console.Error.WriteLine($"Forever action resolution accepted an unbound spell at UI scale {scale}.");
+            return 1;
+        }
+        KeyReader.GameBindings[BindingID.ACTIONBUTTON4] =
+            (ConsoleKey.D4, ModifierKey.None);
+        KeyAction spellAction = new() { Name = spellName };
+        if (!KeyReader.ReadKey(NullLogger.Instance, spellAction) ||
+            spellAction.Slot != 4 || spellAction.ConsoleKey != ConsoleKey.D4 ||
+            KeyReader.FindForeverSpellSlot(actionBar, spellBookReader,
+                spellName, 6603) != 0 ||
+            KeyReader.ReadKey(NullLogger.Instance,
+                new KeyAction { Name = "Unlearned Spell" }))
+        {
+            Console.Error.WriteLine($"Forever spell ID resolution failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawActionGridSlot(4, 4, 7744);
+        if (!VisualBarReader.TryRead(pixels, width, height, out var flyoutResult) ||
+            flyoutResult.ActionBar is not { } flyoutBar ||
+            KeyReader.FindForeverSpellSlot(flyoutBar, spellBookReader,
+                spellName) != 0)
+        {
+            Console.Error.WriteLine($"Forever action resolution treated a flyout as a spell at UI scale {scale}.");
+            return 1;
+        }
+        DrawActionGridSlot(4, 1, 7744);
+        KeyReader.ForeverActionBarProvider = () => null;
+        if (KeyReader.ReadKey(NullLogger.Instance,
+                new KeyAction { Name = spellName }))
+        {
+            Console.Error.WriteLine($"Forever action resolution accepted a stale bar at UI scale {scale}.");
+            return 1;
+        }
+        KeyReader.ForeverActionBarProvider = null;
 
         DrawPositionPixel(12, 0);
         if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
