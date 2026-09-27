@@ -281,6 +281,7 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
     WorldMapAreaDB maps = new(config);
     SpellBookReader spellBook = new(new SpellDB(config));
     KeyBindingsReader bindingReader = new(NullLogger<KeyBindingsReader>.Instance);
+    KeyReader.RequireGameBindings = true;
     PlayerReader player = new(screen, maps, null!, new AddonBits(),
         new SpellInRange(), new Stance(), tracker);
 
@@ -367,6 +368,14 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 bindingReader.ReceivedCount == VisualBindingSnapshot.Count &&
                 bindingReader.Count == expectedBindings &&
                 bindingReader.SecondaryBindings.Count == expectedSecondaryBindings;
+            if (bindingMatches && visualBindings!.GetCode(21) is > 0)
+            {
+                KeyAction firstAction = new() { Slot = 1 };
+                bindingMatches &= KeyReader.ResolveFromSlot(firstAction) &&
+                    firstAction.ConsoleKey == ConsoleKey.D1;
+            }
+            if (bindingMatches && visualBindings!.GetCode(33) == 0)
+                bindingMatches &= !KeyReader.ResolveFromSlot(new KeyAction { Slot = 49 });
 
             bool absoluteRejected = false;
             try { _ = player.HealthCurrent(); }
@@ -388,6 +397,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool staleBindingReaderReset = !bindingReader.IsInitialized &&
                 bindingReader.Count == 0 &&
                 bindingReader.SecondaryBindings.Count == 0;
+            staleBindingReaderReset &=
+                !KeyReader.ResolveFromSlot(new KeyAction { Slot = 1 });
             bool stalePositionRejected = false;
             try { _ = player.WorldPos; }
             catch (InvalidOperationException) { stalePositionRejected = true; }
@@ -621,6 +632,7 @@ static bool BindingsChanged(VisualBindingSnapshot? previous,
 
 static int RunSelfTest()
 {
+    KeyReader.RequireGameBindings = true;
     SpellBookReader spellBookReader = new(new SpellDB(new DataConfig
         { Root = Path.GetFullPath("Json"), Exp = "forever" }));
     KeyBindingsReader bindingReader = new(NullLogger<KeyBindingsReader>.Instance);
@@ -674,7 +686,7 @@ static int RunSelfTest()
         for (int index = 1; index <= VisualBindingSnapshot.Count; index++)
             DrawBindingSlot(index, 0);
         DrawBindingSlot(21, (21 << 14) | (28 << 7));
-        DrawBindingSlot(45, (45 << 14) | (52 << 7));
+        DrawBindingSlot(45, (45 << 14) | 52);
         for (int slot = 1; slot <= VisualActionBarSnapshot.SlotCount; slot++)
             DrawActionGridSlot(slot, 0, 0);
         DrawActionGridSlot(4, 1, 7744);
@@ -715,21 +727,40 @@ static int RunSelfTest()
                 { ReadableCount: VisualBindingSnapshot.Count } visualBindings ||
             visualBindings.GetCode(21) != ((21 << 14) | (28 << 7)) ||
             visualBindings.GetCode(22) != 0 ||
-            visualBindings.GetCode(45) != ((45 << 14) | (52 << 7)))
+            visualBindings.GetCode(45) != ((45 << 14) | 52))
         {
             Console.Error.WriteLine($"Visual binding grid failed at UI scale {scale}.");
             return 1;
         }
         bindingReader.UpdateForever(visualBindings);
-        if (!bindingReader.IsInitialized || bindingReader.Count != 2 ||
+        if (!bindingReader.IsInitialized || bindingReader.Count != 1 ||
+            bindingReader.SecondaryBindings.Count != 1 ||
             !bindingReader.TryGetBinding(BindingID.ACTIONBUTTON1,
                 out ConsoleKey firstKey, out ModifierKey firstModifier) ||
             firstKey != ConsoleKey.D1 || firstModifier != ModifierKey.None ||
-            !bindingReader.TryGetBinding(BindingID.MULTIACTIONBAR1BUTTON1,
+            !bindingReader.TryGetSecondaryBinding(BindingID.MULTIACTIONBAR1BUTTON1,
                 out ConsoleKey secondKey, out ModifierKey secondModifier) ||
             secondKey != ConsoleKey.F1 || secondModifier != ModifierKey.None)
         {
             Console.Error.WriteLine($"Forever binding adapter failed at UI scale {scale}.");
+            return 1;
+        }
+        KeyAction boundAction = new() { Slot = 1 };
+        KeyAction unboundAction = new() { Slot = 2 };
+        KeyAction secondaryAction = new() { Slot = 61 };
+        KeyAction secondaryById = new()
+            { BindingID = BindingID.MULTIACTIONBAR1BUTTON1 };
+        if (!KeyReader.ResolveFromSlot(boundAction) ||
+            boundAction.ConsoleKey != ConsoleKey.D1 ||
+            KeyReader.ResolveFromSlot(unboundAction) ||
+            !KeyReader.ResolveFromSlot(secondaryAction) ||
+            secondaryAction.ConsoleKey != ConsoleKey.F1 ||
+            !KeyReader.ReadKey(NullLogger.Instance, secondaryById) ||
+            secondaryById.ConsoleKey != ConsoleKey.F1 ||
+            KeyReader.ReadKey(NullLogger.Instance,
+                new KeyAction { BindingID = BindingID.ACTIONBUTTON2 }))
+        {
+            Console.Error.WriteLine($"Forever key resolution used a default or missed a secondary binding at UI scale {scale}.");
             return 1;
         }
 
@@ -831,6 +862,11 @@ static int RunSelfTest()
         if (bindingReader.IsInitialized || bindingReader.Count != 0)
         {
             Console.Error.WriteLine($"Forever binding adapter kept a partial snapshot at UI scale {scale}.");
+            return 1;
+        }
+        if (KeyReader.ResolveFromSlot(new KeyAction { Slot = 1 }))
+        {
+            Console.Error.WriteLine($"Forever key resolution accepted stale bindings at UI scale {scale}.");
             return 1;
         }
         DrawBindingSlot(2, 0);
@@ -1056,6 +1092,7 @@ static int RunSelfTest()
         }
     }
 
+    KeyReader.RequireGameBindings = false;
     Console.WriteLine("Visual reader self-test passed at 75%, 100%, and 125% UI scale.");
     return 0;
 }

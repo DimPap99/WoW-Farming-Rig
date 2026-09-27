@@ -87,6 +87,8 @@ public sealed partial class AddonReader : IAddonReader
         // validated independently from the same captured frame.
         foreverVisualBars?.Update();
 
+        KeyReader.RequireGameBindings = foreverVisualBars?.IsEnabled == true;
+
         if (foreverVisualBars?.IsEnabled == true)
         {
             // The guarded Forever add-on has no GlobalTime frame. Refresh
