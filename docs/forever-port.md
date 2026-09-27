@@ -361,6 +361,15 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   actions in a later live capture. Unknown range remains distinct from false.
   The state sample was rejected after capture expiry. This does not establish
   cooldown readiness, and the startup guard remains.
+- A separate 12-row native StatusBar grid now displays remaining cooldown
+  fractions for the bound main action bar. Per-slot marker checksums include
+  the action ID and kind, so a changed slot invalidates the old fill. Synthetic
+  tests at three UI scales cover zero and changing fills, a damaged marker,
+  and an action-kind mismatch. After `/reload`, a live read decoded 12/12
+  slots; slot 4 fell from 33% to 15% to 3% across read-only captures while
+  idle slot 1 stayed at 0%. The sample expires with capture. This is a
+  fraction, not a verified millisecond cooldown value, so the gameplay
+  cooldown reader still needs a Forever-specific decision rule.
 - The Forever dashboard was smoke-tested against the live beta on this machine.
   It returned HTTP 200 and displayed 100% player health, 100% power, and 0%
   target health with no target selected. The log confirmed WGC capture and the
@@ -431,18 +440,17 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
 
 ## Required work before attempting gameplay automation
 
-1. Finish the vital-data migration beyond percentages and player maxima:
-   current health/power, mana when it is not the active power type, pet/focus
-   vitals, and consumers that need exact current values are still unsupported.
-   The existing 24-bit pixel protocol cannot encode protected health/power
-   as-is. Keep the Forever startup guard until missing-data behavior is handled
-   across the full gameplay reader.
-2. Finish spellbook/action/bag adapter integration and design secret-safe aura
-   visual channels. A cyan action-cooldown timer bar has passed one live
-   active-cooldown capture, but still needs multi-spell design, missing-data
-   handling, and gameplay integration. The existing numeric aura/cooldown
-   encoder is not viable under combat lockdown. The current `GetSpellInfo`
-   and spellbook shims help package loading but are not a full data reader.
+1. Finish action readiness. The learned spellbook, checked action IDs,
+   bindings, slot validation, usability, and range are live. The selected-slot
+   cooldown bar and 12-slot cooldown grid work. Handle the protected timer as
+   a readiness signal or a verified
+   time estimate for every bound action and audit profile `CD_` comparisons.
+2. Finish gameplay data and rules. Replace exact current health/power uses
+   with safe percentage or action-state decisions where valid; provide
+   inactive mana, pet, and focus vitals when a chosen profile requires them.
+   Port bag counts and design a combat-safe aura signal. Reject missing data
+   rather than reading Classic pixel cells. The 24-bit numeric protocol cannot
+   encode protected values as-is.
 3. Validate Forever-specific world geometry before gameplay use. The installed
    beta's Azeroth and Kalimdor navmeshes now bake in full locally, and their
    area grids are committed. `BakeTool` and the optional HTTP CASC configuration
@@ -452,9 +460,11 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
    coordinate/cost-zone/listfile tests, but its six-tile MPQ byte-identity
    bake could not run here because this workspace has no `Json/MPQ` archive
    corpus. Do not reuse the pre-Cataclysm navmesh: Forever's world is different.
-4. Complete and validate the remaining DBC-derived tables, game profiles,
-   data-reader integration, and an end-to-end manual test before removing the
-   startup guard. No autonomous movement/combat has been enabled for Forever.
+4. Build a minimal Forever profile from the verified live data, then run a
+   bounded manual check of one route, one target, one action, and recovery.
+   Complete any DBC tables and reader fields that this check actually needs.
+   Remove the startup guard only after those checks pass. No autonomous
+   movement or combat has been enabled for Forever.
 
 For API signatures, use Blizzard's generated UI documentation from the
 [`1.60.1 (70009)` UI-source snapshot](https://github.com/Gethe/wow-ui-source/tree/bd2470aed543f72697a044e989285b6c83e63f73/Interface/AddOns/Blizzard_APIDocumentationGenerated)

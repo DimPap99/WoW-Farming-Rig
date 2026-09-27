@@ -71,6 +71,24 @@ public sealed class VisualActionStateSnapshot
             ? states[slot - 1] : null;
 }
 
+public sealed class VisualCooldownGridSnapshot
+{
+    public const int SlotCount = 12;
+    private readonly double?[] fills;
+    public int ReadableCount { get; }
+
+    internal VisualCooldownGridSnapshot(double?[] fills)
+    {
+        this.fills = fills;
+        foreach (double? fill in fills)
+            if (fill is not null)
+                ReadableCount++;
+    }
+
+    public double? GetSlot(int slot) => slot is >= 1 and <= SlotCount
+        ? fills[slot - 1] : null;
+}
+
 public enum VisualSpellIdSource : byte { SpellId = 1, ActionId = 2 }
 
 public readonly record struct VisualSpellBookEntry(
@@ -136,7 +154,8 @@ public readonly record struct VisualBarSample(
     VisualWorldPositionSample? WorldPosition = null,
     VisualSpellBookSnapshot? SpellBook = null,
     VisualBindingSnapshot? Bindings = null,
-    VisualActionStateSnapshot? ActionStates = null);
+    VisualActionStateSnapshot? ActionStates = null,
+    VisualCooldownGridSnapshot? Cooldowns = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -216,6 +235,8 @@ public static class VisualBarReader
             pixels, width, height, whiteLeft, whiteY, scale);
         VisualActionStateSnapshot? actionStates = TryReadActionStates(
             pixels, width, height, whiteLeft, whiteY, scale, actionBar);
+        VisualCooldownGridSnapshot? cooldowns = TryReadCooldownGrid(
+            pixels, width, height, whiteLeft, whiteY, scale, actionBar);
         int? playerHealthMax = TryReadMaximum(pixels, width, height,
             whiteLeft, whiteY, scale, 11, 12, 0xA55A11);
         int? playerPowerMax = TryReadMaximum(pixels, width, height,
@@ -229,8 +250,48 @@ public static class VisualBarReader
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
             playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
-            actionStates);
+            actionStates, cooldowns);
         return true;
+    }
+
+    private static VisualCooldownGridSnapshot? TryReadCooldownGrid(
+        Bgra32[] pixels, int width, int height, int left, int whiteY,
+        double scale, VisualActionBarSnapshot? actionBar)
+    {
+        if (actionBar is not { ReadableCount: VisualActionBarSnapshot.SlotCount })
+            return null;
+
+        double?[] fills = new double?[VisualCooldownGridSnapshot.SlotCount];
+        for (int slot = 1; slot <= fills.Length; slot++)
+        {
+            int x = left + (int)Math.Round((5 + (slot - 1) * 20) * scale);
+            int y = whiteY + (int)Math.Round(67 * scale);
+            if (x < 0 || x >= width || y < 0 || y >= height)
+                return null;
+            Bgra32 marker = pixels[y * width + x];
+            int code = (marker.R << 16) | (marker.G << 8) | marker.B;
+            VisualActionSample action = actionBar.GetSlot(slot)!.Value;
+            if (code != ((0xA59911 - slot - (int)action.Kind - action.Id) &
+                0xFFFFFF))
+                continue;
+            if (action.Kind == VisualActionKind.Empty)
+            {
+                fills[slot - 1] = 0;
+                continue;
+            }
+
+            int centerY = whiteY + (int)Math.Round(
+                (335 + (slot - 1) * 8) * scale);
+            int barWidth = (int)Math.Round(320 * scale);
+            if (centerY < 0 || centerY >= height ||
+                left + barWidth > width)
+                return null;
+            fills[slot - 1] = RowFill(pixels, width, height,
+                left, centerY, barWidth,
+                Math.Max(1, (int)Math.Round(2 * scale)), BarColor.Cyan);
+        }
+
+        return new(fills);
     }
 
     private static VisualActionStateSnapshot? TryReadActionStates(
