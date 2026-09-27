@@ -101,6 +101,7 @@ try
                             $"target={current.TargetHealth:P0}, {TargetText(current.TargetPresent)}, " +
                             $"calibration={current.Calibration:P0}, " +
                             PositionText(current.Position) + ", " +
+                            WorldPositionText(current.WorldPosition) + ", " +
                             CooldownText(current.ActionCooldownFill) + ", " +
                             ActionText(current.WatchedAction) + ", " +
                             ActionBarText(current.ActionBar));
@@ -182,6 +183,7 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
         $"power max={bars.PlayerPowerMax?.ToString() ?? "unavailable"}");
     Console.WriteLine(TargetText(bars.TargetPresent));
     Console.WriteLine(PositionText(bars.Position));
+    Console.WriteLine(WorldPositionText(bars.WorldPosition));
     Console.WriteLine(CooldownText(bars.ActionCooldownFill));
     Console.WriteLine(ActionText(bars.WatchedAction));
     Console.WriteLine(ActionBarText(bars.ActionBar));
@@ -190,6 +192,10 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
 static string PositionText(VisualPositionSample? position) => position is { } value
     ? $"map={value.UIMapId}, x={value.MapX:F5}, y={value.MapY:F5}, facing={value.Direction:F2}"
     : "position=unavailable";
+
+static string WorldPositionText(VisualWorldPositionSample? position) => position is { } value
+    ? $"world=({value.X:F2}, {value.Y:F2}, {value.Z:F2}) instance={value.InstanceMapId}"
+    : "world position=unavailable";
 
 static string CooldownText(double? fill) => fill is { } value
     ? $"action cooldown fill={value:P0}"
@@ -248,6 +254,10 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool maximaMatch =
                 (bars.PlayerHealthMax is not { } healthMax || player.HealthMax() == healthMax) &&
                 (bars.PlayerPowerMax is not { } powerMax || player.PTMax() == powerMax);
+            bool worldPositionMatches = bars.WorldPosition is not { } world ||
+                (player.TryGetForeverWorldPosition(out VisualWorldPositionSample current) &&
+                 current == world);
+            bool worldPositionAvailable = bars.WorldPosition is not null;
 
             bool absoluteRejected = false;
             try { _ = player.HealthCurrent(); }
@@ -259,6 +269,7 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             catch (InvalidOperationException) { staleRejected = true; }
             bool staleActionRejected = !player.TryGetForeverWatchedAction(out _);
             bool staleActionBarRejected = !player.TryGetForeverActionBar(out _);
+            bool staleWorldPositionRejected = !player.TryGetForeverWorldPosition(out _);
             bool staleMaximumRejected = false;
             try { _ = player.HealthMax(); }
             catch (InvalidOperationException) { staleMaximumRejected = true; }
@@ -269,10 +280,14 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"healthMax={bars.PlayerHealthMax?.ToString() ?? "unavailable"}, " +
                 $"powerMax={bars.PlayerPowerMax?.ToString() ?? "unavailable"}, " +
                 $"maximaMatch={maximaMatch}, staleMaximumRejected={staleMaximumRejected}, " +
+                $"worldPositionAvailable={worldPositionAvailable}, " +
+                $"worldPositionMatches={worldPositionMatches}, " +
+                $"staleWorldPositionRejected={staleWorldPositionRejected}, " +
                 $"absoluteRejected={absoluteRejected}, staleRejected={staleRejected}, " +
                 $"staleActionRejected={staleActionRejected}, " +
                 $"staleActionBarRejected={staleActionBarRejected}");
             return actionMatches && actionBarMatches && maximaMatch &&
+                worldPositionMatches && staleWorldPositionRejected &&
                 staleMaximumRejected && absoluteRejected && staleRejected &&
                 staleActionRejected && staleActionBarRejected ? 0 : 2;
         }
@@ -291,6 +306,7 @@ static bool HasChanged(VisualBarSample previous, VisualBarSample current)
     || previous.TargetPresent != current.TargetPresent
     || previous.PlayerHealthMax != current.PlayerHealthMax
     || previous.PlayerPowerMax != current.PlayerPowerMax
+    || previous.WorldPosition != current.WorldPosition
     || previous.WatchedAction != current.WatchedAction
     || ActionBarChanged(previous.ActionBar, current.ActionBar)
     || ((previous.ActionCooldownFill, current.ActionCooldownFill) switch
@@ -349,16 +365,25 @@ static int RunSelfTest()
         DrawPositionPixel(1, (int)Math.Floor(0.345678 * 16777215));
         DrawPositionPixel(2, (int)Math.Floor(0.789012 * 16777215));
         DrawPositionPixel(3, (int)Math.Floor(1.23456 * 100000));
-        DrawPositionPixel(4, 0xA55AA5);
+        DrawPositionPixel(4, (0xA55AA5 - 42 -
+            (int)Math.Floor(0.345678 * 16777215) -
+            (int)Math.Floor(0.789012 * 16777215) -
+            (int)Math.Floor(1.23456 * 100000)) & 0xFFFFFF);
         DrawPositionPixel(6, 0x00FFFF);
         DrawPositionPixel(7, 0x00FF00);
         DrawPositionPixel(8, 7744);
         DrawPositionPixel(9, 0xA50401);
         DrawPositionPixel(10, 0x5AA55A);
         DrawPositionPixel(11, 742);
-        DrawPositionPixel(12, 0xA55A11);
+        DrawPositionPixel(12, (0xA55A11 - 742) & 0xFFFFFF);
         DrawPositionPixel(13, 1000);
-        DrawPositionPixel(14, 0xA55A22);
+        DrawPositionPixel(14, (0xA55A22 - 1000) & 0xFFFFFF);
+        DrawWorldPixel(0, 8388608 - 61834);
+        DrawWorldPixel(1, 8388608 + 123456);
+        DrawWorldPixel(2, 8388608 + 8765);
+        DrawWorldPixel(3, 0);
+        DrawWorldPixel(4, (0xA55A33 - (8388608 - 61834) -
+            (8388608 + 123456) - (8388608 + 8765)) & 0xFFFFFF);
         for (int slot = 1; slot <= VisualActionBarSnapshot.SlotCount; slot++)
             DrawActionGridSlot(slot, 0, 0);
         DrawActionGridSlot(4, 1, 7744);
@@ -374,6 +399,11 @@ static int RunSelfTest()
             || Math.Abs(position.MapX - 0.345678) > 0.0001
             || Math.Abs(position.MapY - 0.789012) > 0.0001
             || Math.Abs(position.Direction - 1.23456) > 0.0001
+            || result.WorldPosition is not { } worldPosition
+            || Math.Abs(worldPosition.X + 618.34) > 0.001
+            || Math.Abs(worldPosition.Y - 1234.56) > 0.001
+            || Math.Abs(worldPosition.Z - 87.65) > 0.001
+            || worldPosition.InstanceMapId != 0
             || result.TargetPresent != true
             || result.PlayerHealthMax != 742
             || result.PlayerPowerMax != 1000
@@ -393,7 +423,7 @@ static int RunSelfTest()
             Console.Error.WriteLine($"Visual reader accepted missing health-max marker at UI scale {scale}.");
             return 1;
         }
-        DrawPositionPixel(12, 0xA55A11);
+        DrawPositionPixel(12, (0xA55A11 - 742) & 0xFFFFFF);
         DrawPositionPixel(14, 0xA55A11);
         if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
             result.PlayerPowerMax is not null || result.PlayerHealthMax != 742)
@@ -401,7 +431,55 @@ static int RunSelfTest()
             Console.Error.WriteLine($"Visual reader accepted mismatched power-max marker at UI scale {scale}.");
             return 1;
         }
-        DrawPositionPixel(14, 0xA55A22);
+        DrawPositionPixel(14, (0xA55A22 - 1000) & 0xFFFFFF);
+
+        // A red-channel shift from a transient screen tint must not turn a
+        // small maximum into a plausible but wildly larger value.
+        DrawPositionPixel(11, 742 + (4 << 16));
+        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
+            result.PlayerHealthMax is not null)
+        {
+            Console.Error.WriteLine($"Visual reader accepted a corrupted maximum at UI scale {scale}.");
+            return 1;
+        }
+        DrawPositionPixel(11, 742);
+        DrawPositionPixel(11, 742 + (4 << 16));
+        DrawPositionPixel(12, ((0xA55A11 - 742) & 0xFFFFFF) + (4 << 16));
+        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
+            result.PlayerHealthMax is not null)
+        {
+            Console.Error.WriteLine($"Visual reader accepted a uniformly tinted maximum at UI scale {scale}.");
+            return 1;
+        }
+        DrawPositionPixel(11, 742);
+        DrawPositionPixel(12, (0xA55A11 - 742) & 0xFFFFFF);
+
+        DrawWorldPixel(4, 0);
+        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
+            result.WorldPosition is not null)
+        {
+            Console.Error.WriteLine($"Visual reader accepted missing world-position marker at UI scale {scale}.");
+            return 1;
+        }
+        DrawWorldPixel(4, (0xA55A33 - (8388608 - 61834) -
+            (8388608 + 123456) - (8388608 + 8765)) & 0xFFFFFF);
+        DrawWorldPixel(0, (8388608 - 61834) + (4 << 16));
+        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
+            result.WorldPosition is not null)
+        {
+            Console.Error.WriteLine($"Visual reader accepted a corrupted world coordinate at UI scale {scale}.");
+            return 1;
+        }
+        DrawWorldPixel(0, 8388608 - 61834);
+
+        DrawPositionPixel(1, (int)Math.Floor(0.345678 * 16777215) + (4 << 16));
+        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
+            result.Position is not null)
+        {
+            Console.Error.WriteLine($"Visual reader accepted a corrupted map coordinate at UI scale {scale}.");
+            return 1;
+        }
+        DrawPositionPixel(1, (int)Math.Floor(0.345678 * 16777215));
 
         DrawPositionPixel(7, 0xFF0000);
         if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
@@ -519,6 +597,14 @@ static int RunSelfTest()
         {
             int xStart = left + (int)Math.Round(index * 20 * scale);
             int yStart = top + (int)Math.Round(90 * scale);
+            int side = (int)Math.Round(10 * scale);
+            DrawEncodedRect(xStart, yStart, side, encoded);
+        }
+
+        void DrawWorldPixel(int index, int encoded)
+        {
+            int xStart = left + (int)Math.Round(index * 20 * scale);
+            int yStart = top + (int)Math.Round(105 * scale);
             int side = (int)Math.Round(10 * scale);
             DrawEncodedRect(xStart, yStart, side, encoded);
         }

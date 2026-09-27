@@ -119,6 +119,19 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         return false;
     }
 
+    public bool TryGetForeverWorldPosition(out VisualWorldPositionSample position)
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars) &&
+            bars.WorldPosition is { } latest)
+        {
+            position = latest;
+            return true;
+        }
+
+        position = default;
+        return false;
+    }
+
     public bool TryGetForeverWatchedAction(out VisualActionSample action)
     {
         if (TryGetForeverVisualVitals(out VisualBarSample bars) &&

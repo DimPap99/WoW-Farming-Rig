@@ -10,6 +10,12 @@ public readonly record struct VisualPositionSample(
     double MapY,
     double Direction);
 
+public readonly record struct VisualWorldPositionSample(
+    double X,
+    double Y,
+    double Z,
+    int InstanceMapId);
+
 public enum VisualActionKind : byte { Empty, Spell, Item, Macro, Flyout }
 
 public readonly record struct VisualActionSample(
@@ -58,7 +64,8 @@ public readonly record struct VisualBarSample(
     VisualActionSample? WatchedAction = null,
     VisualActionBarSnapshot? ActionBar = null,
     int? PlayerHealthMax = null,
-    int? PlayerPowerMax = null);
+    int? PlayerPowerMax = null,
+    VisualWorldPositionSample? WorldPosition = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -140,10 +147,37 @@ public static class VisualBarReader
             whiteLeft, whiteY, scale, 11, 12, 0xA55A11);
         int? playerPowerMax = TryReadMaximum(pixels, width, height,
             whiteLeft, whiteY, scale, 13, 14, 0xA55A22);
+        VisualWorldPositionSample? worldPosition = TryReadWorldPosition(
+            pixels, width, height, whiteLeft, whiteY, scale);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
-            playerHealthMax, playerPowerMax);
+            playerHealthMax, playerPowerMax, worldPosition);
         return true;
+    }
+
+    private static VisualWorldPositionSample? TryReadWorldPosition(
+        Bgra32[] pixels, int width, int height, int left, int whiteY, double scale)
+    {
+        int centerY = whiteY + (int)Math.Round(42 * scale);
+        int ReadPixel(int index)
+        {
+            int x = left + (int)Math.Round((5 + index * 20) * scale);
+            if (centerY < 0 || centerY >= height || x < 0 || x >= width)
+                return -1;
+            Bgra32 pixel = pixels[centerY * width + x];
+            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
+        }
+
+        int x = ReadPixel(0), y = ReadPixel(1), z = ReadPixel(2);
+        int instanceMapId = ReadPixel(3);
+        if (x < 0 || y < 0 || z < 0 || instanceMapId < 0)
+            return null;
+
+        if (ReadPixel(4) != ((0xA55A33 - x - y - z - instanceMapId) & 0xFFFFFF))
+            return null;
+
+        return new((x - 8388608) / 100.0, (y - 8388608) / 100.0,
+            (z - 8388608) / 100.0, instanceMapId);
     }
 
     private static int? TryReadMaximum(Bgra32[] pixels, int width, int height,
@@ -157,15 +191,13 @@ public static class VisualBarReader
             markerX < 0 || markerX >= width)
             return null;
 
-        Bgra32 marker = pixels[centerY * width + markerX];
-        if (Math.Abs(marker.R - ((expectedMarker >> 16) & 255)) > 3 ||
-            Math.Abs(marker.G - ((expectedMarker >> 8) & 255)) > 3 ||
-            Math.Abs(marker.B - (expectedMarker & 255)) > 3)
-            return null;
-
         Bgra32 value = pixels[centerY * width + valueX];
         int maximum = (value.R << 16) | (value.G << 8) | value.B;
-        return maximum > 0 ? maximum : null;
+        Bgra32 marker = pixels[centerY * width + markerX];
+        int checksum = (marker.R << 16) | (marker.G << 8) | marker.B;
+        return maximum > 0 &&
+            checksum == ((expectedMarker - maximum) & 0xFFFFFF)
+            ? maximum : null;
     }
 
     private static VisualActionBarSnapshot? TryReadActionBar(Bgra32[] pixels,
@@ -274,11 +306,6 @@ public static class VisualBarReader
         if (centerY < 0 || centerY >= height || markerX < 0 || markerX >= width)
             return false;
 
-        Bgra32 marker = pixels[centerY * width + markerX];
-        if (Math.Abs(marker.R - 165) > 3 || Math.Abs(marker.G - 90) > 3 ||
-            Math.Abs(marker.B - 165) > 3)
-            return false;
-
         int ReadPixel(int index)
         {
             int x = left + (int)Math.Round((5 + index * 20) * scale);
@@ -293,7 +320,9 @@ public static class VisualBarReader
         int encodedY = ReadPixel(2);
         int encodedDirection = ReadPixel(3);
         if (mapId <= 0 || encodedX < 0 || encodedY < 0 ||
-            encodedDirection < 0 || encodedDirection > 628400)
+            encodedDirection < 0 || encodedDirection > 628400 ||
+            ReadPixel(4) != ((0xA55AA5 - mapId - encodedX - encodedY -
+                encodedDirection) & 0xFFFFFF))
             return false;
 
         position = new(mapId, encodedX / 16777215.0,
