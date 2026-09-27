@@ -200,8 +200,9 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   reject unreadable values. Synthetic checks pass at 75%, 100%, and 125% UI
   scale. After a beta `/reload`, live WGC capture decoded health max 272 and
   power max 230. `PlayerReader.HealthMax()` and `PTMax()` returned those values
-  and rejected a stale sample. Current health and power are still secret and
-  are not inferred from the bar fill as exact integers.
+  and rejected a stale sample. In a later manual fight, both maxima stayed
+  readable while player health fell from 95% to 80%. Current health and power
+  are still secret and are not inferred from the bar fill as exact integers.
 - The target-presence marker changed from absent to present when a target was
   selected and back to absent after it was cleared, including during a manual
   fight where target health fell to 73%. A live `--reader-smoke` check read
@@ -296,8 +297,10 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   8,182 visible liquid triangles, matching their raw MH2O masks. The latter
   has up to three liquid layers per MCNK. Navmesh tile `126,60` extracted 338
   liquid triangles and baked 11 water polygons. Forever liquid metadata is
-  pinned to build `1.60.1.70009`; the sample covered water, while live lava
-  and slime placement still need checking.
+  pinned to build `1.60.1.70009`. A readback survey of the full local bake
+  found water polygons on 6,566 Azeroth and 8,275 Kalimdor tiles, and
+  magma/slime polygons on 19 and 47 tiles respectively. Live lava and slime
+  placement still need checking.
 
 ## Required work before attempting gameplay automation
 
