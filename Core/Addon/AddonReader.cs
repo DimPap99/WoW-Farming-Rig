@@ -42,6 +42,7 @@ public sealed partial class AddonReader : IAddonReader
     public RecordInt GlobalTime { get; }
 
     private int previousGlobalTime;
+    private long lastForeverFrameId;
 
     private int lastTargetGuid = -1;
     public string TargetName { get; private set; } = string.Empty;
@@ -126,6 +127,16 @@ public sealed partial class AddonReader : IAddonReader
             spellBookReader.UpdateForever(visualAvailable ? bars.SpellBook : null);
             keyBindingsReader.UpdateForever(visualAvailable ? bars.Bindings : null);
             bagReader.UpdateForever(visualAvailable ? bars.Bags : null);
+            // The normal controller waits on DataReady. Signal it only once
+            // per new, complete visual frame; the guarded addon has no
+            // Classic GlobalTime cell to drive that signal.
+            long frameId = foreverVisualBars.LatestFrameId;
+            if (visualAvailable && frameId != lastForeverFrameId &&
+                HasForeverControllerFrame(bars))
+            {
+                lastForeverFrameId = frameId;
+                DataReady.Set();
+            }
             return;
         }
 
@@ -194,6 +205,27 @@ public sealed partial class AddonReader : IAddonReader
 
         DataReady.Set();
     }
+
+    public static bool HasForeverControllerFrame(VisualBarSample bars) =>
+        bars.Position is { UIMapId: > 0 } &&
+        bars.WorldPosition is not null &&
+        bars.PlayerIdentity is { Level: > 0 } &&
+        bars.PlayerPowerType is not null &&
+        bars.PlayerHealthMax is > 0 && bars.PlayerPowerMax is > 0 &&
+        bars.TargetFlags is { } flags &&
+        bars.TargetPresent == flags.Present &&
+        bars.LastCastEvent is not null &&
+        bars.ActionBar is
+            { ReadableCount: VisualActionBarSnapshot.SlotCount } &&
+        bars.ActionStates is
+            { ReadableCount: VisualActionBarSnapshot.SlotCount } &&
+        bars.Cooldowns is
+            { ReadableCount: VisualCooldownGridSnapshot.SlotCount } &&
+        bars.SpellBook is { Count: > 0 } book &&
+        book.ReadableCount == book.Count &&
+        bars.Bindings is
+            { ReadableCount: VisualBindingSnapshot.Count } &&
+        bars.Bags is { IsComplete: true };
 
     public void SessionReset()
     {

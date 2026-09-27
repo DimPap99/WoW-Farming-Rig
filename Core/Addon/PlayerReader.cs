@@ -376,7 +376,12 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
 
     // Sent by the addon rather than derived from the race: a Pandaren is
     // Neutral until the Wandering Isle is finished, then becomes either side.
-    public PlayerFaction Faction => (PlayerFaction)(reader.GetInt(46) / 1000000);
+    public PlayerFaction Faction => IsForever
+        ? RequiredForeverIdentity().RaceId == (int)UnitRace.Undead
+            ? PlayerFaction.Horde
+            : throw new NotSupportedException(
+                "Forever faction is only verified for the Undead Paladin trial.")
+        : (PlayerFaction)(reader.GetInt(46) / 1000000);
 
     // 47 empty
 

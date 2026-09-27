@@ -508,8 +508,10 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
    corpus. Do not reuse the pre-Cataclysm navmesh: Forever's world is different.
 4. The minimal Forever trial profile, read-only combined gate, and bounded
    route, target, action, and recovery checks have passed in isolation. Port
-   the normal controller's remaining Classic-only event, casting, and state
-   dependencies, then validate a bounded controller-run cycle. The checked
+   the normal controller's remaining Classic-only state and goal dependencies,
+   then validate a bounded controller-run cycle. Its guarded trial casting
+   branch now uses the checked success event, but the ordinary GOAP goals still
+   read unported target, movement, and combat cells. The checked
    player combat/death flags are available to `AddonBits`; other Classic-only
    state cells remain unported.
    Remove the startup guard only after that cycle passes. No autonomous
@@ -588,6 +590,31 @@ The tool exited after that single keypress; the user finished the fight.
 The subsequent read-only recovery check found sequence 7, spell ID 20271,
 100% health and mana, no target, and player combat false. All reader and
 stale-data checks passed.
+
+The normal `CastingHandler` now has a guarded Forever branch for the three
+trial Paladin spells. Before a 75 ms keypress it checks the spell, current
+binding, usability, range, cooldown, player/target flags, mana, map, and cast
+event in one fresh visual capture. It confirms only a new successful event for
+the exact spell ID and latches closed after any unconfirmed press until a new
+controller session is created. Holy Light is limited to the verified
+no-target, out-of-combat case; the two attack spells require a living target,
+out-of-combat state, and at least 95% health and 60% mana. Unsupported
+post-cast features fail closed. The bounded one-key utilities now call the
+same gate. Synthetic checks pass at 75%, 100%, and 125% UI scale for ready,
+missing binding/event, dead target, running cooldown, and out-of-range cases.
+`AddonReader` now signals the normal controller's frame wait only once per
+new, complete visual frame, and the trial player's Horde faction comes from
+the checked Undead identity rather than a Classic pixel. Incomplete action,
+bag, or event data does not signal a controller frame; synthetic checks cover
+those cases at all three scales.
+This branch is unreachable from the Forever dashboard while its startup guard
+remains. The normal GOAP state flow and controller-run route/combat cycle have
+not been validated or enabled. A read-only trial check on 2026-09-27 refused
+because the live trial's full data/idle conditions were not met; it sent no
+input. A later reader smoke found no fresh visual sample during its bounded
+capture window. The Debug `Core` and `ForeverVisualReader` builds and the
+three-scale self-test passed. A full Release build was not established in this
+worktree because existing `dotnet` processes held reference/output DLLs open.
 
 For API signatures, use Blizzard's generated UI documentation from the
 [`1.60.1 (70009)` UI-source snapshot](https://github.com/Gethe/wow-ui-source/tree/bd2470aed543f72697a044e989285b6c83e63f73/Interface/AddOns/Blizzard_APIDocumentationGenerated)
