@@ -85,12 +85,15 @@ dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)
 dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" "World\Maps\Azeroth\Azeroth_32_48_obj0.adt"
 dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" --wdt-azeroth
 dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" --sample-bake-azeroth
+dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" --sample-route-azeroth
 ```
 
 An optional fourth argument selects the product (default `wow_classic_beta`);
 an optional fifth argument selects the local cache directory. The sample bake
-reads collision geometry and builds one Detour tile in memory; it does not
-write a tile to the runtime cache or enable gameplay.
+reads collision geometry and builds one Detour tile in memory. The sample route
+checks WMO placement bounds, MCNK collision culling, and a path across two
+adjacent tiles. Neither command writes a tile to the runtime cache or enables
+gameplay.
 
 ## Live findings from the beta client
 
@@ -237,8 +240,19 @@ write a tile to the runtime cache or enable gameplay.
   this tile have no doodad placements; the earlier `MODN` claim was incorrect.
   A read-only in-memory bake of Azeroth tile `126,61` extracted 30,165 ground
   triangles, including 20,129 WMO faces and 4,636 model faces on the sample
-  ADT, and produced 561 Detour polygons. This checks one local tile, not the
-  visual placement, path connectivity, or full-continent collision quality.
+  ADT, and produced 561 Detour polygons. A second read-only check compared
+  that tile's WMO face centers with the eight MODF placement bounds: all
+  20,129 sampled face centers were enclosed. Two adjacent tiles (126,61 and
+  127,61) produced 561 and 197 polygons; Detour found a complete 19-polygon,
+  four-point path from (-8929.01, -166.40, 81.66) to
+  (-8909.28, -104.80, 82.21) across their shared edge. The start is near
+  WMO and model collision. This exposed an MCNK culling error: ADT/MCNK axes
+  and client-space WMO/model bounds were compared in different coordinate
+  systems, leaving zero WMO faces in the start MCNK. With the bounds corrected,
+  the small-chunk query retained all 58 nearby WMO faces and all 67 nearby
+  model faces seen in the full ADT. This validates one local route and the
+  placement bounding boxes, not visual alignment in the game or the collision
+  quality of a full continent.
 
 ## Required work before attempting gameplay automation
 
@@ -260,9 +274,10 @@ write a tile to the runtime cache or enable gameplay.
    local-only CASC source, but the bake host does not select it yet. Modern
    ADT object placements use FileDataIDs. Numeric WMO groups, doodad sets,
    transforms, and M2 collision are loaded; one read-only sample tile bake
-   passed. The bake host still does not select the CASC source. Inspect WMO
-   placement against the client, verify path queries and liquid/collision
-   flags on a small route, then expand coverage before gameplay uses it. The storage
+   passed. The bake host still does not select the CASC source. One in-memory
+   route query across adjacent tiles passed; visual placement against the
+   client and liquid/collision flags need further validation before expanding
+   coverage or using it for gameplay. The storage
    refactor builds and passes the navmesh coordinate/cost-zone/listfile tests,
    but its six-tile MPQ byte-identity bake could not run here because this
    workspace has no `Json/MPQ` archive corpus. Do not reuse the

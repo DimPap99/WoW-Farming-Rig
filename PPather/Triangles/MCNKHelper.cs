@@ -82,12 +82,13 @@ internal static class MCNKHelper
                                      out float minX, out float minY, out float maxX, out float maxY)
     {
         // Get ADT base position
-        float adt_base_x = ChunkReader.ZEROPOINT - (adt_x * ChunkReader.TILESIZE);
-        float adt_base_y = ChunkReader.ZEROPOINT - (adt_y * ChunkReader.TILESIZE);
+        // ADT X indexes world Y; ADT Y indexes world X.
+        float adt_base_x = ChunkReader.ZEROPOINT - (adt_y * ChunkReader.TILESIZE);
+        float adt_base_y = ChunkReader.ZEROPOINT - (adt_x * ChunkReader.TILESIZE);
 
         // Calculate MCNK bounds within ADT
-        minX = adt_base_x - (mcnk_x * ChunkReader.CHUNKSIZE);
-        minY = adt_base_y - (mcnk_y * ChunkReader.CHUNKSIZE);
+        minX = adt_base_x - (mcnk_y * ChunkReader.CHUNKSIZE);
+        minY = adt_base_y - (mcnk_x * ChunkReader.CHUNKSIZE);
         maxX = minX - ChunkReader.CHUNKSIZE;
         maxY = minY - ChunkReader.CHUNKSIZE;
 
@@ -135,51 +136,52 @@ internal static class MCNKHelper
     /// </summary>
     public static void GetModelBounds(in ModelInstance mi, out float minX, out float minY, out float maxX, out float maxY)
     {
+        float centerX = ChunkReader.ZEROPOINT - mi.pos.Z;
+        float centerY = ChunkReader.ZEROPOINT - mi.pos.X;
         if (mi.model.boundingVertices == null || mi.model.boundingVertices.Length == 0)
         {
             // Fallback: use position with small radius
             const float DEFAULT_RADIUS = 5.0f;
-            minX = mi.pos.X - DEFAULT_RADIUS;
-            minY = mi.pos.Y - DEFAULT_RADIUS;
-            maxX = mi.pos.X + DEFAULT_RADIUS;
-            maxY = mi.pos.Y + DEFAULT_RADIUS;
+            minX = centerX - DEFAULT_RADIUS;
+            minY = centerY - DEFAULT_RADIUS;
+            maxX = centerX + DEFAULT_RADIUS;
+            maxY = centerY + DEFAULT_RADIUS;
             return;
         }
 
-        // Calculate actual bounding box from vertices
-        minX = float.MaxValue;
-        minY = float.MaxValue;
-        maxX = float.MinValue;
-        maxY = float.MinValue;
-
+        // Rotation can move any local axis into the horizontal plane. A sphere
+        // around the model origin is a conservative XY bound for every MDDF
+        // rotation, without repeating the vertex transform used by the supplier.
+        float radiusSquared = 0f;
         for (int i = 0; i < mi.model.boundingVertices.Length / 3; i++)
         {
             int off = i * 3;
-            float x = mi.model.boundingVertices[off] * mi.scale + mi.pos.X;
-            float y = mi.model.boundingVertices[off + 2] * mi.scale + mi.pos.Y;
-
-            if (x < minX) minX = x;
-            if (y < minY) minY = y;
-            if (x > maxX) maxX = x;
-            if (y > maxY) maxY = y;
+            float x = mi.model.boundingVertices[off];
+            float y = mi.model.boundingVertices[off + 1];
+            float z = mi.model.boundingVertices[off + 2];
+            radiusSquared = System.Math.Max(radiusSquared, x * x + y * y + z * z);
         }
+        float radius = System.MathF.Sqrt(radiusSquared) * System.MathF.Abs(mi.scale);
+        minX = centerX - radius;
+        minY = centerY - radius;
+        maxX = centerX + radius;
+        maxY = centerY + radius;
     }
 
     /// <summary>
-    /// Calculate AABB for a WMOInstance using bounding box from WMORoot
+    /// Calculate the world-space AABB of an ADT WMO placement. MODF stores
+    /// its bounds in the client basis (X, Y-up, Z); MCNK bounds use WoW XY.
     /// </summary>
     public static void GetWMOBounds(in WMOInstance wi, out float minX, out float minY, out float maxX, out float maxY)
     {
-        // WMOInstance stores pos2 and pos3 which appear to be bounding box corners
-        // Use these directly for a conservative AABB
-        minX = System.Math.Min(wi.pos2.X, wi.pos3.X);
-        minY = System.Math.Min(wi.pos2.Y, wi.pos3.Y);
-        maxX = System.Math.Max(wi.pos2.X, wi.pos3.X);
-        maxY = System.Math.Max(wi.pos2.Y, wi.pos3.Y);
-
-        // Ensure we have valid bounds
-        if (minX > maxX) (minX, maxX) = (maxX, minX);
-        if (minY > maxY) (minY, maxY) = (maxY, minY);
+        float x1 = ChunkReader.ZEROPOINT - wi.pos2.Z;
+        float x2 = ChunkReader.ZEROPOINT - wi.pos3.Z;
+        float y1 = ChunkReader.ZEROPOINT - wi.pos2.X;
+        float y2 = ChunkReader.ZEROPOINT - wi.pos3.X;
+        minX = System.Math.Min(x1, x2);
+        minY = System.Math.Min(y1, y2);
+        maxX = System.Math.Max(x1, x2);
+        maxY = System.Math.Max(y1, y2);
     }
 
     /// <summary>
