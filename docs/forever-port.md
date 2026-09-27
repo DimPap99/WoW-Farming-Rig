@@ -180,7 +180,14 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   to 0.5629/0.5432). Facing differed between captures. Synthetic tests reject
   a missing position marker at three UI scales. `PlayerReader` exposes this
   through `TryGetForeverPosition`, which returns false when the marker or
-  whole visual sample is missing/stale. This is **not** a navigation system.
+  whole visual sample is missing/stale. `PlayerReader` now supplies its
+  `MapX`, `MapY`, `Direction`, and `WorldPos` X/Y from that fresh sample on
+  Forever. Its visual update sets the UI map and area without reading Classic
+  cells; a stale position clears the cached UI map and causes position getters
+  to throw. The live reader smoke check compared the map-derived world X/Y
+  with `UnitPosition`, then verified stale data was rejected. `WorldPosZ` is
+  still a navigation estimate; the client's reported Z=0 is not used. This is
+  **not** a navigation system or permission to remove the startup guard.
 - A hidden native `StatusBar` accepted direct `SetMinMaxValues`/`SetValue`
   calls for secret player health, player power, and target health, including in
   a delayed combat-lockdown snapshot. The separate visible vitals prototype

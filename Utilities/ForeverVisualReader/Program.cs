@@ -237,17 +237,27 @@ static string TargetText(bool? present) => present switch
 
 static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTracker tracker)
 {
-    // This focused test only calls vital getters. The legacy map/area services
-    // are intentionally absent, as they are not part of the Forever reader yet.
-    PlayerReader player = new(screen, null!, null!, new AddonBits(),
+    WorldMapAreaDB maps = new(new DataConfig
+        { Root = Path.GetFullPath("Json"), Exp = "forever" });
+    PlayerReader player = new(screen, maps, null!, new AddonBits(),
         new SpellInRange(), new Stance(), tracker);
 
     for (int i = 0; i < 50; i++)
     {
         screen.Update();
         tracker.Update();
-        if (player.TryGetForeverVisualVitals(out VisualBarSample bars))
+        if (player.TryGetForeverVisualVitals(out VisualBarSample bars) &&
+            bars.Position is { } mapPosition &&
+            bars.WorldPosition is { } worldPosition)
         {
+            player.Update(screen);
+            Vector3 readerWorld = player.WorldPos;
+            bool positionMatches = player.UIMapId.Value == mapPosition.UIMapId &&
+                Math.Abs(player.MapX - mapPosition.MapX * 100) < 0.01 &&
+                Math.Abs(player.MapY - mapPosition.MapY * 100) < 0.01 &&
+                Math.Abs(player.Direction - mapPosition.Direction) < 0.0001 &&
+                Vector2.Distance(new(readerWorld.X, readerWorld.Y),
+                    new((float)worldPosition.X, (float)worldPosition.Y)) < 3;
             int health = player.HealthPercent();
             int power = player.PTPercentage();
             int? target = bars.TargetPresent == true
@@ -277,6 +287,11 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool staleActionRejected = !player.TryGetForeverWatchedAction(out _);
             bool staleActionBarRejected = !player.TryGetForeverActionBar(out _);
             bool staleWorldPositionRejected = !player.TryGetForeverWorldPosition(out _);
+            bool stalePositionRejected = false;
+            try { _ = player.WorldPos; }
+            catch (InvalidOperationException) { stalePositionRejected = true; }
+            player.Update(screen);
+            bool staleMapIdCleared = player.UIMapId.Value == 0;
             bool staleMaximumRejected = false;
             try { _ = player.HealthMax(); }
             catch (InvalidOperationException) { staleMaximumRejected = true; }
@@ -290,11 +305,15 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"worldPositionAvailable={worldPositionAvailable}, " +
                 $"worldPositionMatches={worldPositionMatches}, " +
                 $"staleWorldPositionRejected={staleWorldPositionRejected}, " +
+                $"positionMatches={positionMatches}, " +
+                $"stalePositionRejected={stalePositionRejected}, " +
+                $"staleMapIdCleared={staleMapIdCleared}, " +
                 $"absoluteRejected={absoluteRejected}, staleRejected={staleRejected}, " +
                 $"staleActionRejected={staleActionRejected}, " +
                 $"staleActionBarRejected={staleActionBarRejected}");
             return actionMatches && actionBarMatches && maximaMatch &&
                 worldPositionMatches && staleWorldPositionRejected &&
+                positionMatches && stalePositionRejected && staleMapIdCleared &&
                 staleMaximumRejected && absoluteRejected && staleRejected &&
                 staleActionRejected && staleActionBarRejected ? 0 : 2;
         }
