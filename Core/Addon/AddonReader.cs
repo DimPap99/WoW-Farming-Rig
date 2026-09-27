@@ -90,6 +90,8 @@ public sealed partial class AddonReader : IAddonReader
                 ? () => playerReader.TryGetForeverVisualVitals(out var bars)
                     ? bars : null
                 : null;
+        sp.GetRequiredService<ActionBarCostReader>().RejectForeverCosts =
+            foreverVisualBars?.IsEnabled == true;
         bagReader.ForeverBagsProvider = foreverVisualBars?.IsEnabled == true
             ? () => playerReader.TryGetForeverBags(out var bags) ? bags : null
             : null;

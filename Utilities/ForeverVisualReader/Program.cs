@@ -1705,8 +1705,25 @@ static int RunSelfTest()
         bool millisecondsRejected = false;
         try { _ = foreverCooldown.Get(cooldownAction); }
         catch (NotSupportedException) { millisecondsRejected = true; }
+        ActionBarCostReader foreverCosts = new(
+            NullLogger<ActionBarCostReader>.Instance)
+        {
+            RejectForeverCosts = true
+        };
+        bool numericCostRejected = false;
+        try { _ = foreverCosts.Get(cooldownAction); }
+        catch (NotSupportedException) { numericCostRejected = true; }
         if (foreverCooldown.IsForeverReady(cooldownAction, spellBookReader) ||
             !millisecondsRejected ||
+            !numericCostRejected ||
+            RequirementFactory.FindUnsupportedForeverActionCost(
+                "Cost_Judgement >= 10") != "Cost_Judgement" ||
+            RequirementFactory.FindUnsupportedForeverActionCost(
+                "Cost < Mana") != "Cost" ||
+            RequirementFactory.FindUnsupportedForeverActionCost(
+                "Health% > 50 && Mana% >= 25") is not null ||
+            RequirementFactory.FindUnsupportedForeverActionCost(
+                "CostumeCount > 0") is not null ||
             RequirementFactory.FindUnsupportedForeverCooldownComparison(
                 "CD_Judgement <= GCD", cooldownKeys) != "CD_Judgement" ||
             RequirementFactory.FindUnsupportedForeverCooldownComparison(
