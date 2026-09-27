@@ -502,11 +502,34 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
    coordinate/cost-zone/listfile tests, but its six-tile MPQ byte-identity
    bake could not run here because this workspace has no `Json/MPQ` archive
    corpus. Do not reuse the pre-Cataclysm navmesh: Forever's world is different.
-4. Build a minimal Forever profile from the verified live data, then run a
-   bounded manual check of one route, one target, one action, and recovery.
-   Complete any DBC tables and reader fields that this check actually needs.
+4. The minimal Forever trial profile and read-only combined gate are present.
+   Run a bounded manual check of one route, one target, one action, and recovery
+   after the remaining input and casting readers are ported. Complete any DBC
+   tables and reader fields that this check actually needs.
    Remove the startup guard only after those checks pass. No autonomous
    movement or combat has been enabled for Forever.
+
+### Paladin trial gate
+
+`Json/class/Paladin_Forever_Trial.json` contains only the verified bound
+Holy Light, Judgement, and Holy Strike slots. Its two-anchor Tirisfal path is
+`Json/path/Forever_Tirisfal_LocalTrial.json`. The profile has no aura rules,
+loot, mount, or unbound secondary-bar actions. Run the read-only combined gate:
+
+```powershell
+dotnet run --project Utilities/ForeverVisualReader/ForeverVisualReader.csproj -- --trial-check
+```
+
+At the stationary live check on 2026-09-27, the route start was 0.8 yards from
+the player, the 12-yard segment resolved entirely from baked mesh, and the
+spell IDs, main-bar bindings, action states, cooldown readiness, map position,
+mana, and bag grid agreed with the profile. The player was at 100% health and
+mana with no target. This is a read-only prerequisite, not a completed
+movement, target, cast, or recovery trial. The normal Forever controller still
+refuses gameplay. The current binding grid has no `INTERACTTARGET` or
+`STARTATTACK` key, and the normal casting/controller path still relies on
+Classic-only event, aura, and cost data. Those gaps must be resolved before
+the startup guard can be removed.
 
 For API signatures, use Blizzard's generated UI documentation from the
 [`1.60.1 (70009)` UI-source snapshot](https://github.com/Gethe/wow-ui-source/tree/bd2470aed543f72697a044e989285b6c83e63f73/Interface/AddOns/Blizzard_APIDocumentationGenerated)

@@ -6,6 +6,8 @@ using Game;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
+using Newtonsoft.Json;
+
 using PPather.Navmesh;
 
 using SharedLib;
@@ -44,6 +46,7 @@ if (args.Length == 1 && args[0] == "--self-test")
 
 bool readerSmoke = args.Length == 1 && args[0] == "--reader-smoke";
 bool routeProbe = args.Length == 1 && args[0] == "--route-probe";
+bool trialCheck = args.Length == 1 && args[0] == "--trial-check";
 
 if (args.Length == 2 && args[0] == "--read")
 {
@@ -86,6 +89,9 @@ try
 
     if (routeProbe)
         return await RunRouteProbe(screen, tracker);
+
+    if (trialCheck)
+        return await RunTrialCheck(screen, tracker);
 
     if (monitor)
     {
@@ -740,6 +746,177 @@ static async Task<int> RunRouteProbe(WowScreenWGC screen, ForeverVisualBarTracke
     Console.Error.WriteLine(lastMapError > 0
         ? $"No consistent live map/world position was captured; last error {lastMapError:F2} yd."
         : "No fresh checksummed Forever position was captured.");
+    return 2;
+}
+
+static async Task<int> RunTrialCheck(WowScreenWGC screen, ForeverVisualBarTracker tracker)
+{
+    // Read-only gate for the candidate profile. No controller or input service
+    // is constructed here; every value comes from one fresh visual capture.
+    DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
+    string profileFile = Path.Combine(config.Class, "Paladin_Forever_Trial.json");
+    ClassConfiguration profile = JsonConvert.DeserializeObject<ClassConfiguration>(
+        File.ReadAllText(profileFile)) ?? throw new InvalidDataException("Trial profile is empty.");
+    KeyAction[] actions = [.. profile.Pull.Sequence, .. profile.Combat.Sequence];
+    (string Name, int Id, int Slot)[] expected =
+    [
+        ("Holy Light", 635, 1),
+        ("Judgement", 20271, 2),
+        ("Holy Strike", 679, 3)
+    ];
+    static bool HasRules(KeyAction action, params string[] rules) =>
+        action.Requirements.Count == rules.Length &&
+        rules.All(action.Requirements.Contains);
+    bool profileSafe = profile.Paths.Length == 1 &&
+        profile.Paths[0].UIMapId == 1420 &&
+        profile.Paths[0].PathFilename == "Forever_Tirisfal_LocalTrial.json" &&
+        !profile.Loot && !profile.UseMount &&
+        profile.Pull.Sequence.Length == 1 &&
+        profile.Combat.Sequence.Length == 3 &&
+        HasRules(profile.Pull.Sequence[0], "Spell:20271", "TargetHealth% > 0") &&
+        HasRules(profile.Combat.Sequence[0], "Spell:635", "Health% < 60", "Mana% >= 25") &&
+        HasRules(profile.Combat.Sequence[1], "Spell:679", "TargetHealth% > 0") &&
+        HasRules(profile.Combat.Sequence[2], "Spell:20271", "TargetHealth% > 0") &&
+        actions.All(a => a.WhenUsable && !a.BaseAction &&
+            !a.AfterCastWaitBuff && !a.AfterCastAuraExpected &&
+            string.IsNullOrEmpty(a.MacroText) &&
+            expected.Any(e => e.Name == a.Name && e.Id == a.SpellId &&
+                e.Slot == a.Slot && a.Key == e.Slot.ToString())) &&
+        expected.All(e => actions.Any(a => a.Name == e.Name &&
+            a.SpellId == e.Id && a.Slot == e.Slot));
+    if (!profileSafe)
+    {
+        Console.Error.WriteLine("Trial profile has unsupported or changed actions, rules, or route.");
+        return 2;
+    }
+
+    WorldMapAreaDB maps = new(config);
+    for (int i = 0; i < 50; i++)
+    {
+        screen.Update();
+        tracker.Update();
+        if (!tracker.TryGetLatest(out VisualBarSample bars) ||
+            bars.Position is not { } map || bars.WorldPosition is not { } world)
+        {
+            await Task.Delay(100);
+            continue;
+        }
+
+        if (map.UIMapId != 1420 || world.InstanceMapId != 0 ||
+            bars.ActionBar is not { ReadableCount: VisualActionBarSnapshot.SlotCount } bar ||
+            bars.ActionStates is not { ReadableCount: VisualActionBarSnapshot.SlotCount } states ||
+            bars.Cooldowns is not { ReadableCount: VisualCooldownGridSnapshot.SlotCount } cooldowns ||
+            bars.SpellBook is not { Count: > 0 } book || book.ReadableCount != book.Count ||
+            bars.Bindings is not { ReadableCount: VisualBindingSnapshot.Count } bindings ||
+            bars.Bags is not { IsComplete: true } || bars.PlayerPowerType != 0)
+        {
+            Console.Error.WriteLine("Trial data is incomplete or the character left Tirisfal.");
+            return 2;
+        }
+
+        SpellBookReader spellBook = new(new SpellDB(config));
+        spellBook.UpdateForever(book);
+        ActionBarCooldownReader readiness = new()
+        {
+            ForeverSampleProvider = () => tracker.TryGetLatest(out var latest)
+                ? latest : null
+        };
+        bool actionsMatch = spellBook.IsInitialized && spellBook.AllRanksReceived;
+        foreach (var expectedAction in expected)
+        {
+            int slot = expectedAction.Slot;
+            int? code = bindings.GetCode(20 + slot);
+            var key = code is > 0 ? KeyReader.DecodeBinding(code.Value) : null;
+            actionsMatch &= bar.GetSlot(slot) is
+                    { Kind: VisualActionKind.Spell } placed &&
+                placed.Id == expectedAction.Id &&
+                spellBook.HasExact(expectedAction.Id) &&
+                spellBook.TryGetValue(expectedAction.Id, out var spell) &&
+                spell.Name == expectedAction.Name &&
+                states.GetSlot(slot) is not null &&
+                cooldowns.GetSlot(slot) is not null &&
+                key?.key1 == slot switch
+                {
+                    1 => ConsoleKey.D1,
+                    2 => ConsoleKey.D2,
+                    3 => ConsoleKey.D3,
+                    _ => ConsoleKey.NoName
+                };
+            KeyAction trialAction = new()
+            {
+                Name = expectedAction.Name,
+                SpellId = expectedAction.Id,
+                Slot = slot
+            };
+            bool expectedReady = states.GetSlot(slot) is
+                    { Usable: true, NoMana: false } &&
+                cooldowns.GetSlot(slot) == 0;
+            actionsMatch &= readiness.IsForeverReady(trialAction, spellBook) ==
+                expectedReady;
+        }
+        if (!actionsMatch)
+        {
+            Console.Error.WriteLine("Trial spells, bindings, or action signals do not match the profile.");
+            return 2;
+        }
+
+        if (!maps.TryGet(1420, out WorldMapArea area))
+            return 2;
+        Vector3 mappedPlayer = WorldMapAreaDB.ToWorld_FlipXY(
+            new Vector3((float)(map.MapX * 100), (float)(map.MapY * 100), 0), area);
+        float mapError = Vector2.Distance(new(mappedPlayer.X, mappedPlayer.Y),
+            new((float)world.X, (float)world.Y));
+        if (mapError > 3f)
+        {
+            await Task.Delay(100);
+            continue;
+        }
+
+        string routeFile = Path.Combine(config.Path, profile.Paths[0].PathFilename);
+        Vector3[] routeMap = JsonConvert.DeserializeObject<Vector3[]>(
+            File.ReadAllText(routeFile)) ?? [];
+        if (routeMap.Length != 2)
+            return 2;
+        Vector3[] routeWorld = routeMap.Select(p =>
+            WorldMapAreaDB.ToWorld_FlipXY(p, area)).ToArray();
+        float startDistance = Vector2.Distance(
+            new((float)world.X, (float)world.Y),
+            new(routeWorld[0].X, routeWorld[0].Y));
+        NavmeshBakeOptions bake = new();
+        string version = typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0";
+        string hash = NavmeshSettings.ComputeSettingsHash("forever", version,
+            bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope);
+        string cache = Path.Combine(config.Navmesh, area.Continent, hash);
+        if (!Directory.Exists(cache))
+            return 2;
+        using NavmeshPathfinder nav = new(NullLogger.Instance, null, cache,
+            bake, new NavmeshQueryOptions());
+        bool firstHeightFound = nav.TryGetHeight(
+            routeWorld[0].X, routeWorld[0].Y, out float startZ);
+        bool lastHeightFound = nav.TryGetHeight(
+            routeWorld[1].X, routeWorld[1].Y, out float endZ);
+        bool heightFound = firstHeightFound && lastHeightFound;
+        if (!heightFound)
+        {
+            Console.Error.WriteLine("Trial route has no walkable mesh height.");
+            return 2;
+        }
+        var path = nav.FindPath(
+            new(routeWorld[0].X, routeWorld[0].Y, startZ),
+            new(routeWorld[1].X, routeWorld[1].Y, endZ), null);
+        bool routeConnected = path is { locations.Count: >= 2 } &&
+            nav.LastStats.TilesBaked == 0 &&
+            Vector2.Distance(new(path.locations[^1].X, path.locations[^1].Y),
+                new(routeWorld[1].X, routeWorld[1].Y)) < 5;
+        Console.WriteLine($"Trial: profileSafe={profileSafe}, actionsMatch={actionsMatch}, " +
+            $"mapError={mapError:F2} yd, routeConnected={routeConnected}, " +
+            $"routeStartDistance={startDistance:F1} yd, " +
+            $"health={bars.PlayerHealth:P0}, mana={bars.PlayerPower:P0}, " +
+            $"target={bars.TargetPresent}, bagSlots={bars.Bags.ReadableSlots}/200");
+        return routeConnected && startDistance <= 30 ? 0 : 2;
+    }
+
+    Console.Error.WriteLine("No consistent fresh Forever trial sample was captured.");
     return 2;
 }
 
