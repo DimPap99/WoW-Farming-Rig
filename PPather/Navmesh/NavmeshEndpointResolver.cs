@@ -154,6 +154,23 @@ public sealed class NavmeshEndpointResolver
             return false;
         }
 
+        // Pick the column under the requested X/Y before choosing its floor.
+        // A taller neighbouring hillside must not win over ground directly
+        // underfoot just because it overlaps the three-yard search box.
+        float nearestHorizontal = float.MaxValue;
+        foreach (Candidate candidate in candidates)
+        {
+            float dx = candidate.RcPos.X - rcCenter.X;
+            float dz = candidate.RcPos.Z - rcCenter.Z;
+            nearestHorizontal = MathF.Min(nearestHorizontal, dx * dx + dz * dz);
+        }
+        candidates.RemoveAll(candidate =>
+        {
+            float dx = candidate.RcPos.X - rcCenter.X;
+            float dz = candidate.RcPos.Z - rcCenter.Z;
+            return dx * dx + dz * dz > nearestHorizontal + 0.0001f;
+        });
+
         // rc Y = wow Z (up). Highest first.
         candidates.Sort(static (a, b) => b.RcPos.Y.CompareTo(a.RcPos.Y));
 
