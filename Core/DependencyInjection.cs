@@ -178,11 +178,14 @@ public static class DependencyInjection
         s.ForwardSingleton<RouteGenerator>(sp);
         s.ForwardSingleton<SpellDB>(sp);
         s.ForwardSingleton<IconDB>(sp);
-        s.ForwardSingleton<TalentDB>(sp);
+        if (sp.GetRequiredService<StartupClientVersion>().Version != ClientVersion.Forever)
+            s.ForwardSingleton<TalentDB>(sp);
         s.ForwardSingleton<MailboxDB>(sp);
 
         s.ForwardSingleton<AddonReader>(sp);
         s.ForwardSingleton<PlayerReader>(sp);
+        if (sp.GetRequiredService<StartupClientVersion>().Version == ClientVersion.Forever)
+            s.ForwardSingleton<ForeverVisualBarTracker>(sp);
 
         s.ForwardSingleton<AddonBits>(sp);
         s.ForwardSingleton<IGameMenuWindowShown>(sp);
@@ -195,7 +198,10 @@ public static class DependencyInjection
 
         s.ForwardSingleton<IScreenCapture>(sp);
         s.ForwardSingleton<SessionStat>(sp);
-        s.ForwardSingleton<IGrindSessionDAO>(sp);
+        // The guarded Forever trial has no XP table or grind persistence.
+        // Resolving the Classic DAO here would require Json/experience/forever.
+        if (sp.GetRequiredService<StartupClientVersion>().Version != ClientVersion.Forever)
+            s.ForwardSingleton<IGrindSessionDAO>(sp);
 
         // Addon Components
         s.ForwardSingleton<CombatLog>(sp);

@@ -1,0 +1,388 @@
+using Core.GOAP;
+
+using Game;
+
+using Microsoft.Extensions.Logging;
+
+using PPather.Navmesh;
+
+using SharedLib;
+
+using System;
+using System.IO;
+using System.Linq;
+using System.Numerics;
+using System.Threading;
+
+using static System.Diagnostics.Stopwatch;
+
+namespace Core.Goals;
+
+/// <summary>
+/// One bounded controller run for the guarded Forever Paladin profile. A person
+/// selects and finishes the target; automatic acquisition and sustained combat
+/// are deliberately outside this trial.
+/// </summary>
+public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
+{
+    private enum Phase { Initial, Stable, VerifyStep, AwaitTarget, AwaitRecovery, Passed, Failed }
+
+    public override float Cost => 1;
+    public override bool CanRun() => phase is not (Phase.Passed or Phase.Failed);
+    public string TrialStatus => phase.ToString();
+    public string LastFailure { get; private set; } = string.Empty;
+
+    public bool TryReadOnlyRoutePreflight(out string reason)
+    {
+        if (!player.TryGetForeverVisualVitals(out VisualBarSample bars) ||
+            !AddonReader.HasForeverControllerFrame(bars) ||
+            bars.Position is not { UIMapId: 1420 } ||
+            bars.WorldPosition is not { InstanceMapId: 0 } ||
+            bars.PlayerIdentity is not { ClassId: (int)UnitClass.Paladin } ||
+            bars.PlayerPowerType != 0 ||
+            bars.TargetFlags is not { } flags ||
+            !IdleForMove(bars, flags))
+        {
+            reason = "requires a complete Paladin Tirisfal frame, high health, mana, and no target or combat";
+            return false;
+        }
+        try
+        {
+            return RouteReady(bars, out reason);
+        }
+        catch (Exception ex)
+        {
+            reason = ex.Message;
+            return false;
+        }
+    }
+
+    private readonly ILogger<ForeverTrialGoal> logger;
+    private readonly PlayerReader player;
+    private readonly ForeverVisualBarTracker tracker;
+    private readonly ConfigurableInput input;
+    private readonly CastingHandler caster;
+    private readonly SpellBookReader spellBook;
+    private readonly ClassConfiguration config;
+    private readonly DataConfig data;
+    private readonly WorldMapAreaDB maps;
+    private readonly CancellationToken token;
+
+    private volatile Phase phase = Phase.Initial;
+    private long phaseStarted;
+    private Vector2 origin;
+    private double direction;
+    private long firstFrameId;
+    private long pressFrameId;
+    private bool sawCombat;
+    private bool sawDeadTarget;
+
+    public ForeverTrialGoal(ILogger<ForeverTrialGoal> logger,
+        PlayerReader player, ForeverVisualBarTracker tracker,
+        ConfigurableInput input, CastingHandler caster,
+        SpellBookReader spellBook, ClassConfiguration config, DataConfig data,
+        WorldMapAreaDB maps, CancellationTokenSource<GoapAgent> cts)
+        : base(nameof(ForeverTrialGoal))
+    {
+        this.logger = logger;
+        this.player = player;
+        this.tracker = tracker;
+        this.input = input;
+        this.caster = caster;
+        this.spellBook = spellBook;
+        this.config = config;
+        this.data = data;
+        this.maps = maps;
+        token = cts.Token;
+        phaseStarted = GetTimestamp();
+    }
+
+    public void OnGoapEvent(GoapEventArgs e)
+    {
+        if (e is AbortEvent)
+            Fail("Controller stopped");
+    }
+
+    public override void Update()
+    {
+        if (!CanRun() || token.IsCancellationRequested)
+            return;
+
+        try
+        {
+            if (!player.TryGetForeverVisualVitals(out VisualBarSample bars) ||
+                !AddonReader.HasForeverControllerFrame(bars))
+            {
+                if (phase == Phase.Initial && !TimedOut(10000))
+                    return;
+                Fail("Visual controller frame is missing or stale");
+                return;
+            }
+
+            if (bars.Position is not { UIMapId: 1420 } map ||
+                bars.WorldPosition is not { InstanceMapId: 0 } world ||
+                bars.TargetFlags is not { PlayerDead: false } flags ||
+                bars.PlayerIdentity is not { ClassId: (int)UnitClass.Paladin } ||
+                bars.PlayerPowerType != 0 ||
+                flags.Present != bars.TargetPresent)
+            {
+                Fail("Trial map, class, or combat flags changed");
+                return;
+            }
+
+            switch (phase)
+            {
+                case Phase.Initial:
+                    if (!IdleForMove(bars, flags))
+                    {
+                        Fail("Route start requires high health, mana, and no target or combat");
+                        return;
+                    }
+                    origin = new((float)world.X, (float)world.Y);
+                    direction = map.Direction;
+                    firstFrameId = tracker.LatestFrameId;
+                    Enter(Phase.Stable);
+                    break;
+
+                case Phase.Stable:
+                    if (tracker.LatestFrameId == firstFrameId && !TimedOut(5000))
+                        return;
+                    string reason = "player moved or resources changed";
+                    if (TimedOut(5000) || !IdleForMove(bars, flags) ||
+                        Vector2.Distance(origin, new((float)world.X, (float)world.Y)) > 0.3f ||
+                        AngularDifference(direction, map.Direction) > 0.1 ||
+                        input.ForwardKey != ConsoleKey.UpArrow ||
+                        !RouteReady(bars, out reason))
+                    {
+                        Fail($"Route preflight failed: {reason}");
+                        return;
+                    }
+
+                    // A second full capture immediately preceded this one input.
+                    // PressFixed releases the key; the finally is a belt-and-braces
+                    // release if the process or cancellation interrupts the press.
+                    pressFrameId = tracker.LatestFrameId;
+                    try
+                    {
+                        input.PressFixed(ConsoleKey.UpArrow, 200, token);
+                    }
+                    finally
+                    {
+                        input.SetKeyState(ConsoleKey.UpArrow, false, true);
+                    }
+                    Enter(Phase.VerifyStep);
+                    break;
+
+                case Phase.VerifyStep:
+                    if (tracker.LatestFrameId == pressFrameId && !TimedOut(5000))
+                        return;
+                    if (!IdleForMove(bars, flags))
+                    {
+                        Fail("Combat or target changed during the route step");
+                        return;
+                    }
+                    Vector2 delta = new((float)world.X - origin.X, (float)world.Y - origin.Y);
+                    Vector2 forward = new(MathF.Cos((float)direction), MathF.Sin((float)direction));
+                    float along = Vector2.Dot(delta, forward);
+                    float lateral = MathF.Abs(delta.X * forward.Y - delta.Y * forward.X);
+                    if (along >= 0.2f && along < 4f && lateral < 2f)
+                    {
+                        if (logger.IsEnabled(LogLevel.Information))
+                            logger.LogInformation("Forever route step verified: {Distance:F2} yd forward", along);
+                        Enter(Phase.AwaitTarget);
+                    }
+                    else if (TimedOut(5000) || along >= 4f || lateral >= 2f)
+                        Fail("Route step displacement was not verified");
+                    break;
+
+                case Phase.AwaitTarget:
+                    if (TimedOut(90000))
+                    {
+                        Fail("No safe selected target within the trial window");
+                        return;
+                    }
+                    if (flags.PlayerCombat || bars.PlayerHealth < 0.95 || bars.PlayerPower < 0.60)
+                    {
+                        Fail("Combat or low resources before the trial cast");
+                        return;
+                    }
+                    if (flags is not { Present: true, Attackable: true, Dead: false } ||
+                        bars.TargetHealth <= 0)
+                        return;
+
+                    KeyAction? judgement = config.Pull.Sequence.SingleOrDefault();
+                    if (judgement is null ||
+                        !ForeverCastGate.CanPress(bars, judgement, spellBook))
+                        return;
+
+                    if (!caster.Cast(judgement, () => token.IsCancellationRequested))
+                    {
+                        Fail("Judgement success event was not confirmed");
+                        return;
+                    }
+                    logger.LogInformation("Forever trial Judgement confirmed");
+                    Enter(Phase.AwaitRecovery);
+                    break;
+
+                case Phase.AwaitRecovery:
+                    if (TimedOut(90000))
+                    {
+                        Fail("Combat recovery was not verified within the trial window");
+                        return;
+                    }
+                    sawCombat |= flags.PlayerCombat;
+                    sawDeadTarget |= flags.Present && flags.Dead;
+                    if ((sawCombat || sawDeadTarget) && !flags.Present &&
+                        !flags.PlayerCombat && bars.PlayerHealth >= 0.95 &&
+                        bars.PlayerPower >= 0.60)
+                    {
+                        Enter(Phase.Passed);
+                        logger.LogInformation("Forever bounded route, action, and recovery trial passed");
+                    }
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Forever bounded trial stopped");
+            Fail("Trial preflight or controller update threw an exception");
+        }
+    }
+
+    private bool RouteReady(VisualBarSample bars, out string reason)
+    {
+        reason = "unknown route condition";
+        if (config.Paths is not { Length: 1 } ||
+            config.Paths[0] is not
+                { PathFilename: "Forever_Tirisfal_LocalTrial.json", UIMapId: 1420,
+                  PathThereAndBack: false } ||
+            config.Loot || config.UseMount ||
+            bars.Position is not { } map || bars.WorldPosition is not { } world ||
+            !maps.TryGet(1420, out WorldMapArea area) || area.MapID != 0 ||
+            area.Continent != "Azeroth")
+        {
+            reason = "profile or map does not match the local trial";
+            return false;
+        }
+
+        string path = Path.Combine(data.Path, "Forever_Tirisfal_LocalTrial.json");
+        Vector3[]? anchors = Newtonsoft.Json.JsonConvert.DeserializeObject<Vector3[]>(
+            File.ReadAllText(path));
+        if (anchors is not { Length: 2 })
+        {
+            reason = "trial route must have two anchors";
+            return false;
+        }
+
+        Vector3 first = WorldMapAreaDB.ToWorld_FlipXY(anchors[0], area);
+        Vector3 second = WorldMapAreaDB.ToWorld_FlipXY(anchors[1], area);
+        Vector2 here = new((float)world.X, (float)world.Y);
+        Vector2 start = new(first.X, first.Y);
+        Vector2 end = new(second.X, second.Y);
+        int? moveCode = bars.Bindings?.GetCode(2);
+        var moveBinding = moveCode is > 0
+            ? KeyReader.DecodeBinding(moveCode.Value) : null;
+        Vector3 mapWorld = WorldMapAreaDB.ToWorld_FlipXY(
+            new Vector3((float)(map.MapX * 100), (float)(map.MapY * 100), 0), area);
+        Vector2 forward = new(MathF.Cos((float)map.Direction), MathF.Sin((float)map.Direction));
+        if (moveBinding is not { bindingId: BindingID.MOVEFORWARD } ||
+            !((moveBinding.Value.key1 == ConsoleKey.UpArrow &&
+               moveBinding.Value.mod1 == ModifierKey.None) ||
+              (moveBinding.Value.key2 == ConsoleKey.UpArrow &&
+               moveBinding.Value.mod2 == ModifierKey.None)) ||
+            Vector2.Distance(here, new(mapWorld.X, mapWorld.Y)) > 1f ||
+            Vector2.Distance(here, start) > 3f ||
+            Vector2.Distance(start, end) is < 5f or > 20f ||
+            AngularDifference(map.Direction,
+                Math.Atan2(end.Y - here.Y, end.X - here.X)) > 0.35)
+        {
+            reason = "position or facing does not match the route start";
+            return false;
+        }
+
+        NavmeshBakeOptions bake = new();
+        string version = typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0";
+        string hash = NavmeshSettings.ComputeSettingsHash("forever", version,
+            bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope);
+        string cache = Path.Combine(data.Navmesh, area.Continent, hash);
+        if (!Directory.Exists(cache))
+        {
+            reason = "baked Forever navmesh is missing";
+            return false;
+        }
+
+        using NavmeshPathfinder nav = new(logger, null, cache, bake, new NavmeshQueryOptions());
+        if (!nav.TryGetHeight(here.X, here.Y, out float z) ||
+            !nav.TryGetHeight(end.X, end.Y, out float endZ))
+        {
+            reason = "route endpoints are outside the baked mesh";
+            return false;
+        }
+
+        var route = nav.FindPath(new(here.X, here.Y, z),
+            new(end.X, end.Y, endZ), null);
+        if (route is null || route.locations.Count < 2 || nav.LastStats.TilesBaked != 0 ||
+            PathLength(route.locations) > 20f ||
+            Vector2.Distance(new(route.locations[0].X, route.locations[0].Y), here) > 0.5f ||
+            Vector2.Distance(new(route.locations[^1].X, route.locations[^1].Y), end) > 0.5f)
+        {
+            reason = "route has no complete disk-only path";
+            return false;
+        }
+
+        Vector2 ahead = here + forward * 3f;
+        if (!nav.TryGetHeight(ahead.X, ahead.Y, out float aheadZ) ||
+            MathF.Abs(aheadZ - z) > 1.5f)
+        {
+            reason = "forward segment is outside the baked mesh";
+            return false;
+        }
+        var step = nav.FindPath(new(here.X, here.Y, z),
+            new(ahead.X, ahead.Y, aheadZ), null);
+        if (step is null || step.locations.Count < 2 || nav.LastStats.TilesBaked != 0 ||
+            PathLength(step.locations) > 3.6f ||
+            Vector2.Distance(new(step.locations[0].X, step.locations[0].Y), here) > 0.5f ||
+            Vector2.Distance(new(step.locations[^1].X, step.locations[^1].Y), ahead) > 0.5f)
+        {
+            reason = "forward step has no complete disk-only path";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private static float PathLength(System.Collections.Generic.List<Vector3> points)
+    {
+        float length = 0;
+        for (int i = 1; i < points.Count; i++)
+            length += Vector2.Distance(new(points[i - 1].X, points[i - 1].Y),
+                new(points[i].X, points[i].Y));
+        return length;
+    }
+
+    private static bool IdleForMove(VisualBarSample bars, VisualTargetFlags flags) =>
+        !flags.Present && !flags.PlayerCombat && !flags.PlayerDead &&
+        bars.PlayerHealth >= 0.95 && bars.PlayerPower >= 0.60;
+
+    private static double AngularDifference(double a, double b) =>
+        Math.Abs(Math.Atan2(Math.Sin(a - b), Math.Cos(a - b)));
+
+    private bool TimedOut(int milliseconds) =>
+        GetElapsedTime(phaseStarted).TotalMilliseconds > milliseconds;
+
+    private void Enter(Phase next)
+    {
+        phase = next;
+        phaseStarted = GetTimestamp();
+    }
+
+    private void Fail(string reason)
+    {
+        if (phase is Phase.Passed or Phase.Failed)
+            return;
+        LastFailure = reason;
+        Enter(Phase.Failed);
+        logger.LogWarning("Forever bounded trial failed closed: {Reason}", reason);
+    }
+}

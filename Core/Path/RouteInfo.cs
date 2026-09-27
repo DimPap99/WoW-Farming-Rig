@@ -185,7 +185,7 @@ public sealed class RouteInfo : IDisposable
         int navLength = RouteToWaypoint.Length;
         int poiCount = PoiList.Count;
 
-        bool hasTarget = playerReader.TargetId != 0;
+        bool hasTarget = !playerReader.IsForeverVisual && playerReader.TargetId != 0;
         int extraCount = hasTarget ? 2 : 1;
 
         int length = routeLength + navLength + poiCount + extraCount;
