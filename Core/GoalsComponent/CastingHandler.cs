@@ -903,10 +903,12 @@ public sealed partial class CastingHandler
 
     private bool CastForever(KeyAction item)
     {
-        // This branch is intentionally limited to the guarded Paladin trial.
+        // This branch is limited to the guarded Forever Paladin profiles.
         // It never reads aura, GCD, current-action, cast-time, or UI-error cells.
-        if (!string.Equals(classConfig.FileName,
-                "Paladin_Forever_Trial.json", StringComparison.OrdinalIgnoreCase) ||
+        if (!(string.Equals(classConfig.FileName,
+                  "Paladin_Forever_Trial.json", StringComparison.OrdinalIgnoreCase) ||
+              string.Equals(classConfig.FileName,
+                  "Paladin_Forever_Auto.json", StringComparison.OrdinalIgnoreCase)) ||
             foreverCastNeedsReset ||
             !playerReader.TryGetForeverVisualVitals(out VisualBarSample before) ||
             !ForeverCastGate.CanPress(before, item, spellBookReader) ||

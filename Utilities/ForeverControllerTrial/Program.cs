@@ -20,11 +20,14 @@ using System.Threading;
 // The dashboard keeps ForeverDiagnosticController. This explicit command
 // constructs the normal controller for a bounded trial only.
 bool run = args.Contains("--run");
-if (args.Any(a => a is not ("--check" or "--run" or "--pid") &&
+bool auto = args.Contains("--auto-check") || args.Contains("--auto-run");
+run |= args.Contains("--auto-run");
+if (args.Any(a => a is not ("--check" or "--run" or "--auto-check" or "--auto-run" or "--pid") &&
     !int.TryParse(a, out _)) ||
-    (run && args.Contains("--check")))
+    (run && (args.Contains("--check") || args.Contains("--auto-check"))) ||
+    (auto && (args.Contains("--check") || args.Contains("--run"))))
 {
-    Console.Error.WriteLine("Use --check or --run [--pid <WowB process ID>].");
+    Console.Error.WriteLine("Use --check, --run, --auto-check or --auto-run [--pid <WowB process ID>].");
     return 1;
 }
 
@@ -120,8 +123,52 @@ try
     }
 
     using BotController controller = ActivatorUtilities.CreateInstance<BotController>(provider);
-    if (!controller.LoadClassProfile("Paladin_Forever_Trial.json") ||
-        controller.GoapAgent?.AvailableGoals is not [ForeverTrialGoal goal])
+    if (!controller.LoadClassProfile(auto
+            ? "Paladin_Forever_Auto.json"
+            : "Paladin_Forever_Trial.json"))
+    {
+        Console.Error.WriteLine("Normal controller did not load the Forever profile.");
+        return 2;
+    }
+
+    if (auto)
+    {
+        if (controller.GoapAgent?.AvailableGoals is not [ForeverAutonomousGoal automatic])
+        {
+            Console.Error.WriteLine("Normal controller did not load the autonomous goal.");
+            return 2;
+        }
+        if (!automatic.TryReadOnlyPreflight(out string autoReason))
+        {
+            Console.Error.WriteLine($"Autonomous preflight refused: {autoReason}. No input sent.");
+            return 2;
+        }
+        Console.WriteLine("Autonomous current-position preflight passed.");
+        if (!run)
+            return 0;
+
+        controller.ToggleBotStatus();
+        DateTime autoDeadline = DateTime.UtcNow.AddSeconds(170);
+        string autoLastStatus = string.Empty;
+        while (!cts.IsCancellationRequested && DateTime.UtcNow < autoDeadline &&
+               automatic.Status != "Failed" && automatic.CompletedKills == 0)
+        {
+            string status = automatic.Status;
+            if (status != autoLastStatus)
+            {
+                Console.WriteLine($"Autonomous phase: {status}");
+                autoLastStatus = status;
+            }
+            Thread.Sleep(100);
+        }
+        if (controller.IsBotActive)
+            controller.ToggleBotStatus();
+        Console.WriteLine($"Autonomous kills: {automatic.CompletedKills}; " +
+            $"status: {automatic.Status}; {automatic.LastFailure}");
+        return automatic.CompletedKills > 0 ? 0 : 3;
+    }
+
+    if (controller.GoapAgent?.AvailableGoals is not [ForeverTrialGoal goal])
     {
         Console.Error.WriteLine("Normal controller did not load the isolated trial goal.");
         return 2;

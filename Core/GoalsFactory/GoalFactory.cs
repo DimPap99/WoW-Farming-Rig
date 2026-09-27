@@ -1,6 +1,7 @@
 using Core.Database;
 using Core.Goals;
 using Core.GoalsComponent;
+using Core.Forever;
 using Core.GOAP;
 using Core.Session;
 
@@ -85,9 +86,12 @@ public static class GoalFactory
 
         if (forever)
         {
-            if (!string.Equals(classConfig.FileName,
-                    "Paladin_Forever_Trial.json", StringComparison.OrdinalIgnoreCase))
-                throw new NotSupportedException("Only the guarded Forever Paladin trial profile is supported.");
+            bool trial = string.Equals(classConfig.FileName,
+                "Paladin_Forever_Trial.json", StringComparison.OrdinalIgnoreCase);
+            bool automatic = string.Equals(classConfig.FileName,
+                "Paladin_Forever_Auto.json", StringComparison.OrdinalIgnoreCase);
+            if (!trial && !automatic)
+                throw new NotSupportedException("Unsupported Forever Paladin profile.");
 
             // CastingHandler's Classic collaborators are constructed but never
             // called by its Forever branch. Do not construct the Classic goal
@@ -99,7 +103,15 @@ public static class GoalFactory
             services.AddScoped<CastingHandler>();
             services.AddScoped<ApproachThrottle>();
             services.AddScoped<IMountHandler, MountHandler>();
-            services.AddScoped<GoapGoal, ForeverTrialGoal>();
+            if (automatic)
+            {
+                services.AddScoped<ForeverTargetSelector>();
+                services.AddScoped<ForeverNavigator>();
+                services.AddScoped<IForeverCombatRoutine, ForeverCombat>();
+                services.AddScoped<GoapGoal, ForeverAutonomousGoal>();
+            }
+            else
+                services.AddScoped<GoapGoal, ForeverTrialGoal>();
             return services.BuildServiceProvider(
                 new ServiceProviderOptions
                 {

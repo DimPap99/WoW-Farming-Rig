@@ -1,0 +1,27 @@
+{
+  "Loot": false,
+  "UseMount": false,
+  "Paths": [],
+  "Pull": { "Sequence": [] },
+  "Combat": {
+    "Sequence": [
+      {
+        "Name": "Holy Light",
+        "SpellId": 635,
+        "Slot": 1,
+        "Key": "1",
+        "HasCastBar": true,
+        "WhenUsable": true,
+        "Requirements": ["Spell:635", "Health% < 90", "Mana% >= 25"]
+      },
+      {
+        "Name": "Holy Strike",
+        "SpellId": 678,
+        "Slot": 3,
+        "Key": "3",
+        "WhenUsable": true,
+        "Requirements": ["Spell:678", "TargetHealth% > 0"]
+      }
+    ]
+  }
+}

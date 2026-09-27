@@ -760,3 +760,55 @@ For API signatures, use Blizzard's generated UI documentation from the
 [`1.60.1 (70009)` UI-source snapshot](https://github.com/Gethe/wow-ui-source/tree/bd2470aed543f72697a044e989285b6c83e63f73/Interface/AddOns/Blizzard_APIDocumentationGenerated)
 and validate behavior in the actual beta client; the client may protect a
 value even when its documented return type is `number`.
+
+## Autonomous controller work, 2026-09-27
+
+The new guarded `Paladin_Forever_Auto.json` profile constructs
+`ForeverAutonomousGoal` through the normal `BotController`. Its collaborators
+are separate target, navigation, and combat components. It acquires with the
+verified Tab binding, checks target identity and level, searches in short
+disk-only mesh steps from the live player position, starts melee attack through
+the checked binding, uses Holy Strike rank 2 in slot 3, and waits for checked
+death and resource recovery. Judgement is omitted from this profile until Seal
+upkeep is implemented. This profile is available only through the explicit
+bounded utility; `ForeverDiagnosticController` still guards dashboard startup.
+
+Read-only current-position preflight:
+
+```powershell
+dotnet run --project Utilities/ForeverControllerTrial/ForeverControllerTrial.csproj -- --auto-check
+```
+
+The first `--auto-run` passed its preflight, cleared and reacquired a target,
+then reached pursuit and combat. It stopped with `selected target changed
+during pursuit` and no verified kill. The screenshot and user observation
+showed that target search had turned back toward its origin at 25 yards.
+Targeted search now has its own 35-yard bound and stops rather than reversing;
+this change has not had another live combat run. The startup guard must remain.
+
+Live target-position audit on a selected level-6 mob found both
+`UnitPosition("target")` and `C_Map.GetPlayerMapPosition(mapId, "target")`
+unavailable, while the corresponding player positions work. A one-press
+`INTERACTTARGET` approach did not move the character. `ClosestUnitPosition`
+returned no usable result for the selected creature, and
+`UnitDistanceSquared("target")` returned zero for a visibly distant mob, so
+the latter is rejected. A normal nameplate frame list did contain the selected
+mob: `C_NamePlate.GetNamePlates()` plus `frame:GetUnit()` and `UnitIsUnit`
+matched it, though `frame:GetCenter()` gave no usable numeric point.
+
+The add-on can anchor a small magenta/cyan visual marker to that selected
+nameplate. A saved live 1920x1080 capture decoded its position as normalized
+screen X 0.548, Y 0.915. The reader matches the marker only when the same
+capture contains a checked target identity and a matched nameplate parent;
+its three-scale synthetic test passes. The marker was absent in another live
+capture, so screen guidance is conditional on nameplate visibility. The
+navigator uses its X coordinate to turn toward an on-screen target and uses
+the checked Holy Strike range bit to decide when to stop approaching. That
+directional behavior has not yet passed a live controller run. If the marker
+is absent, local search remains bounded and can fail without moving farther.
+
+Still required before autonomous dashboard use: a bounded run that acquires,
+approaches, kills, and recovers without help; loot verification; safe handling
+of incidental combat and target loss; Seal upkeep if Judgement is included;
+and death/corpse recovery. The current autonomous profile intentionally keeps
+`Loot` false and fails closed on player death or health below 70% in combat.
