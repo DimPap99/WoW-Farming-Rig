@@ -10,7 +10,7 @@ using WowTriangles;
 
 if (args.Length < 3 || args.Length > 5)
 {
-    Console.Error.WriteLine("Usage: ForeverCasc <install-dir> <geometry-listfile> <file-data-id-or-path|--wdt-azeroth|--sample-bake-azeroth> [product] [cache-dir]");
+    Console.Error.WriteLine("Usage: ForeverCasc <install-dir> <geometry-listfile> <file-data-id-or-path|--wdt-azeroth|--sample-bake-azeroth|--sample-route-azeroth> [product] [cache-dir]");
     return 2;
 }
 
@@ -32,7 +32,7 @@ try
         return 0;
     }
 
-    if (args[2] == "--sample-bake-azeroth")
+    if (args[2] is "--sample-bake-azeroth" or "--sample-route-azeroth")
     {
         ContinentDB.IdToName[0] = "Azeroth";
         MPQTriangleSupplier supplier = new(NullLogger.Instance, source, 0);
@@ -40,6 +40,11 @@ try
         try
         {
             NavmeshCoords.GetTileIndex(-8800, -200, out int tileX, out int tileZ);
+            if (args[2] == "--sample-route-azeroth")
+            {
+                ForeverRouteProbe.Run(world, source, supplier, tileX, tileZ);
+                return 0;
+            }
             TileGeometry geometry = TileGeometryExtractor.Extract(world, tileX, tileZ);
             if (geometry.IsEmpty || geometry.FailedChunkLoads != 0)
                 throw new InvalidDataException("Sample navmesh tile has missing collision geometry.");
