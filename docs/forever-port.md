@@ -572,6 +572,23 @@ read found combat false, dead false, and 100% health; a living target was
 still selected. The idle transition and stale-sample checks passed. A true
 death/ghost state has only been checked synthetically.
 
+A separate checksummed pixel row carries the most recent successful player
+spellcast's sequence and exact spell ID. An unreadable event payload clears
+the validity marker, and the reader rejects stale captures. The bounded heal
+and Judgement trials now require a new success event for the expected spell;
+mana or target-health movement alone no longer confirms a cast. Synthetic
+tests passed at three UI scales, including a damaged checksum. After `/reload`
+in the beta client, an idle read showed sequence 0 and spell ID 0. One manual
+Holy Light cast changed the read to sequence 1, spell ID 635, while mana fell
+from 100% to 93%. The reader also rejected that event after the capture aged
+out. In a later armed one-key trial on a living attackable target, Judgement
+produced a new successful event for spell ID 20271. Mana fell from 94% to
+89%, target health fell from 100% to 81%, and target flags remained readable.
+The tool exited after that single keypress; the user finished the fight.
+The subsequent read-only recovery check found sequence 7, spell ID 20271,
+100% health and mana, no target, and player combat false. All reader and
+stale-data checks passed.
+
 For API signatures, use Blizzard's generated UI documentation from the
 [`1.60.1 (70009)` UI-source snapshot](https://github.com/Gethe/wow-ui-source/tree/bd2470aed543f72697a044e989285b6c83e63f73/Interface/AddOns/Blizzard_APIDocumentationGenerated)
 and validate behavior in the actual beta client; the client may protect a

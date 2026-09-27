@@ -245,6 +245,19 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         return false;
     }
 
+    public bool TryGetForeverCastEvent(out VisualCastEvent castEvent)
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars) &&
+            bars.LastCastEvent is { } latest)
+        {
+            castEvent = latest;
+            return true;
+        }
+
+        castEvent = default;
+        return false;
+    }
+
     public bool IsForeverVisual => foreverVisualBars?.IsEnabled == true;
     private bool IsForever => IsForeverVisual;
 

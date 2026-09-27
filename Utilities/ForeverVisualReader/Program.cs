@@ -136,7 +136,8 @@ try
                             ActionText(current.WatchedAction) + ", " +
                             ActionBarText(current.ActionBar) + ", " +
                             SpellBookText(current.SpellBook) + ", " +
-                            BindingsText(current.Bindings));
+                            BindingsText(current.Bindings) + ", " +
+                            $"cast={current.LastCastEvent?.ToString() ?? "missing"}");
                         previous = current;
                     }
                 }
@@ -221,6 +222,7 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
     Console.WriteLine(ActionBarText(bars.ActionBar));
     Console.WriteLine(SpellBookText(bars.SpellBook));
     Console.WriteLine(BindingsText(bars.Bindings));
+    Console.WriteLine($"last successful player cast={bars.LastCastEvent?.ToString() ?? "unavailable"}");
 }
 
 static string PositionText(VisualPositionSample? position) => position is { } value
@@ -418,6 +420,9 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 player.Version == ClientVersion.Forever;
             bool targetFlagsMatch = bars.TargetFlags is { } flags &&
                 flags.Present == bars.TargetPresent;
+            bool castEventMatches = bars.LastCastEvent is { } castEvent &&
+                player.TryGetForeverCastEvent(out VisualCastEvent readerCast) &&
+                readerCast == castEvent;
             bool targetBitsMatch = bars.TargetFlags is { } targetFlags &&
                 targetFlagsMatch &&
                 targetBits.Target() == targetFlags.Present &&
@@ -563,6 +568,7 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool staleCooldownGridRejected =
                 !player.TryGetForeverCooldowns(out _);
             bool staleBagGridRejected = !player.TryGetForeverBags(out _);
+            bool staleCastEventRejected = !player.TryGetForeverCastEvent(out _);
             bool staleBagReaderRejected = false;
             try { _ = liveBagReader.BagItemCount(); }
             catch (InvalidOperationException) { staleBagReaderRejected = true; }
@@ -618,6 +624,9 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"targetFlagsMatch={targetFlagsMatch}, " +
                 $"targetBitsMatch={targetBitsMatch}, " +
                 $"stalePlayerFlagsRejected={stalePlayerFlagsRejected}, " +
+                $"castEvent={bars.LastCastEvent?.ToString() ?? "missing"}, " +
+                $"castEventMatches={castEventMatches}, " +
+                $"staleCastEventRejected={staleCastEventRejected}, " +
                 $"mana={(mana is { } mp ? mp + "%" : "unavailable")}, " +
                 $"manaMatches={manaMatches}, " +
                 $"staleManaRejected={staleManaRejected}, " +
@@ -677,6 +686,7 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 powerTypeReadable && manaMatches && identityMatches &&
                 targetFlagsMatch && targetBitsMatch &&
                 stalePlayerFlagsRejected &&
+                castEventMatches && staleCastEventRejected &&
                 worldPositionMatches && staleWorldPositionRejected &&
                 spellBookMatches && staleSpellBookRejected &&
                 staleSpellBookReaderReset &&
@@ -883,6 +893,7 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
             bars.Bags is not { IsComplete: true } || bars.PlayerPowerType != 0 ||
             bars.PlayerIdentity is not { ClassId: (int)UnitClass.Paladin } ||
             bars.TargetFlags is not { } targetFlags ||
+            bars.LastCastEvent is null ||
             targetFlags.Present != bars.TargetPresent ||
             targetFlags.PlayerCombat || targetFlags.PlayerDead)
         {
@@ -1117,7 +1128,8 @@ static async Task<int> RunTrialHeal(WowScreenWGC screen,
         before.PlayerHealth < 0.95 || before.PlayerPower < 0.60 ||
         before.TargetFlags is not
             { Present: false, PlayerCombat: false, PlayerDead: false } ||
-        before.SpellBook is not { } visualBook)
+        before.SpellBook is not { } visualBook ||
+        before.LastCastEvent is not { } beforeCast)
     {
         Console.Error.WriteLine("Heal trial refused: full health, mana, no target, or spellbook check failed.");
         return 2;
@@ -1145,6 +1157,7 @@ static async Task<int> RunTrialHeal(WowScreenWGC screen,
     }
 
     bool observedCast = false;
+    VisualCastEvent? confirmedCast = null;
     double lastMana = before.PlayerPower;
     for (int i = 0; i < 50; i++)
     {
@@ -1161,16 +1174,18 @@ static async Task<int> RunTrialHeal(WowScreenWGC screen,
                 return 2;
             }
             lastMana = after.PlayerPower;
-            if (after.PlayerPower < before.PlayerPower - 0.01 ||
-                after.Cooldowns?.GetSlot(1) is > 0)
+            if (after.LastCastEvent is { } cast &&
+                cast.ConfirmsNewSuccess(beforeCast, 635))
             {
                 observedCast = true;
+                confirmedCast = cast;
                 break;
             }
         }
         await Task.Delay(100);
     }
     Console.WriteLine($"Single Holy Light keypress: observed={observedCast}, " +
+        $"castEvent={confirmedCast?.ToString() ?? "missing"}, " +
         $"mana={before.PlayerPower:P0}->{lastMana:P0}, target=none");
     return observedCast ? 0 : 2;
 }
@@ -1220,7 +1235,8 @@ static async Task<int> RunTrialJudgement(WowScreenWGC screen,
     if (before.TargetFlags is not
             { Present: true, Attackable: true, Dead: false,
               PlayerCombat: false, PlayerDead: false } ||
-        before.TargetHealth <= 0)
+        before.TargetHealth <= 0 ||
+        before.LastCastEvent is null)
     {
         Console.Error.WriteLine($"Judgement trial refused: target={before.TargetFlags}; need a living attackable target.");
         return 2;
@@ -1255,6 +1271,8 @@ static async Task<int> RunTrialJudgement(WowScreenWGC screen,
     }
 
     bool observedAction = false;
+    VisualCastEvent? confirmedCast = null;
+    VisualCastEvent beforeCast = before.LastCastEvent!.Value;
     double lastMana = before.PlayerPower;
     double lastTargetHealth = before.TargetHealth;
     bool flagsReadable = true;
@@ -1267,17 +1285,18 @@ static async Task<int> RunTrialJudgement(WowScreenWGC screen,
             flagsReadable &= after.TargetFlags is not null;
             lastMana = after.PlayerPower;
             lastTargetHealth = after.TargetHealth;
-            if (after.PlayerPower < before.PlayerPower - 0.01 ||
-                after.TargetHealth < before.TargetHealth - 0.01 ||
-                after.Cooldowns?.GetSlot(2) is > 0)
+            if (after.LastCastEvent is { } cast &&
+                cast.ConfirmsNewSuccess(beforeCast, 20271))
             {
                 observedAction = true;
+                confirmedCast = cast;
                 break;
             }
         }
         await Task.Delay(100);
     }
     Console.WriteLine($"Single Judgement keypress: observed={observedAction}, " +
+        $"castEvent={confirmedCast?.ToString() ?? "missing"}, " +
         $"mana={before.PlayerPower:P0}->{lastMana:P0}, " +
         $"targetHealth={before.TargetHealth:P0}->{lastTargetHealth:P0}, " +
         $"targetFlagsReadable={flagsReadable}; finish the fight manually.");
@@ -1293,6 +1312,7 @@ static bool HasChanged(VisualBarSample previous, VisualBarSample current)
     || previous.PlayerPowerMax != current.PlayerPowerMax
     || previous.WorldPosition != current.WorldPosition
     || previous.WatchedAction != current.WatchedAction
+    || previous.LastCastEvent != current.LastCastEvent
     || ActionBarChanged(previous.ActionBar, current.ActionBar)
     || SpellBookChanged(previous.SpellBook, current.SpellBook)
     || BindingsChanged(previous.Bindings, current.Bindings)
@@ -1421,6 +1441,9 @@ static int RunSelfTest()
         DrawWorldPixel(12, (0xA57744 - identity) & 0xFFFFFF);
         DrawWorldPixel(13, 35);
         DrawWorldPixel(14, 0xA57755 - 35);
+        DrawCastPixel(0, 0);
+        DrawCastPixel(1, 0);
+        DrawCastPixel(2, 0xA5CC11);
         DrawSpellGridSlot(1, VisualSpellIdSource.SpellId, 6603);
         DrawSpellGridSlot(2, VisualSpellIdSource.ActionId, 270);
         DrawSpellGridSlot(3, VisualSpellIdSource.SpellId, 7744);
@@ -1474,6 +1497,7 @@ static int RunSelfTest()
             || result.TargetFlags is not
                 { Present: true, Attackable: true, Dead: false,
                   PlayerCombat: false, PlayerDead: false }
+            || result.LastCastEvent is not { Sequence: 0, SpellId: 0 }
             || result.WatchedAction is not { Slot: 4, Kind: VisualActionKind.Spell, Id: 7744 }
             || result.ActionBar is not { ReadableCount: 120, OccupiedCount: 2 } actionBar
             || actionBar.GetSlot(4) is not { Kind: VisualActionKind.Spell, Id: 7744 }
@@ -1603,6 +1627,25 @@ static int RunSelfTest()
             return 1;
         DrawWorldPixel(13, 35);
         DrawWorldPixel(14, 0xA57755 - 35);
+        DrawCastPixel(0, 7);
+        DrawCastPixel(1, 20271);
+        DrawCastPixel(2, 0xA5CC11 - 7 - 20271);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var successfulCast) ||
+            successfulCast.LastCastEvent is not
+                { Sequence: 7, SpellId: 20271 } castEvent ||
+            !castEvent.ConfirmsNewSuccess(new(6, 635), 20271) ||
+            castEvent.ConfirmsNewSuccess(new(7, 635), 20271) ||
+            castEvent.ConfirmsNewSuccess(new(6, 635), 635))
+            return 1;
+        DrawCastPixel(2, 0);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var damagedCast) ||
+            damagedCast.LastCastEvent is not null)
+            return 1;
+        DrawCastPixel(0, 0);
+        DrawCastPixel(1, 0);
+        DrawCastPixel(2, 0xA5CC11);
 
         VisualTargetFlags? targetForBits = result.TargetFlags;
         AddonBits targetBits = new()
@@ -2153,6 +2196,14 @@ static int RunSelfTest()
         {
             int xStart = left + (int)Math.Round(index * 20 * scale);
             int yStart = top + (int)Math.Round(105 * scale);
+            int side = (int)Math.Round(10 * scale);
+            DrawEncodedRect(xStart, yStart, side, encoded);
+        }
+
+        void DrawCastPixel(int index, int encoded)
+        {
+            int xStart = left + (int)Math.Round(index * 20 * scale);
+            int yStart = top + (int)Math.Round(190 * scale);
             int side = (int)Math.Round(10 * scale);
             DrawEncodedRect(xStart, yStart, side, encoded);
         }
