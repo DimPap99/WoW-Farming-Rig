@@ -206,7 +206,8 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         return false;
     }
 
-    private bool IsForever => foreverVisualBars?.IsEnabled == true;
+    public bool IsForeverVisual => foreverVisualBars?.IsEnabled == true;
+    private bool IsForever => IsForeverVisual;
 
     private VisualBarSample RequiredForeverVitals()
     {
