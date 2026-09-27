@@ -157,9 +157,7 @@ public static class NavmeshTileBuilder
 
         probe = ProbeReport("regions", probe);
 
-        RcContourSet cset = RcContours.BuildContours(ctx, chf,
-            cfg.MaxSimplificationError, cfg.MaxEdgeLen,
-            RcBuildContoursFlags.RC_CONTOUR_TESS_WALL_EDGES);
+        RcContourSet cset = BuildContoursWithRetry(ctx, chf, cfg);
 
         probe = ProbeReport("contours", probe);
 
@@ -224,5 +222,43 @@ public static class NavmeshTileBuilder
         DtMeshData? result = DtNavMeshBuilder.CreateNavMeshData(option);
         ProbeReport("create tile", probe);
         return result;
+    }
+
+    private static RcContourSet BuildContoursWithRetry(RcContext ctx, RcCompactHeightfield chf,
+        RcConfig cfg)
+    {
+        // A few complex regions lose their outline when the normal contour
+        // simplification folds it over a hole. Rebuilding contours from the
+        // same heightfield with less simplification preserves those regions.
+        float[] errors = [cfg.MaxSimplificationError, 1.3f, 0.9f, 0.5f, 0f];
+        Exception? outlineFailure = null;
+        for (int i = 0; i < errors.Length; i++)
+        {
+            if (i > 0 && errors[i] >= cfg.MaxSimplificationError)
+                continue;
+
+            try
+            {
+                RcContourSet contours = RcContours.BuildContours(ctx, chf,
+                    errors[i], cfg.MaxEdgeLen,
+                    RcBuildContoursFlags.RC_CONTOUR_TESS_WALL_EDGES);
+                if (i > 0)
+                    ctx.Warn($"Contour build recovered with simplification error {errors[i]} (default {cfg.MaxSimplificationError}).");
+                return contours;
+            }
+            catch (Exception ex) when (
+                ex.Message.StartsWith("rcBuildContours: Bad outline for region ", StringComparison.Ordinal))
+            {
+                outlineFailure = ex;
+            }
+        }
+
+        // A bad outline even with no simplification comes from the watershed
+        // partition itself. Monotone partitioning creates regions without
+        // holes and can reuse the same compact heightfield.
+        ctx.Warn($"Contour build failed at every simplification error ({outlineFailure?.Message}); retrying with monotone regions.");
+        RcRegions.BuildRegionsMonotone(ctx, chf, cfg.MinRegionArea, cfg.MergeRegionArea);
+        return RcContours.BuildContours(ctx, chf, cfg.MaxSimplificationError,
+            cfg.MaxEdgeLen, RcBuildContoursFlags.RC_CONTOUR_TESS_WALL_EDGES);
     }
 }
