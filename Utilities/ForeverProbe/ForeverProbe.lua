@@ -407,6 +407,8 @@ local function createVisual()
     frame.spellCountValidPixel = addPixel(6, 105)
     frame.bindingCountPixel = addPixel(7, 105)
     frame.bindingCountValidPixel = addPixel(8, 105)
+    frame.powerTypePixel = addPixel(9, 105)
+    frame.powerTypeValidPixel = addPixel(10, 105)
 
     -- Forty tiny pixels per row (ID, marker per action), six rows total.
     -- The marker distinguishes an empty slot from an unreadable one.
@@ -654,6 +656,18 @@ local function createVisual()
             frame.healthMaxValidPixel, 0xA55A11)
         renderMax(UnitPowerMax, frame.powerMaxPixel,
             frame.powerMaxValidPixel, 0xA55A22)
+
+        frame.powerTypePixel:SetColorTexture(0, 0, 0, 1)
+        frame.powerTypeValidPixel:SetColorTexture(0, 0, 0, 1)
+        pcall(function()
+            local powerType = readableNumber(UnitPowerType("player"))
+            if powerType and powerType >= 0 and powerType <= 255 and
+                powerType == math.floor(powerType) then
+                setIntPixel(frame.powerTypePixel, powerType)
+                setIntPixel(frame.powerTypeValidPixel,
+                    (0xA56644 - powerType) % 16777216)
+            end
+        end)
 
         frame.cooldownValidPixel:SetColorTexture(0, 0, 0, 1)
         local cooldownOk = pcall(function()

@@ -303,6 +303,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                     new((float)worldPosition.X, (float)worldPosition.Y)) < 3;
             int health = player.HealthPercent();
             int power = player.PTPercentage();
+            int? mana = bars.PlayerPowerType == 0
+                ? player.ManaPercent() : null;
             int? target = bars.TargetPresent == true
                 ? player.TargetHealthPercent() : null;
             bool actionMatches = bars.WatchedAction is not { } watched ||
@@ -351,6 +353,9 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool maximaMatch =
                 (bars.PlayerHealthMax is not { } healthMax || player.HealthMax() == healthMax) &&
                 (bars.PlayerPowerMax is not { } powerMax || player.PTMax() == powerMax);
+            bool powerTypeReadable = bars.PlayerPowerType is >= 0 and <= 255;
+            bool manaMatches = powerTypeReadable &&
+                (bars.PlayerPowerType != 0 || mana == power);
             bool worldPositionMatches = bars.WorldPosition is not { } world ||
                 (player.TryGetForeverWorldPosition(out VisualWorldPositionSample current) &&
                  current == world);
@@ -516,8 +521,16 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool staleMaximumRejected = false;
             try { _ = player.HealthMax(); }
             catch (InvalidOperationException) { staleMaximumRejected = true; }
+            bool staleManaRejected = false;
+            try { _ = player.ManaPercent(); }
+            catch (InvalidOperationException) { staleManaRejected = true; }
 
             Console.WriteLine($"PlayerReader: health={health}%, power={power}%, " +
+                $"powerType={bars.PlayerPowerType?.ToString() ?? "missing"}, " +
+                $"powerTypeReadable={powerTypeReadable}, " +
+                $"mana={(mana is { } mp ? mp + "%" : "unavailable")}, " +
+                $"manaMatches={manaMatches}, " +
+                $"staleManaRejected={staleManaRejected}, " +
                 $"target={(target is { } value ? value + "%" : "unavailable")}, " +
                 $"actionMatches={actionMatches}, actionBarMatches={actionBarMatches}, " +
                 $"actionStates={liveStates?.ReadableCount.ToString() ?? "missing"}/120, " +
@@ -563,6 +576,7 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 staleActionStatesRejected && cooldownGridMatches &&
                 staleCooldownGridRejected && liveReadinessMatches &&
                 staleCooldownReadinessRejected && maximaMatch &&
+                powerTypeReadable && manaMatches &&
                 worldPositionMatches && staleWorldPositionRejected &&
                 spellBookMatches && staleSpellBookRejected &&
                 staleSpellBookReaderReset &&
@@ -571,7 +585,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 staleBindingsRejected &&
                 staleBindingReaderReset &&
                 positionMatches && stalePositionRejected && staleMapIdCleared &&
-                staleMaximumRejected && absoluteRejected && staleRejected &&
+                staleMaximumRejected && staleManaRejected &&
+                absoluteRejected && staleRejected &&
                 staleActionRejected && staleActionBarRejected ? 0 : 2;
         }
 
@@ -814,6 +829,8 @@ static int RunSelfTest()
         DrawWorldPixel(6, (0xA56622 - 3) & 0xFFFFFF);
         DrawWorldPixel(7, VisualBindingSnapshot.Count);
         DrawWorldPixel(8, (0xA57722 - VisualBindingSnapshot.Count) & 0xFFFFFF);
+        DrawWorldPixel(9, 0);
+        DrawWorldPixel(10, 0xA56644);
         DrawSpellGridSlot(1, VisualSpellIdSource.SpellId, 6603);
         DrawSpellGridSlot(2, VisualSpellIdSource.ActionId, 270);
         DrawSpellGridSlot(3, VisualSpellIdSource.SpellId, 7744);
@@ -852,6 +869,7 @@ static int RunSelfTest()
             || result.TargetPresent != true
             || result.PlayerHealthMax != 742
             || result.PlayerPowerMax != 1000
+            || result.PlayerPowerType != 0
             || result.WatchedAction is not { Slot: 4, Kind: VisualActionKind.Spell, Id: 7744 }
             || result.ActionBar is not { ReadableCount: 120, OccupiedCount: 2 } actionBar
             || actionBar.GetSlot(4) is not { Kind: VisualActionKind.Spell, Id: 7744 }
@@ -875,6 +893,24 @@ static int RunSelfTest()
             Console.Error.WriteLine($"Visual reader self-test failed at UI scale {scale}.");
             return 1;
         }
+
+        DrawWorldPixel(9, 1);
+        DrawWorldPixel(10, 0xA56643);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var nonManaPower) || nonManaPower.PlayerPowerType != 1)
+        {
+            Console.Error.WriteLine($"Forever power type decode failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawWorldPixel(10, 0);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var damagedPower) || damagedPower.PlayerPowerType is not null)
+        {
+            Console.Error.WriteLine($"Forever power type checksum failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawWorldPixel(9, 0);
+        DrawWorldPixel(10, 0xA56644);
 
         ActionBarBits<IUsableAction>.ForeverStatesProvider =
             () => result.ActionStates;
@@ -1012,7 +1048,13 @@ static int RunSelfTest()
                 "CD_Judgement of Wisdom == 0", cooldownKeys) !=
                     "CD_Judgement of Wisdom" ||
             RequirementFactory.FindUnsupportedForeverCooldownComparison(
-                "TargetHealth% > CD_MIN_TARGET_HP%", cooldownKeys) is not null)
+                "TargetHealth% > CD_MIN_TARGET_HP%", cooldownKeys) is not null ||
+            RequirementFactory.FindUnsupportedForeverVital(
+                "Mana% < 30 && Health% < 50") is not null ||
+            RequirementFactory.FindUnsupportedForeverVital(
+                "Mana < 20") != "Mana" ||
+            RequirementFactory.FindUnsupportedForeverVital(
+                "FocusHealth% < 50") != "FocusHealth%")
         {
             Console.Error.WriteLine($"Forever cooldown comparison audit failed at UI scale {scale}.");
             return 1;

@@ -743,7 +743,9 @@ public sealed partial class CastingHandler
 
         if (item.AfterCastWaitMeleeRange)
         {
-            int lastKnownHealth = playerReader.HealthCurrent();
+            int lastKnownHealth = playerReader.IsForeverVisual
+                ? playerReader.HealthPercent()
+                : playerReader.HealthCurrent();
             int initialMinRange = playerReader.MinRange();
 
             float elapsedMs = AfterCastWaitMeleeRange(MAX_WAIT_MELEE_RANGE,
@@ -762,7 +764,9 @@ public sealed partial class CastingHandler
                 playerReader.MinRange() > initialMinRange ||
                 playerReader.IsInMeleeRange() ||
                 playerReader.IsTargetCasting() ||
-                playerReader.HealthCurrent() < lastKnownHealth ||
+                (playerReader.IsForeverVisual
+                    ? playerReader.HealthPercent()
+                    : playerReader.HealthCurrent()) < lastKnownHealth ||
                 token.IsCancellationRequested);
         }
 
