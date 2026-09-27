@@ -44,4 +44,5 @@ public sealed class WMORoot
     public WmoDoodadSet[] numericDoodadSets = [];
     public WmoDoodadPlacement[] numericDoodads = [];
     public bool numericPlacement;
+    public uint numericFileDataId;
 }

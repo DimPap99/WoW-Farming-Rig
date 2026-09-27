@@ -29,6 +29,7 @@ using SharedLib.Data;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Buffers;
 using System.IO;
 using System.Numerics;
@@ -50,6 +51,7 @@ public sealed class MPQTriangleSupplier
     private readonly WMOManager wmomanager;
     private readonly WDT wdt;
     private readonly WDTFile wdtf;
+    private readonly ConcurrentDictionary<(uint rootId, int placementId), byte> invalidDoodadSets = new();
 
     private readonly float mapId;
 
@@ -564,14 +566,32 @@ public sealed class MPQTriangleSupplier
         if (root.numericDoodads.Length == 0)
             return;
 
-        if (wi.doodadset < 0 || wi.doodadset >= root.numericDoodadSets.Length)
-            throw new InvalidDataException($"Numeric WMO placement selects absent doodad set {wi.doodadset}.");
+        if (root.numericDoodadSets.Length == 0)
+        {
+            if (invalidDoodadSets.TryAdd((root.numericFileDataId, wi.id), 0))
+                logger.LogWarning("WMO {RootId} placement {PlacementId} has doodads but no defined doodad sets",
+                    root.numericFileDataId, wi.id);
+            return;
+        }
 
         // Set zero is the default global set and is present alongside a
         // selected alternative set. Never load an unselected alternative.
         AddNumericWmoDoodadSet(tc, wi, root.numericDoodadSets[0], cosX, sinX, cosY, sinY, cosZ, sinZ);
-        if (wi.doodadset != 0)
-            AddNumericWmoDoodadSet(tc, wi, root.numericDoodadSets[wi.doodadset], cosX, sinX, cosY, sinY, cosZ, sinZ);
+        if (wi.doodadset == 0)
+            return;
+
+        if (wi.doodadset < 0 || wi.doodadset >= root.numericDoodadSets.Length)
+        {
+            // Some client placements retain a set number after the root WMO
+            // no longer defines that variant. Keep the WMO and its global
+            // doodads; inventing another variant would add false collision.
+            if (invalidDoodadSets.TryAdd((root.numericFileDataId, wi.id), 0))
+                logger.LogWarning("WMO {RootId} placement {PlacementId} requests absent doodad set {Set} ({Count} defined); using global set only",
+                    root.numericFileDataId, wi.id, wi.doodadset, root.numericDoodadSets.Length);
+            return;
+        }
+
+        AddNumericWmoDoodadSet(tc, wi, root.numericDoodadSets[wi.doodadset], cosX, sinX, cosY, sinY, cosZ, sinZ);
     }
 
     private void AddNumericWmoDoodadSet(TriangleCollection tc, WMOInstance wi, WmoDoodadSet set,
