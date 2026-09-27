@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 
 using static Core.Requirement;
 using static System.Math;
@@ -45,6 +46,8 @@ public sealed partial class RequirementFactory
     private readonly FrozenDictionary<int, SchoolMask> npcSchoolImmunity;
 
     private readonly Dictionary<string, Func<int>> intVariables;
+    private readonly HashSet<string> actionCooldownKeys =
+        new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, int[]> intArrayVariables = [];
 
     private readonly FrozenDictionary<string, Func<bool>> boolVariables;
@@ -387,7 +390,8 @@ public sealed partial class RequirementFactory
             InitPerKeyAction(item);
 
             AddMinPower(list, item, costReader, buffs);
-            AddGameCooldown(list, item, playerReader, intVariables);
+            AddGameCooldown(list, item, playerReader, intVariables,
+                cooldownReader, spellBookReader);
 
             if (item.WhenUsable)
             {
@@ -442,12 +446,33 @@ public sealed partial class RequirementFactory
     {
         foreach (string requirement in CollectionsMarshal.AsSpan(requirements))
         {
+            if (playerReader.IsForeverVisual &&
+                FindUnsupportedForeverCooldownComparison(requirement,
+                    actionCooldownKeys) is { } key)
+                throw new NotSupportedException(
+                    $"Forever profile expression '{requirement}' uses {key} as milliseconds; replace it with a readiness rule.");
+
             if (logger.IsEnabled(LogLevel.Information))
                 LogProcessing(logger, name, requirement);
 
             output.Add(expressionParser.Parse(requirement));
         }
     }
+
+    public static string? FindUnsupportedForeverCooldownComparison(
+        string expression, IReadOnlySet<string> actionCooldownKeys)
+    {
+        foreach (Match match in ForeverCooldownVariable().Matches(expression))
+        {
+            string key = match.Value.Trim();
+            if (actionCooldownKeys.Contains(key))
+                return key;
+        }
+        return null;
+    }
+
+    [GeneratedRegex(@"(?<!\w)CD_[^<>=&|),]+", RegexOptions.IgnoreCase)]
+    private static partial Regex ForeverCooldownVariable();
 
     public void InitUserDefinedIntVariables(
         Dictionary<string, int[]> intKeyValues,
@@ -610,6 +635,7 @@ public sealed partial class RequirementFactory
     private void BindCooldown(KeyAction item, ActionBarCooldownReader reader)
     {
         string key = $"CD_{item.Name}";
+        actionCooldownKeys.Add(key);
         if (intVariables.ContainsKey(key))
             return;
 
@@ -1019,11 +1045,16 @@ public sealed partial class RequirementFactory
 
     private void AddGameCooldown(List<Requirement> list,
         KeyAction item, PlayerReader playerReader,
-        Dictionary<string, Func<int>> intVariables)
+        Dictionary<string, Func<int>> intVariables,
+        ActionBarCooldownReader cooldownReader, SpellBookReader spellBookReader)
     {
         string key = $"CD_{item.Name}";
-        bool f() => UsableGCD(key, playerReader, intVariables);
-        string s() => $"CD {intVariables[key]() / 1000f:F1}";
+        bool f() => playerReader.IsForeverVisual
+            ? cooldownReader.IsForeverReady(item, spellBookReader)
+            : UsableGCD(key, playerReader, intVariables);
+        string s() => playerReader.IsForeverVisual
+            ? "Forever cooldown ready"
+            : $"CD {intVariables[key]() / 1000f:F1}";
 
         list.Add(new Requirement
         {

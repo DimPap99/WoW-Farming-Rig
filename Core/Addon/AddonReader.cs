@@ -83,6 +83,11 @@ public sealed partial class AddonReader : IAddonReader
                 ? () => playerReader.TryGetForeverActionStates(out var states)
                     ? states : null
                 : null;
+        sp.GetRequiredService<ActionBarCooldownReader>().ForeverSampleProvider =
+            foreverVisualBars?.IsEnabled == true
+                ? () => playerReader.TryGetForeverVisualVitals(out var bars)
+                    ? bars : null
+                : null;
 
         GlobalTime = new(frames.Length - 2);
 

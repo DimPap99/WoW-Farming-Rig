@@ -422,6 +422,7 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool spellActionResolved = false;
             bool spellSlotValidated = false;
             string? resolvedSpellName = null;
+            KeyAction? resolvedSpellAction = null;
             if (spellBookMatches && bindingMatches && bars.ActionBar is { } liveActions)
                 for (int slot = 1; slot <= VisualActionBarSnapshot.SlotCount; slot++)
                 {
@@ -449,9 +450,23 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                                 { Name = "Unlearned Spell", Slot = candidate.Slot }) ==
                             SlotValidationStatus.Mismatch;
                         resolvedSpellName = spell.Name;
+                        resolvedSpellAction = candidate;
                         break;
                     }
                 }
+
+            ActionBarCooldownReader cooldownReader = new()
+            {
+                ForeverSampleProvider = () =>
+                    player.TryGetForeverVisualVitals(out var latest)
+                        ? latest : null
+            };
+            bool liveReadinessMatches = resolvedSpellAction is { } known &&
+                bars.Cooldowns?.GetSlot(known.Slot) is { } fill &&
+                bars.ActionStates?.GetSlot(known.Slot) is { } cooldownState &&
+                cooldownReader.IsForeverReady(known, spellBook) ==
+                    (fill == 0 && cooldownState.Usable &&
+                        !cooldownState.NoMana);
 
             bool absoluteRejected = false;
             try { _ = player.HealthCurrent(); }
@@ -467,6 +482,9 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 !player.TryGetForeverActionStates(out _);
             bool staleCooldownGridRejected =
                 !player.TryGetForeverCooldowns(out _);
+            bool staleCooldownReadinessRejected =
+                resolvedSpellAction is { } staleSpell &&
+                !cooldownReader.IsForeverReady(staleSpell, spellBook);
             bool staleUsableReaderReset = usableReader.Count == 0 &&
                 !usableReader.Any && !usableReader.IsSlotUsable(1);
             ActionBarBits<IUsableAction>.ForeverStatesProvider = null;
@@ -509,6 +527,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"cooldownSlot4={bars.Cooldowns?.GetSlot(4)?.ToString("P0") ?? "missing"}, " +
                 $"cooldownGridMatches={cooldownGridMatches}, " +
                 $"staleCooldownGridRejected={staleCooldownGridRejected}, " +
+                $"liveReadinessMatches={liveReadinessMatches}, " +
+                $"staleCooldownReadinessRejected={staleCooldownReadinessRejected}, " +
                 $"inRangeActionCount={inRangeActionCount}, " +
                 $"outOfRangeActionCount={outOfRangeActionCount}, " +
                 $"unknownRangeActionCount={unknownRangeActionCount}, " +
@@ -541,7 +561,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             return actionMatches && actionBarMatches && actionStatesMatch &&
                 usableReaderMatches && staleUsableReaderReset &&
                 staleActionStatesRejected && cooldownGridMatches &&
-                staleCooldownGridRejected && maximaMatch &&
+                staleCooldownGridRejected && liveReadinessMatches &&
+                staleCooldownReadinessRejected && maximaMatch &&
                 worldPositionMatches && staleWorldPositionRejected &&
                 spellBookMatches && staleSpellBookRejected &&
                 staleSpellBookReaderReset &&
@@ -973,6 +994,52 @@ static int RunSelfTest()
         }
 
         string spellName = spellBookReader.SpellDB.Spells[7744].Name;
+        ActionBarCooldownReader foreverCooldown = new();
+        VisualBarSample? cooldownSample = result;
+        foreverCooldown.ForeverSampleProvider = () => cooldownSample;
+        KeyAction cooldownAction = new() { Name = spellName, Slot = 4,
+            SpellId = 7744 };
+        var cooldownKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "CD_Judgement", "CD_Judgement of Wisdom" };
+        bool millisecondsRejected = false;
+        try { _ = foreverCooldown.Get(cooldownAction); }
+        catch (NotSupportedException) { millisecondsRejected = true; }
+        if (foreverCooldown.IsForeverReady(cooldownAction, spellBookReader) ||
+            !millisecondsRejected ||
+            RequirementFactory.FindUnsupportedForeverCooldownComparison(
+                "CD_Judgement <= GCD", cooldownKeys) != "CD_Judgement" ||
+            RequirementFactory.FindUnsupportedForeverCooldownComparison(
+                "CD_Judgement of Wisdom == 0", cooldownKeys) !=
+                    "CD_Judgement of Wisdom" ||
+            RequirementFactory.FindUnsupportedForeverCooldownComparison(
+                "TargetHealth% > CD_MIN_TARGET_HP%", cooldownKeys) is not null)
+        {
+            Console.Error.WriteLine($"Forever cooldown comparison audit failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawCooldownSlot(4, 1, 7744, 0);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var readyCooldown))
+            return 1;
+        cooldownSample = readyCooldown;
+        if (!foreverCooldown.IsForeverReady(cooldownAction, spellBookReader) ||
+            foreverCooldown.IsForeverReady(new KeyAction
+                { Name = "Wrong spell", Slot = 4 }, spellBookReader) ||
+            foreverCooldown.IsForeverReady(new KeyAction
+                { Name = spellName, Slot = 4, SpellId = 6603 }, spellBookReader) ||
+            foreverCooldown.IsForeverReady(new KeyAction
+                { Name = spellName, Slot = 13 }, spellBookReader))
+        {
+            Console.Error.WriteLine($"Forever cooldown readiness failed at UI scale {scale}.");
+            return 1;
+        }
+        cooldownSample = null;
+        if (foreverCooldown.IsForeverReady(cooldownAction, spellBookReader))
+        {
+            Console.Error.WriteLine($"Forever stale cooldown accepted at UI scale {scale}.");
+            return 1;
+        }
+        DrawCooldownSlot(4, 1, 7744, 0.4);
         if (ActionBarSlotValidator.ValidateForeverAction(
                 new KeyAction { Name = spellName, Slot = 4 }, 4,
                 actionBar, spellBookReader) != SlotValidationStatus.Valid ||
