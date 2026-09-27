@@ -56,7 +56,9 @@ public readonly record struct VisualBarSample(
     double? ActionCooldownFill = null,
     bool? TargetPresent = null,
     VisualActionSample? WatchedAction = null,
-    VisualActionBarSnapshot? ActionBar = null);
+    VisualActionBarSnapshot? ActionBar = null,
+    int? PlayerHealthMax = null,
+    int? PlayerPowerMax = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -134,9 +136,36 @@ public static class VisualBarReader
             pixels, width, height, whiteLeft, whiteY, scale);
         VisualActionBarSnapshot? actionBar = TryReadActionBar(
             pixels, width, height, whiteLeft, whiteY, scale);
+        int? playerHealthMax = TryReadMaximum(pixels, width, height,
+            whiteLeft, whiteY, scale, 11, 12, 0xA55A11);
+        int? playerPowerMax = TryReadMaximum(pixels, width, height,
+            whiteLeft, whiteY, scale, 13, 14, 0xA55A22);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
-            position, actionCooldownFill, targetPresent, watchedAction, actionBar);
+            position, actionCooldownFill, targetPresent, watchedAction, actionBar,
+            playerHealthMax, playerPowerMax);
         return true;
+    }
+
+    private static int? TryReadMaximum(Bgra32[] pixels, int width, int height,
+        int left, int whiteY, double scale, int valueIndex, int markerIndex,
+        int expectedMarker)
+    {
+        int centerY = whiteY + (int)Math.Round(27 * scale);
+        int valueX = left + (int)Math.Round((5 + valueIndex * 20) * scale);
+        int markerX = left + (int)Math.Round((5 + markerIndex * 20) * scale);
+        if (centerY < 0 || centerY >= height || valueX < 0 || valueX >= width ||
+            markerX < 0 || markerX >= width)
+            return null;
+
+        Bgra32 marker = pixels[centerY * width + markerX];
+        if (Math.Abs(marker.R - ((expectedMarker >> 16) & 255)) > 3 ||
+            Math.Abs(marker.G - ((expectedMarker >> 8) & 255)) > 3 ||
+            Math.Abs(marker.B - (expectedMarker & 255)) > 3)
+            return null;
+
+        Bgra32 value = pixels[centerY * width + valueX];
+        int maximum = (value.R << 16) | (value.G << 8) | value.B;
+        return maximum > 0 ? maximum : null;
     }
 
     private static VisualActionBarSnapshot? TryReadActionBar(Bgra32[] pixels,

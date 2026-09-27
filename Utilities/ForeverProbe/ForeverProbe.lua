@@ -391,6 +391,10 @@ local function createVisual()
     frame.actionIdPixel = addPixel(8)
     frame.actionMetaPixel = addPixel(9)
     frame.actionGridValidPixel = addPixel(10)
+    frame.healthMaxPixel = addPixel(11)
+    frame.healthMaxValidPixel = addPixel(12)
+    frame.powerMaxPixel = addPixel(13)
+    frame.powerMaxValidPixel = addPixel(14)
 
     -- Forty tiny pixels per row (ID, marker per action), six rows total.
     -- The marker distinguishes an empty slot from an unreadable one.
@@ -479,6 +483,25 @@ local function createVisual()
             setIntPixel(frame.facingPixel, facing * 100000)
             frame.positionValidPixel:SetColorTexture(165 / 255, 90 / 255, 165 / 255, 1)
         end)
+
+        -- Maxima are ordinary numbers on some Forever builds. Encode each
+        -- only when it is readable; current health/power remain secret and
+        -- continue to flow exclusively through native StatusBars above.
+        local function renderMax(getter, valuePixel, markerPixel, marker)
+            valuePixel:SetColorTexture(0, 0, 0, 1)
+            markerPixel:SetColorTexture(0, 0, 0, 1)
+            pcall(function()
+                local maximum = readableNumber(getter("player"))
+                if not maximum or maximum <= 0 or maximum > 16777215 or
+                    maximum ~= math.floor(maximum) then return end
+                setIntPixel(valuePixel, maximum)
+                setIntPixel(markerPixel, marker)
+            end)
+        end
+        renderMax(UnitHealthMax, frame.healthMaxPixel,
+            frame.healthMaxValidPixel, 0xA55A11)
+        renderMax(UnitPowerMax, frame.powerMaxPixel,
+            frame.powerMaxValidPixel, 0xA55A22)
 
         frame.cooldownValidPixel:SetColorTexture(0, 0, 0, 1)
         local cooldownOk = pcall(function()
