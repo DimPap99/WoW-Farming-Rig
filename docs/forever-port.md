@@ -192,9 +192,16 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   `TargetHealthPercent` now consume the fresh visual sample on Forever.
   `TargetHealthPercent` requires confirmed target presence, while missing or
   stale samples throw rather than falling back to legacy pixel cells. Absolute
-  health/power getters remain unsupported and explicitly reject Forever.
+  current health/power getters remain unsupported and explicitly reject Forever.
   The Core-backed live monitor tracked changing bars during another fight and
   returned no sample after `/forevervisual` hid them.
+- Two additional visual pixels now carry player maximum health and maximum
+  power only when those API results are ordinary integers; separate markers
+  reject unreadable values. Synthetic checks pass at 75%, 100%, and 125% UI
+  scale. After a beta `/reload`, live WGC capture decoded health max 272 and
+  power max 230. `PlayerReader.HealthMax()` and `PTMax()` returned those values
+  and rejected a stale sample. Current health and power are still secret and
+  are not inferred from the bar fill as exact integers.
 - The target-presence marker changed from absent to present when a target was
   selected and back to absent after it was cleared, including during a manual
   fight where target health fell to 73%. A live `--reader-smoke` check read
@@ -294,9 +301,9 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
 
 ## Required work before attempting gameplay automation
 
-1. Finish the vital-data migration beyond the three percentage getters:
-   absolute health/power, mana when it is not the active power type, pet/focus
-   vitals, and consumers that need more than percentages are still unsupported.
+1. Finish the vital-data migration beyond percentages and player maxima:
+   current health/power, mana when it is not the active power type, pet/focus
+   vitals, and consumers that need exact current values are still unsupported.
    The existing 24-bit pixel protocol cannot encode protected health/power
    as-is. Keep the Forever startup guard until missing-data behavior is handled
    across the full gameplay reader.

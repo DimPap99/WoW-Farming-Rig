@@ -90,7 +90,10 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         return reader.GetInt(cell);
     }
 
-    public int HealthMax() => ClassicAbsoluteVital(10);
+    public int HealthMax() => IsForever
+        ? RequiredForeverVitals().PlayerHealthMax ?? throw new InvalidOperationException(
+            "Forever player maximum health is unavailable or unreadable.")
+        : ClassicAbsoluteVital(10);
 
     // Read-only Forever percentage source. The sample expires with capture;
     // callers that can tolerate missing data should use this Try method.
@@ -161,7 +164,10 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         ? VisualPercent(RequiredForeverVitals().PlayerHealth)
         : (1 + HealthCurrent()) * 100 / (1 + HealthMax());
 
-    public int PTMax() => ClassicAbsoluteVital(12); // Maximum amount of Power Type (dynamic)
+    public int PTMax() => IsForever
+        ? RequiredForeverVitals().PlayerPowerMax ?? throw new InvalidOperationException(
+            "Forever player maximum power is unavailable or unreadable.")
+        : ClassicAbsoluteVital(12); // Maximum amount of Power Type (dynamic)
     public int PTCurrent() => ClassicAbsoluteVital(13); // Current amount of Power Type (dynamic)
     public int PTPercentage() => IsForever
         ? VisualPercent(RequiredForeverVitals().PlayerPower)

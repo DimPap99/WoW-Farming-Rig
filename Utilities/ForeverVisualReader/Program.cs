@@ -96,6 +96,8 @@ try
                     {
                         Console.WriteLine($"{DateTime.Now:HH:mm:ss}: " +
                             $"health={current.PlayerHealth:P0}, power={current.PlayerPower:P0}, " +
+                            $"healthMax={current.PlayerHealthMax?.ToString() ?? "unavailable"}, " +
+                            $"powerMax={current.PlayerPowerMax?.ToString() ?? "unavailable"}, " +
                             $"target={current.TargetHealth:P0}, {TargetText(current.TargetPresent)}, " +
                             $"calibration={current.Calibration:P0}, " +
                             PositionText(current.Position) + ", " +
@@ -176,6 +178,8 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
     Console.WriteLine($"Visual bars at x={bars.Left}, y={bars.Bottom}, width={bars.Width}");
     Console.WriteLine($"Calibration={bars.Calibration:P1}, player health={bars.PlayerHealth:P1}, " +
         $"player power={bars.PlayerPower:P1}, target health={bars.TargetHealth:P1}");
+    Console.WriteLine($"Player health max={bars.PlayerHealthMax?.ToString() ?? "unavailable"}, " +
+        $"power max={bars.PlayerPowerMax?.ToString() ?? "unavailable"}");
     Console.WriteLine(TargetText(bars.TargetPresent));
     Console.WriteLine(PositionText(bars.Position));
     Console.WriteLine(CooldownText(bars.ActionCooldownFill));
@@ -241,6 +245,9 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool actionBarMatches = bars.ActionBar is not { } liveBar ||
                 (player.TryGetForeverActionBar(out VisualActionBarSnapshot actionBar) &&
                 ReferenceEquals(actionBar, liveBar));
+            bool maximaMatch =
+                (bars.PlayerHealthMax is not { } healthMax || player.HealthMax() == healthMax) &&
+                (bars.PlayerPowerMax is not { } powerMax || player.PTMax() == powerMax);
 
             bool absoluteRejected = false;
             try { _ = player.HealthCurrent(); }
@@ -252,15 +259,22 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             catch (InvalidOperationException) { staleRejected = true; }
             bool staleActionRejected = !player.TryGetForeverWatchedAction(out _);
             bool staleActionBarRejected = !player.TryGetForeverActionBar(out _);
+            bool staleMaximumRejected = false;
+            try { _ = player.HealthMax(); }
+            catch (InvalidOperationException) { staleMaximumRejected = true; }
 
             Console.WriteLine($"PlayerReader: health={health}%, power={power}%, " +
                 $"target={(target is { } value ? value + "%" : "unavailable")}, " +
                 $"actionMatches={actionMatches}, actionBarMatches={actionBarMatches}, " +
+                $"healthMax={bars.PlayerHealthMax?.ToString() ?? "unavailable"}, " +
+                $"powerMax={bars.PlayerPowerMax?.ToString() ?? "unavailable"}, " +
+                $"maximaMatch={maximaMatch}, staleMaximumRejected={staleMaximumRejected}, " +
                 $"absoluteRejected={absoluteRejected}, staleRejected={staleRejected}, " +
                 $"staleActionRejected={staleActionRejected}, " +
                 $"staleActionBarRejected={staleActionBarRejected}");
-            return actionMatches && actionBarMatches && absoluteRejected &&
-                staleRejected && staleActionRejected && staleActionBarRejected ? 0 : 2;
+            return actionMatches && actionBarMatches && maximaMatch &&
+                staleMaximumRejected && absoluteRejected && staleRejected &&
+                staleActionRejected && staleActionBarRejected ? 0 : 2;
         }
 
         await Task.Delay(100);
@@ -275,6 +289,8 @@ static bool HasChanged(VisualBarSample previous, VisualBarSample current)
     || Math.Abs(previous.PlayerPower - current.PlayerPower) >= 0.02
     || Math.Abs(previous.TargetHealth - current.TargetHealth) >= 0.02
     || previous.TargetPresent != current.TargetPresent
+    || previous.PlayerHealthMax != current.PlayerHealthMax
+    || previous.PlayerPowerMax != current.PlayerPowerMax
     || previous.WatchedAction != current.WatchedAction
     || ActionBarChanged(previous.ActionBar, current.ActionBar)
     || ((previous.ActionCooldownFill, current.ActionCooldownFill) switch
@@ -339,6 +355,10 @@ static int RunSelfTest()
         DrawPositionPixel(8, 7744);
         DrawPositionPixel(9, 0xA50401);
         DrawPositionPixel(10, 0x5AA55A);
+        DrawPositionPixel(11, 742);
+        DrawPositionPixel(12, 0xA55A11);
+        DrawPositionPixel(13, 1000);
+        DrawPositionPixel(14, 0xA55A22);
         for (int slot = 1; slot <= VisualActionBarSnapshot.SlotCount; slot++)
             DrawActionGridSlot(slot, 0, 0);
         DrawActionGridSlot(4, 1, 7744);
@@ -355,6 +375,8 @@ static int RunSelfTest()
             || Math.Abs(position.MapY - 0.789012) > 0.0001
             || Math.Abs(position.Direction - 1.23456) > 0.0001
             || result.TargetPresent != true
+            || result.PlayerHealthMax != 742
+            || result.PlayerPowerMax != 1000
             || result.WatchedAction is not { Slot: 4, Kind: VisualActionKind.Spell, Id: 7744 }
             || result.ActionBar is not { ReadableCount: 120, OccupiedCount: 2 } actionBar
             || actionBar.GetSlot(4) is not { Kind: VisualActionKind.Spell, Id: 7744 }
@@ -363,6 +385,23 @@ static int RunSelfTest()
             Console.Error.WriteLine($"Visual reader self-test failed at UI scale {scale}.");
             return 1;
         }
+
+        DrawPositionPixel(12, 0);
+        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
+            result.PlayerHealthMax is not null || result.PlayerPowerMax != 1000)
+        {
+            Console.Error.WriteLine($"Visual reader accepted missing health-max marker at UI scale {scale}.");
+            return 1;
+        }
+        DrawPositionPixel(12, 0xA55A11);
+        DrawPositionPixel(14, 0xA55A11);
+        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
+            result.PlayerPowerMax is not null || result.PlayerHealthMax != 742)
+        {
+            Console.Error.WriteLine($"Visual reader accepted mismatched power-max marker at UI scale {scale}.");
+            return 1;
+        }
+        DrawPositionPixel(14, 0xA55A22);
 
         DrawPositionPixel(7, 0xFF0000);
         if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
