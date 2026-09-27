@@ -104,14 +104,28 @@ pair is world grid X,Y, so the file `Azeroth_32_48.adt` is selected with
 ```powershell
 dotnet run --project Utilities/BakeTool -c Release -- --exp forever --root Json --continent Azeroth --adt 48,32 --casc-install "C:\Program Files (x86)\World of Warcraft" --casc-listfile "C:\path\to\community-listfile.csv"
 dotnet run --project Utilities/BakeTool -c Release -- --exp forever --root Json --continent Azeroth --area-grid --casc-install "C:\Program Files (x86)\World of Warcraft" --casc-listfile "C:\path\to\community-listfile.csv"
+dotnet run --project Utilities/BakeTool -c Release -- --exp forever --root Json --continent Azeroth --casc-install "C:\Program Files (x86)\World of Warcraft" --casc-listfile "C:\path\to\community-listfile.csv"
+dotnet run --project Utilities/BakeTool -c Release -- --exp forever --root Json --continent Kalimdor --casc-install "C:\Program Files (x86)\World of Warcraft" --casc-listfile "C:\path\to\community-listfile.csv"
 ```
 
-The sample ADT wrote 16 navmesh tiles to the local ignored cache. A disk-only
-pathfinder read them back and found a 29-point route while baking zero tiles.
-The Azeroth area grid and its 447 subzone bounds were generated under
-`Json/area_grid/forever` and `Json/subzones/forever`. The HTTP bake host does
-not yet configure a CASC source; `BakeTool` is the supported Forever bake entry
-point.
+The installed beta's Azeroth bake completed 737 ADTs and persisted 11,216
+navmesh tiles. Kalimdor completed 989 ADTs and persisted 15,126 tiles. These
+large `.dnm` tile sets are local and Git-ignored; another machine must bake
+or receive them separately. The committed area grids and subzone bounds cover
+447 Azeroth areas and 415 Kalimdor areas under `Json/area_grid/forever` and
+`Json/subzones/forever`. A disk-only path query returned 28 points across
+three resident tiles while baking zero. Another disk-only route crossed the
+tile recovered by the contour fallback and its neighbor; a Kalimdor route
+crossed tiles `128,128` and `129,128` with zero bakes. The strict bulk
+bake now reports worker failures; a missing WMO doodad variant is logged and
+uses the root's global set while retaining WMO collision.
+
+`PathingAPI` can use the same local CASC source for on-demand bakes. Set
+`exp=forever`, `ForeverCasc__Install` to the WoW install, and
+`ForeverCasc__Listfile` to the local `id;path` listfile. `ForeverCasc__Product`
+and `ForeverCasc__Cache` are optional. Leave Install and Listfile empty to
+serve only baked tiles. A configured HTTP bake resumed one existing Azeroth
+ADT, and an unconfigured HTTP host returned the disk-only route above.
 
 ## Live findings from the beta client
 
@@ -292,21 +306,15 @@ point.
    handling, and gameplay integration. The existing numeric aura/cooldown
    encoder is not viable under combat lockdown. The current `GetSpellInfo`
    and spellbook shims help package loading but are not a full data reader.
-3. Import Forever-specific world geometry and build a matching navmesh. The
-   geometry readers now accept a container-neutral `IGameFileSource`, and the
-   supplier can be given one directly. `Utilities/ForeverCasc` provides a
-   local-only CASC source selected by `BakeTool` for Forever. Modern
-   ADT object placements use FileDataIDs. Numeric WMO groups, doodad sets,
-   transforms, and M2 collision are loaded; one read-only sample tile bake
-   passed. One ADT was baked through `BakeTool`; the HTTP bake host still needs
-   CASC configuration. One in-memory route query across adjacent tiles, a
-   disk-only readback route, and a sampled wet tile passed; visual
-   placement against the client and broader liquid/collision coverage need
-   validation before expanding coverage or using it for gameplay. The storage
-   refactor builds and passes the navmesh coordinate/cost-zone/listfile tests,
-   but its six-tile MPQ byte-identity bake could not run here because this
-   workspace has no `Json/MPQ` archive corpus. Do not reuse the
-   pre-Cataclysm navmesh: Forever's world is different.
+3. Validate Forever-specific world geometry before gameplay use. The installed
+   beta's Azeroth and Kalimdor navmeshes now bake in full locally, and their
+   area grids are committed. `BakeTool` and the optional HTTP CASC configuration
+   read the installed client; disk-only HTTP pathing also passed. Visual
+   placement against the client and broader liquid/collision coverage still
+   need validation. The storage refactor builds and passes the navmesh
+   coordinate/cost-zone/listfile tests, but its six-tile MPQ byte-identity
+   bake could not run here because this workspace has no `Json/MPQ` archive
+   corpus. Do not reuse the pre-Cataclysm navmesh: Forever's world is different.
 4. Complete and validate the remaining DBC-derived tables, game profiles,
    data-reader integration, and an end-to-end manual test before removing the
    startup guard. No autonomous movement/combat has been enabled for Forever.
