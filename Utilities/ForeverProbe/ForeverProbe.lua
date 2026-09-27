@@ -402,6 +402,8 @@ local function createVisual()
     frame.worldZPixel = addPixel(2, 105)
     frame.worldMapPixel = addPixel(3, 105)
     frame.worldValidPixel = addPixel(4, 105)
+    frame.spellCountPixel = addPixel(5, 105)
+    frame.spellCountValidPixel = addPixel(6, 105)
 
     -- Forty tiny pixels per row (ID, marker per action), six rows total.
     -- The marker distinguishes an empty slot from an unreadable one.
@@ -417,6 +419,25 @@ local function createVisual()
             return pixel
         end
         frame.actionGrid[slot] = {
+            id = gridPixel(column * 16),
+            meta = gridPixel(column * 16 + 8),
+        }
+    end
+
+    -- Two pixels per spellbook slot: selected ID and a source/checksum marker.
+    -- Only the first 200 slots fit; a larger book is explicitly unreadable.
+    frame.spellGrid = {}
+    for slot = 1, 200 do
+        local column = (slot - 1) % 20
+        local row = math.floor((slot - 1) / 20)
+        local function gridPixel(x)
+            local pixel = frame:CreateTexture(nil, "ARTWORK")
+            pixel:SetSize(8, 8)
+            pixel:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -205 - row * 8)
+            pixel:SetColorTexture(0, 0, 0, 1)
+            return pixel
+        end
+        frame.spellGrid[slot] = {
             id = gridPixel(column * 16),
             meta = gridPixel(column * 16 + 8),
         }
@@ -454,9 +475,11 @@ local function createVisual()
 
     local elapsedSinceUpdate = 0
     local elapsedSinceActionGrid = 0
+    local elapsedSinceSpellGrid = 0
     frame:SetScript("OnUpdate", function(_, elapsed)
         elapsedSinceUpdate = elapsedSinceUpdate + elapsed
         elapsedSinceActionGrid = elapsedSinceActionGrid + elapsed
+        elapsedSinceSpellGrid = elapsedSinceSpellGrid + elapsed
         if elapsedSinceUpdate < 0.1 then return end
         elapsedSinceUpdate = 0
         local ok = pcall(function()
@@ -570,6 +593,59 @@ local function createVisual()
             end
             frame.actionGridValidPixel:SetColorTexture(
                 90 / 255, 165 / 255, 90 / 255, 1)
+        end
+
+        if elapsedSinceSpellGrid >= 0.5 then
+            elapsedSinceSpellGrid = 0
+            frame.spellCountValidPixel:SetColorTexture(0, 0, 0, 1)
+            pcall(function()
+                local lines = readableNumber(C_SpellBook.GetNumSpellBookSkillLines())
+                if not lines or lines < 0 or lines > 40 or
+                    lines ~= math.floor(lines) then return end
+                local count = 0
+                for lineIndex = 1, lines do
+                    local info = C_SpellBook.GetSpellBookSkillLineInfo(lineIndex)
+                    if not info then return end
+                    local offset = readableNumber(info.itemIndexOffset)
+                    local length = readableNumber(info.numSpellBookItems)
+                    if not offset or not length or offset < 0 or length < 0 or
+                        offset ~= math.floor(offset) or
+                        length ~= math.floor(length) then return end
+                    count = math.max(count, offset + length)
+                end
+                if count > 200 then return end
+
+                local bank = Enum.SpellBookSpellBank.Player
+                for slot = 1, count do
+                    local pair = frame.spellGrid[slot]
+                    pair.id:SetColorTexture(0, 0, 0, 1)
+                    pair.meta:SetColorTexture(0, 0, 0, 1)
+                    local item = C_SpellBook.GetSpellBookItemInfo(slot, bank)
+                    if not item or
+                        (type(issecretvalue) == "function" and issecretvalue(item)) then
+                        return
+                    end
+                    local spellId = readableNumber(item.spellID)
+                    local actionId = readableNumber(item.actionID)
+                    local id, source
+                    if spellId and spellId > 0 then
+                        id, source = spellId, 1
+                    elseif actionId and actionId > 0 then
+                        id, source = actionId, 2
+                    else
+                        return
+                    end
+                    if id > 16777215 or id ~= math.floor(id) then return end
+                    local checksum = (0xA56611 - id - slot) % 16777216
+                    setIntPixel(pair.id, id)
+                    setIntPixel(pair.meta,
+                        math.floor(checksum / 16) * 16 + source)
+                end
+
+                setIntPixel(frame.spellCountPixel, count)
+                setIntPixel(frame.spellCountValidPixel,
+                    (0xA56622 - count) % 16777216)
+            end)
         end
 
         -- Green means a target exists, red means no target, black means the

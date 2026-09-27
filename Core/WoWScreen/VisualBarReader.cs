@@ -50,6 +50,34 @@ public sealed class VisualActionBarSnapshot
         ? slots[slot - 1] : null;
 }
 
+public enum VisualSpellIdSource : byte { SpellId = 1, ActionId = 2 }
+
+public readonly record struct VisualSpellBookEntry(
+    int Slot,
+    VisualSpellIdSource Source,
+    int Id);
+
+public sealed class VisualSpellBookSnapshot
+{
+    public const int MaxSlots = 200;
+
+    private readonly VisualSpellBookEntry?[] entries;
+
+    public int Count => entries.Length;
+    public int ReadableCount { get; }
+
+    internal VisualSpellBookSnapshot(VisualSpellBookEntry?[] entries)
+    {
+        this.entries = entries;
+        foreach (VisualSpellBookEntry? entry in entries)
+            if (entry is not null)
+                ReadableCount++;
+    }
+
+    public VisualSpellBookEntry? GetSlot(int slot) => slot is >= 1 and <= MaxSlots &&
+        slot <= entries.Length ? entries[slot - 1] : null;
+}
+
 public readonly record struct VisualBarSample(
     double PlayerHealth,
     double PlayerPower,
@@ -65,7 +93,8 @@ public readonly record struct VisualBarSample(
     VisualActionBarSnapshot? ActionBar = null,
     int? PlayerHealthMax = null,
     int? PlayerPowerMax = null,
-    VisualWorldPositionSample? WorldPosition = null);
+    VisualWorldPositionSample? WorldPosition = null,
+    VisualSpellBookSnapshot? SpellBook = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -149,10 +178,54 @@ public static class VisualBarReader
             whiteLeft, whiteY, scale, 13, 14, 0xA55A22);
         VisualWorldPositionSample? worldPosition = TryReadWorldPosition(
             pixels, width, height, whiteLeft, whiteY, scale);
+        VisualSpellBookSnapshot? spellBook = TryReadSpellBook(
+            pixels, width, height, whiteLeft, whiteY, scale);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
-            playerHealthMax, playerPowerMax, worldPosition);
+            playerHealthMax, playerPowerMax, worldPosition, spellBook);
         return true;
+    }
+
+    private static VisualSpellBookSnapshot? TryReadSpellBook(
+        Bgra32[] pixels, int width, int height, int left, int whiteY, double scale)
+    {
+        int countY = whiteY + (int)Math.Round(42 * scale);
+        int ReadAt(int x, int y)
+        {
+            if (x < 0 || x >= width || y < 0 || y >= height)
+                return -1;
+            Bgra32 pixel = pixels[y * width + x];
+            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
+        }
+        int CountPixel(int index) => ReadAt(
+            left + (int)Math.Round((5 + index * 20) * scale), countY);
+
+        int count = CountPixel(5);
+        if (count < 0 || count > VisualSpellBookSnapshot.MaxSlots ||
+            CountPixel(6) != ((0xA56622 - count) & 0xFFFFFF))
+            return null;
+
+        VisualSpellBookEntry?[] entries = new VisualSpellBookEntry?[count];
+        for (int slot = 1; slot <= count; slot++)
+        {
+            int column = (slot - 1) % 20;
+            int row = (slot - 1) / 20;
+            int y = whiteY + (int)Math.Round((141 + row * 8) * scale);
+            int id = ReadAt(left + (int)Math.Round((4 + column * 16) * scale), y);
+            int meta = ReadAt(left + (int)Math.Round((12 + column * 16) * scale), y);
+            if (id <= 0 || meta < 0)
+                continue;
+
+            VisualSpellIdSource source = (VisualSpellIdSource)(meta & 15);
+            int checksum = (0xA56611 - id - slot) & 0xFFFFFF;
+            if (source is not (VisualSpellIdSource.SpellId or VisualSpellIdSource.ActionId) ||
+                (meta & 0xFFFFF0) != (checksum & 0xFFFFF0))
+                continue;
+
+            entries[slot - 1] = new(slot, source, id);
+        }
+
+        return new(entries);
     }
 
     private static VisualWorldPositionSample? TryReadWorldPosition(

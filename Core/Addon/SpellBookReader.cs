@@ -18,6 +18,8 @@ public sealed class SpellBookReader : IReader
     private int expectedCount = -1;
     private int receivedCount;
     private bool snapshotDirty;
+    private VisualSpellBookEntry[] foreverEntries = [];
+    private bool foreverActive;
 
     public SpellDB SpellDB { get; }
     public int Count => spells.Count;
@@ -95,12 +97,59 @@ public sealed class SpellBookReader : IReader
         }
     }
 
+    public void UpdateForever(VisualSpellBookSnapshot? snapshot)
+    {
+        if (snapshot is null || snapshot.ReadableCount != snapshot.Count)
+        {
+            if (foreverActive)
+                Reset();
+            return;
+        }
+
+        bool same = foreverActive && foreverEntries.Length == snapshot.Count;
+        if (same)
+        {
+            for (int slot = 1; slot <= snapshot.Count; slot++)
+            {
+                if (snapshot.GetSlot(slot) != foreverEntries[slot - 1])
+                {
+                    same = false;
+                    break;
+                }
+            }
+        }
+        if (same)
+            return;
+
+        Reset();
+        foreverEntries = new VisualSpellBookEntry[snapshot.Count];
+        for (int slot = 1; slot <= snapshot.Count; slot++)
+        {
+            VisualSpellBookEntry entry = snapshot.GetSlot(slot)!.Value;
+            foreverEntries[slot - 1] = entry;
+            if (entry.Source != VisualSpellIdSource.SpellId ||
+                !spells.Add(entry.Id))
+                continue;
+
+            Hash++;
+            snapshotDirty = true;
+            if (TryGetValue(entry.Id, out Spell spell))
+                spellNames.Add(spell.Name);
+        }
+        expectedCount = snapshot.Count;
+        receivedCount = snapshot.Count;
+        AllRanksReceived = true;
+        foreverActive = true;
+    }
+
     public void Reset()
     {
         spells.Clear();
         spellNames.Clear();
         spellIdsSnapshot = [];
         snapshotDirty = false;
+        foreverEntries = [];
+        foreverActive = false;
         expectedCount = -1;
         receivedCount = 0;
         AllRanksReceived = false;

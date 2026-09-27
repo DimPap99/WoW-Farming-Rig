@@ -90,8 +90,11 @@ public sealed partial class AddonReader : IAddonReader
         if (foreverVisualBars?.IsEnabled == true)
         {
             // The guarded Forever add-on has no GlobalTime frame. Refresh
-            // only the visual-backed player position; legacy readers stay off.
+            // only visual-backed readers; legacy readers stay off.
             playerReader.Update(this.reader);
+            spellBookReader.UpdateForever(
+                playerReader.TryGetForeverVisualVitals(out VisualBarSample bars)
+                    ? bars.SpellBook : null);
             return;
         }
 
