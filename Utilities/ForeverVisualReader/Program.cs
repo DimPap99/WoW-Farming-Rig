@@ -1,5 +1,6 @@
 using Core;
 using Core.Database;
+using Core.Goals;
 
 using Game;
 
@@ -418,6 +419,11 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 player.Race == (UnitRace)bars.PlayerIdentity!.Value.RaceId &&
                 player.Level.Value == bars.PlayerIdentity!.Value.Level &&
                 player.Version == ClientVersion.Forever;
+            bool trialFactionMatches = bars.PlayerIdentity is not
+                { RaceId: (int)UnitRace.Undead } ||
+                player.Faction == PlayerFaction.Horde;
+            bool controllerFrameReady =
+                AddonReader.HasForeverControllerFrame(bars);
             bool targetFlagsMatch = bars.TargetFlags is { } flags &&
                 flags.Present == bars.TargetPresent;
             bool castEventMatches = bars.LastCastEvent is { } castEvent &&
@@ -620,6 +626,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"powerTypeReadable={powerTypeReadable}, " +
                 $"identity={bars.PlayerIdentity?.ToString() ?? "missing"}, " +
                 $"identityMatches={identityMatches}, " +
+                $"trialFactionMatches={trialFactionMatches}, " +
+                $"controllerFrameReady={controllerFrameReady}, " +
                 $"targetFlags={bars.TargetFlags?.ToString() ?? "missing"}, " +
                 $"targetFlagsMatch={targetFlagsMatch}, " +
                 $"targetBitsMatch={targetBitsMatch}, " +
@@ -684,6 +692,7 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 staleCooldownGridRejected && liveReadinessMatches &&
                 staleCooldownReadinessRejected && maximaMatch &&
                 powerTypeReadable && manaMatches && identityMatches &&
+                trialFactionMatches && controllerFrameReady &&
                 targetFlagsMatch && targetBitsMatch &&
                 stalePlayerFlagsRejected &&
                 castEventMatches && staleCastEventRejected &&
@@ -943,7 +952,10 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
         }
 
         if (!maps.TryGet(1420, out WorldMapArea area))
+        {
+            Console.Error.WriteLine("Trial map 1420 is missing from the Forever map table.");
             return 2;
+        }
         Vector3 mappedPlayer = WorldMapAreaDB.ToWorld_FlipXY(
             new Vector3((float)(map.MapX * 100), (float)(map.MapY * 100), 0), area);
         float mapError = Vector2.Distance(new(mappedPlayer.X, mappedPlayer.Y),
@@ -958,7 +970,10 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
         Vector3[] routeMap = JsonConvert.DeserializeObject<Vector3[]>(
             File.ReadAllText(routeFile)) ?? [];
         if (routeMap.Length != 2)
+        {
+            Console.Error.WriteLine("Trial route must have exactly two anchors.");
             return 2;
+        }
         Vector3[] routeWorld = routeMap.Select(p =>
             WorldMapAreaDB.ToWorld_FlipXY(p, area)).ToArray();
         float startDistance = Vector2.Distance(
@@ -970,7 +985,10 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
             bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope);
         string cache = Path.Combine(config.Navmesh, area.Continent, hash);
         if (!Directory.Exists(cache))
+        {
+            Console.Error.WriteLine($"Trial navmesh cache is missing: {cache}");
             return 2;
+        }
         using NavmeshPathfinder nav = new(NullLogger.Instance, null, cache,
             bake, new NavmeshQueryOptions());
         bool firstHeightFound = nav.TryGetHeight(
@@ -1138,9 +1156,10 @@ static async Task<int> RunTrialHeal(WowScreenWGC screen,
     DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
     SpellBookReader spellBook = new(new SpellDB(config));
     spellBook.UpdateForever(visualBook);
-    KeyAction heal = new() { Name = "Holy Light", SpellId = 635, Slot = 1 };
-    if (!HasTrialBinding(before, 1, ConsoleKey.D1) ||
-        !ActionBarCooldownReader.IsForeverReady(before, heal, spellBook))
+    KeyAction heal = new()
+        { Name = "Holy Light", SpellId = 635, Slot = 1,
+          ConsoleKey = ConsoleKey.D1 };
+    if (!ForeverCastGate.CanPress(before, heal, spellBook))
     {
         Console.Error.WriteLine("Heal trial refused: Holy Light is not verified ready.");
         return 2;
@@ -1251,10 +1270,10 @@ static async Task<int> RunTrialJudgement(WowScreenWGC screen,
     DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
     SpellBookReader spellBook = new(new SpellDB(config));
     spellBook.UpdateForever(visualBook);
-    KeyAction judgement = new() { Name = "Judgement", SpellId = 20271, Slot = 2 };
-    if (!HasTrialBinding(before, 2, ConsoleKey.D2) ||
-        !ActionBarCooldownReader.IsForeverReady(
-            before, judgement, spellBook))
+    KeyAction judgement = new()
+        { Name = "Judgement", SpellId = 20271, Slot = 2,
+          ConsoleKey = ConsoleKey.D2 };
+    if (!ForeverCastGate.CanPress(before, judgement, spellBook))
     {
         Console.Error.WriteLine("Judgement trial refused: the verified action is not ready.");
         return 2;
@@ -1525,6 +1544,14 @@ static int RunSelfTest()
             || spellBook.GetSlot(3) is not { Source: VisualSpellIdSource.SpellId, Id: 7744 })
         {
             Console.Error.WriteLine($"Visual reader self-test failed at UI scale {scale}.");
+            return 1;
+        }
+        if (!AddonReader.HasForeverControllerFrame(result) ||
+            AddonReader.HasForeverControllerFrame(result with { ActionStates = null }) ||
+            AddonReader.HasForeverControllerFrame(result with { Bags = null }) ||
+            AddonReader.HasForeverControllerFrame(result with { LastCastEvent = null }))
+        {
+            Console.Error.WriteLine($"Forever controller frame gate failed at UI scale {scale}.");
             return 1;
         }
 
@@ -2156,6 +2183,88 @@ static int RunSelfTest()
             result.Position is not null)
         {
             Console.Error.WriteLine($"Visual reader accepted missing position marker at UI scale {scale}.");
+            return 1;
+        }
+
+        // The normal cast adapter must use the action, binding, readiness,
+        // target, and event from one checked capture before sending input.
+        DrawPositionPixel(4, (0xA55AA5 - 42 -
+            (int)Math.Floor(0.345678 * 16777215) -
+            (int)Math.Floor(0.789012 * 16777215) -
+            (int)Math.Floor(1.23456 * 100000)) & 0xFFFFFF);
+        DrawActionGridSlot(4, 1, 7744);
+        DrawActionGridSlot(2, 1, 20271);
+        DrawActionStateSlot(2, 1, 20271, 6);
+        DrawCooldownSlot(2, 1, 20271, 0);
+        DrawSpellGridSlot(3, VisualSpellIdSource.SpellId, 20271);
+        DrawBindingSlot(22, (22 << 14) | (29 << 7));
+        DrawPositionPixel(7, 0x00FF00);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var trialCastSample) ||
+            trialCastSample.SpellBook is not { } trialBook)
+            return 1;
+        trialCastSample = trialCastSample with
+        {
+            PlayerHealth = 1,
+            PlayerPower = 1,
+            Position = new(1420, 0.35, 0.79, 1.23),
+            WorldPosition = new(100, 200, 0, 0)
+        };
+        spellBookReader.UpdateForever(trialBook);
+        KeyAction trialJudgement = new()
+        {
+            Name = "Judgement", SpellId = 20271, Slot = 2,
+            ConsoleKey = ConsoleKey.D2
+        };
+        if (!ForeverCastGate.CanPress(trialCastSample,
+                trialJudgement, spellBookReader) ||
+            ForeverCastGate.CanPress(trialCastSample with { Bindings = null },
+                trialJudgement, spellBookReader) ||
+            ForeverCastGate.CanPress(trialCastSample with { LastCastEvent = null },
+                trialJudgement, spellBookReader) ||
+            ForeverCastGate.CanPress(trialCastSample with
+                { TargetFlags = new(true, true, true, false, false) },
+                trialJudgement, spellBookReader))
+        {
+            Console.Error.WriteLine($"Forever cast preflight failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawBindingSlot(22, (22 << 14) | (30 << 7));
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var reboundTrial) ||
+            ForeverCastGate.CanPress(reboundTrial with
+                { PlayerHealth = 1, PlayerPower = 1,
+                  Position = trialCastSample.Position,
+                  WorldPosition = trialCastSample.WorldPosition },
+                trialJudgement, spellBookReader))
+        {
+            Console.Error.WriteLine($"Forever cast accepted a changed key at UI scale {scale}.");
+            return 1;
+        }
+        DrawBindingSlot(22, (22 << 14) | (29 << 7));
+        DrawCooldownSlot(2, 1, 20271, 0.4);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var busyTrial) ||
+            ForeverCastGate.CanPress(busyTrial with
+                { PlayerHealth = 1, PlayerPower = 1,
+                  Position = trialCastSample.Position,
+                  WorldPosition = trialCastSample.WorldPosition },
+                trialJudgement, spellBookReader))
+        {
+            Console.Error.WriteLine($"Forever cast accepted a running cooldown at UI scale {scale}.");
+            return 1;
+        }
+        DrawCooldownSlot(2, 1, 20271, 0);
+        DrawActionStateSlot(2, 1, 20271, 10);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var distantTrial) ||
+            ForeverCastGate.CanPress(distantTrial with
+                { PlayerHealth = 1, PlayerPower = 1,
+                  Position = trialCastSample.Position,
+                  WorldPosition = trialCastSample.WorldPosition },
+                trialJudgement, spellBookReader))
+        {
+            Console.Error.WriteLine($"Forever cast accepted an out-of-range action at UI scale {scale}.");
             return 1;
         }
 

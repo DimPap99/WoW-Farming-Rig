@@ -27,6 +27,7 @@ public sealed class ForeverVisualBarTracker
     public bool IsEnabled => enabled;
     private Bgra32[] pixels = [];
     private long lastFrameId;
+    public long LatestFrameId => lastFrameId;
     private Snapshot? current;
 
     private sealed record Snapshot(VisualBarSample Bars, long CapturedAt);

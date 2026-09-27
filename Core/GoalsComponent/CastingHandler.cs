@@ -43,6 +43,7 @@ public sealed partial class CastingHandler
     private readonly ActionBarBits<ICurrentAction> currentAction;
     private readonly ActionBarCastTimeReader castTimeReader;
     private readonly CastEventReader castEventReader;
+    private readonly SpellBookReader spellBookReader;
 
     private readonly ClassConfiguration classConfig;
     private readonly FormKeyActions forms;
@@ -53,9 +54,16 @@ public sealed partial class CastingHandler
     private readonly CastingHandlerInterruptWatchdog interruptWatchdog;
 
     private readonly ApproachThrottle approachThrottle;
+    private bool foreverCastNeedsReset;
 
     public bool SpellInQueue()
     {
+        // Forever has no cast/GCD millisecond cells. The single action cast
+        // path below waits for its success event and readiness is checked
+        // again from a fresh visual capture before every input.
+        if (playerReader.IsForeverVisual)
+            return false;
+
         // Returns true while a non-base press would be wasted; CombatGoal
         // uses this to skip non-base actions during the wait.
         //
@@ -87,6 +95,7 @@ public sealed partial class CastingHandler
         ActionBarBits<ICurrentAction> currentAction,
         ActionBarCastTimeReader castTimeReader,
         CastEventReader castEventReader,
+        SpellBookReader spellBookReader,
         Wait wait,
         AddonReader addonReader,
         PlayerReader playerReader,
@@ -112,6 +121,7 @@ public sealed partial class CastingHandler
         this.currentAction = currentAction;
         this.castTimeReader = castTimeReader;
         this.castEventReader = castEventReader;
+        this.spellBookReader = spellBookReader;
 
         this.classConfig = classConfig;
         Log = classConfig.Log;
@@ -821,6 +831,9 @@ public sealed partial class CastingHandler
 
     public bool Cast(KeyAction item, Func<bool> interrupt)
     {
+        if (playerReader.IsForeverVisual)
+            return CastForever(item);
+
         CancellationToken token = CancellationToken.None;
 
         bool hasCastBar = castTimeReader.HasCastBar(item);
@@ -886,6 +899,53 @@ public sealed partial class CastingHandler
         item.ConsumeCharge();
 
         return true;
+    }
+
+    private bool CastForever(KeyAction item)
+    {
+        // This branch is intentionally limited to the guarded Paladin trial.
+        // It never reads aura, GCD, current-action, cast-time, or UI-error cells.
+        if (!string.Equals(classConfig.FileName,
+                "Paladin_Forever_Trial.json", StringComparison.OrdinalIgnoreCase) ||
+            foreverCastNeedsReset ||
+            !playerReader.TryGetForeverVisualVitals(out VisualBarSample before) ||
+            !ForeverCastGate.CanPress(before, item, spellBookReader) ||
+            before.LastCastEvent is not { } previousEvent)
+            return false;
+
+        // A missed event, unreadable frame, or changed target after this point
+        // latches the cast path closed for this session. Do not retry a press
+        // whose outcome cannot be proved from the visual event.
+        foreverCastNeedsReset = true;
+        input.PressFixed(item.ConsoleKey, 75, CancellationToken.None);
+        item.SetClicked();
+
+        int timeoutMs = item.SpellId == 635 ? 5000 : 3000;
+        long start = GetTimestamp();
+        while (GetElapsedTime(start).TotalMilliseconds < timeoutMs)
+        {
+            if (!playerReader.TryGetForeverVisualVitals(out VisualBarSample current) ||
+                current.TargetFlags is not { PlayerDead: false } flags ||
+                flags.Present != current.TargetPresent ||
+                (item.SpellId == 635
+                    ? flags.Present || flags.PlayerCombat
+                    : !flags.Present || !flags.Attackable))
+                return false;
+
+            if (current.LastCastEvent is { } castEvent &&
+                castEvent.ConfirmsNewSuccess(previousEvent, item.SpellId))
+            {
+                item.ConsumeCharge();
+                foreverCastNeedsReset = false;
+                return true;
+            }
+
+            Thread.Sleep(50);
+        }
+
+        logger.LogWarning("Forever cast success event was not observed for {Spell} ({SpellId})",
+            item.Name, item.SpellId);
+        return false;
     }
 
     public bool WaitForGCD(KeyAction item, bool spellQueue, bool ignoreRemainCast, CancellationToken token)
