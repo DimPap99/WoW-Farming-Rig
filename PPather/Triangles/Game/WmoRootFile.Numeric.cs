@@ -24,6 +24,8 @@ internal static partial class WmoRootFile
         if (!archive.SupportsFileDataIds)
             throw new NotSupportedException("This game-file source cannot open numeric WMO roots.");
 
+        root.numericFileDataId = fileDataId;
+
         using Stream stream = archive.OpenRead(fileDataId);
         using BinaryReader reader = new(stream);
         Dictionary<uint, byte[]> chunks = new();
