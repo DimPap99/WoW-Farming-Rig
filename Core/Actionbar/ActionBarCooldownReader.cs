@@ -13,18 +13,28 @@ public sealed class ActionBarCooldownReader : IReader
 
     public bool IsForeverReady(KeyAction action, SpellBookReader book)
     {
-        if (ForeverSampleProvider is not { } provider ||
-            action.Slot is < 1 or > VisualCooldownGridSnapshot.SlotCount ||
-            provider() is not { } sample ||
+        return ForeverSampleProvider?.Invoke() is { } sample &&
+            IsForeverReady(sample, action, book);
+    }
+
+    // Use this overload when a caller is about to send input. The spellbook,
+    // action state, and cooldown must all be checked against that one capture.
+    public static bool IsForeverReady(VisualBarSample sample,
+        KeyAction action, SpellBookReader book)
+    {
+        if (action.Slot is < 1 or > VisualCooldownGridSnapshot.SlotCount ||
             sample.ActionBar is not
                 { ReadableCount: VisualActionBarSnapshot.SlotCount } bar ||
             sample.ActionStates is not
                 { ReadableCount: VisualActionBarSnapshot.SlotCount } states ||
             sample.Cooldowns is not
                 { ReadableCount: VisualCooldownGridSnapshot.SlotCount } cooldowns ||
+            sample.SpellBook is not { Count: > 0 } visualBook ||
+            visualBook.ReadableCount != visualBook.Count ||
             bar.GetSlot(action.Slot) is not
                 { Kind: VisualActionKind.Spell, Id: > 0 } placed ||
             (action.SpellId > 0 && action.SpellId != placed.Id) ||
+            !HasExactVisualSpell(visualBook, placed.Id) ||
             !book.IsInitialized || !book.AllRanksReceived ||
             !book.HasExact(placed.Id) ||
             !book.TryGetValue(placed.Id, out var spell) ||
@@ -37,6 +47,16 @@ public sealed class ActionBarCooldownReader : IReader
         // A pixel-width remnant is still a running timer. Require an empty
         // bar; no fraction-to-milliseconds estimate is made.
         return fill == 0;
+    }
+
+    private static bool HasExactVisualSpell(VisualSpellBookSnapshot book, int id)
+    {
+        for (int slot = 1; slot <= book.Count; slot++)
+            if (book.GetSlot(slot) is
+                { Source: VisualSpellIdSource.SpellId, Id: var learnedId } &&
+                learnedId == id)
+                return true;
+        return false;
     }
 
     private readonly struct Data

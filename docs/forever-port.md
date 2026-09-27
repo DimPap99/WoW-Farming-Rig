@@ -552,6 +552,14 @@ fight and cleared the target, after which the read-only reader smoke found
 100% health, 100% mana, no target, and all checked fields valid. The isolated
 bounded sequence passes; an autonomous controller-run cycle is still open.
 
+The bounded spell preflight now checks the current game's main-bar binding and
+the learned spell, usability, power, and cooldown signals from the same fresh
+capture immediately before each keypress. Synthetic tests cover a missing
+spellbook and changed or missing bindings. A read-only live gate after this
+change reported all trial actions matched, 100% health and mana, and complete
+bag data. It refused the near-route condition because the player had moved
+298 yards from the original local trial route; no input was sent.
+
 For API signatures, use Blizzard's generated UI documentation from the
 [`1.60.1 (70009)` UI-source snapshot](https://github.com/Gethe/wow-ui-source/tree/bd2470aed543f72697a044e989285b6c83e63f73/Interface/AddOns/Blizzard_APIDocumentationGenerated)
 and validate behavior in the actual beta client; the client may protect a

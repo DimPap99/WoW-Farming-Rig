@@ -794,6 +794,23 @@ static async Task<int> RunRouteProbe(WowScreenWGC screen, ForeverVisualBarTracke
     return 2;
 }
 
+static bool HasTrialBinding(VisualBarSample sample, int slot,
+    ConsoleKey expected)
+{
+    if (slot is < 1 or > 12 ||
+        sample.Bindings is not
+            { ReadableCount: VisualBindingSnapshot.Count } bindings)
+        return false;
+
+    int? code = bindings.GetCode(20 + slot);
+    if (code is not > 0 ||
+        KeyReader.DecodeBinding(code.Value) is not { } decoded)
+        return false;
+
+    return decoded.bindingId == BindingID.ACTIONBUTTON1 + (slot - 1) &&
+        decoded.key1 == expected && decoded.mod1 == ModifierKey.None;
+}
+
 static async Task<int> RunTrialCheck(WowScreenWGC screen,
     ForeverVisualBarTracker tracker, bool requireNearRoute = true)
 {
@@ -865,17 +882,17 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
 
         SpellBookReader spellBook = new(new SpellDB(config));
         spellBook.UpdateForever(book);
-        ActionBarCooldownReader readiness = new()
-        {
-            ForeverSampleProvider = () => tracker.TryGetLatest(out var latest)
-                ? latest : null
-        };
         bool actionsMatch = spellBook.IsInitialized && spellBook.AllRanksReceived;
         foreach (var expectedAction in expected)
         {
             int slot = expectedAction.Slot;
-            int? code = bindings.GetCode(20 + slot);
-            var key = code is > 0 ? KeyReader.DecodeBinding(code.Value) : null;
+            ConsoleKey expectedKey = slot switch
+            {
+                1 => ConsoleKey.D1,
+                2 => ConsoleKey.D2,
+                3 => ConsoleKey.D3,
+                _ => ConsoleKey.NoName
+            };
             actionsMatch &= bar.GetSlot(slot) is
                     { Kind: VisualActionKind.Spell } placed &&
                 placed.Id == expectedAction.Id &&
@@ -884,13 +901,7 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
                 spell.Name == expectedAction.Name &&
                 states.GetSlot(slot) is not null &&
                 cooldowns.GetSlot(slot) is not null &&
-                key?.key1 == slot switch
-                {
-                    1 => ConsoleKey.D1,
-                    2 => ConsoleKey.D2,
-                    3 => ConsoleKey.D3,
-                    _ => ConsoleKey.NoName
-                };
+                HasTrialBinding(bars, slot, expectedKey);
             KeyAction trialAction = new()
             {
                 Name = expectedAction.Name,
@@ -900,7 +911,8 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
             bool expectedReady = states.GetSlot(slot) is
                     { Usable: true, NoMana: false } &&
                 cooldowns.GetSlot(slot) == 0;
-            actionsMatch &= readiness.IsForeverReady(trialAction, spellBook) ==
+            actionsMatch &= ActionBarCooldownReader.IsForeverReady(
+                bars, trialAction, spellBook) ==
                 expectedReady;
         }
         if (!actionsMatch)
@@ -1101,12 +1113,8 @@ static async Task<int> RunTrialHeal(WowScreenWGC screen,
     SpellBookReader spellBook = new(new SpellDB(config));
     spellBook.UpdateForever(visualBook);
     KeyAction heal = new() { Name = "Holy Light", SpellId = 635, Slot = 1 };
-    ActionBarCooldownReader cooldown = new()
-    {
-        ForeverSampleProvider = () => tracker.TryGetLatest(out var latest)
-            ? latest : null
-    };
-    if (!cooldown.IsForeverReady(heal, spellBook))
+    if (!HasTrialBinding(before, 1, ConsoleKey.D1) ||
+        !ActionBarCooldownReader.IsForeverReady(before, heal, spellBook))
     {
         Console.Error.WriteLine("Heal trial refused: Holy Light is not verified ready.");
         return 2;
@@ -1211,12 +1219,9 @@ static async Task<int> RunTrialJudgement(WowScreenWGC screen,
     SpellBookReader spellBook = new(new SpellDB(config));
     spellBook.UpdateForever(visualBook);
     KeyAction judgement = new() { Name = "Judgement", SpellId = 20271, Slot = 2 };
-    ActionBarCooldownReader cooldown = new()
-    {
-        ForeverSampleProvider = () => tracker.TryGetLatest(out var latest)
-            ? latest : null
-    };
-    if (!cooldown.IsForeverReady(judgement, spellBook))
+    if (!HasTrialBinding(before, 2, ConsoleKey.D2) ||
+        !ActionBarCooldownReader.IsForeverReady(
+            before, judgement, spellBook))
     {
         Console.Error.WriteLine("Judgement trial refused: the verified action is not ready.");
         return 2;
@@ -1642,7 +1647,11 @@ static int RunSelfTest()
                 { ReadableCount: VisualBindingSnapshot.Count } visualBindings ||
             visualBindings.GetCode(21) != ((21 << 14) | (28 << 7)) ||
             visualBindings.GetCode(22) != 0 ||
-            visualBindings.GetCode(45) != ((45 << 14) | 52))
+            visualBindings.GetCode(45) != ((45 << 14) | 52) ||
+            !HasTrialBinding(result, 1, ConsoleKey.D1) ||
+            HasTrialBinding(result, 1, ConsoleKey.D2) ||
+            HasTrialBinding(result, 2, ConsoleKey.D2) ||
+            HasTrialBinding(result with { Bindings = null }, 1, ConsoleKey.D1))
         {
             Console.Error.WriteLine($"Visual binding grid failed at UI scale {scale}.");
             return 1;
@@ -1753,6 +1762,11 @@ static int RunSelfTest()
             return 1;
         cooldownSample = readyCooldown;
         if (!foreverCooldown.IsForeverReady(cooldownAction, spellBookReader) ||
+            !ActionBarCooldownReader.IsForeverReady(
+                readyCooldown, cooldownAction, spellBookReader) ||
+            ActionBarCooldownReader.IsForeverReady(
+                readyCooldown with { SpellBook = null },
+                cooldownAction, spellBookReader) ||
             foreverCooldown.IsForeverReady(new KeyAction
                 { Name = "Wrong spell", Slot = 4 }, spellBookReader) ||
             foreverCooldown.IsForeverReady(new KeyAction
