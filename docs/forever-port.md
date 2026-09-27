@@ -3,8 +3,10 @@
 This is a work-in-progress port for the **Forever beta 1.60.1.70009** client
 (`WowB.exe`, interface `16001`). The dashboard now detects this process and
 classifies it as `forever`; the matching `DataToColor_Camelot.toc` loads in the
-client. **It does not run the bot yet.** `DataToColor:OnInitialize` intentionally
-stops before creating pixel frames or changing CVars on Forever.
+client. **Dashboard startup remains guarded.** The explicit controller utility
+now runs bounded target acquisition, mouse pursuit, combat, looting and recovery.
+`DataToColor:OnInitialize` intentionally stops before creating Classic pixel
+frames or changing CVars on Forever.
 
 ## Reproduce the current setup
 
@@ -761,30 +763,49 @@ For API signatures, use Blizzard's generated UI documentation from the
 and validate behavior in the actual beta client; the client may protect a
 value even when its documented return type is `number`.
 
-## Autonomous controller work, 2026-09-27
+## Autonomous controller work, updated 2026-09-28
 
 The new guarded `Paladin_Forever_Auto.json` profile constructs
 `ForeverAutonomousGoal` through the normal `BotController`. Its collaborators
-are separate target, navigation, and combat components. It acquires with the
-verified Tab binding, checks target identity and level, searches in short
-disk-only mesh steps from the live player position, starts melee attack through
-the checked binding, uses Holy Strike rank 2 in slot 3, and waits for checked
-death and resource recovery. Judgement is omitted from this profile until Seal
-upkeep is implemented. This profile is available only through the explicit
-bounded utility; `ForeverDiagnosticController` still guards dashboard startup.
+are separate target, navigation, combat, and loot components, with session policy
+in `ForeverRunOptions`. It acquires with the checked Tab binding, locks that
+opponent through pursuit and combat, holds forward while steering with the right
+mouse button, and uses checked spell range to stop. Seal (slot 5), Judgement
+(slot 2), melee start and Holy Strike (slot 3) are enabled. `Loot` is now true.
+This profile remains available through the explicit bounded utility;
+`ForeverDiagnosticController` still guards dashboard startup.
 
 Read-only current-position preflight:
 
 ```powershell
 dotnet run --project Utilities/ForeverControllerTrial/ForeverControllerTrial.csproj -- --auto-check
+# One complete kill / loot / recovery cycle:
+dotnet run --project Utilities/ForeverControllerTrial/ForeverControllerTrial.csproj -- --auto-run
+# Repeat cycles until Tab has no eligible target; no roaming:
+dotnet run --project Utilities/ForeverControllerTrial/ForeverControllerTrial.csproj -- --sweep
 ```
 
-The first `--auto-run` passed its preflight, cleared and reacquired a target,
-then reached pursuit and combat. It stopped with `selected target changed
-during pursuit` and no verified kill. The screenshot and user observation
-showed that target search had turned back toward its origin at 25 yards.
-Targeted search now has its own 35-yard bound and stops rather than reversing;
-this change has not had another live combat run. The startup guard must remain.
+Tests start at the current player position, without a fixed route origin. The
+single-cycle utility has a 170-second total bound; the sweep has a 600-second
+bound and stops after two unanswered Tab attempts, or after revisiting a rejected
+candidate. It uses the game's Tab targeting selection; it does not measure an
+exact 90-degree enemy cone. Each pursuit remains bounded to 35 yards / 20 seconds.
+The controller reports normal completion separately from failures.
+
+The first attempts exposed several defects now fixed: marker detection had been
+cropped to the left 650 pixels; mouse focus changes could cancel a forward key
+pressed beforehand; combat entry could trigger another Tab; and a target could
+clear before its dead flag reached the next screenshot. Capturing the entire
+viewport, taking focus before key-down, retaining the acquired identity, and
+latching kill events address those cases. Target clearing now uses `/cleartarget`
+instead of Escape, which could open the game menu on a repeated call.
+
+Local movement uses a Detour raycast through connected polygons, returning the
+height at the endpoint. It no longer rejects ordinary slopes solely for a
+1.5-yard height change or independently resolves the endpoint onto another floor.
+The column resolver prefers ground under the requested X/Y over a higher surface
+beside it. Blocked straight movement tries checked sidesteps and pathfinder
+waypoints while retaining the same target.
 
 Live target-position audit on a selected level-6 mob found both
 `UnitPosition("target")` and `C_Map.GetPlayerMapPosition(mapId, "target")`
@@ -796,19 +817,65 @@ the latter is rejected. A normal nameplate frame list did contain the selected
 mob: `C_NamePlate.GetNamePlates()` plus `frame:GetUnit()` and `UnitIsUnit`
 matched it, though `frame:GetCenter()` gave no usable numeric point.
 
-The add-on can anchor a small magenta/cyan visual marker to that selected
+The add-on anchors a magenta/cyan visual marker with a black interior to that selected
 nameplate. A saved live 1920x1080 capture decoded its position as normalized
 screen X 0.548, Y 0.915. The reader matches the marker only when the same
 capture contains a checked target identity and a matched nameplate parent;
-its three-scale synthetic test passes. The marker was absent in another live
-capture, so screen guidance is conditional on nameplate visibility. The
-navigator uses its X coordinate to turn toward an on-screen target and uses
-the checked Holy Strike range bit to decide when to stop approaching. That
-directional behavior has not yet passed a live controller run. If the marker
-is absent, local search remains bounded and can fail without moving farther.
+its three-scale synthetic test passes, including a marker beyond X=650. Screen
+guidance remains conditional on nameplate visibility. The navigator uses marker
+X for mouse steering, Judgement range for the initial cast, then Holy Strike
+range for melee. This passed the live controller cycle below. The external
+`--watch-target-marker` overlay displays screenshot-derived X/Y; the add-on cannot
+recover those coordinates from its protected nameplate frame API.
 
-Still required before autonomous dashboard use: a bounded run that acquires,
-approaches, kills, and recovers without help; loot verification; safe handling
-of incidental combat and target loss; Seal upkeep if Judgement is included;
-and death/corpse recovery. The current autonomous profile intentionally keeps
-`Loot` false and fails closed on player death or health below 70% in combat.
+### Death and loot events
+
+`ForeverEvents.lua` observes `PLAYER_TARGET_DIED` and `PARTY_KILL`, deduplicates
+them by GUID, and latches a sequence plus the victim's two identity hashes. A
+matching new event proves death even if the current target is already empty.
+The live record identified `PARTY_KILL` as the source. `LOOT_OPENED`,
+`LOOT_SLOT_CLEARED`, and `LOOT_CLOSED` similarly persist across captures.
+
+`IForeverLootRoutine` restores the corpse when necessary, checks its identity,
+presses the bound `INTERACTTARGET`, and uses `C_LootFrame.TryAutoLoot()` if the
+window remains open. It requires all tracked slots to clear and the window to
+close; a timeout or partial collection is reported. It changes no auto-loot CVar.
+An explicitly non-lootable corpse completes without claiming items were collected.
+
+Definitions: [target death](https://github.com/Gethe/wow-ui-source/blob/forever/Interface/AddOns/Blizzard_APIDocumentationGenerated/PlayerScriptDocumentation.lua),
+[party kill](https://github.com/Gethe/wow-ui-source/blob/forever/Interface/AddOns/Blizzard_APIDocumentationGenerated/UnitDocumentation.lua),
+[loot events](https://github.com/Gethe/wow-ui-source/blob/forever/Interface/AddOns/Blizzard_APIDocumentationGenerated/LootDocumentation.lua),
+[Loot All](https://github.com/Gethe/wow-ui-source/blob/forever/Interface/AddOns/Blizzard_APIDocumentationGenerated/LootFrameDocumentation.lua).
+
+### Live results and remaining work
+
+- A complete autonomous cycle passed on 2026-09-28: one mob killed, its identity
+  confirmed after target clearing, two loot slots collected, and recovery completed.
+  The following read-only capture showed death sequence 1, two cleared slots,
+  zero remaining slots, a closed loot window, and full player health/mana.
+- The first `--sweep` then killed and looted one more mob (one loot slot), returned
+  to Tab acquisition, received no target twice, and finished with `status: Complete`.
+  Log: `%TEMP%/forever-sweep-20260928.log`.
+- A second sweep also completed one kill and loot, then stopped on no target
+  (`%TEMP%/forever-sweep-20260928-2.log`). The final requested sweep completed
+  **two consecutive kills and two corpse loots** before Tab returned no target.
+  Its loot events cleared four slots total (one then three). Holy Light event 635
+  confirmed recovery from 88% to 100% health between those fights. The final
+  status was `Complete`, exit code 0, with 100% health and 81% mana.
+- Builds of the controller and visual utilities pass. The three-scale self-test
+  covers full-viewport markers, Seal icons, death after target clearing, stale or
+  wrong-target deaths, damaged event checksums, and stale/partial loot completion.
+- Missing optional Forever creature/talent DBC files now log at Debug; malformed
+  files and missing files on other clients retain their existing handling.
+
+Remaining before general autonomous dashboard use: reliable Seal visibility
+through restricted combat, broader handling of additional attackers and target
+loss, player death/corpse recovery, and route/travel/vendor integration. Aura
+enumeration (`GetUnitAuras` and `GetAuraDataByIndex`) was blocked by the client in
+combat. An unknown Seal state therefore withholds Seal/Judgement and continues
+melee, rather than repeatedly refreshing an already active buff. Out-of-combat
+icons verify Seal presence and prevent duplicate presses. The 500ms action grid
+includes GCD, and casts wait for its refresh before another decision. In-combat
+health below 70% requests a self-heal rather than abandoning the fight. Holy
+Light recovery between fights is verified; healing while an attacker is still
+active needs a separate live case.

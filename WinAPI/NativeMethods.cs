@@ -42,6 +42,14 @@ public static partial class NativeMethods
     [LibraryImport("user32.dll")]
     public static partial nint GetForegroundWindow();
 
+    [LibraryImport("kernel32.dll")]
+    public static partial uint GetCurrentThreadId();
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AttachThreadInput(uint from, uint to,
+        [MarshalAs(UnmanagedType.Bool)] bool attach);
+
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool SetForegroundWindow(nint hWnd);
@@ -57,6 +65,10 @@ public static partial class NativeMethods
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetCursorPos(out Point p);
+
+    [LibraryImport("user32.dll", EntryPoint = "mouse_event")]
+    public static partial void MouseEvent(uint flags, uint dx, uint dy,
+        uint data, nuint extraInfo);
 
     public const uint WM_CHAR = 0x0102;
     public const uint WM_KEYDOWN = 0x0100;

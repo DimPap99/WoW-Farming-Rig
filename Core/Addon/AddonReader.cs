@@ -226,8 +226,7 @@ public sealed partial class AddonReader : IAddonReader
             { ReadableCount: VisualCooldownGridSnapshot.SlotCount } &&
         bars.SpellBook is { Count: > 0 } book &&
         book.ReadableCount == book.Count &&
-        bars.Bindings is
-            { ReadableCount: VisualBindingSnapshot.Count };
+        bars.Bindings is not null;
 
     public static bool HasForeverControllerFrame(VisualBarSample bars) =>
         HasForeverTrialFrame(bars) && bars.Bags is { IsComplete: true };

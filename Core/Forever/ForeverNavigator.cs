@@ -1,6 +1,8 @@
 using Core.Database;
 using Core.GOAP;
 
+using Game;
+
 using Microsoft.Extensions.Logging;
 
 using PPather.Navmesh;
@@ -16,7 +18,7 @@ using static System.Diagnostics.Stopwatch;
 
 namespace Core.Forever;
 
-public enum ForeverNavigationResult { Waiting, StepSent, StepVerified, NoTargetPosition, Failed }
+public enum ForeverNavigationResult { Waiting, StepSent, StepVerified, NoTargetPosition, Blocked, Failed }
 
 /// <summary>Short, checked local mesh steps from the current live position.</summary>
 public sealed class ForeverNavigator : IDisposable
@@ -25,6 +27,7 @@ public sealed class ForeverNavigator : IDisposable
 
     private readonly ILogger<ForeverNavigator> logger;
     private readonly ConfigurableInput input;
+    private readonly MouseCameraInput camera;
     private readonly ForeverVisualBarTracker tracker;
     private readonly WorldMapAreaDB maps;
     private readonly DataConfig data;
@@ -38,15 +41,22 @@ public sealed class ForeverNavigator : IDisposable
     private long actionFrame;
     private long actionStarted;
     private PendingAction pending;
+    private bool pursuitForwardHeld;
+    private ConsoleKey? pursuitStrafeKey;
+    private Vector2 pursuitProgressPoint;
+    private long pursuitProgressAt;
+    private long markerMissingAt;
     private string? navCache;
+    private Vector2? detourWaypoint;
 
     public ForeverNavigator(ILogger<ForeverNavigator> logger,
-        ConfigurableInput input, ForeverVisualBarTracker tracker,
+        ConfigurableInput input, MouseCameraInput camera, ForeverVisualBarTracker tracker,
         WorldMapAreaDB maps, DataConfig data,
         CancellationTokenSource<GoapAgent> cts)
     {
         this.logger = logger;
         this.input = input;
+        this.camera = camera;
         this.tracker = tracker;
         this.maps = maps;
         this.data = data;
@@ -77,8 +87,8 @@ public sealed class ForeverNavigator : IDisposable
             reason = "map and world position disagree";
             return false;
         }
-        Vector2 ahead = here + Heading(map.Direction) * 3;
-        return HasShortPath(here, ahead, out reason);
+        return TrySafeHeading(here, (float)world.Z, map.Direction,
+            out _, out reason);
     }
 
     public ForeverNavigationResult Roam(VisualBarSample bars, out string reason)
@@ -95,8 +105,9 @@ public sealed class ForeverNavigator : IDisposable
         double desired = map.Direction;
         if (Vector2.Distance(here, roamOrigin.Value) >= 25)
             desired = Bearing(here, roamOrigin.Value);
-        else if (!HasShortPath(here, here + Heading(desired) * 3, out _))
-            desired = Normalize(desired + Math.PI / 2);
+        if (!TrySafeHeading(here, (float)world.Z, desired,
+                out desired, out reason))
+            return ForeverNavigationResult.Failed;
         return SendStep(bars, here, desired, out reason);
     }
 
@@ -131,33 +142,252 @@ public sealed class ForeverNavigator : IDisposable
         if (bars.Position is not { } map ||
             bars.WorldPosition is not { } world ||
             bars.TargetIdentity != target || !TryNav(out reason))
+        {
+            StopPursuit();
             return ForeverNavigationResult.Failed;
+        }
 
         Vector2 here = new((float)world.X, (float)world.Y);
         if (pursuitTarget != target)
         {
+            StopPursuit();
+            markerMissingAt = 0;
             pursuitTarget = target;
             pursuitOrigin = here;
+            detourWaypoint = null;
         }
         if (pending != PendingAction.None)
             return CheckPending(here, map.Direction, out reason);
         if (Vector2.Distance(here, pursuitOrigin!.Value) >= 35)
         {
+            StopPursuit();
             reason = "target stayed out of range after 35 yards of local search";
             return ForeverNavigationResult.Failed;
         }
-        double desired = map.Direction;
-        if (bars.TargetScreenPosition is { } screen)
+        if (detourWaypoint is { } waypoint)
+            return FollowDetour(bars, here, waypoint, out reason);
+
+        if (bars.TargetScreenPosition is not { } screen)
         {
-            if (screen.X < 0.42)
-                desired = Normalize(desired + 0.45);
-            else if (screen.X > 0.58)
-                desired = Normalize(desired - 0.45);
+            StopTranslation();
+            if (markerMissingAt == 0)
+                markerMissingAt = GetTimestamp();
+            double missingSeconds = GetElapsedTime(markerMissingAt).TotalSeconds;
+            if (missingSeconds > 5)
+            {
+                reason = "selected nameplate marker stayed unavailable";
+                return ForeverNavigationResult.Failed;
+            }
+            if (missingSeconds < 0.3)
+                return ForeverNavigationResult.Waiting;
+            return TurnTowardMarker(bars, 0.25, out reason);
         }
-        if (desired == map.Direction &&
-            !HasShortPath(here, here + Heading(desired) * 3, out _))
-            desired = Normalize(desired + Math.PI / 2);
-        return SendStep(bars, here, desired, out reason);
+        markerMissingAt = 0;
+
+        // Turning in place needs no walkable segment in the old direction.
+        // Align first; otherwise a wall beside us can prevent facing a clear path.
+        double horizontalError = screen.X - 0.5;
+        if (Math.Abs(horizontalError) > 0.15)
+        {
+            StopTranslation();
+            return TurnTowardMarker(bars, horizontalError, out reason);
+        }
+
+        if (pursuitForwardHeld || pursuitStrafeKey is not null)
+        {
+            float travel = Vector2.Distance(here, pursuitProgressPoint);
+            if (travel >= 0.20f)
+            {
+                pursuitProgressPoint = here;
+                pursuitProgressAt = GetTimestamp();
+            }
+            else if (GetElapsedTime(pursuitProgressAt).TotalSeconds > 3)
+            {
+                StopPursuit();
+                reason = "held forward movement was not verified";
+                return ForeverNavigationResult.Failed;
+            }
+        }
+
+        if (!ForeverTargetSelector.HasBinding(bars, 2,
+                BindingID.MOVEFORWARD, ConsoleKey.UpArrow, ModifierKey.None))
+        {
+            StopPursuit();
+            reason = "forward binding changed";
+            return ForeverNavigationResult.Failed;
+        }
+
+        bool forward = true;
+        ConsoleKey? strafe = null;
+        if (!HasShortPath(here, (float)world.Z,
+                here + Heading(map.Direction) * 3,
+                out string forwardReason))
+        {
+            int towardMarker = screen.X < 0.5 ? -1 : 1;
+            foreach (int side in new[] { towardMarker, -towardMarker })
+            {
+                ConsoleKey candidateKey = side < 0
+                    ? ConsoleKey.A : ConsoleKey.D;
+                if (!ForeverTargetSelector.HasBinding(bars,
+                        side < 0 ? 4 : 5,
+                        side < 0 ? BindingID.STRAFELEFT : BindingID.STRAFERIGHT,
+                        candidateKey, ModifierKey.None))
+                    continue;
+                if (HasShortPath(here, (float)world.Z, here +
+                        Heading(map.Direction - side * Math.PI / 4) * 3,
+                        out _))
+                {
+                    strafe = candidateKey;
+                    break;
+                }
+            }
+            if (strafe is null)
+            {
+                foreach (int side in new[] { towardMarker, -towardMarker })
+                {
+                    ConsoleKey candidateKey = side < 0
+                        ? ConsoleKey.A : ConsoleKey.D;
+                    if (!ForeverTargetSelector.HasBinding(bars,
+                            side < 0 ? 4 : 5,
+                            side < 0 ? BindingID.STRAFELEFT : BindingID.STRAFERIGHT,
+                            candidateKey, ModifierKey.None))
+                        continue;
+                    if (HasShortPath(here, (float)world.Z, here +
+                            Heading(map.Direction - side * Math.PI / 2) * 3,
+                            out _))
+                    {
+                        forward = false;
+                        strafe = candidateKey;
+                        break;
+                    }
+                }
+            }
+            if (strafe is null)
+            {
+                StopPursuit();
+                if (TryDetour(here, (float)world.Z, map.Direction, out Vector2 nextWaypoint))
+                {
+                    detourWaypoint = nextWaypoint;
+                    return ForeverNavigationResult.Waiting;
+                }
+                reason = $"no checked forward or sidestep path toward target; forward: {forwardReason}";
+                return ForeverNavigationResult.Blocked;
+            }
+        }
+
+        // Acquire foreground before key-down: WoW releases movement keys on
+        // focus changes, so sending forward first can leave only our held flag.
+        if (TurnTowardMarker(bars, horizontalError, out reason) == ForeverNavigationResult.Failed)
+            return ForeverNavigationResult.Failed;
+        bool starting = !pursuitForwardHeld && pursuitStrafeKey is null;
+        SetPursuitMovement(here, forward, strafe);
+        return starting ? ForeverNavigationResult.StepSent : ForeverNavigationResult.StepVerified;
+    }
+
+    private bool TryDetour(Vector2 here, float z, double direction, out Vector2 waypoint)
+    {
+        waypoint = default;
+        foreach (float distance in new[] { 3f, 6f, 9f, 12f })
+        {
+            Vector2 end = here + Heading(direction) * distance;
+            var path = nav!.FindPath(new(here.X, here.Y, z), new(end.X, end.Y, 0), null);
+            if (path is not { locations.Count: >= 2 } ||
+                Vector2.Distance(here, new(path.locations[0].X, path.locations[0].Y)) > 0.5f ||
+                Vector2.Distance(end, new(path.locations[^1].X, path.locations[^1].Y)) > 1)
+                continue;
+            foreach (Vector3 point in path.locations)
+            {
+                Vector2 next = new(point.X, point.Y);
+                if (Vector2.Distance(here, next) < 1) continue;
+                if (HasShortPath(here, z, next, out _))
+                {
+                    waypoint = next;
+                    return true;
+                }
+                break;
+            }
+        }
+        return false;
+    }
+
+    private ForeverNavigationResult FollowDetour(VisualBarSample bars, Vector2 here,
+        Vector2 waypoint, out string reason)
+    {
+        reason = string.Empty;
+        float distance = Vector2.Distance(here, waypoint);
+        if (distance < 0.65f)
+        {
+            detourWaypoint = null;
+            StopTranslation();
+            return ForeverNavigationResult.StepVerified;
+        }
+        double delta = SignedAngle(Bearing(here, waypoint) - bars.Position!.Value.Direction);
+        if (Math.Abs(delta) > 0.20)
+        {
+            StopTranslation();
+            return TurnTowardMarker(bars, -delta / Math.PI, out reason);
+        }
+        if (!ForeverTargetSelector.HasBinding(bars, 2, BindingID.MOVEFORWARD,
+                ConsoleKey.UpArrow, ModifierKey.None) ||
+            !HasShortPath(here, (float)bars.WorldPosition!.Value.Z,
+                here + Heading(bars.Position.Value.Direction) * Math.Min(3, distance), out reason))
+        {
+            StopPursuit();
+            detourWaypoint = null;
+            return ForeverNavigationResult.Blocked;
+        }
+        ForeverNavigationResult turn = TurnTowardMarker(bars, -delta / Math.PI, out reason);
+        if (turn != ForeverNavigationResult.Failed)
+            SetPursuitMovement(here, true, null);
+        return turn;
+    }
+
+    private ForeverNavigationResult TurnTowardMarker(VisualBarSample bars,
+        double horizontalError, out string reason)
+    {
+        reason = string.Empty;
+        if (!camera.Turn(horizontalError))
+        {
+            StopPursuit();
+            reason = "game lost focus during mouse steering";
+            return ForeverNavigationResult.Failed;
+        }
+        return ForeverNavigationResult.StepSent;
+    }
+
+    private void SetPursuitMovement(Vector2 here, bool forward,
+        ConsoleKey? strafe)
+    {
+        if (pursuitForwardHeld == forward && pursuitStrafeKey == strafe)
+            return;
+        if (pursuitStrafeKey is { } oldStrafe)
+            input.SetKeyState(oldStrafe, false, true);
+        if (pursuitForwardHeld && !forward)
+            input.StopForward(true);
+        if (forward && !pursuitForwardHeld)
+            input.StartForward(false);
+        if (strafe is { } newStrafe)
+            input.SetKeyState(newStrafe, true, false);
+        pursuitForwardHeld = forward;
+        pursuitStrafeKey = strafe;
+        pursuitProgressPoint = here;
+        pursuitProgressAt = GetTimestamp();
+    }
+
+    public void StopPursuit()
+    {
+        StopTranslation();
+        camera.Stop();
+    }
+
+    private void StopTranslation()
+    {
+        if (pursuitForwardHeld)
+            input.StopForward(true);
+        if (pursuitStrafeKey is { } strafe)
+            input.SetKeyState(strafe, false, true);
+        pursuitForwardHeld = false;
+        pursuitStrafeKey = null;
     }
 
     private ForeverNavigationResult SendStep(VisualBarSample bars,
@@ -189,7 +419,8 @@ public sealed class ForeverNavigator : IDisposable
             if (!ForeverTargetSelector.HasBinding(bars, 2,
                     BindingID.MOVEFORWARD, ConsoleKey.UpArrow,
                     ModifierKey.None) ||
-                !HasShortPath(here, here + Heading(map.Direction) * 3,
+                !HasShortPath(here, (float)bars.WorldPosition!.Value.Z,
+                    here + Heading(map.Direction) * 3,
                     out reason))
             {
                 reason = string.IsNullOrEmpty(reason)
@@ -229,7 +460,7 @@ public sealed class ForeverNavigator : IDisposable
             Vector2 forward = Heading(actionDirection);
             float along = Vector2.Dot(delta, forward);
             float lateral = MathF.Abs(delta.X * forward.Y - delta.Y * forward.X);
-            if (along is >= 0.20f and < 4f && lateral < 2f)
+            if (along >= 0.20f && lateral < 2f)
             {
                 pending = PendingAction.None;
                 return ForeverNavigationResult.StepVerified;
@@ -307,31 +538,39 @@ public sealed class ForeverNavigator : IDisposable
         return true;
     }
 
-    private bool HasShortPath(Vector2 here, Vector2 ahead,
+    private bool HasShortPath(Vector2 here, float playerZ, Vector2 ahead,
         out string reason)
     {
         reason = string.Empty;
-        if (nav is null ||
-            !nav.TryGetHeight(here.X, here.Y, out float startZ) ||
-            !nav.TryGetHeight(ahead.X, ahead.Y, out float endZ) ||
-            Math.Abs(endZ - startZ) > 1.5f)
+        if (nav is null || !float.IsFinite(playerZ))
         {
-            reason = "forward segment is outside the baked mesh";
+            reason = "player height or baked mesh is unavailable";
             return false;
         }
-        var path = nav.FindPath(new(here.X, here.Y, startZ),
-            new(ahead.X, ahead.Y, endZ), null);
-        if (path is not { locations.Count: >= 2 } ||
-            nav.LastStats.TilesBaked != 0 ||
-            Vector2.Distance(new(path.locations[0].X,
-                path.locations[0].Y), here) > 0.5f ||
-            Vector2.Distance(new(path.locations[^1].X,
-                path.locations[^1].Y), ahead) > 0.5f)
+        return nav.TryWalkStraight(new(here.X, here.Y, playerZ), ahead,
+            out _, out reason);
+    }
+
+    private bool TrySafeHeading(Vector2 here, float playerZ, double preferred,
+        out double direction, out string reason)
+    {
+        foreach (double offset in new[]
+            { 0.0, Math.PI / 4, -Math.PI / 4,
+              Math.PI / 2, -Math.PI / 2,
+              3 * Math.PI / 4, -3 * Math.PI / 4, Math.PI })
         {
-            reason = "forward segment has no complete disk-only path";
-            return false;
+            double candidate = Normalize(preferred + offset);
+            if (HasShortPath(here, playerZ,
+                    here + Heading(candidate) * 3, out _))
+            {
+                direction = candidate;
+                reason = string.Empty;
+                return true;
+            }
         }
-        return true;
+        direction = preferred;
+        reason = "no checked three-yard segment is available from the current position";
+        return false;
     }
 
     private bool TryNav(out string reason)
@@ -380,5 +619,9 @@ public sealed class ForeverNavigator : IDisposable
     private static double SignedAngle(double angle) =>
         Math.Atan2(Math.Sin(angle), Math.Cos(angle));
 
-    public void Dispose() => nav?.Dispose();
+    public void Dispose()
+    {
+        StopPursuit();
+        nav?.Dispose();
+    }
 }

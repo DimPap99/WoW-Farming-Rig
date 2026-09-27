@@ -105,9 +105,13 @@ public static class GoalFactory
             services.AddScoped<IMountHandler, MountHandler>();
             if (automatic)
             {
+                services.AddSingleton(sp.GetService<ForeverRunOptions>() ?? new ForeverRunOptions());
                 services.AddScoped<ForeverTargetSelector>();
                 services.AddScoped<ForeverNavigator>();
+                services.AddScoped(_ => new Game.MouseCameraInput(
+                    sp.GetRequiredService<Game.WowProcess>()));
                 services.AddScoped<IForeverCombatRoutine, ForeverCombat>();
+                services.AddScoped<IForeverLootRoutine, ForeverLoot>();
                 services.AddScoped<GoapGoal, ForeverAutonomousGoal>();
             }
             else

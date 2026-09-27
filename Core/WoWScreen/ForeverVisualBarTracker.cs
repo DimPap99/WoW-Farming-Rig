@@ -18,8 +18,6 @@ namespace Core;
 /// </summary>
 public sealed class ForeverVisualBarTracker
 {
-    private const int MaxRoiWidth = 650;
-    private const int MaxRoiHeight = 1000;
     private static readonly TimeSpan MaxSampleAge = TimeSpan.FromMilliseconds(750);
 
     private readonly IWowScreen screen;
@@ -49,8 +47,10 @@ public sealed class ForeverVisualBarTracker
         lastFrameId = frameId;
 
         Image<Bgra32> image = screen.ScreenImage;
-        int width = Math.Min(image.Width, MaxRoiWidth);
-        int height = Math.Min(image.Height, MaxRoiHeight);
+        // The telemetry sits at the left, but the selected nameplate marker
+        // can be anywhere. Its normalized coordinates use the full viewport.
+        int width = image.Width;
+        int height = image.Height;
         if (pixels.Length != width * height)
             pixels = new Bgra32[width * height];
 

@@ -390,15 +390,22 @@ local function createVisual()
     -- The client may allow anchoring to its selected nameplate while hiding
     -- the numeric frame center from Lua. This marker is decoded from pixels.
     local locator = CreateFrame("Frame", nil, UIParent)
-    locator:SetSize(16, 16)
+    locator:SetSize(28, 28)
     locator:SetFrameStrata("TOOLTIP")
     local border = locator:CreateTexture(nil, "OVERLAY")
     border:SetAllPoints(locator)
     border:SetColorTexture(1, 0, 1, 1)
+    border:SetDrawLayer("OVERLAY", 0)
+    local black = locator:CreateTexture(nil, "OVERLAY")
+    black:SetSize(22, 22)
+    black:SetPoint("CENTER", locator, "CENTER")
+    black:SetColorTexture(0, 0, 0, 1)
+    black:SetDrawLayer("OVERLAY", 1)
     local center = locator:CreateTexture(nil, "OVERLAY")
-    center:SetSize(4, 4)
+    center:SetSize(6, 6)
     center:SetPoint("CENTER", locator, "CENTER")
     center:SetColorTexture(0, 1, 1, 1)
+    center:SetDrawLayer("OVERLAY", 2)
     locator:Hide()
     frame.targetLocator = locator
     frame:SetScript("OnHide", function() locator:Hide() end)
@@ -498,6 +505,26 @@ local function createVisual()
     frame.targetDistanceValidPixel = addPixel(25, 190)
     frame.nameplateProbePixel = addPixel(26, 190)
     frame.nameplateProbeValidPixel = addPixel(27, 190)
+    frame.sealAuraPixel = addPixel(28, 190)
+    frame.sealAuraValidPixel = addPixel(29, 190)
+
+    frame.deathPixels, frame.lootPixels = {}, {}
+    for i = 1, 4 do frame.deathPixels[i] = addPixel(16 + i, 205) end
+    for i = 1, 9 do frame.lootPixels[i] = addPixel(16 + i, 225) end
+
+    -- Render permitted aura icons through native textures. In combat the
+    -- spell-ID lookup may return nil for an active restricted aura, so nil
+    -- cannot prove absence. The external reader compares these rendered
+    -- icons with the adjacent Seal reference from the same capture.
+    frame.auraIcons = {}
+    for index = 0, 40 do
+        local icon = frame:CreateTexture(nil, "OVERLAY")
+        icon:SetSize(16, 16)
+        icon:SetPoint("TOPLEFT", frame, "TOPLEFT",
+            (index % 21) * 18, -700 - math.floor(index / 21) * 18)
+        frame.auraIcons[index] = icon
+    end
+    frame.auraIcons[0]:SetTexture(C_Spell.GetSpellTexture(20287))
 
     -- Forty tiny pixels per row (ID, marker per action), six rows total.
     -- The marker distinguishes an empty slot from an unreadable one.
@@ -757,6 +784,31 @@ local function createVisual()
             print("ForeverProbe visual bars stopped: the client rejected an update")
         end
 
+        frame.sealAuraValidPixel:SetColorTexture(0, 0, 0, 1)
+        local auraOk, auraError = pcall(function()
+            local auras = C_UnitAuras.GetUnitAuras("player", "HELPFUL")
+            for index = 1, 40 do
+                local aura = auras[index]
+                if aura then
+                    frame.auraIcons[index]:SetTexture(aura.icon)
+                else
+                    frame.auraIcons[index]:SetColorTexture(0, 0, 0, 1)
+                end
+            end
+            local state = 2 -- completed visual aura grid
+            setIntPixel(frame.sealAuraPixel, state)
+            setIntPixel(frame.sealAuraValidPixel,
+                (0xA5B5A9 - state) % 16777216)
+        end)
+        if not auraOk then
+            ForeverProbeResults = ForeverProbeResults or {}
+            ForeverProbeResults.auraGridError = tostring(auraError)
+            if not frame.auraErrorReported then
+                print("ForeverProbe aura grid: " .. tostring(auraError))
+                frame.auraErrorReported = true
+            end
+        end
+
         frame.positionValidPixel:SetColorTexture(0, 0, 0, 1)
         pcall(function()
             local mapId = C_Map.GetBestMapForUnit("player")
@@ -921,6 +973,7 @@ local function createVisual()
             if present then
                 checkedTargetGuid = guid
                 checkedTargetHash1, checkedTargetHash2 = hash1, hash2
+                ForeverProbeEvents.ObserveTarget(guid)
             end
         end)
 
@@ -1097,6 +1150,12 @@ local function createVisual()
         end) end
 
         frame.castValidPixel:SetColorTexture(0, 0, 0, 1)
+        for i, value in ipairs(ForeverProbeEvents.DeathPixels()) do
+            setIntPixel(frame.deathPixels[i], value)
+        end
+        for i, value in ipairs(ForeverProbeEvents.LootPixels()) do
+            setIntPixel(frame.lootPixels[i], value)
+        end
         if castEventReadable then
             setIntPixel(frame.castSequencePixel, castSequence)
             setIntPixel(frame.castSpellPixel, castSpellId)
@@ -1106,7 +1165,7 @@ local function createVisual()
 
         frame.cooldownValidPixel:SetColorTexture(0, 0, 0, 1)
         local cooldownOk = pcall(function()
-            local duration = C_ActionBar.GetActionCooldownDuration(cooldownSlot, true)
+            local duration = C_ActionBar.GetActionCooldownDuration(cooldownSlot, false)
             frame.cooldown:SetTimerDuration(duration,
                 Enum.StatusBarInterpolation.Immediate,
                 Enum.StatusBarTimerDirection.RemainingTime)
@@ -1140,7 +1199,7 @@ local function createVisual()
                     if kind then
                         local cooldownReady = kind == 0 or pcall(function()
                             local duration =
-                                C_ActionBar.GetActionCooldownDuration(slot, true)
+                                C_ActionBar.GetActionCooldownDuration(slot, false)
                             cooldown.bar:SetTimerDuration(duration,
                                 Enum.StatusBarInterpolation.Immediate,
                                 Enum.StatusBarTimerDirection.RemainingTime)
