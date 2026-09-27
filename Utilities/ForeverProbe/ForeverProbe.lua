@@ -374,10 +374,10 @@ local function createVisual()
     -- Five small RGB pixels beneath the bars carry only ordinary map values.
     -- The last pixel is a validity marker written only after every field is
     -- encoded. If any API returns a secret or errors, the marker stays black.
-    local function addPixel(index)
+    local function addPixel(index, top)
         local pixel = frame:CreateTexture(nil, "ARTWORK")
         pixel:SetSize(10, 10)
-        pixel:SetPoint("TOPLEFT", frame, "TOPLEFT", index * 20, -90)
+        pixel:SetPoint("TOPLEFT", frame, "TOPLEFT", index * 20, -(top or 90))
         pixel:SetColorTexture(0, 0, 0, 1)
         return pixel
     end
@@ -395,6 +395,13 @@ local function createVisual()
     frame.healthMaxValidPixel = addPixel(12)
     frame.powerMaxPixel = addPixel(13)
     frame.powerMaxValidPixel = addPixel(14)
+    -- Signed centiyards with a 2^23 bias fit each world axis in one RGB pixel.
+    -- This row sits between the map markers and the cooldown bar.
+    frame.worldXPixel = addPixel(0, 105)
+    frame.worldYPixel = addPixel(1, 105)
+    frame.worldZPixel = addPixel(2, 105)
+    frame.worldMapPixel = addPixel(3, 105)
+    frame.worldValidPixel = addPixel(4, 105)
 
     -- Forty tiny pixels per row (ID, marker per action), six rows total.
     -- The marker distinguishes an empty slot from an unreadable one.
@@ -477,11 +484,41 @@ local function createVisual()
                 x < 0 or x > 1 or y < 0 or y > 1 or
                 facing < 0 or facing > 6.284 then return end
 
+            local encodedX = math.floor(x * 16777215)
+            local encodedY = math.floor(y * 16777215)
+            local encodedFacing = math.floor(facing * 100000)
             setIntPixel(frame.mapIdPixel, mapId)
-            setIntPixel(frame.mapXPixel, x * 16777215)
-            setIntPixel(frame.mapYPixel, y * 16777215)
-            setIntPixel(frame.facingPixel, facing * 100000)
-            frame.positionValidPixel:SetColorTexture(165 / 255, 90 / 255, 165 / 255, 1)
+            setIntPixel(frame.mapXPixel, encodedX)
+            setIntPixel(frame.mapYPixel, encodedY)
+            setIntPixel(frame.facingPixel, encodedFacing)
+            setIntPixel(frame.positionValidPixel,
+                (0xA55AA5 - mapId - encodedX - encodedY - encodedFacing) % 16777216)
+        end)
+
+        frame.worldValidPixel:SetColorTexture(0, 0, 0, 1)
+        pcall(function()
+            local x, y, z, instanceMap = UnitPosition("player")
+            local function encodeAxis(value)
+                if type(value) ~= "number" or
+                    (type(issecretvalue) == "function" and issecretvalue(value)) or
+                    value ~= value then return nil end
+                local encoded = math.floor(value * 100 + 0.5) + 8388608
+                if encoded < 0 or encoded > 16777215 then return nil end
+                return encoded
+            end
+            local encodedX, encodedY, encodedZ =
+                encodeAxis(x), encodeAxis(y), encodeAxis(z)
+            if not encodedX or not encodedY or not encodedZ or
+                type(instanceMap) ~= "number" or
+                (type(issecretvalue) == "function" and issecretvalue(instanceMap)) or
+                instanceMap < 0 or instanceMap > 16777215 or
+                instanceMap ~= math.floor(instanceMap) then return end
+            setIntPixel(frame.worldXPixel, encodedX)
+            setIntPixel(frame.worldYPixel, encodedY)
+            setIntPixel(frame.worldZPixel, encodedZ)
+            setIntPixel(frame.worldMapPixel, instanceMap)
+            setIntPixel(frame.worldValidPixel,
+                (0xA55A33 - encodedX - encodedY - encodedZ - instanceMap) % 16777216)
         end)
 
         -- Maxima are ordinary numbers on some Forever builds. Encode each
@@ -495,7 +532,7 @@ local function createVisual()
                 if not maximum or maximum <= 0 or maximum > 16777215 or
                     maximum ~= math.floor(maximum) then return end
                 setIntPixel(valuePixel, maximum)
-                setIntPixel(markerPixel, marker)
+                setIntPixel(markerPixel, (marker - maximum) % 16777216)
             end)
         end
         renderMax(UnitHealthMax, frame.healthMaxPixel,

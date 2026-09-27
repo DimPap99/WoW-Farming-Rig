@@ -30,6 +30,10 @@ stops before creating pixel frames or changing CVars on Forever.
    ID and a validity/type/slot marker; missing or mismatched pixels are rejected.
    A compact six-row grid beneath the bars carries type and ID for all 120
    action slots; each slot explicitly distinguishes empty from unreadable.
+   A second pixel row carries `UnitPosition` world X/Y/Z and instance map ID
+   at 0.01-yard resolution. Map coordinates, world coordinates, and player
+   vital maxima include a checksum marker; a damaged pixel is treated as
+   unreadable. These coordinates are diagnostic data only.
    A separate cyan sixth bar shows the remaining cooldown
    fraction for action-bar slot 1, or
    the slot selected with `/forevercooldown 1` through `/forevercooldown 12`.
@@ -203,6 +207,26 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   and rejected a stale sample. In a later manual fight, both maxima stayed
   readable while player health fell from 95% to 80%. Current health and power
   are still secret and are not inferred from the bar fill as exact integers.
+- A live world-position read in Tirisfal returned `(1934.80, 2441.60, 0.00)`
+  on instance map 0 while map `1420` showed normalized `(0.13094, 0.63160)`.
+  The committed map transform predicts `(1934.80, 2441.65)` in world X/Y,
+  within 0.05 yards. A second position returned `(1909.80, 2476.70, 0.00)`;
+  its map transform predicts `(1909.83, 2476.71)`. Both positions land on
+  baked Azeroth tile `146,142`. The mesh reported walkable heights around
+  129.39 and 130.68, while `UnitPosition` reported Z=0 at both. That Z result
+  is not suitable for navigation until its meaning is resolved. The visual
+  reader exposes fresh world values through `TryGetForeverWorldPosition` for
+  diagnostics, without feeding Z into the movement controller.
+- A later low-health capture showed color noise in the numeric pixel row:
+  an expected maximum of 232 appeared as 262,376 in one frame. The map and
+  world-position markers were also intermittently unreadable. The numeric
+  channels now checksum their payloads, so corrupted coordinates and maxima
+  are rejected rather than accepted as valid large values. Synthetic tests
+  cover red-channel corruption, including a uniform tint of value and marker,
+  at three UI scales. After reloading the updated
+  probe, a live `--reader-smoke` read both maxima and world position, then
+  rejected stale world position. A five-second moving capture kept the
+  checksummed map, world X/Y, and maxima readable; reported world Z stayed 0.
 - The target-presence marker changed from absent to present when a target was
   selected and back to absent after it was cleared, including during a manual
   fight where target health fell to 73%. A live `--reader-smoke` check read
