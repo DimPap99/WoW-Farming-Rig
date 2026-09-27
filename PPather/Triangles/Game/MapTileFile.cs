@@ -116,7 +116,7 @@ internal static partial class MapTileFile // adt file
                     HandleMDDF(file, modelmanager, models, size, out modelis);
                     break;
                 case ChunkReader.MODF:
-                    if (size != 0 && wmos.Length == 0)
+                    if (size != 0 && wmos.Length == 0 && !archive.SupportsFileDataIds)
                         throw new NotSupportedException($"{name.ToString()} has FileDataID-indexed MODF placements; the legacy name-table parser cannot load its collision WMOs.");
                     HandleMODF(file, wmos, wmomanager, size, out wmois);
                     break;
@@ -232,7 +232,7 @@ internal static partial class MapTileFile // adt file
                     HandleMDDF(file, modelmanager, models, size, out modelis);
                     break;
                 case ChunkReader.MODF:
-                    if (size != 0 && wmos.Length == 0)
+                    if (size != 0 && wmos.Length == 0 && !archive.SupportsFileDataIds)
                         throw new NotSupportedException($"{objName.ToString()} has FileDataID-indexed MODF placements; the legacy name-table parser cannot load its collision WMOs.");
                     HandleMODF(file, wmos, wmomanager, size, out wmois);
                     break;
@@ -423,8 +423,10 @@ internal static partial class MapTileFile // adt file
 
         for (int i = 0; i < nWMO; i++)
         {
-            int id = file.ReadInt32();
-            WMORoot wmo = wmomanager.AddAndLoadIfNeeded(wmos[id]);
+            uint id = file.ReadUInt32();
+            WMORoot wmo = wmos.Length == 0
+                ? wmomanager.AddAndLoadIfNeeded(id)
+                : wmomanager.AddAndLoadIfNeeded(wmos[checked((int)id)]);
 
             wmois[i] = new(file, wmo);
         }

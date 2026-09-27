@@ -69,8 +69,8 @@ public static class TileGeometryExtractor
                     y = maxY;
                 }
 
-                // A missing or unreadable ADT (ocean edges, corrupt archives)
-                // must not kill the whole tile - bake what did load.
+                // Legacy MPQ bakes tolerate missing edge ADTs. CASC geometry
+                // reads fail the bake so a partial WMO cannot become a tile.
                 try
                 {
                     TriangleCollection tc = world.GetChunkAt(x, y);
@@ -79,7 +79,7 @@ public static class TileGeometryExtractor
                         chunks.Add(tc);
                     }
                 }
-                catch (Exception)
+                catch (Exception) when (!world.RequiresCompleteGeometry)
                 {
                     failedChunkLoads++;
                 }

@@ -44,7 +44,9 @@ public sealed class WmoFileDataIdReferences
         uint[] groupIds = [];
         bool sawGfid = false;
         bool sawModi = false;
+        bool sawModn = false;
         bool sawModd = false;
+        byte[] modn = [];
 
         while (stream.Position < stream.Length)
         {
@@ -81,6 +83,12 @@ public sealed class WmoFileDataIdReferences
                     for (int i = 0; i < result.DoodadModelIds.Length; i++)
                         result.DoodadModelIds[i] = reader.ReadUInt32();
                     break;
+                case ChunkReader.MODN:
+                    if (sawModn)
+                        throw new InvalidDataException("Duplicate WMO MODN chunk.");
+                    sawModn = true;
+                    modn = reader.ReadBytes(checked((int)size));
+                    break;
                 case ChunkReader.MODD:
                     if (size % DoodadDefinitionSize != 0 || sawModd)
                         throw new InvalidDataException("Invalid or duplicate WMO MODD chunk.");
@@ -108,13 +116,24 @@ public sealed class WmoFileDataIdReferences
                 throw new InvalidDataException($"WMO full-detail group {i} has no FileDataID.");
         }
 
-        if (sawModd && result.DoodadPlacementModelIndexes.Length != 0 && !sawModi)
-            throw new InvalidDataException("WMO has doodad placements but no MODI model IDs.");
+        if (sawModd && result.DoodadPlacementModelIndexes.Length != 0 &&
+            result.DoodadModelIds.Length == 0 && modn.Length == 0)
+            throw new InvalidDataException("WMO has doodad placements but no MODI IDs or MODN names.");
 
         foreach (uint index in result.DoodadPlacementModelIndexes)
         {
-            if (index >= result.DoodadModelIds.Length)
-                throw new InvalidDataException($"WMO doodad references absent MODI entry {index}.");
+            if (result.DoodadModelIds.Length > 0)
+            {
+                if (index >= result.DoodadModelIds.Length || result.DoodadModelIds[index] == 0)
+                    throw new InvalidDataException($"WMO doodad references absent MODI entry {index}.");
+            }
+            else if (index >= modn.Length ||
+                     (index > 0 && modn[index - 1] != 0) ||
+                     modn.AsSpan((int)index).IndexOf((byte)0) < 0 ||
+                     string.IsNullOrWhiteSpace(ChunkReader.ExtractString(modn, (int)index)))
+            {
+                throw new InvalidDataException($"WMO doodad references absent MODN name at {index}.");
+            }
         }
 
         return result;

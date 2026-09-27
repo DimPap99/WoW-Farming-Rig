@@ -38,4 +38,10 @@ public sealed class WMORoot
     public ModelInstance[] doodadInstances;
 
     public uint flags;
+
+    // Numeric MODF roots keep only MODD metadata here. M2 collision meshes are
+    // loaded on demand for the selected doodad set during extraction.
+    public WmoDoodadSet[] numericDoodadSets = [];
+    public WmoDoodadPlacement[] numericDoodads = [];
+    public bool numericPlacement;
 }

@@ -34,6 +34,7 @@ public readonly struct WMOInstance
     public readonly Vector3 dir;
     public readonly int d2; //d3
     public readonly int doodadset;
+    public readonly float scale;
 
     public WMOInstance(BinaryReader file, WMORoot wmo)
     {
@@ -47,9 +48,21 @@ public readonly struct WMOInstance
         pos2 = file.ReadVector3();
         pos3 = file.ReadVector3();
 
-        d2 = file.ReadInt32();
-        doodadset = file.ReadInt16();
-        //_ = file.ReadInt16();
-        file.BaseStream.Seek(sizeof(Int16), SeekOrigin.Current);
+        if (wmo.numericPlacement)
+        {
+            d2 = file.ReadUInt16(); // flags
+            doodadset = file.ReadUInt16();
+            _ = file.ReadUInt16(); // name set
+            scale = file.ReadUInt16() / 1024f;
+            if (scale <= 0)
+                throw new InvalidDataException("Numeric WMO placement has zero scale.");
+        }
+        else
+        {
+            d2 = file.ReadInt32();
+            doodadset = file.ReadInt16();
+            file.BaseStream.Seek(sizeof(Int16), SeekOrigin.Current);
+            scale = 1;
+        }
     }
 }

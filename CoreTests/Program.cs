@@ -103,6 +103,7 @@ internal sealed class Program
             Test_CascGeometryListfile();
             Test_ModelInstanceScale();
             Test_WmoFileDataIdReferences();
+            Test_NumericWmoPlacement();
             Test_WmoMPY2();
             Log.CloseAndFlush();
             return;
@@ -757,7 +758,7 @@ internal sealed class Program
 
     private static void Test_WmoFileDataIdReferences()
     {
-        static byte[] MakeRoot(uint doodadIndex, bool incompleteGroups = false)
+        static byte[] MakeRoot(uint doodadIndex, bool incompleteGroups = false, bool legacyNames = false)
         {
             using System.IO.MemoryStream stream = new();
             using System.IO.BinaryWriter writer = new(stream);
@@ -802,9 +803,17 @@ internal sealed class Program
             using (System.IO.MemoryStream payload = new())
             {
                 using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
-                data.Write(301U);
-                data.Write(302U);
-                Chunk(writer, "IDOM", payload.ToArray());
+                if (legacyNames)
+                {
+                    data.Write(System.Text.Encoding.ASCII.GetBytes("World\\Doodads\\fixture.m2\0"));
+                    Chunk(writer, "NDOM", payload.ToArray());
+                }
+                else
+                {
+                    data.Write(301U);
+                    data.Write(302U);
+                    Chunk(writer, "IDOM", payload.ToArray());
+                }
             }
 
             return stream.ToArray();
@@ -822,7 +831,16 @@ internal sealed class Program
             }
         }
 
-        foreach (byte[] malformed in new[] { MakeRoot(2), MakeRoot(0, incompleteGroups: true) })
+        using (System.IO.MemoryStream legacy = new(MakeRoot(0, legacyNames: true)))
+        {
+            Wmo.WmoFileDataIdReferences refs = Wmo.WmoFileDataIdReferences.Read(legacy);
+            if (refs.GroupCount != 2 || refs.DoodadModelIds.Length != 0 ||
+                !refs.DoodadPlacementModelIndexes.SequenceEqual([0U]))
+                throw new Exception("WMO MODN fallback was not parsed correctly.");
+        }
+
+        foreach (byte[] malformed in new[] { MakeRoot(2), MakeRoot(0, incompleteGroups: true),
+                     MakeRoot(99, legacyNames: true), MakeRoot(1, legacyNames: true) })
         {
             try
             {
@@ -875,6 +893,151 @@ internal sealed class Program
         }
 
         logger.LogInformation("WMO MPY2 collision flag parsing passed.");
+    }
+
+    private static void Test_NumericWmoPlacement()
+    {
+        static void Chunk(System.IO.BinaryWriter writer, string reversedTag, byte[] payload)
+        {
+            writer.Write(System.Text.Encoding.ASCII.GetBytes(reversedTag));
+            writer.Write((uint)payload.Length);
+            writer.Write(payload);
+        }
+
+        static byte[] MakeRoot()
+        {
+            using System.IO.MemoryStream stream = new();
+            using System.IO.BinaryWriter writer = new(stream);
+            using (System.IO.MemoryStream payload = new())
+            {
+                using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
+                foreach (uint value in new uint[] { 0, 1, 0, 0, 2, 2, 2, 0, 0 })
+                    data.Write(value); // MOHD: one group, two doodads, two sets
+                data.Write(new byte[28]); // bounds and flags
+                Chunk(writer, "DHOM", payload.ToArray());
+            }
+            Chunk(writer, "IGOM", new byte[32]);
+            using (System.IO.MemoryStream payload = new())
+            {
+                using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
+                foreach ((uint first, uint count) in new (uint, uint)[] { (0, 1), (1, 1) })
+                {
+                    data.Write(new byte[20]);
+                    data.Write(first);
+                    data.Write(count);
+                    data.Write(0U);
+                }
+                Chunk(writer, "SDOM", payload.ToArray());
+            }
+            using (System.IO.MemoryStream payload = new())
+            {
+                using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
+                for (uint i = 0; i < 2; i++)
+                {
+                    data.Write(i | 0x10000000U); // MODI index plus flags
+                    data.Write(1f + i); data.Write(2f); data.Write(3f);
+                    data.Write(1f); data.Write(0f); data.Write(0f); data.Write(0f); // identity quaternion, W first
+                    data.Write(1f); data.Write(0U);
+                }
+                Chunk(writer, "DDOM", payload.ToArray()); // before MODI
+            }
+            using (System.IO.MemoryStream payload = new())
+            {
+                using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
+                data.Write(301U); data.Write(302U);
+                Chunk(writer, "IDOM", payload.ToArray());
+            }
+            using (System.IO.MemoryStream payload = new())
+            {
+                using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
+                data.Write(101U); data.Write(201U); // full-detail group, then LOD
+                Chunk(writer, "DIFG", payload.ToArray());
+            }
+            return stream.ToArray();
+        }
+
+        static byte[] MakeGroup()
+        {
+            using System.IO.MemoryStream stream = new();
+            using System.IO.BinaryWriter writer = new(stream);
+            Chunk(writer, "REVM", BitConverter.GetBytes(17U));
+            Chunk(writer, "PGOM", new byte[68]);
+            using (System.IO.MemoryStream payload = new())
+            {
+                using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
+                data.Write((ushort)0x28); data.Write((ushort)0);
+                Chunk(writer, "2YPM", payload.ToArray());
+            }
+            using (System.IO.MemoryStream payload = new())
+            {
+                using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
+                data.Write((ushort)0); data.Write((ushort)1); data.Write((ushort)2);
+                Chunk(writer, "IVOM", payload.ToArray());
+            }
+            using (System.IO.MemoryStream payload = new())
+            {
+                using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
+                foreach (float value in new float[] { 0, 0, 0, 1, 0, 0, 0, 1, 0 })
+                    data.Write(value);
+                Chunk(writer, "TVOM", payload.ToArray());
+            }
+            return stream.ToArray();
+        }
+
+        using NumericWmoTestSource source = new(new Dictionary<uint, byte[]>
+        {
+            [500] = MakeRoot(), [101] = MakeGroup(),
+        });
+        Wmo.WMOManager manager = new(source, new Wmo.ModelManager(source));
+        Wmo.WMORoot root = manager.AddAndLoadIfNeeded(500);
+        if (!root.numericPlacement || root.groups.Length != 1 || root.groups[0].nTriangles != 1 ||
+            root.numericDoodads.Length != 2 || root.numericDoodads[0].FileDataId != 301 ||
+            root.numericDoodads[1].FileDataId != 302 ||
+            root.numericDoodadSets[0] != new Wmo.WmoDoodadSet(0, 1) ||
+            root.numericDoodadSets[1] != new Wmo.WmoDoodadSet(1, 1))
+        {
+            throw new Exception("Numeric WMO full-detail group or doodad sets were parsed incorrectly.");
+        }
+
+        using (System.IO.MemoryStream placementStream = new())
+        {
+            using System.IO.BinaryWriter writer = new(placementStream, System.Text.Encoding.ASCII, leaveOpen: true);
+            writer.Write(7); // unique ID, after the MODF FileDataID
+            writer.Write(new byte[48]); // position, orientation, extents
+            writer.Write((ushort)12); // flags
+            writer.Write((ushort)1); // selected doodad set
+            writer.Write((ushort)3); // name set (must not be used as doodad set)
+            writer.Write((ushort)2048); // scale 2
+            placementStream.Position = 0;
+            using System.IO.BinaryReader reader = new(placementStream);
+            Wmo.WMOInstance placement = new(reader, root);
+            if (placement.doodadset != 1 || Math.Abs(placement.scale - 2f) > 0.0001f)
+                throw new Exception("Numeric MODF tail fields were misread.");
+        }
+
+        using NumericWmoTestSource missingGroup = new(new Dictionary<uint, byte[]> { [500] = MakeRoot() });
+        try
+        {
+            _ = new Wmo.WMOManager(missingGroup, new Wmo.ModelManager(missingGroup)).AddAndLoadIfNeeded(500);
+            throw new Exception("Missing numeric WMO group was accepted.");
+        }
+        catch (System.IO.FileNotFoundException)
+        {
+        }
+
+        logger.LogInformation("Numeric WMO placement, selected set, and missing-group checks passed.");
+    }
+
+    private sealed class NumericWmoTestSource(Dictionary<uint, byte[]> files) : PPather.Storage.IGameFileSource
+    {
+        public bool SupportsFileDataIds => true;
+        public System.IO.Stream OpenRead(uint fileDataId) => files.TryGetValue(fileDataId, out byte[]? data)
+            ? new System.IO.MemoryStream(data, writable: false)
+            : throw new System.IO.FileNotFoundException($"Missing {fileDataId}");
+        public System.IO.Stream OpenRead(ReadOnlySpan<char> name) => throw new NotSupportedException();
+        public bool Exists(uint fileDataId) => files.ContainsKey(fileDataId);
+        public bool Exists(ReadOnlySpan<char> name) => false;
+        public void Dispose() { }
     }
 
     private sealed class WmoGroupTestSource(byte[] bytes) : PPather.Storage.IGameFileSource
