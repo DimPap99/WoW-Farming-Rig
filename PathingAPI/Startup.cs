@@ -1,6 +1,7 @@
 using Core.Database;
 
 using Frontend;
+using ForeverCasc;
 
 using MatBlazor;
 
@@ -15,6 +16,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 
 using PPather;
+using PPather.Storage;
 
 using Serilog;
 using Serilog.Events;
@@ -100,7 +102,38 @@ public sealed class Startup
         services.Configure<NavmeshQueryOptions>(configuration.GetSection(NavmeshQueryOptions.Position));
         services.Configure<SplineFollowerOptions>(configuration.GetSection(SplineFollowerOptions.Position));
 
-        services.AddSingleton<PPatherService>();
+        Func<IGameFileSource>? gameFileSourceFactory = null;
+        if (exp.Equals("forever", StringComparison.OrdinalIgnoreCase))
+        {
+            string? install = configuration["ForeverCasc:Install"];
+            string? listfile = configuration["ForeverCasc:Listfile"];
+            if (string.IsNullOrWhiteSpace(install) != string.IsNullOrWhiteSpace(listfile))
+                throw new InvalidOperationException("ForeverCasc:Install and ForeverCasc:Listfile must be configured together.");
+
+            if (!string.IsNullOrWhiteSpace(install))
+            {
+                string? configuredProduct = configuration["ForeverCasc:Product"];
+                string product = string.IsNullOrWhiteSpace(configuredProduct) ? "wow_classic_beta" : configuredProduct;
+                string? configuredCache = configuration["ForeverCasc:Cache"];
+                string cache = string.IsNullOrWhiteSpace(configuredCache)
+                    ? Path.Combine(Path.GetTempPath(), "WoWFarmingRig", "forever-casc")
+                    : configuredCache;
+                gameFileSourceFactory = () => new CascGameFileSource(install, product, listfile!, cache);
+                Log.Information("Forever CASC geometry enabled from {Install}", install);
+            }
+            else
+            {
+                Log.Information("Forever CASC geometry is not configured; navmesh queries will use baked tiles on disk");
+            }
+        }
+
+        services.AddSingleton(sp => new PPatherService(
+            sp.GetRequiredService<ILogger<PPatherService>>(),
+            sp.GetRequiredService<DataConfig>(),
+            sp.GetRequiredService<WorldMapAreaDB>(),
+            sp.GetRequiredService<IOptions<NavmeshBakeOptions>>(),
+            sp.GetRequiredService<IOptions<NavmeshQueryOptions>>(),
+            gameFileSourceFactory));
 
         // Opt-in AnTCP listener speaking AmeisenNavigation's binary protocol, so a bot
         // configured for RemoteV3 can point at this server and get routes from this
