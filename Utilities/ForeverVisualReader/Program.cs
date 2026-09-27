@@ -25,7 +25,7 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 
-// Read-only capture diagnostics plus two explicitly bounded trial inputs.
+// Read-only capture diagnostics plus explicitly bounded trial inputs.
 // It never constructs BotController or starts autonomous gameplay.
 int pidOption = Array.IndexOf(args, "--pid");
 int? requestedPid = null;
@@ -49,6 +49,8 @@ bool routeProbe = args.Length == 1 && args[0] == "--route-probe";
 bool trialCheck = args.Length == 1 && args[0] == "--trial-check";
 bool trialMove = args.Length == 1 && args[0] == "--trial-move";
 bool trialHeal = args.Length == 1 && args[0] == "--trial-heal";
+bool trialJudgement = args.Length == 1 && args[0] == "--trial-judgement";
+bool trialJudgementArmed = args.Length == 1 && args[0] == "--trial-judgement-armed";
 
 if (args.Length == 2 && args[0] == "--read")
 {
@@ -100,6 +102,12 @@ try
 
     if (trialHeal)
         return await RunTrialHeal(screen, tracker, process, cts);
+
+    if (trialJudgement)
+        return await RunTrialJudgement(screen, tracker, process, cts);
+
+    if (trialJudgementArmed)
+        return await RunArmedJudgement(screen, tracker, process, cts);
 
     if (monitor)
     {
@@ -1141,6 +1149,117 @@ static async Task<int> RunTrialHeal(WowScreenWGC screen,
     Console.WriteLine($"Single Holy Light keypress: observed={observedCast}, " +
         $"mana={before.PlayerPower:P0}->{lastMana:P0}, target=none");
     return observedCast ? 0 : 2;
+}
+
+static async Task<int> RunArmedJudgement(WowScreenWGC screen,
+    ForeverVisualBarTracker tracker, WowProcess process,
+    CancellationTokenSource cts)
+{
+    if (await RunTrialCheck(screen, tracker, requireNearRoute: false) != 0)
+        return 2;
+
+    Console.WriteLine("Judgement trial armed and capturing. Send go on stdin for one immediate safety check and keypress.");
+    Task<string?> command = Console.In.ReadLineAsync();
+    while (!command.IsCompleted && !cts.IsCancellationRequested)
+    {
+        screen.Update();
+        tracker.Update();
+        await Task.Delay(50);
+    }
+    if (cts.IsCancellationRequested ||
+        !string.Equals(await command, "go", StringComparison.OrdinalIgnoreCase))
+        return 2;
+
+    return await RunTrialJudgement(screen, tracker, process, cts,
+        profilePrechecked: true);
+}
+
+static async Task<int> RunTrialJudgement(WowScreenWGC screen,
+    ForeverVisualBarTracker tracker, WowProcess process,
+    CancellationTokenSource cts, bool profilePrechecked = false)
+{
+    if (!profilePrechecked &&
+        await RunTrialCheck(screen, tracker, requireNearRoute: false) != 0)
+        return 2;
+    screen.Update();
+    tracker.Update();
+    if (!tracker.TryGetLatest(out VisualBarSample before))
+    {
+        Console.Error.WriteLine("Judgement trial refused: no fresh visual sample.");
+        return 2;
+    }
+    if (before.PlayerHealth < 0.95 || before.PlayerPower < 0.60)
+    {
+        Console.Error.WriteLine($"Judgement trial refused: health={before.PlayerHealth:P0}, mana={before.PlayerPower:P0}; need at least 95% and 60%.");
+        return 2;
+    }
+    if (before.TargetFlags is not
+            { Present: true, Attackable: true, Dead: false } ||
+        before.TargetHealth <= 0)
+    {
+        Console.Error.WriteLine($"Judgement trial refused: target={before.TargetFlags}; need a living attackable target.");
+        return 2;
+    }
+    if (before.ActionStates?.GetSlot(2) is not { InRange: true } ||
+        before.SpellBook is not { } visualBook)
+    {
+        Console.Error.WriteLine("Judgement trial refused: range or spellbook is unreadable.");
+        return 2;
+    }
+
+    DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
+    SpellBookReader spellBook = new(new SpellDB(config));
+    spellBook.UpdateForever(visualBook);
+    KeyAction judgement = new() { Name = "Judgement", SpellId = 20271, Slot = 2 };
+    ActionBarCooldownReader cooldown = new()
+    {
+        ForeverSampleProvider = () => tracker.TryGetLatest(out var latest)
+            ? latest : null
+    };
+    if (!cooldown.IsForeverReady(judgement, spellBook))
+    {
+        Console.Error.WriteLine("Judgement trial refused: the verified action is not ready.");
+        return 2;
+    }
+
+    InputWindowsNative input = new(process, cts, 0);
+    try
+    {
+        input.PressFixed((int)ConsoleKey.D2, 75, cts.Token);
+    }
+    finally
+    {
+        input.KeyUp((int)ConsoleKey.D2);
+    }
+
+    bool observedAction = false;
+    double lastMana = before.PlayerPower;
+    double lastTargetHealth = before.TargetHealth;
+    bool flagsReadable = true;
+    for (int i = 0; i < 30; i++)
+    {
+        screen.Update();
+        tracker.Update();
+        if (tracker.TryGetLatest(out VisualBarSample after))
+        {
+            flagsReadable &= after.TargetFlags is not null;
+            lastMana = after.PlayerPower;
+            lastTargetHealth = after.TargetHealth;
+            if (after.PlayerPower < before.PlayerPower - 0.01 ||
+                after.TargetHealth < before.TargetHealth - 0.01 ||
+                after.Cooldowns?.GetSlot(2) is > 0)
+            {
+                observedAction = true;
+                break;
+            }
+        }
+        await Task.Delay(100);
+    }
+    Console.WriteLine($"Single Judgement keypress: observed={observedAction}, " +
+        $"mana={before.PlayerPower:P0}->{lastMana:P0}, " +
+        $"targetHealth={before.TargetHealth:P0}->{lastTargetHealth:P0}, " +
+        $"targetFlagsReadable={flagsReadable}; finish the fight manually.");
+    return observedAction && flagsReadable ? 0 : 2;
 }
 
 static bool HasChanged(VisualBarSample previous, VisualBarSample current)

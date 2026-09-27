@@ -502,11 +502,11 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
    coordinate/cost-zone/listfile tests, but its six-tile MPQ byte-identity
    bake could not run here because this workspace has no `Json/MPQ` archive
    corpus. Do not reuse the pre-Cataclysm navmesh: Forever's world is different.
-4. The minimal Forever trial profile and read-only combined gate are present.
-   Run a bounded manual check of one route, one target, one action, and recovery
-   after the remaining input and casting readers are ported. Complete any DBC
-   tables and reader fields that this check actually needs.
-   Remove the startup guard only after those checks pass. No autonomous
+4. The minimal Forever trial profile, read-only combined gate, and bounded
+   route, target, action, and recovery checks have passed in isolation. Port
+   the normal controller's Classic-only event, casting, action-cost, and
+   combat-state dependencies, then validate a bounded controller-run cycle.
+   Remove the startup guard only after that cycle passes. No autonomous
    movement or combat has been enabled for Forever.
 
 ### Paladin trial gate
@@ -532,10 +532,21 @@ The beta binding grid now contains `STARTATTACK` on Shift+2 and
 and target flags passed live, including one selected attackable living target.
 After the target was cleared, a guarded `--trial-heal` check sent one Holy Light
 key and observed mana fall from 100% to 88% without acquiring a target. The
-profile's enemy cast and recovery from a fight remain untested. The normal
-Forever controller still refuses gameplay, and its casting path relies on
-Classic-only event, aura, and cost data. Those gaps must be resolved before
+normal Forever controller still refuses gameplay, and its casting path relies
+on Classic-only event, aura, and cost data. Those gaps must be resolved before
 the startup guard can be removed.
+
+The optional `--trial-judgement` tool requires a fresh living attackable
+target in range, at least 95% health and 60% mana, and checked slot readiness
+before one keypress. Two live preflights refused input: the first target was
+already dead, and the second found the player at 89% health. An armed run then
+held the capture process open until the user's ready signal. Its immediate
+preflight refused input at 93% health. A subsequent armed run with a neutral
+attackable target passed: one Judgement keypress changed mana 100% to 96% and
+target health 100% to 81%; target flags stayed readable. The user finished the
+fight and cleared the target, after which the read-only reader smoke found
+100% health, 100% mana, no target, and all checked fields valid. The isolated
+bounded sequence passes; an autonomous controller-run cycle is still open.
 
 For API signatures, use Blizzard's generated UI documentation from the
 [`1.60.1 (70009)` UI-source snapshot](https://github.com/Gethe/wow-ui-source/tree/bd2470aed543f72697a044e989285b6c83e63f73/Interface/AddOns/Blizzard_APIDocumentationGenerated)
