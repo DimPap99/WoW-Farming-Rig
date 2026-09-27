@@ -342,9 +342,24 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
     public RecordInt Money { get; } = new(44, 45, 1000000);
 
     // FACTION_ID * 1000000 + RACE_ID * 10000 + CLASS_ID * 100 + ClientVersion
-    public UnitRace Race => (UnitRace)(reader.GetInt(46) / 10000 % 100);
-    public UnitClass Class => (UnitClass)(reader.GetInt(46) / 100 % 100);
-    public ClientVersion Version => (ClientVersion)(reader.GetInt(46) % 100);
+    public UnitRace Race => IsForever
+        ? (UnitRace)RequiredForeverIdentity().RaceId
+        : (UnitRace)(reader.GetInt(46) / 10000 % 100);
+    public UnitClass Class => IsForever
+        ? (UnitClass)RequiredForeverIdentity().ClassId
+        : (UnitClass)(reader.GetInt(46) / 100 % 100);
+    public ClientVersion Version => IsForever
+        ? ClientVersion.Forever
+        : (ClientVersion)(reader.GetInt(46) % 100);
+
+    private VisualPlayerIdentity RequiredForeverIdentity()
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars) &&
+            bars.PlayerIdentity is { } identity)
+            return identity;
+        throw new InvalidOperationException(
+            "Forever player identity is unavailable or stale.");
+    }
 
     // Sent by the addon rather than derived from the race: a Pandaren is
     // Neutral until the Wandering Isle is finished, then becomes either side.
@@ -553,10 +568,12 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
             if (currentHealth < previousHealthPercent && previousHealthPercent > 0)
                 lastDamageTakenTimestamp = Stopwatch.GetTimestamp();
             previousHealthPercent = currentHealth;
+            Level.ForceUpdate(bars.PlayerIdentity?.Level ?? 0);
         }
         else
         {
             previousHealthPercent = 0;
+            Level.ForceUpdate(0);
         }
 
         if (!TryGetForeverPosition(out VisualPositionSample position) ||

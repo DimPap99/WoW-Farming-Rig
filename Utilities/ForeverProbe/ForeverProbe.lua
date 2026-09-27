@@ -422,6 +422,10 @@ local function createVisual()
     frame.bindingCountValidPixel = addPixel(8, 105)
     frame.powerTypePixel = addPixel(9, 105)
     frame.powerTypeValidPixel = addPixel(10, 105)
+    frame.playerIdentityPixel = addPixel(11, 105)
+    frame.playerIdentityValidPixel = addPixel(12, 105)
+    frame.targetFlagsPixel = addPixel(13, 105)
+    frame.targetFlagsValidPixel = addPixel(14, 105)
 
     -- Forty tiny pixels per row (ID, marker per action), six rows total.
     -- The marker distinguishes an empty slot from an unreadable one.
@@ -759,6 +763,53 @@ local function createVisual()
                 setIntPixel(frame.powerTypeValidPixel,
                     (0xA56644 - powerType) % 16777216)
             end
+        end)
+
+        frame.playerIdentityPixel:SetColorTexture(0, 0, 0, 1)
+        frame.playerIdentityValidPixel:SetColorTexture(0, 0, 0, 1)
+        pcall(function()
+            local _, _, classId = UnitClass("player")
+            local _, _, raceId = UnitRace("player")
+            local level = UnitLevel("player")
+            classId, raceId, level = readableNumber(classId),
+                readableNumber(raceId), readableNumber(level)
+            if not classId or not raceId or not level or
+                classId < 1 or classId > 63 or
+                raceId < 1 or raceId > 255 or
+                level < 1 or level > 1023 or
+                classId ~= math.floor(classId) or
+                raceId ~= math.floor(raceId) or
+                level ~= math.floor(level) then return end
+            local packed = classId + raceId * 64 + level * 16384
+            setIntPixel(frame.playerIdentityPixel, packed)
+            setIntPixel(frame.playerIdentityValidPixel,
+                (0xA57744 - packed) % 16777216)
+        end)
+
+        frame.targetFlagsPixel:SetColorTexture(0, 0, 0, 1)
+        frame.targetFlagsValidPixel:SetColorTexture(0, 0, 0, 1)
+        pcall(function()
+            local guid = UnitGUID("target")
+            if type(issecretvalue) == "function" and issecretvalue(guid) then
+                return
+            end
+            local present = guid ~= nil
+            local attackable, dead = false, false
+            if present then
+                attackable = UnitCanAttack("player", "target")
+                dead = UnitIsDead("target")
+                if type(issecretvalue) == "function" and
+                    (issecretvalue(attackable) or issecretvalue(dead)) then
+                    return
+                end
+                if type(attackable) ~= "boolean" or
+                    type(dead) ~= "boolean" then return end
+            end
+            local flags = (present and 1 or 0) +
+                (attackable and 2 or 0) + (dead and 4 or 0)
+            setIntPixel(frame.targetFlagsPixel, flags)
+            setIntPixel(frame.targetFlagsValidPixel,
+                (0xA57755 - flags) % 16777216)
         end)
 
         frame.cooldownValidPixel:SetColorTexture(0, 0, 0, 1)

@@ -524,10 +524,16 @@ At the stationary live check on 2026-09-27, the route start was 0.8 yards from
 the player, the 12-yard segment resolved entirely from baked mesh, and the
 spell IDs, main-bar bindings, action states, cooldown readiness, map position,
 mana, and bag grid agreed with the profile. The player was at 100% health and
-mana with no target. This is a read-only prerequisite, not a completed
-movement, target, cast, or recovery trial. The normal Forever controller still
-refuses gameplay. The current binding grid has no `INTERACTTARGET` or
-`STARTATTACK` key, and the normal casting/controller path still relies on
+mana with no target. A later guarded `--trial-move` run sent one 200 ms Up Arrow
+press after a fresh full-health/no-target/stationary check; the character moved
+1.46 yards over a connected baked mesh segment and remained at full health.
+The beta binding grid now contains `STARTATTACK` on Shift+2 and
+`INTERACTTARGET` on Shift+3. Checked player identity (level 11 Undead Paladin)
+and target flags passed live, including one selected attackable living target.
+After the target was cleared, a guarded `--trial-heal` check sent one Holy Light
+key and observed mana fall from 100% to 88% without acquiring a target. The
+profile's enemy cast and recovery from a fight remain untested. The normal
+Forever controller still refuses gameplay, and its casting path relies on
 Classic-only event, aura, and cost data. Those gaps must be resolved before
 the startup guard can be removed.
 
