@@ -325,6 +325,13 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   after sample expiry. The current character has no bindings for many
   secondary action bars, so their occupied slots cannot yet be driven by a
   key. The startup guard remains in place.
+- Forever key resolution now requires a live game binding. If a command is
+  unbound or the visual snapshot has expired, `KeyReader` refuses to substitute
+  a Classic default. A secondary binding is accepted when the primary is
+  absent. Synthetic checks cover a bound main-bar slot, an unbound slot, a
+  secondary-only slot, and stale data at three UI scales. A live read confirmed
+  main slot 1 resolves to `1` while unbound bottom-right slot 49 and stale
+  bindings resolve to no key. No action was pressed by this check.
 - The Forever dashboard was smoke-tested against the live beta on this machine.
   It returned HTTP 200 and displayed 100% player health, 100% power, and 0%
   target health with no target selected. The log confirmed WGC capture and the

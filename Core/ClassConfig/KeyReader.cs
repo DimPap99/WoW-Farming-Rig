@@ -422,6 +422,19 @@ public static class KeyReader
             return true;
         }
 
+        if (GameBindingsSecondary.TryGetValue(key.BindingID, out var secondaryBinding))
+        {
+            key.ConsoleKey = secondaryBinding.Key;
+            key.Modifier = secondaryBinding.Modifier;
+            var binding = KeyBindingDefaults.GetByBindingID(key.BindingID);
+            if (binding.HasValue && binding.Value.Slot.HasValue)
+                key.Slot = binding.Value.Slot.Value;
+            return true;
+        }
+
+        if (RequireGameBindings)
+            return false;
+
         // Fall back to KeyBindingDefaults (before GameBindings is populated)
         var defaultBinding = KeyBindingDefaults.GetByBindingID(key.BindingID);
         if (defaultBinding.HasValue)
@@ -453,6 +466,16 @@ public static class KeyReader
             key.Modifier = gameBinding.Modifier;
             return true;
         }
+
+        if (GameBindingsSecondary.TryGetValue(bindingId, out var secondaryBinding))
+        {
+            key.ConsoleKey = secondaryBinding.Key;
+            key.Modifier = secondaryBinding.Modifier;
+            return true;
+        }
+
+        if (RequireGameBindings)
+            return false;
 
         // Fall back to KeyBindingDefaults
         var defaultBinding = KeyBindingDefaults.GetByBindingID(bindingId);
@@ -833,6 +856,10 @@ public static class KeyReader
     /// Storage for secondary bindings received from the game client.
     /// </summary>
     public static Dictionary<BindingID, (ConsoleKey Key, ModifierKey Modifier)> GameBindingsSecondary { get; } = [];
+
+    // Forever has a checked live binding snapshot. Never infer a key from
+    // Classic defaults when that snapshot says a command is unbound or stale.
+    public static bool RequireGameBindings { get; set; }
 
     /// <summary>
     /// Processes an encoded binding value and stores it.
