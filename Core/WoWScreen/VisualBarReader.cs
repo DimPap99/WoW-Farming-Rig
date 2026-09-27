@@ -20,7 +20,8 @@ public readonly record struct VisualPlayerIdentity(
     int ClassId, int RaceId, int Level);
 
 public readonly record struct VisualTargetFlags(
-    bool Present, bool Attackable, bool Dead);
+    bool Present, bool Attackable, bool Dead,
+    bool PlayerCombat, bool PlayerDead);
 
 public enum VisualActionKind : byte { Empty, Spell, Item, Macro, Flyout }
 
@@ -346,13 +347,17 @@ public static class VisualBarReader
     {
         int? flags = TryReadCheckedWorldPixel(pixels, width, height,
             left, whiteY, scale, 13, 0xA57755);
-        if (flags is not int value || value is < 0 or > 7)
+        if (flags is not int value || value is < 32 or > 63)
             return null;
+        value -= 32;
         bool present = (value & 1) != 0;
         bool attackable = (value & 2) != 0;
         bool dead = (value & 4) != 0;
+        bool playerCombat = (value & 8) != 0;
+        bool playerDead = (value & 16) != 0;
         return !present && (attackable || dead)
-            ? null : new(present, attackable, dead);
+            ? null : new(present, attackable, dead,
+                playerCombat, playerDead);
     }
 
     private static VisualCooldownGridSnapshot? TryReadCooldownGrid(
