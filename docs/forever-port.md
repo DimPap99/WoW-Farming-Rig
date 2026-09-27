@@ -370,6 +370,20 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   idle slot 1 stayed at 0%. The sample expires with capture. This is a
   fraction, not a verified millisecond cooldown value, so the gameplay
   cooldown reader still needs a Forever-specific decision rule.
+- Forever cooldown gating now requires a fresh, complete action/state/cooldown
+  capture, an exact learned spell in the expected slot, a usable action with
+  enough power, and an empty cooldown bar. It rejects slots outside the 12-row
+  grid and stale or partial captures. `CD_{action}` still means milliseconds on
+  Classic. On Forever, numeric reads throw and profile expressions using a
+  bound action's `CD_` variable are rejected at load with a clear error.
+  Synthetic tests exercise ready, running, wrong spell, unsupported slot,
+  missing data, and profile-expression detection at three UI scales.
+  The profile audit found four uses that cannot be inferred from a fraction:
+  `<= GCD` (Paladin and Death Knight), comparisons between two `CD_` values
+  (Paladin), and `>= WAIT_CHARGE_MS` (Warrior). `== 0` and `> 0` express
+  ready/busy but still need explicit boolean rules before those existing
+  profiles can run on Forever. `CD_MIN_TARGET_HP%` is a user-defined threshold,
+  not an action cooldown, and remains valid.
 - The Forever dashboard was smoke-tested against the live beta on this machine.
   It returned HTTP 200 and displayed 100% player health, 100% power, and 0%
   target health with no target selected. The log confirmed WGC capture and the
@@ -440,11 +454,11 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
 
 ## Required work before attempting gameplay automation
 
-1. Finish action readiness. The learned spellbook, checked action IDs,
-   bindings, slot validation, usability, and range are live. The selected-slot
-   cooldown bar and 12-slot cooldown grid work. Handle the protected timer as
-   a readiness signal or a verified
-   time estimate for every bound action and audit profile `CD_` comparisons.
+1. Extend action readiness beyond the 12 main-bar slots only if the chosen
+   Forever profile needs them. A fresh checked ready/busy decision now gates
+   learned spells in those slots. Existing profile `CD_` millisecond
+   comparisons are audited and rejected on Forever until rewritten as explicit
+   readiness rules or backed by a verified timer source.
 2. Finish gameplay data and rules. Replace exact current health/power uses
    with safe percentage or action-state decisions where valid; provide
    inactive mana, pet, and focus vitals when a chosen profile requires them.
