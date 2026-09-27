@@ -33,6 +33,10 @@ dotnet run --project Utilities/BakeTool -c Release -- --exp legacy_mop --root ~/
 point it at a directory whose `MPQ` is that client's `Data` (a junction works) and whose
 other subdirs junction back to the repo, so output lands in the real tree.
 
+For `--exp forever`, pass `--casc-install` and a local `--casc-listfile` instead
+of MPQ archives. `--adt` is world grid X,Y: `Azeroth_32_48.adt` uses `--adt 48,32`.
+The tool fails if that grid cell is absent from the WDT.
+
 **`--min-world-z` feeds the settings hash.** It defaults to `Expansion01=-700` to match
 `appsettings.json`; baking Outland without it writes to a different cache dir *and*
 bakes the floating-landmass death floor.

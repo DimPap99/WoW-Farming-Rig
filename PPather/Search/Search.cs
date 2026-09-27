@@ -2,6 +2,7 @@
 
 using PPather.Graph;
 using PPather.Navmesh;
+using PPather.Storage;
 
 using System;
 using System.Numerics;
@@ -17,6 +18,7 @@ public sealed class Search
 
     private readonly DataConfig dataConfig;
     private readonly ILogger logger;
+    private readonly Func<IGameFileSource>? gameFileSourceFactory;
 
     public Vector4 From { get; set; }
     public Vector4 Target { get; set; }
@@ -26,11 +28,13 @@ public sealed class Search
 
     private const float howClose = PathGraph.MaxStepLength;
 
-    public Search(float mapId, ILogger logger, DataConfig dataConfig)
+    public Search(float mapId, ILogger logger, DataConfig dataConfig,
+        Func<IGameFileSource>? gameFileSourceFactory = null)
     {
         this.logger = logger;
         this.MapId = mapId;
         this.dataConfig = dataConfig;
+        this.gameFileSourceFactory = gameFileSourceFactory;
 
         CreatePathGraph(mapId);
     }
@@ -173,9 +177,34 @@ public sealed class Search
     {
         this.MapId = mapId;
 
-        MPQTriangleSupplier mpq = new(logger, dataConfig, mapId);
-        ChunkedTriangleCollection triangleWorld = new(logger, 64, mpq);
-        PathGraph = new(mapId, triangleWorld, logger, dataConfig);
+        MPQTriangleSupplier supplier;
+        if (gameFileSourceFactory is null)
+        {
+            supplier = new(logger, dataConfig, mapId);
+        }
+        else
+        {
+            IGameFileSource source = gameFileSourceFactory();
+            try
+            {
+                supplier = new(logger, source, mapId);
+            }
+            catch
+            {
+                source.Dispose();
+                throw;
+            }
+        }
+        ChunkedTriangleCollection triangleWorld = new(logger, 64, supplier);
+        try
+        {
+            PathGraph = new(mapId, triangleWorld, logger, dataConfig);
+        }
+        catch
+        {
+            triangleWorld.Close();
+            throw;
+        }
     }
 
     public Path DoSearch(SearchStrategy searchScoreSpot)

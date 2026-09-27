@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using PPather.Data;
 using PPather.Graph;
 using PPather.Navmesh;
+using PPather.Storage;
 
 using SharedLib;
 using SharedLib.Data;
@@ -27,6 +28,7 @@ public sealed class PPatherService : IDisposable
     private readonly WorldMapAreaDB worldMapAreaDB;
     private readonly NavmeshBakeOptions bakeOptions;
     private readonly NavmeshQueryOptions queryOptions;
+    private readonly Func<IGameFileSource>? gameFileSourceFactory;
 
     public event Action SearchBegin;
     public event Action<Path> OnPathCreated;
@@ -149,16 +151,19 @@ public sealed class PPatherService : IDisposable
     public HashSet<Vector3> BlockedPoints => search?.PathGraph?.BlockedPoints ?? [];
 
     public PPatherService(ILogger<PPatherService> logger, DataConfig dataConfig, WorldMapAreaDB worldMapAreaDB,
-        IOptions<NavmeshBakeOptions> bakeOptions, IOptions<NavmeshQueryOptions> queryOptions)
+        IOptions<NavmeshBakeOptions> bakeOptions, IOptions<NavmeshQueryOptions> queryOptions,
+        Func<IGameFileSource>? gameFileSourceFactory = null)
     {
         this.dataConfig = dataConfig;
         this.logger = logger;
         this.worldMapAreaDB = worldMapAreaDB;
         this.bakeOptions = bakeOptions.Value;
         this.queryOptions = queryOptions.Value;
+        this.gameFileSourceFactory = gameFileSourceFactory;
         ContinentDB.Init(worldMapAreaDB.Values);
 
-        MPQSelfTest();
+        if (gameFileSourceFactory is null)
+            MPQSelfTest();
         StartZoneWatcher();
     }
 
@@ -316,7 +321,7 @@ public sealed class PPatherService : IDisposable
 
         try
         {
-            search = new Search(mapId, logger, dataConfig);
+            search = new Search(mapId, logger, dataConfig, gameFileSourceFactory);
             search.PathGraph.triangleWorld.NotifyChunkAdded = ChunkAdded;
         }
         catch (Exception e) when (Engine == PathingEngine.Navmesh)
@@ -470,7 +475,7 @@ public sealed class PPatherService : IDisposable
         search ?? throw new InvalidOperationException(
             $"This operation needs the game archives for " +
             $"{(ContinentDB.IdToName.TryGetValue(activeMapId, out string? n) ? n : activeMapId.ToString())}, " +
-            $"which are not available in {dataConfig.MPQ}. Baked navmesh tiles alone " +
+            $"which are not available from the configured game source. Baked navmesh tiles alone " +
             $"support path and height queries, not baking or SpotAStar.");
 
     public void ChunkAdded(ChunkEventArgs e)
@@ -749,9 +754,12 @@ public sealed class PPatherService : IDisposable
 
         NavmeshTileCache tiles = navmeshPathfinder!.Tiles;
 
-        List<(int x, int y)> adts = adt.HasValue
-            ? [adt.Value]
-            : TriangleWorld!.ExistingAdts();
+        List<(int x, int y)> existingAdts = TriangleWorld!.ExistingAdts();
+        if (adt.HasValue && !existingAdts.Contains(adt.Value))
+            throw new InvalidOperationException(
+                $"ADT {adt.Value.x},{adt.Value.y} is absent from {name}. " +
+                "--adt uses world grid X,Y; raw ADT filenames use Y_X.");
+        List<(int x, int y)> adts = adt.HasValue ? [adt.Value] : existingAdts;
 
         lock (bakeLock)
         {
@@ -1345,6 +1353,8 @@ public sealed class PPatherService : IDisposable
 
             if (search == null)
             {
+                if (gameFileSourceFactory is not null)
+                    throw new InvalidOperationException($"Area data bake cannot read {name} from the configured game source.");
                 // Area data comes from ADT area ids, not from the navmesh, so
                 // there is nothing to extract without the client archives.
                 logger.LogWarning(

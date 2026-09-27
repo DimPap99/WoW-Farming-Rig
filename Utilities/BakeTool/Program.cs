@@ -1,13 +1,16 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
+using ForeverCasc;
 using PPather;
+using PPather.Storage;
 
 using SharedLib;
 
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Threading;
 
 namespace BakeTool;
@@ -31,10 +34,27 @@ internal static class Program
         string? root = Value(args, "--root");
         string? continent = Value(args, "--continent");
         string? adt = Value(args, "--adt");
+        string? cascInstall = Value(args, "--casc-install");
+        string? cascListfile = Value(args, "--casc-listfile");
+        string? cascProduct = Value(args, "--casc-product");
+        string? cascCache = Value(args, "--casc-cache");
 
         if (string.IsNullOrWhiteSpace(exp))
         {
-            Console.Error.WriteLine("--exp is required (e.g. legacy_mop, legacy_cata, wrath)");
+            Console.Error.WriteLine("--exp is required (e.g. legacy_mop, legacy_cata, forever)");
+            return 1;
+        }
+
+        bool forever = exp.Equals("forever", StringComparison.OrdinalIgnoreCase);
+        if (forever && (string.IsNullOrWhiteSpace(cascInstall) || string.IsNullOrWhiteSpace(cascListfile)))
+        {
+            Console.Error.WriteLine("Forever requires --casc-install and --casc-listfile.");
+            return 1;
+        }
+        if (!forever && (cascInstall is not null || cascListfile is not null ||
+            cascProduct is not null || cascCache is not null))
+        {
+            Console.Error.WriteLine("CASC options require --exp forever.");
             return 1;
         }
 
@@ -50,7 +70,10 @@ internal static class Program
                           $"{System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}");
         Console.WriteLine($"exp / era : {cfg.Exp} / {DataConfig.ClientEra(cfg.Exp)}");
         Console.WriteLine($"root      : {cfg.Root}");
-        Console.WriteLine($"MPQ       : {cfg.MPQ}");
+        if (forever)
+            Console.WriteLine($"CASC      : {cascInstall}");
+        else
+            Console.WriteLine($"MPQ       : {cfg.MPQ}");
         Console.WriteLine($"navmesh   : {cfg.Navmesh}");
 
         WorldMapAreaDB wmaDb;
@@ -98,9 +121,15 @@ internal static class Program
             Console.WriteLine($"minWorldZ : {c} = {z}");
         }
 
-        PPatherService service = new(log, cfg, wmaDb,
+        Func<IGameFileSource>? sourceFactory = forever
+            ? () => new CascGameFileSource(cascInstall!,
+                cascProduct ?? "wow_classic_beta", cascListfile!,
+                cascCache ?? Path.Combine(Path.GetTempPath(), "WoWFarmingRig", "forever-casc"))
+            : null;
+
+        using PPatherService service = new(log, cfg, wmaDb,
             Options.Create(bake),
-            Options.Create(new NavmeshQueryOptions()));
+            Options.Create(new NavmeshQueryOptions()), sourceFactory);
 
         // Area-id grids + subzone bounds. Separate from the navmesh bake: it reads
         // ADT area ids rather than geometry, and its output is what lets
@@ -114,7 +143,20 @@ internal static class Program
             Console.WriteLine();
 
             long areaStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            bool ok = service.BuildAreaGrid(continent);
+            bool ok;
+            try
+            {
+                ok = service.BuildAreaGrid(continent);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine($"Area grid bake failed: {e.Message}");
+                return 4;
+            }
+            finally
+            {
+                service.Reset();
+            }
             Console.WriteLine($"\ntotal {System.Diagnostics.Stopwatch.GetElapsedTime(areaStart):hh\\:mm\\:ss}");
 
             return ok ? 0 : 4;
@@ -174,7 +216,10 @@ internal static class Program
                 Console.WriteLine($"[{Elapsed(start)}] DONE {s.Continent} " +
                                   $"adts={s.AdtDone}/{s.AdtTotal} tilesBaked={s.TilesDone} " +
                                   $"onDisk={s.TilesAlreadyOnDisk} msg={s.Message}");
-                break;
+                Console.WriteLine($"\ntotal {Elapsed(start)}");
+                service.Reset();
+                return s.Message.StartsWith("failed:", StringComparison.Ordinal) ? 4
+                    : s.Message == "cancelled" ? 5 : 0;
             }
 
             if ((DateTime.UtcNow - lastReport).TotalMinutes >= 1)
@@ -186,8 +231,6 @@ internal static class Program
             }
         }
 
-        Console.WriteLine($"\ntotal {Elapsed(start)}");
-        return 0;
     }
 
     private static string Elapsed(DateTime start) =>
@@ -212,12 +255,13 @@ internal static class Program
         Console.WriteLine("""
             BakeTool - cross-platform navmesh bake (macOS / Linux / Windows)
 
-              --exp <client>        required, e.g. legacy_mop, legacy_cata, wrath
+              --exp <client>        required, e.g. legacy_mop, legacy_cata, forever
               --root <dir>          data root; default is DataConfig's (../json)
               --continent <name>    one continent; omit to bake every continent
                                     the client has (Azeroth, Kalimdor,
                                     Expansion01, Northrend, HawaiiMainLand)
-              --adt <x,y>           one ADT only; needs --continent
+              --adt <x,y>           one world-grid ADT; needs --continent.
+                                    Raw ADT filenames use y_x order.
               --min-world-z <list>  Continent=z pairs, e.g. Expansion01=-700
                                     (that one is the default; it feeds the
                                     settings hash, so it must match whatever
@@ -227,14 +271,19 @@ internal static class Program
                                     and subzones/<exp>/; this is what lets
                                     GetAreaIdAndZ answer without the client.
                                     Honours --continent; omit it for all.
+              --casc-install <dir>  Forever client install directory
+              --casc-listfile <csv> local geometry listfile (id;path)
+              --casc-product <name> CASC product; default wow_classic_beta
+              --casc-cache <dir>    local CASC index cache directory
 
-            The data root must contain MPQ/ (the client's archives) and
-            dbc/<exp>/ (generate with ReadDBC_CSV -v <exp>).
+            The data root must contain dbc/<exp>/ (generate with ReadDBC_CSV
+            -v <exp>). MPQ clients also need MPQ/; Forever uses local CASC.
 
             Examples
               BakeTool --exp legacy_mop --root ~/wcgb-data --continent HawaiiMainLand
               BakeTool --exp legacy_mop --root ~/wcgb-data --continent Azeroth --adt 48,32
               BakeTool --exp legacy_mop --root ~/wcgb-data --area-grid
+              BakeTool --exp forever --root Json --continent Azeroth --adt 48,32 --casc-install "C:\Program Files (x86)\World of Warcraft" --casc-listfile local/forever-casc/community-listfile.csv
             """);
     }
 }

@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\PPather\PPather.csproj" />
     <ProjectReference Include="..\..\SharedLib\SharedLib.csproj" />
     <ProjectReference Include="..\..\DataConfig\DataConfig.csproj" />
+    <ProjectReference Include="..\ForeverCasc\ForeverCasc.csproj" />
   </ItemGroup>
 
   <!-- Only what Central Package Management already declares; a console logger
