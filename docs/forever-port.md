@@ -480,7 +480,11 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
    Forever profile needs them. A fresh checked ready/busy decision now gates
    learned spells in those slots. Existing profile `CD_` millisecond
    comparisons are audited and rejected on Forever until rewritten as explicit
-   readiness rules or backed by a verified timer source.
+   readiness rules or backed by a verified timer source. Numeric `Cost` and
+   `Cost_...` comparisons are likewise rejected: the Classic action-cost cells
+   have no Forever source. For the verified main-bar spells, the checked
+   cooldown gate requires a fresh usable action with `NoMana=false`; form and
+   combo-point cost rules are rejected until those signals are ported.
 2. Finish gameplay data and rules. Player health/power percentages, maxima,
    and checked primary mana percentage are live; exact current values remain
    protected. Provide pet/focus vitals only if the chosen profile needs them.

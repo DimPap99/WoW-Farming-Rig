@@ -390,6 +390,10 @@ public sealed partial class RequirementFactory
             (item.AfterCastWaitBuff || item.AfterCastAuraExpected))
             throw new NotSupportedException(
                 $"Forever action '{item.Name}' requires an unverified aura signal.");
+        if (playerReader.IsForeverVisual &&
+            (item.HasForm || item.MinComboPoints > 0))
+            throw new NotSupportedException(
+                $"Forever action '{item.Name}' requires unported form or combo-point cost data.");
 
         if (item.Name is Drink or Food)
             AddConsumable(item);
@@ -464,6 +468,11 @@ public sealed partial class RequirementFactory
                     $"Forever profile expression '{requirement}' uses {key} as milliseconds; replace it with a readiness rule.");
 
             if (playerReader.IsForeverVisual &&
+                FindUnsupportedForeverActionCost(requirement) is { } cost)
+                throw new NotSupportedException(
+                    $"Forever profile expression '{requirement}' uses unavailable numeric action cost {cost}; use checked usability and no-mana state.");
+
+            if (playerReader.IsForeverVisual &&
                 FindUnsupportedForeverVital(requirement) is { } vital)
                 throw new NotSupportedException(
                     $"Forever profile expression '{requirement}' uses unavailable exact or secondary vital {vital}; use a checked percentage or action usability rule.");
@@ -494,6 +503,16 @@ public sealed partial class RequirementFactory
 
     [GeneratedRegex(@"(?<!\w)CD_[^<>=&|),]+", RegexOptions.IgnoreCase)]
     private static partial Regex ForeverCooldownVariable();
+
+    public static string? FindUnsupportedForeverActionCost(string expression)
+    {
+        Match match = ForeverActionCostVariable().Match(expression);
+        return match.Success ? match.Value.Trim() : null;
+    }
+
+    [GeneratedRegex(@"(?<![A-Za-z0-9_])Cost(?:_[^<>=&|),]+)?(?![A-Za-z0-9_])",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex ForeverActionCostVariable();
 
     public static string? FindUnsupportedForeverVital(string expression)
     {
@@ -685,7 +704,8 @@ public sealed partial class RequirementFactory
             return;
 
         BindCooldown(item, cooldownReader);
-        BindMinCost(item, costReader);
+        if (!playerReader.IsForeverVisual)
+            BindMinCost(item, costReader);
     }
 
     private void BindCooldown(KeyAction item, ActionBarCooldownReader reader)
@@ -857,6 +877,13 @@ public sealed partial class RequirementFactory
     private void AddMinPower(List<Requirement> list, KeyAction item,
         ActionBarCostReader costReader, BuffStatus<IPlayer> buffs)
     {
+        if (playerReader.IsForeverVisual)
+        {
+            // IsForeverReady already requires a fresh usable action with
+            // NoMana=false. Numeric costs and current power are protected.
+            return;
+        }
+
         AddMinPower(list, item, playerReader, costReader, buffs);
 
         AddMinComboPoints(list, item, playerReader);
