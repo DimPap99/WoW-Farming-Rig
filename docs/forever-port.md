@@ -508,8 +508,10 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
    corpus. Do not reuse the pre-Cataclysm navmesh: Forever's world is different.
 4. The minimal Forever trial profile, read-only combined gate, and bounded
    route, target, action, and recovery checks have passed in isolation. Port
-   the normal controller's Classic-only event, casting, action-cost, and
-   combat-state dependencies, then validate a bounded controller-run cycle.
+   the normal controller's remaining Classic-only event, casting, and state
+   dependencies, then validate a bounded controller-run cycle. The checked
+   player combat/death flags are available to `AddonBits`; other Classic-only
+   state cells remain unported.
    Remove the startup guard only after that cycle passes. No autonomous
    movement or combat has been enabled for Forever.
 
@@ -559,6 +561,16 @@ spellbook and changed or missing bindings. A read-only live gate after this
 change reported all trial actions matched, 100% health and mana, and complete
 bag data. It refused the near-route condition because the player had moved
 298 yards from the original local trial route; no input was sent.
+
+The probe's checked target-flags pixel now also carries player combat and
+dead/ghost state, with a version bit that rejects the older three-bit pixel.
+`AddonBits.Combat()` and `Dead()` use these flags on Forever and reject an
+unreadable or stale sample. A live read during a manual fight found player
+combat true, player dead false, 44% health, and a living target at 4% health;
+the adapter and stale-sample checks passed. After the fight, a second live
+read found combat false, dead false, and 100% health; a living target was
+still selected. The idle transition and stale-sample checks passed. A true
+death/ghost state has only been checked synthetically.
 
 For API signatures, use Blizzard's generated UI documentation from the
 [`1.60.1 (70009)` UI-source snapshot](https://github.com/Gethe/wow-ui-source/tree/bd2470aed543f72697a044e989285b6c83e63f73/Interface/AddOns/Blizzard_APIDocumentationGenerated)

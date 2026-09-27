@@ -426,7 +426,9 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                     (targetFlags.Present && targetFlags.Dead) &&
                 targetBits.Target_Hostile() ==
                     (targetFlags.Present && targetFlags.Attackable &&
-                        !targetFlags.Dead);
+                        !targetFlags.Dead) &&
+                targetBits.Combat() == targetFlags.PlayerCombat &&
+                targetBits.Dead() == targetFlags.PlayerDead;
             bool manaMatches = powerTypeReadable &&
                 (bars.PlayerPowerType != 0 || mana == power);
             bool worldPositionMatches = bars.WorldPosition is not { } world ||
@@ -601,6 +603,11 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool staleManaRejected = false;
             try { _ = player.ManaPercent(); }
             catch (InvalidOperationException) { staleManaRejected = true; }
+            bool stalePlayerFlagsRejected = false;
+            try { _ = targetBits.Combat(); }
+            catch (InvalidOperationException) { stalePlayerFlagsRejected = true; }
+            try { _ = targetBits.Dead(); stalePlayerFlagsRejected = false; }
+            catch (InvalidOperationException) { }
 
             Console.WriteLine($"PlayerReader: health={health}%, power={power}%, " +
                 $"powerType={bars.PlayerPowerType?.ToString() ?? "missing"}, " +
@@ -610,6 +617,7 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"targetFlags={bars.TargetFlags?.ToString() ?? "missing"}, " +
                 $"targetFlagsMatch={targetFlagsMatch}, " +
                 $"targetBitsMatch={targetBitsMatch}, " +
+                $"stalePlayerFlagsRejected={stalePlayerFlagsRejected}, " +
                 $"mana={(mana is { } mp ? mp + "%" : "unavailable")}, " +
                 $"manaMatches={manaMatches}, " +
                 $"staleManaRejected={staleManaRejected}, " +
@@ -668,6 +676,7 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 staleCooldownReadinessRejected && maximaMatch &&
                 powerTypeReadable && manaMatches && identityMatches &&
                 targetFlagsMatch && targetBitsMatch &&
+                stalePlayerFlagsRejected &&
                 worldPositionMatches && staleWorldPositionRejected &&
                 spellBookMatches && staleSpellBookRejected &&
                 staleSpellBookReaderReset &&
@@ -874,7 +883,8 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
             bars.Bags is not { IsComplete: true } || bars.PlayerPowerType != 0 ||
             bars.PlayerIdentity is not { ClassId: (int)UnitClass.Paladin } ||
             bars.TargetFlags is not { } targetFlags ||
-            targetFlags.Present != bars.TargetPresent)
+            targetFlags.Present != bars.TargetPresent ||
+            targetFlags.PlayerCombat || targetFlags.PlayerDead)
         {
             Console.Error.WriteLine("Trial data is incomplete or the character left Tirisfal.");
             return 2;
@@ -1014,8 +1024,10 @@ static async Task<int> RunTrialMove(WowScreenWGC screen,
         current.WorldPosition is not { } startWorld ||
         current.Position is not { } startMap ||
         first.PlayerHealth < 0.95 || current.PlayerHealth < 0.95 ||
-        first.TargetFlags is not { Present: false } ||
-        current.TargetFlags is not { Present: false } ||
+        first.TargetFlags is not
+            { Present: false, PlayerCombat: false, PlayerDead: false } ||
+        current.TargetFlags is not
+            { Present: false, PlayerCombat: false, PlayerDead: false } ||
         current.TargetPresent != false ||
         startMap.UIMapId != 1420 || startWorld.InstanceMapId != 0 ||
         Vector2.Distance(new((float)firstWorld.X, (float)firstWorld.Y),
@@ -1053,7 +1065,8 @@ static async Task<int> RunTrialMove(WowScreenWGC screen,
     if (after is not { } observed ||
         observed.WorldPosition is not { } endWorld ||
         observed.Position is not { UIMapId: 1420 } ||
-        observed.TargetFlags is not { Present: false } ||
+        observed.TargetFlags is not
+            { Present: false, PlayerCombat: false, PlayerDead: false } ||
         observed.PlayerHealth < 0.90)
     {
         Console.Error.WriteLine("Movement trial failed to confirm a safe fresh endpoint.");
@@ -1102,7 +1115,8 @@ static async Task<int> RunTrialHeal(WowScreenWGC screen,
     tracker.Update();
     if (!tracker.TryGetLatest(out VisualBarSample before) ||
         before.PlayerHealth < 0.95 || before.PlayerPower < 0.60 ||
-        before.TargetFlags is not { Present: false } ||
+        before.TargetFlags is not
+            { Present: false, PlayerCombat: false, PlayerDead: false } ||
         before.SpellBook is not { } visualBook)
     {
         Console.Error.WriteLine("Heal trial refused: full health, mana, no target, or spellbook check failed.");
@@ -1139,7 +1153,9 @@ static async Task<int> RunTrialHeal(WowScreenWGC screen,
         if (tracker.TryGetLatest(out VisualBarSample after))
         {
             if (after.PlayerHealth < 0.90 ||
-                after.TargetFlags is not { Present: false })
+                after.TargetFlags is not
+                    { Present: false, PlayerCombat: false,
+                      PlayerDead: false })
             {
                 Console.Error.WriteLine("Heal trial stopped: health or target safety changed.");
                 return 2;
@@ -1202,7 +1218,8 @@ static async Task<int> RunTrialJudgement(WowScreenWGC screen,
         return 2;
     }
     if (before.TargetFlags is not
-            { Present: true, Attackable: true, Dead: false } ||
+            { Present: true, Attackable: true, Dead: false,
+              PlayerCombat: false, PlayerDead: false } ||
         before.TargetHealth <= 0)
     {
         Console.Error.WriteLine($"Judgement trial refused: target={before.TargetFlags}; need a living attackable target.");
@@ -1402,8 +1419,8 @@ static int RunSelfTest()
         int identity = 2 + 5 * 64 + 12 * 16384;
         DrawWorldPixel(11, identity);
         DrawWorldPixel(12, (0xA57744 - identity) & 0xFFFFFF);
-        DrawWorldPixel(13, 3);
-        DrawWorldPixel(14, 0xA57755 - 3);
+        DrawWorldPixel(13, 35);
+        DrawWorldPixel(14, 0xA57755 - 35);
         DrawSpellGridSlot(1, VisualSpellIdSource.SpellId, 6603);
         DrawSpellGridSlot(2, VisualSpellIdSource.ActionId, 270);
         DrawSpellGridSlot(3, VisualSpellIdSource.SpellId, 7744);
@@ -1455,7 +1472,8 @@ static int RunSelfTest()
             || result.PlayerIdentity is not
                 { ClassId: 2, RaceId: 5, Level: 12 }
             || result.TargetFlags is not
-                { Present: true, Attackable: true, Dead: false }
+                { Present: true, Attackable: true, Dead: false,
+                  PlayerCombat: false, PlayerDead: false }
             || result.WatchedAction is not { Slot: 4, Kind: VisualActionKind.Spell, Id: 7744 }
             || result.ActionBar is not { ReadableCount: 120, OccupiedCount: 2 } actionBar
             || actionBar.GetSlot(4) is not { Kind: VisualActionKind.Spell, Id: 7744 }
@@ -1546,22 +1564,45 @@ static int RunSelfTest()
             return 1;
         }
         DrawWorldPixel(12, (0xA57744 - identity) & 0xFFFFFF);
-        DrawWorldPixel(14, 0xA57755 - 3);
-        DrawWorldPixel(13, 0);
-        DrawWorldPixel(14, 0xA57755);
+        DrawWorldPixel(14, 0xA57755 - 35);
+        DrawWorldPixel(13, 32);
+        DrawWorldPixel(14, 0xA57755 - 32);
         if (!VisualBarReader.TryRead(pixels, width, height,
                 out var noTargetFlags) ||
             noTargetFlags.TargetFlags is not
-                { Present: false, Attackable: false, Dead: false })
+                { Present: false, Attackable: false, Dead: false,
+                  PlayerCombat: false, PlayerDead: false })
             return 1;
-        DrawWorldPixel(13, 6);
-        DrawWorldPixel(14, 0xA57755 - 6);
+        DrawWorldPixel(13, 38);
+        DrawWorldPixel(14, 0xA57755 - 38);
         if (!VisualBarReader.TryRead(pixels, width, height,
                 out var impossibleTargetFlags) ||
             impossibleTargetFlags.TargetFlags is not null)
             return 1;
         DrawWorldPixel(13, 3);
         DrawWorldPixel(14, 0xA57755 - 3);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var oldTargetFlags) ||
+            oldTargetFlags.TargetFlags is not null)
+            return 1;
+        DrawWorldPixel(13, 43);
+        DrawWorldPixel(14, 0xA57755 - 43);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var combatTargetFlags) ||
+            combatTargetFlags.TargetFlags is not
+                { Present: true, Attackable: true, Dead: false,
+                  PlayerCombat: true, PlayerDead: false })
+            return 1;
+        DrawWorldPixel(13, 51);
+        DrawWorldPixel(14, 0xA57755 - 51);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var deadTargetFlags) ||
+            deadTargetFlags.TargetFlags is not
+                { Present: true, Attackable: true, Dead: false,
+                  PlayerCombat: false, PlayerDead: true })
+            return 1;
+        DrawWorldPixel(13, 35);
+        DrawWorldPixel(14, 0xA57755 - 35);
 
         VisualTargetFlags? targetForBits = result.TargetFlags;
         AddonBits targetBits = new()
@@ -1570,13 +1611,25 @@ static int RunSelfTest()
         };
         if (!targetBits.Target() || !targetBits.Target_Alive() ||
             !targetBits.Target_Hostile() || targetBits.NoTarget() ||
-            targetBits.Target_Dead())
+            targetBits.Target_Dead() || targetBits.Combat() ||
+            targetBits.Dead())
+            return 1;
+        targetForBits = combatTargetFlags.TargetFlags;
+        if (!targetBits.Combat() || targetBits.Dead())
+            return 1;
+        targetForBits = deadTargetFlags.TargetFlags;
+        if (targetBits.Combat() || !targetBits.Dead())
             return 1;
         targetForBits = null;
-        if (targetBits.Target() || targetBits.Target_Alive() ||
+        bool stalePlayerFlagsRejected = false;
+        try { _ = targetBits.Combat(); }
+        catch (InvalidOperationException) { stalePlayerFlagsRejected = true; }
+        try { _ = targetBits.Dead(); stalePlayerFlagsRejected = false; }
+        catch (InvalidOperationException) { }
+        if (!stalePlayerFlagsRejected || targetBits.Target() || targetBits.Target_Alive() ||
             targetBits.Target_Hostile() || targetBits.NoTarget())
             return 1;
-        targetForBits = new(false, false, false);
+        targetForBits = new(false, false, false, false, false);
         if (!targetBits.NoTarget() || targetBits.Target())
             return 1;
 

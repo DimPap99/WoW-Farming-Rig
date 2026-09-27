@@ -805,8 +805,18 @@ local function createVisual()
                 if type(attackable) ~= "boolean" or
                     type(dead) ~= "boolean" then return end
             end
+            local playerCombat = UnitAffectingCombat("player") or false
+            local playerDead = UnitIsDeadOrGhost("player") or false
+            if type(issecretvalue) == "function" and
+                (issecretvalue(playerCombat) or issecretvalue(playerDead)) then
+                return
+            end
+            if type(playerCombat) ~= "boolean" or
+                type(playerDead) ~= "boolean" then return end
             local flags = (present and 1 or 0) +
-                (attackable and 2 or 0) + (dead and 4 or 0)
+                (attackable and 2 or 0) + (dead and 4 or 0) +
+                (playerCombat and 8 or 0) + (playerDead and 16 or 0) +
+                32 -- protocol marker: older three-bit samples are rejected
             setIntPixel(frame.targetFlagsPixel, flags)
             setIntPixel(frame.targetFlagsValidPixel,
                 (0xA57755 - flags) % 16777216)
