@@ -404,6 +404,8 @@ local function createVisual()
     frame.worldValidPixel = addPixel(4, 105)
     frame.spellCountPixel = addPixel(5, 105)
     frame.spellCountValidPixel = addPixel(6, 105)
+    frame.bindingCountPixel = addPixel(7, 105)
+    frame.bindingCountValidPixel = addPixel(8, 105)
 
     -- Forty tiny pixels per row (ID, marker per action), six rows total.
     -- The marker distinguishes an empty slot from an unreadable one.
@@ -443,6 +445,23 @@ local function createVisual()
         }
     end
 
+    frame.bindingGrid = {}
+    for index = 1, 62 do
+        local column = (index - 1) % 20
+        local row = math.floor((index - 1) / 20)
+        local function gridPixel(x)
+            local pixel = frame:CreateTexture(nil, "ARTWORK")
+            pixel:SetSize(8, 8)
+            pixel:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -300 - row * 8)
+            pixel:SetColorTexture(0, 0, 0, 1)
+            return pixel
+        end
+        frame.bindingGrid[index] = {
+            code = gridPixel(column * 16),
+            valid = gridPixel(column * 16 + 8),
+        }
+    end
+
     local function setIntPixel(pixel, value)
         value = math.floor(value)
         pixel:SetColorTexture(
@@ -476,10 +495,12 @@ local function createVisual()
     local elapsedSinceUpdate = 0
     local elapsedSinceActionGrid = 0
     local elapsedSinceSpellGrid = 0
+    local elapsedSinceBindingGrid = 0
     frame:SetScript("OnUpdate", function(_, elapsed)
         elapsedSinceUpdate = elapsedSinceUpdate + elapsed
         elapsedSinceActionGrid = elapsedSinceActionGrid + elapsed
         elapsedSinceSpellGrid = elapsedSinceSpellGrid + elapsed
+        elapsedSinceBindingGrid = elapsedSinceBindingGrid + elapsed
         if elapsedSinceUpdate < 0.1 then return end
         elapsedSinceUpdate = 0
         local ok = pcall(function()
@@ -645,6 +666,36 @@ local function createVisual()
                 setIntPixel(frame.spellCountPixel, count)
                 setIntPixel(frame.spellCountValidPixel,
                     (0xA56622 - count) % 16777216)
+            end)
+        end
+
+        if elapsedSinceBindingGrid >= 0.5 then
+            elapsedSinceBindingGrid = 0
+            frame.bindingCountValidPixel:SetColorTexture(0, 0, 0, 1)
+            pcall(function()
+                if not DataToColor or
+                    type(DataToColor.GetBindingEncodedByIndex) ~= "function" then
+                    return
+                end
+                local boundCount = 0
+                for index = 1, 62 do
+                    local code = readableNumber(
+                        DataToColor:GetBindingEncodedByIndex(index))
+                    if not code or code < 0 or code > 16777215 or
+                        code ~= math.floor(code) then return end
+                    if code > 0 then
+                        if math.floor(code / 16384) % 64 ~= index then return end
+                        boundCount = boundCount + 1
+                    end
+                    local pair = frame.bindingGrid[index]
+                    setIntPixel(pair.code, code)
+                    setIntPixel(pair.valid,
+                        (0xA57711 - code - index) % 16777216)
+                end
+                if boundCount == 0 then return end
+                setIntPixel(frame.bindingCountPixel, 62)
+                setIntPixel(frame.bindingCountValidPixel,
+                    (0xA57722 - 62) % 16777216)
             end)
         end
 

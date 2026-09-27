@@ -92,9 +92,10 @@ public sealed partial class AddonReader : IAddonReader
             // The guarded Forever add-on has no GlobalTime frame. Refresh
             // only visual-backed readers; legacy readers stay off.
             playerReader.Update(this.reader);
-            spellBookReader.UpdateForever(
-                playerReader.TryGetForeverVisualVitals(out VisualBarSample bars)
-                    ? bars.SpellBook : null);
+            bool visualAvailable =
+                playerReader.TryGetForeverVisualVitals(out VisualBarSample bars);
+            spellBookReader.UpdateForever(visualAvailable ? bars.SpellBook : null);
+            keyBindingsReader.UpdateForever(visualAvailable ? bars.Bindings : null);
             return;
         }
 

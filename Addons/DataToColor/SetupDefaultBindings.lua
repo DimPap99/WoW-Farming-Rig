@@ -251,6 +251,18 @@ function DataToColor:GetBindingEncoded(bindingId)
     return EncodeBinding(bindingId)
 end
 
+-- Read-only indexed access for the guarded Forever visual probe. This reuses
+-- the binding encoder without initializing queues or changing any bindings.
+local BindingIdByIndex = {}
+for bindingId, index in pairs(BindingIndex) do
+    BindingIdByIndex[index] = bindingId
+end
+
+function DataToColor:GetBindingEncodedByIndex(index)
+    local bindingId = BindingIdByIndex[index]
+    return bindingId and EncodeBinding(bindingId) or 0
+end
+
 -- Checks if a key is already bound to a command
 local function IsAlreadyBound(key, command)
   -- Check if this command is bound to this key

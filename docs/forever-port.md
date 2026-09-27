@@ -34,6 +34,10 @@ stops before creating pixel frames or changing CVars on Forever.
    checksummed numeric ID and whether it is a spell ID or a flyout action ID.
    The count has its own marker; an incomplete grid does not initialize the
    spellbook reader. A book with more than 200 slots is unavailable.
+   A third grid carries the existing addon's compact key-binding codes for 62
+   binding indices, including valid unbound entries. It reads the current
+   bindings without changing them and checks each entry before updating the
+   binding reader. This grid requires both installed addons.
    A second pixel row carries `UnitPosition` world X/Y/Z and instance map ID
    at 0.01-yard resolution. Map coordinates, world coordinates, and player
    vital maxima include a checksum marker; a damaged pixel is treated as
@@ -298,8 +302,8 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   readable and nine occupied: slots 1-4, 11, 26-27, and 38-39. Their kinds
   and IDs matched the earlier `/forevercatalog` SavedVariables snapshot exactly.
   A live `PlayerReader` smoke check confirmed that the grid is rejected after
-  the visual sample expires. This is metadata only: bindings, usability,
-  range, and cooldowns for every slot are still not ported.
+  the visual sample expires. This is metadata only: usability, range, and
+  cooldowns for every slot are still not ported.
 - A checksummed visual spellbook grid now feeds `SpellBookReader` on Forever.
   The decoder covers up to 200 slots and rejects missing or damaged count and
   entry markers. Synthetic checks at 75%, 100%, and 125% UI scale include the
@@ -308,8 +312,19 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   26 spell IDs and three flyout action IDs. The live `--reader-smoke` check
   populated `SpellBookReader` from that snapshot and confirmed that both the
   visual sample and reader state are cleared after capture expiry. This is
-  learned-spell metadata; key bindings, spell usability, range, and complete
-  cooldown data are still missing.
+  learned-spell metadata; spell usability, range, and complete cooldown data
+  are still missing.
+- The guarded Forever visual probe now reads the 62 indexed binding codes
+  through `DataToColor:GetBindingEncodedByIndex`, which only queries current
+  game bindings. A checksum distinguishes each unbound entry from a damaged
+  pixel, and `KeyBindingsReader` resets on an incomplete or stale snapshot.
+  Synthetic decoder and adapter checks passed at 75%, 100%, and 125% UI scale.
+  Live capture decoded 62/62 indices with 26 bound commands. `MOVEFORWARD`
+  had `W` as primary and Up Arrow as secondary, consistent with the bounded
+  movement press. The live reader check confirmed both binding maps clear
+  after sample expiry. The current character has no bindings for many
+  secondary action bars, so their occupied slots cannot yet be driven by a
+  key. The startup guard remains in place.
 - The Forever dashboard was smoke-tested against the live beta on this machine.
   It returned HTTP 200 and displayed 100% player health, 100% power, and 0%
   target health with no target selected. The log confirmed WGC capture and the

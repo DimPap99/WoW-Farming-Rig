@@ -113,7 +113,8 @@ try
                             CooldownText(current.ActionCooldownFill) + ", " +
                             ActionText(current.WatchedAction) + ", " +
                             ActionBarText(current.ActionBar) + ", " +
-                            SpellBookText(current.SpellBook));
+                            SpellBookText(current.SpellBook) + ", " +
+                            BindingsText(current.Bindings));
                         previous = current;
                     }
                 }
@@ -151,7 +152,7 @@ try
         Path.GetDirectoryName(output)!,
         Path.GetFileNameWithoutExtension(output) + "-bars.png");
     using Image<Bgra32> crop = image.Clone(context => context.Crop(
-        new Rectangle(0, 0, Math.Min(650, image.Width), Math.Min(450, image.Height))));
+        new Rectangle(0, 0, Math.Min(650, image.Width), Math.Min(550, image.Height))));
     crop.SaveAsPng(cropOutput);
     Console.WriteLine($"Saved {image.Width}x{image.Height} capture to {output}");
     Console.WriteLine($"Saved upper-left bar region to {cropOutput}");
@@ -197,6 +198,7 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
     Console.WriteLine(ActionText(bars.WatchedAction));
     Console.WriteLine(ActionBarText(bars.ActionBar));
     Console.WriteLine(SpellBookText(bars.SpellBook));
+    Console.WriteLine(BindingsText(bars.Bindings));
 }
 
 static string PositionText(VisualPositionSample? position) => position is { } value
@@ -245,6 +247,27 @@ static string SpellBookText(VisualSpellBookSnapshot? book)
         $"[{string.Join(", ", entries)}]";
 }
 
+static string BindingsText(VisualBindingSnapshot? snapshot)
+{
+    if (snapshot is null)
+        return "bindings=unavailable";
+
+    List<string> bound = [];
+    for (int index = 1; index <= VisualBindingSnapshot.Count; index++)
+        if (snapshot.GetCode(index) is > 0 and int code &&
+            KeyReader.DecodeBinding(code) is { } binding)
+        {
+            string primary = binding.key1 == ConsoleKey.NoName
+                ? "" : $"{binding.mod1.ToPrefix()}{binding.key1}";
+            string secondary = binding.key2 == ConsoleKey.NoName
+                ? "" : $"/{binding.mod2.ToPrefix()}{binding.key2}";
+            bound.Add($"{index}:{binding.bindingId}:{primary}{secondary}");
+        }
+
+    return $"bindings {snapshot.ReadableCount}/{VisualBindingSnapshot.Count} readable, " +
+        $"{bound.Count} bound [{string.Join(", ", bound)}]";
+}
+
 static string TargetText(bool? present) => present switch
 {
     true => "target presence=present",
@@ -257,6 +280,7 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
     DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
     WorldMapAreaDB maps = new(config);
     SpellBookReader spellBook = new(new SpellDB(config));
+    KeyBindingsReader bindingReader = new(NullLogger<KeyBindingsReader>.Instance);
     PlayerReader player = new(screen, maps, null!, new AddonBits(),
         new SpellInRange(), new Stance(), tracker);
 
@@ -322,6 +346,27 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                         spellBookMatches = false;
                 }
             }
+            VisualBindingSnapshot? visualBindings = bars.Bindings;
+            bindingReader.UpdateForever(visualBindings);
+            int expectedBindings = 0;
+            int expectedSecondaryBindings = 0;
+            if (visualBindings is not null)
+                for (int index = 1; index <= VisualBindingSnapshot.Count; index++)
+                    if (visualBindings.GetCode(index) is > 0 and int code &&
+                        KeyReader.DecodeBinding(code) is { } decoded)
+                    {
+                        if (decoded.key1 != ConsoleKey.NoName)
+                            expectedBindings++;
+                        if (decoded.key2 != ConsoleKey.NoName)
+                            expectedSecondaryBindings++;
+                    }
+            bool bindingMatches = visualBindings is
+                    { ReadableCount: VisualBindingSnapshot.Count } &&
+                bindingReader.IsInitialized &&
+                bindingReader.ExpectedCount == VisualBindingSnapshot.Count &&
+                bindingReader.ReceivedCount == VisualBindingSnapshot.Count &&
+                bindingReader.Count == expectedBindings &&
+                bindingReader.SecondaryBindings.Count == expectedSecondaryBindings;
 
             bool absoluteRejected = false;
             try { _ = player.HealthCurrent(); }
@@ -335,9 +380,14 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool staleActionBarRejected = !player.TryGetForeverActionBar(out _);
             bool staleWorldPositionRejected = !player.TryGetForeverWorldPosition(out _);
             bool staleSpellBookRejected = !player.TryGetForeverSpellBook(out _);
+            bool staleBindingsRejected = !player.TryGetForeverBindings(out _);
             spellBook.UpdateForever(null);
+            bindingReader.UpdateForever(null);
             bool staleSpellBookReaderReset = !spellBook.IsInitialized &&
                 !spellBook.AllRanksReceived && spellBook.Count == 0;
+            bool staleBindingReaderReset = !bindingReader.IsInitialized &&
+                bindingReader.Count == 0 &&
+                bindingReader.SecondaryBindings.Count == 0;
             bool stalePositionRejected = false;
             try { _ = player.WorldPos; }
             catch (InvalidOperationException) { stalePositionRejected = true; }
@@ -360,6 +410,10 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"spellBookMatches={spellBookMatches}, " +
                 $"staleSpellBookRejected={staleSpellBookRejected}, " +
                 $"staleSpellBookReaderReset={staleSpellBookReaderReset}, " +
+                $"bindings={BindingsText(visualBindings)}, " +
+                $"bindingMatches={bindingMatches}, " +
+                $"staleBindingsRejected={staleBindingsRejected}, " +
+                $"staleBindingReaderReset={staleBindingReaderReset}, " +
                 $"positionMatches={positionMatches}, " +
                 $"stalePositionRejected={stalePositionRejected}, " +
                 $"staleMapIdCleared={staleMapIdCleared}, " +
@@ -370,6 +424,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 worldPositionMatches && staleWorldPositionRejected &&
                 spellBookMatches && staleSpellBookRejected &&
                 staleSpellBookReaderReset &&
+                bindingMatches && staleBindingsRejected &&
+                staleBindingReaderReset &&
                 positionMatches && stalePositionRejected && staleMapIdCleared &&
                 staleMaximumRejected && absoluteRejected && staleRejected &&
                 staleActionRejected && staleActionBarRejected ? 0 : 2;
@@ -499,6 +555,7 @@ static bool HasChanged(VisualBarSample previous, VisualBarSample current)
     || previous.WatchedAction != current.WatchedAction
     || ActionBarChanged(previous.ActionBar, current.ActionBar)
     || SpellBookChanged(previous.SpellBook, current.SpellBook)
+    || BindingsChanged(previous.Bindings, current.Bindings)
     || ((previous.ActionCooldownFill, current.ActionCooldownFill) switch
     {
         (null, null) => false,
@@ -549,14 +606,28 @@ static bool SpellBookChanged(VisualSpellBookSnapshot? previous,
     return false;
 }
 
+static bool BindingsChanged(VisualBindingSnapshot? previous,
+    VisualBindingSnapshot? current)
+{
+    if (previous is null || current is null)
+        return previous != current;
+    if (previous.ReadableCount != current.ReadableCount)
+        return true;
+    for (int index = 1; index <= VisualBindingSnapshot.Count; index++)
+        if (previous.GetCode(index) != current.GetCode(index))
+            return true;
+    return false;
+}
+
 static int RunSelfTest()
 {
     SpellBookReader spellBookReader = new(new SpellDB(new DataConfig
         { Root = Path.GetFullPath("Json"), Exp = "forever" }));
+    KeyBindingsReader bindingReader = new(NullLogger<KeyBindingsReader>.Instance);
     foreach (double scale in new[] { 0.75, 1.0, 1.25 })
     {
         const int width = 700;
-        const int height = 450;
+        const int height = 550;
         const int left = 16;
         const int top = 70;
         Bgra32[] pixels = new Bgra32[width * height];
@@ -595,9 +666,15 @@ static int RunSelfTest()
             (8388608 + 123456) - (8388608 + 8765)) & 0xFFFFFF);
         DrawWorldPixel(5, 3);
         DrawWorldPixel(6, (0xA56622 - 3) & 0xFFFFFF);
+        DrawWorldPixel(7, VisualBindingSnapshot.Count);
+        DrawWorldPixel(8, (0xA57722 - VisualBindingSnapshot.Count) & 0xFFFFFF);
         DrawSpellGridSlot(1, VisualSpellIdSource.SpellId, 6603);
         DrawSpellGridSlot(2, VisualSpellIdSource.ActionId, 270);
         DrawSpellGridSlot(3, VisualSpellIdSource.SpellId, 7744);
+        for (int index = 1; index <= VisualBindingSnapshot.Count; index++)
+            DrawBindingSlot(index, 0);
+        DrawBindingSlot(21, (21 << 14) | (28 << 7));
+        DrawBindingSlot(45, (45 << 14) | (52 << 7));
         for (int slot = 1; slot <= VisualActionBarSnapshot.SlotCount; slot++)
             DrawActionGridSlot(slot, 0, 0);
         DrawActionGridSlot(4, 1, 7744);
@@ -631,6 +708,28 @@ static int RunSelfTest()
             || spellBook.GetSlot(3) is not { Source: VisualSpellIdSource.SpellId, Id: 7744 })
         {
             Console.Error.WriteLine($"Visual reader self-test failed at UI scale {scale}.");
+            return 1;
+        }
+
+        if (result.Bindings is not
+                { ReadableCount: VisualBindingSnapshot.Count } visualBindings ||
+            visualBindings.GetCode(21) != ((21 << 14) | (28 << 7)) ||
+            visualBindings.GetCode(22) != 0 ||
+            visualBindings.GetCode(45) != ((45 << 14) | (52 << 7)))
+        {
+            Console.Error.WriteLine($"Visual binding grid failed at UI scale {scale}.");
+            return 1;
+        }
+        bindingReader.UpdateForever(visualBindings);
+        if (!bindingReader.IsInitialized || bindingReader.Count != 2 ||
+            !bindingReader.TryGetBinding(BindingID.ACTIONBUTTON1,
+                out ConsoleKey firstKey, out ModifierKey firstModifier) ||
+            firstKey != ConsoleKey.D1 || firstModifier != ModifierKey.None ||
+            !bindingReader.TryGetBinding(BindingID.MULTIACTIONBAR1BUTTON1,
+                out ConsoleKey secondKey, out ModifierKey secondModifier) ||
+            secondKey != ConsoleKey.F1 || secondModifier != ModifierKey.None)
+        {
+            Console.Error.WriteLine($"Forever binding adapter failed at UI scale {scale}.");
             return 1;
         }
 
@@ -710,6 +809,31 @@ static int RunSelfTest()
             return 1;
         }
         DrawSpellGridSlot(2, VisualSpellIdSource.ActionId, 270);
+
+        DrawWorldPixel(8, 0);
+        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
+            result.Bindings is not null)
+        {
+            Console.Error.WriteLine($"Visual reader accepted missing binding marker at UI scale {scale}.");
+            return 1;
+        }
+        DrawWorldPixel(8, (0xA57722 - VisualBindingSnapshot.Count) & 0xFFFFFF);
+        DrawEncodedRect(left + (int)Math.Round(16 * scale),
+            top + (int)Math.Round(300 * scale), (int)Math.Round(8 * scale),
+            4 << 16);
+        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
+            result.Bindings is not { ReadableCount: 61 })
+        {
+            Console.Error.WriteLine($"Visual reader accepted corrupt binding code at UI scale {scale}.");
+            return 1;
+        }
+        bindingReader.UpdateForever(result.Bindings);
+        if (bindingReader.IsInitialized || bindingReader.Count != 0)
+        {
+            Console.Error.WriteLine($"Forever binding adapter kept a partial snapshot at UI scale {scale}.");
+            return 1;
+        }
+        DrawBindingSlot(2, 0);
 
         DrawWorldPixel(5, 200);
         DrawWorldPixel(6, (0xA56622 - 200) & 0xFFFFFF);
@@ -903,6 +1027,18 @@ static int RunSelfTest()
                 yStart, side, id);
             DrawEncodedRect(left + (int)Math.Round((column * 16 + 8) * scale),
                 yStart, side, (checksum & 0xFFFFF0) | (int)source);
+        }
+
+        void DrawBindingSlot(int index, int code)
+        {
+            int column = (index - 1) % 20;
+            int row = (index - 1) / 20;
+            int yStart = top + (int)Math.Round((300 + row * 8) * scale);
+            int side = (int)Math.Round(8 * scale);
+            DrawEncodedRect(left + (int)Math.Round(column * 16 * scale),
+                yStart, side, code);
+            DrawEncodedRect(left + (int)Math.Round((column * 16 + 8) * scale),
+                yStart, side, (0xA57711 - code - index) & 0xFFFFFF);
         }
 
         void DrawEncodedRect(int xStart, int yStart, int side, int encoded)
