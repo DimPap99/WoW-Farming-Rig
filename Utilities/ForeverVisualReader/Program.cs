@@ -311,6 +311,39 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool actionBarMatches = bars.ActionBar is not { } liveBar ||
                 (player.TryGetForeverActionBar(out VisualActionBarSnapshot actionBar) &&
                 ReferenceEquals(actionBar, liveBar));
+            VisualActionStateSnapshot? liveStates = bars.ActionStates;
+            bool actionStatesMatch = liveStates is
+                    { ReadableCount: VisualActionBarSnapshot.SlotCount } &&
+                player.TryGetForeverActionStates(out var states) &&
+                ReferenceEquals(states, liveStates);
+            int usableActionCount = 0;
+            int inRangeActionCount = 0;
+            int outOfRangeActionCount = 0;
+            int unknownRangeActionCount = 0;
+            if (actionStatesMatch)
+                for (int slot = 1; slot <= VisualActionBarSnapshot.SlotCount; slot++)
+                {
+                    var state = liveStates!.GetSlot(slot)!.Value;
+                    if (state.Usable)
+                        usableActionCount++;
+                    if (state.InRange == true)
+                        inRangeActionCount++;
+                    else if (state.InRange == false)
+                        outOfRangeActionCount++;
+                    else if (bars.ActionBar?.GetSlot(slot)?.Kind !=
+                        VisualActionKind.Empty)
+                        unknownRangeActionCount++;
+                    if (bars.ActionBar?.GetSlot(slot)?.Kind ==
+                        VisualActionKind.Empty && state.Usable)
+                        actionStatesMatch = false;
+                }
+            ActionBarBits<IUsableAction>.ForeverStatesProvider =
+                () => player.TryGetForeverActionStates(out var latest)
+                    ? latest : null;
+            ActionBarBits<IUsableAction> usableReader = new(1);
+            bool usableReaderMatches = actionStatesMatch &&
+                usableReader.Count == usableActionCount &&
+                usableReader.Any == (usableActionCount > 0);
             bool maximaMatch =
                 (bars.PlayerHealthMax is not { } healthMax || player.HealthMax() == healthMax) &&
                 (bars.PlayerPowerMax is not { } powerMax || player.PTMax() == powerMax);
@@ -426,6 +459,11 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             catch (InvalidOperationException) { staleRejected = true; }
             bool staleActionRejected = !player.TryGetForeverWatchedAction(out _);
             bool staleActionBarRejected = !player.TryGetForeverActionBar(out _);
+            bool staleActionStatesRejected =
+                !player.TryGetForeverActionStates(out _);
+            bool staleUsableReaderReset = usableReader.Count == 0 &&
+                !usableReader.Any && !usableReader.IsSlotUsable(1);
+            ActionBarBits<IUsableAction>.ForeverStatesProvider = null;
             bool staleSpellActionRejected = resolvedSpellName is { } name &&
                 !KeyReader.ReadKey(NullLogger.Instance,
                     new KeyAction { Name = name });
@@ -458,6 +496,13 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             Console.WriteLine($"PlayerReader: health={health}%, power={power}%, " +
                 $"target={(target is { } value ? value + "%" : "unavailable")}, " +
                 $"actionMatches={actionMatches}, actionBarMatches={actionBarMatches}, " +
+                $"actionStates={liveStates?.ReadableCount.ToString() ?? "missing"}/120, " +
+                $"actionStatesMatch={actionStatesMatch}, usableActionCount={usableActionCount}, " +
+                $"inRangeActionCount={inRangeActionCount}, " +
+                $"outOfRangeActionCount={outOfRangeActionCount}, " +
+                $"unknownRangeActionCount={unknownRangeActionCount}, " +
+                $"usableReaderMatches={usableReaderMatches}, " +
+                $"staleUsableReaderReset={staleUsableReaderReset}, " +
                 $"healthMax={bars.PlayerHealthMax?.ToString() ?? "unavailable"}, " +
                 $"powerMax={bars.PlayerPowerMax?.ToString() ?? "unavailable"}, " +
                 $"maximaMatch={maximaMatch}, staleMaximumRejected={staleMaximumRejected}, " +
@@ -482,7 +527,9 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"absoluteRejected={absoluteRejected}, staleRejected={staleRejected}, " +
                 $"staleActionRejected={staleActionRejected}, " +
                 $"staleActionBarRejected={staleActionBarRejected}");
-            return actionMatches && actionBarMatches && maximaMatch &&
+            return actionMatches && actionBarMatches && actionStatesMatch &&
+                usableReaderMatches && staleUsableReaderReset &&
+                staleActionStatesRejected && maximaMatch &&
                 worldPositionMatches && staleWorldPositionRejected &&
                 spellBookMatches && staleSpellBookRejected &&
                 staleSpellBookReaderReset &&
@@ -692,7 +739,7 @@ static int RunSelfTest()
     foreach (double scale in new[] { 0.75, 1.0, 1.25 })
     {
         const int width = 700;
-        const int height = 550;
+        const int height = 650;
         const int left = 16;
         const int top = 70;
         Bgra32[] pixels = new Bgra32[width * height];
@@ -723,6 +770,7 @@ static int RunSelfTest()
         DrawPositionPixel(12, (0xA55A11 - 742) & 0xFFFFFF);
         DrawPositionPixel(13, 1000);
         DrawPositionPixel(14, (0xA55A22 - 1000) & 0xFFFFFF);
+        DrawPositionPixel(15, 0x5A88A5);
         DrawWorldPixel(0, 8388608 - 61834);
         DrawWorldPixel(1, 8388608 + 123456);
         DrawWorldPixel(2, 8388608 + 8765);
@@ -741,9 +789,14 @@ static int RunSelfTest()
         DrawBindingSlot(21, (21 << 14) | (28 << 7));
         DrawBindingSlot(45, (45 << 14) | 52);
         for (int slot = 1; slot <= VisualActionBarSnapshot.SlotCount; slot++)
+        {
             DrawActionGridSlot(slot, 0, 0);
+            DrawActionStateSlot(slot, 0, 0, 1);
+        }
         DrawActionGridSlot(4, 1, 7744);
         DrawActionGridSlot(26, 4, 270);
+        DrawActionStateSlot(4, 1, 7744, 6);
+        DrawActionStateSlot(26, 4, 270, 1);
 
         if (!VisualBarReader.TryRead(pixels, width, height, out VisualBarSample result)
             || Math.Abs(result.PlayerHealth - 0.75) > 0.02
@@ -767,6 +820,12 @@ static int RunSelfTest()
             || result.ActionBar is not { ReadableCount: 120, OccupiedCount: 2 } actionBar
             || actionBar.GetSlot(4) is not { Kind: VisualActionKind.Spell, Id: 7744 }
             || actionBar.GetSlot(26) is not { Kind: VisualActionKind.Flyout, Id: 270 }
+            || result.ActionStates is not
+                { ReadableCount: VisualActionBarSnapshot.SlotCount } actionStates
+            || actionStates.GetSlot(4) is not
+                { Usable: true, NoMana: false, InRange: true }
+            || actionStates.GetSlot(1) is not
+                { Usable: false, NoMana: false, InRange: null }
             || result.SpellBook is not { Count: 3, ReadableCount: 3 } spellBook
             || spellBook.GetSlot(1) is not { Source: VisualSpellIdSource.SpellId, Id: 6603 }
             || spellBook.GetSlot(2) is not { Source: VisualSpellIdSource.ActionId, Id: 270 }
@@ -775,6 +834,49 @@ static int RunSelfTest()
             Console.Error.WriteLine($"Visual reader self-test failed at UI scale {scale}.");
             return 1;
         }
+
+        ActionBarBits<IUsableAction>.ForeverStatesProvider =
+            () => result.ActionStates;
+        ActionBarBits<IUsableAction> usableBits = new(1);
+        if (!usableBits.IsSlotUsable(4) || usableBits.IsSlotUsable(1) ||
+            !usableBits.Any || usableBits.Count != 1)
+        {
+            Console.Error.WriteLine($"Forever usable action adapter failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawActionStateSlot(4, 1, 7744, 2, 6);
+        if (!VisualBarReader.TryRead(pixels, width, height, out var damagedState) ||
+            damagedState.ActionStates is not { ReadableCount: 119 } ||
+            damagedState.ActionStates.GetSlot(4) is not null)
+        {
+            Console.Error.WriteLine($"Forever action-state checksum failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawActionStateSlot(4, 1, 7744, 6);
+        DrawActionStateSlot(4, 1, 7744, 10);
+        if (!VisualBarReader.TryRead(pixels, width, height, out var outOfRange) ||
+            outOfRange.ActionStates?.GetSlot(4) is not
+                { Usable: true, InRange: false })
+        {
+            Console.Error.WriteLine($"Forever out-of-range state failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawActionStateSlot(4, 1, 7744, 6);
+        DrawPositionPixel(15, 0);
+        if (!VisualBarReader.TryRead(pixels, width, height, out var missingState) ||
+            missingState.ActionStates is not null)
+        {
+            Console.Error.WriteLine($"Forever action-state marker failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawPositionPixel(15, 0x5A88A5);
+        ActionBarBits<IUsableAction>.ForeverStatesProvider = () => null;
+        if (usableBits.IsSlotUsable(4) || usableBits.Any || usableBits.Count != 0)
+        {
+            Console.Error.WriteLine($"Forever usable actions survived stale data at UI scale {scale}.");
+            return 1;
+        }
+        ActionBarBits<IUsableAction>.ForeverStatesProvider = null;
 
         if (result.Bindings is not
                 { ReadableCount: VisualBindingSnapshot.Count } visualBindings ||
@@ -870,6 +972,7 @@ static int RunSelfTest()
         DrawActionGridSlot(4, 4, 7744);
         if (!VisualBarReader.TryRead(pixels, width, height, out var flyoutResult) ||
             flyoutResult.ActionBar is not { } flyoutBar ||
+            flyoutResult.ActionStates is not { ReadableCount: 119 } ||
             KeyReader.FindForeverSpellSlot(flyoutBar, spellBookReader,
                 spellName) != 0)
         {
@@ -1184,6 +1287,20 @@ static int RunSelfTest()
                 yStart, side, code);
             DrawEncodedRect(left + (int)Math.Round((column * 16 + 8) * scale),
                 yStart, side, (0xA57711 - code - index) & 0xFFFFFF);
+        }
+
+        void DrawActionStateSlot(int slot, int kind, int id, int code,
+            int? markerCode = null)
+        {
+            int column = (slot - 1) % 20;
+            int row = (slot - 1) / 20;
+            int yStart = top + (int)Math.Round((340 + row * 8) * scale);
+            int side = (int)Math.Round(8 * scale);
+            DrawEncodedRect(left + (int)Math.Round(column * 16 * scale),
+                yStart, side, code);
+            DrawEncodedRect(left + (int)Math.Round((column * 16 + 8) * scale),
+                yStart, side, (0xA58811 - id - slot - kind -
+                    (markerCode ?? code)) & 0xFFFFFF);
         }
 
         void DrawEncodedRect(int xStart, int yStart, int side, int encoded)

@@ -50,6 +50,27 @@ public sealed class VisualActionBarSnapshot
         ? slots[slot - 1] : null;
 }
 
+public readonly record struct VisualActionState(
+    int Slot, bool Usable, bool NoMana, bool? InRange);
+
+public sealed class VisualActionStateSnapshot
+{
+    private readonly VisualActionState?[] states;
+    public int ReadableCount { get; }
+
+    internal VisualActionStateSnapshot(VisualActionState?[] states)
+    {
+        this.states = states;
+        foreach (var state in states)
+            if (state is not null)
+                ReadableCount++;
+    }
+
+    public VisualActionState? GetSlot(int slot) =>
+        slot is >= 1 and <= VisualActionBarSnapshot.SlotCount
+            ? states[slot - 1] : null;
+}
+
 public enum VisualSpellIdSource : byte { SpellId = 1, ActionId = 2 }
 
 public readonly record struct VisualSpellBookEntry(
@@ -114,7 +135,8 @@ public readonly record struct VisualBarSample(
     int? PlayerPowerMax = null,
     VisualWorldPositionSample? WorldPosition = null,
     VisualSpellBookSnapshot? SpellBook = null,
-    VisualBindingSnapshot? Bindings = null);
+    VisualBindingSnapshot? Bindings = null,
+    VisualActionStateSnapshot? ActionStates = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -192,6 +214,8 @@ public static class VisualBarReader
             pixels, width, height, whiteLeft, whiteY, scale);
         VisualActionBarSnapshot? actionBar = TryReadActionBar(
             pixels, width, height, whiteLeft, whiteY, scale);
+        VisualActionStateSnapshot? actionStates = TryReadActionStates(
+            pixels, width, height, whiteLeft, whiteY, scale, actionBar);
         int? playerHealthMax = TryReadMaximum(pixels, width, height,
             whiteLeft, whiteY, scale, 11, 12, 0xA55A11);
         int? playerPowerMax = TryReadMaximum(pixels, width, height,
@@ -204,8 +228,64 @@ public static class VisualBarReader
             pixels, width, height, whiteLeft, whiteY, scale);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
-            playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings);
+            playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
+            actionStates);
         return true;
+    }
+
+    private static VisualActionStateSnapshot? TryReadActionStates(
+        Bgra32[] pixels, int width, int height, int left, int whiteY,
+        double scale, VisualActionBarSnapshot? actionBar)
+    {
+        if (actionBar is not { ReadableCount: VisualActionBarSnapshot.SlotCount })
+            return null;
+
+        int ReadAt(int x, int y)
+        {
+            if (x < 0 || x >= width || y < 0 || y >= height)
+                return -1;
+            Bgra32 pixel = pixels[y * width + x];
+            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
+        }
+
+        int markerY = whiteY + (int)Math.Round(27 * scale);
+        int markerX = left + (int)Math.Round(305 * scale);
+        if (ReadAt(markerX, markerY) != 0x5A88A5)
+            return null;
+
+        VisualActionState?[] states =
+            new VisualActionState?[VisualActionBarSnapshot.SlotCount];
+        for (int slot = 1; slot <= states.Length; slot++)
+        {
+            int column = (slot - 1) % 20;
+            int row = (slot - 1) / 20;
+            int y = whiteY + (int)Math.Round((276 + row * 8) * scale);
+            int codeX = left + (int)Math.Round((4 + column * 16) * scale);
+            int validX = left + (int)Math.Round((12 + column * 16) * scale);
+            int code = ReadAt(codeX, y);
+            int marker = ReadAt(validX, y);
+            VisualActionSample action = actionBar.GetSlot(slot)!.Value;
+            if (code is < 1 or > 12 ||
+                marker != ((0xA58811 - action.Id - slot -
+                    (int)action.Kind - code) & 0xFFFFFF))
+                continue;
+
+            int flags = code - 1;
+            int range = flags >> 2;
+            if (range > 2 ||
+                (action.Kind == VisualActionKind.Empty && code != 1))
+                continue;
+            bool? inRange = range switch
+            {
+                1 => true,
+                2 => false,
+                _ => null
+            };
+            states[slot - 1] = new(slot, (flags & 1) != 0,
+                (flags & 2) != 0, inRange);
+        }
+
+        return new(states);
     }
 
     private static VisualBindingSnapshot? TryReadBindings(
