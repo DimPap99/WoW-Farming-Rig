@@ -87,6 +87,14 @@ public sealed partial class AddonReader : IAddonReader
         // validated independently from the same captured frame.
         foreverVisualBars?.Update();
 
+        if (foreverVisualBars?.IsEnabled == true)
+        {
+            // The guarded Forever add-on has no GlobalTime frame. Refresh
+            // only the visual-backed player position; legacy readers stay off.
+            playerReader.Update(this.reader);
+            return;
+        }
+
         IAddonDataProvider reader = this.reader;
         reader.UpdateData();
 

@@ -45,12 +45,32 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
     public Vector3 MapPos => new(MapX, MapY, WorldPosZ);
     public Vector3 MapPosNoZ => new(MapX, MapY, 0);
     public Vector3 _MapPosNoZ() => MapPosNoZ;
-    public Vector3 WorldPos => worldMapAreaDB.ToWorld_FlipXY(UIMapId.Value, MapPos);
+    public Vector3 WorldPos
+    {
+        get
+        {
+            if (!IsForever)
+                return worldMapAreaDB.ToWorld_FlipXY(UIMapId.Value, MapPos);
+
+            VisualPositionSample position = RequiredForeverPosition();
+            if (!worldMapAreaDB.TryGet(position.UIMapId, out WorldMapArea area))
+                throw new InvalidOperationException(
+                    $"Forever UI map {position.UIMapId} is not in the map table.");
+
+            return WorldMapAreaDB.ToWorld_FlipXY(
+                new Vector3((float)(position.MapX * 100),
+                    (float)(position.MapY * 100), WorldPosZ), area);
+        }
+    }
 
     public float WorldPosZ { get; set; } // MapZ not exists. Alias for WorldLoc.Z
 
-    public float MapX => reader.GetFixed24(1);
-    public float MapY => reader.GetFixed24(2);
+    public float MapX => IsForever
+        ? (float)(RequiredForeverPosition().MapX * 100)
+        : reader.GetFixed24(1);
+    public float MapY => IsForever
+        ? (float)(RequiredForeverPosition().MapY * 100)
+        : reader.GetFixed24(2);
 
     public Vector3 TargetMapPos
     {
@@ -67,7 +87,9 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         }
     }
 
-    public float Direction => reader.GetFixed20(3);
+    public float Direction => IsForever
+        ? (float)RequiredForeverPosition().Direction
+        : reader.GetFixed20(3);
 
     public float _Direction() => Direction;
 
@@ -167,6 +189,15 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
 
         throw new InvalidOperationException(
             "Forever visual vitals are unavailable or stale; refusing legacy pixel data.");
+    }
+
+    private VisualPositionSample RequiredForeverPosition()
+    {
+        if (TryGetForeverPosition(out VisualPositionSample position))
+            return position;
+
+        throw new InvalidOperationException(
+            "Forever visual position is unavailable or stale; refusing legacy pixel data.");
     }
 
     private static int VisualPercent(double fraction) =>
@@ -386,6 +417,12 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
 
     public void Update(IAddonDataProvider reader)
     {
+        if (IsForever)
+        {
+            UpdateForeverVisual();
+            return;
+        }
+
         if (UIMapId.Updated(reader) && UIMapId.Value != 0 &&
             worldMapAreaDB.TryGet(UIMapId.Value, out WorldMapArea wma))
         {
@@ -423,6 +460,38 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
             lastDamageTakenTimestamp = Stopwatch.GetTimestamp();
         }
         previousHealthPercent = currentHealth;
+    }
+
+    private void UpdateForeverVisual()
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars))
+        {
+            int currentHealth = VisualPercent(bars.PlayerHealth);
+            if (currentHealth < previousHealthPercent && previousHealthPercent > 0)
+                lastDamageTakenTimestamp = Stopwatch.GetTimestamp();
+            previousHealthPercent = currentHealth;
+        }
+        else
+        {
+            previousHealthPercent = 0;
+        }
+
+        if (!TryGetForeverPosition(out VisualPositionSample position) ||
+            !worldMapAreaDB.TryGet(position.UIMapId, out WorldMapArea wma))
+        {
+            UIMapId.ForceUpdate(0);
+            WorldMapArea = default;
+            MapId = 0;
+            return;
+        }
+
+        if (UIMapId.Value == position.UIMapId)
+            return;
+
+        UIMapId.ForceUpdate(position.UIMapId);
+        WorldMapArea = wma;
+        MapId = wma.MapID;
+        areaDb?.Update(wma.AreaID);
     }
 
     public void Reset()
