@@ -16,3 +16,5 @@ Search the [current issue tracker](https://github.com/DimPap99/WoW-Farming-Rig/i
 The solution file is `WoWFarmingRig.sln`; build it from the repository root. The project name in user-facing text is **WoW Farming Rig**.
 
 The [architecture guide](docs/architecture.md) describes the components; [Forever port status](docs/forever-port.md) records what is currently diagnostic and what still blocks automation.
+
+Maintainers can follow [Keeping the fork current](docs/upstream-sync.md) to merge fixes from the upstream `dev` branch into this project's `main` branch.
