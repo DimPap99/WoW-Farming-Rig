@@ -1,4 +1,5 @@
 using Core;
+using Core.Database;
 
 using Game;
 
@@ -111,7 +112,8 @@ try
                             WorldPositionText(current.WorldPosition) + ", " +
                             CooldownText(current.ActionCooldownFill) + ", " +
                             ActionText(current.WatchedAction) + ", " +
-                            ActionBarText(current.ActionBar));
+                            ActionBarText(current.ActionBar) + ", " +
+                            SpellBookText(current.SpellBook));
                         previous = current;
                     }
                 }
@@ -149,7 +151,7 @@ try
         Path.GetDirectoryName(output)!,
         Path.GetFileNameWithoutExtension(output) + "-bars.png");
     using Image<Bgra32> crop = image.Clone(context => context.Crop(
-        new Rectangle(0, 0, Math.Min(650, image.Width), Math.Min(350, image.Height))));
+        new Rectangle(0, 0, Math.Min(650, image.Width), Math.Min(450, image.Height))));
     crop.SaveAsPng(cropOutput);
     Console.WriteLine($"Saved {image.Width}x{image.Height} capture to {output}");
     Console.WriteLine($"Saved upper-left bar region to {cropOutput}");
@@ -194,6 +196,7 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
     Console.WriteLine(CooldownText(bars.ActionCooldownFill));
     Console.WriteLine(ActionText(bars.WatchedAction));
     Console.WriteLine(ActionBarText(bars.ActionBar));
+    Console.WriteLine(SpellBookText(bars.SpellBook));
 }
 
 static string PositionText(VisualPositionSample? position) => position is { } value
@@ -228,6 +231,20 @@ static string ActionBarText(VisualActionBarSnapshot? bar)
         $"{bar.OccupiedCount} occupied [{string.Join(", ", occupied)}]";
 }
 
+static string SpellBookText(VisualSpellBookSnapshot? book)
+{
+    if (book is null)
+        return "spellbook=unavailable";
+
+    List<string> entries = [];
+    for (int slot = 1; slot <= book.Count; slot++)
+        if (book.GetSlot(slot) is { } entry)
+            entries.Add($"{slot}:{entry.Source}:{entry.Id}");
+
+    return $"spellbook {book.ReadableCount}/{book.Count} readable " +
+        $"[{string.Join(", ", entries)}]";
+}
+
 static string TargetText(bool? present) => present switch
 {
     true => "target presence=present",
@@ -237,8 +254,9 @@ static string TargetText(bool? present) => present switch
 
 static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTracker tracker)
 {
-    WorldMapAreaDB maps = new(new DataConfig
-        { Root = Path.GetFullPath("Json"), Exp = "forever" });
+    DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
+    WorldMapAreaDB maps = new(config);
+    SpellBookReader spellBook = new(new SpellDB(config));
     PlayerReader player = new(screen, maps, null!, new AddonBits(),
         new SpellInRange(), new Stance(), tracker);
 
@@ -275,6 +293,35 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 (player.TryGetForeverWorldPosition(out VisualWorldPositionSample current) &&
                  current == world);
             bool worldPositionAvailable = bars.WorldPosition is not null;
+            VisualSpellBookSnapshot? visualBook = bars.SpellBook;
+            spellBook.UpdateForever(visualBook);
+            bool spellBookMatches = visualBook is { Count: > 0 } book &&
+                book.ReadableCount == book.Count &&
+                spellBook.IsInitialized && spellBook.AllRanksReceived &&
+                spellBook.ExpectedCount == book.Count &&
+                spellBook.ReceivedCount == book.Count;
+            if (spellBookMatches)
+            {
+                HashSet<int> spellIds = [];
+                for (int slot = 1; slot <= visualBook!.Count; slot++)
+                {
+                    VisualSpellBookEntry entry = visualBook.GetSlot(slot)!.Value;
+                    if (entry.Source == VisualSpellIdSource.SpellId)
+                    {
+                        spellIds.Add(entry.Id);
+                        if (!spellBook.HasExact(entry.Id))
+                            spellBookMatches = false;
+                    }
+                }
+                spellBookMatches &= spellBook.Count == spellIds.Count;
+                for (int slot = 1; slot <= visualBook.Count; slot++)
+                {
+                    VisualSpellBookEntry entry = visualBook.GetSlot(slot)!.Value;
+                    if (entry.Source == VisualSpellIdSource.ActionId &&
+                        !spellIds.Contains(entry.Id) && spellBook.HasExact(entry.Id))
+                        spellBookMatches = false;
+                }
+            }
 
             bool absoluteRejected = false;
             try { _ = player.HealthCurrent(); }
@@ -287,6 +334,10 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool staleActionRejected = !player.TryGetForeverWatchedAction(out _);
             bool staleActionBarRejected = !player.TryGetForeverActionBar(out _);
             bool staleWorldPositionRejected = !player.TryGetForeverWorldPosition(out _);
+            bool staleSpellBookRejected = !player.TryGetForeverSpellBook(out _);
+            spellBook.UpdateForever(null);
+            bool staleSpellBookReaderReset = !spellBook.IsInitialized &&
+                !spellBook.AllRanksReceived && spellBook.Count == 0;
             bool stalePositionRejected = false;
             try { _ = player.WorldPos; }
             catch (InvalidOperationException) { stalePositionRejected = true; }
@@ -305,6 +356,10 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"worldPositionAvailable={worldPositionAvailable}, " +
                 $"worldPositionMatches={worldPositionMatches}, " +
                 $"staleWorldPositionRejected={staleWorldPositionRejected}, " +
+                $"spellBook={SpellBookText(visualBook)}, " +
+                $"spellBookMatches={spellBookMatches}, " +
+                $"staleSpellBookRejected={staleSpellBookRejected}, " +
+                $"staleSpellBookReaderReset={staleSpellBookReaderReset}, " +
                 $"positionMatches={positionMatches}, " +
                 $"stalePositionRejected={stalePositionRejected}, " +
                 $"staleMapIdCleared={staleMapIdCleared}, " +
@@ -313,6 +368,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"staleActionBarRejected={staleActionBarRejected}");
             return actionMatches && actionBarMatches && maximaMatch &&
                 worldPositionMatches && staleWorldPositionRejected &&
+                spellBookMatches && staleSpellBookRejected &&
+                staleSpellBookReaderReset &&
                 positionMatches && stalePositionRejected && staleMapIdCleared &&
                 staleMaximumRejected && absoluteRejected && staleRejected &&
                 staleActionRejected && staleActionBarRejected ? 0 : 2;
@@ -441,6 +498,7 @@ static bool HasChanged(VisualBarSample previous, VisualBarSample current)
     || previous.WorldPosition != current.WorldPosition
     || previous.WatchedAction != current.WatchedAction
     || ActionBarChanged(previous.ActionBar, current.ActionBar)
+    || SpellBookChanged(previous.SpellBook, current.SpellBook)
     || ((previous.ActionCooldownFill, current.ActionCooldownFill) switch
     {
         (null, null) => false,
@@ -474,12 +532,31 @@ static bool ActionBarChanged(VisualActionBarSnapshot? previous,
     return false;
 }
 
+static bool SpellBookChanged(VisualSpellBookSnapshot? previous,
+    VisualSpellBookSnapshot? current)
+{
+    if (previous is null || current is null)
+        return previous != current;
+
+    if (previous.Count != current.Count ||
+        previous.ReadableCount != current.ReadableCount)
+        return true;
+
+    for (int slot = 1; slot <= current.Count; slot++)
+        if (previous.GetSlot(slot) != current.GetSlot(slot))
+            return true;
+
+    return false;
+}
+
 static int RunSelfTest()
 {
+    SpellBookReader spellBookReader = new(new SpellDB(new DataConfig
+        { Root = Path.GetFullPath("Json"), Exp = "forever" }));
     foreach (double scale in new[] { 0.75, 1.0, 1.25 })
     {
         const int width = 700;
-        const int height = 350;
+        const int height = 450;
         const int left = 16;
         const int top = 70;
         Bgra32[] pixels = new Bgra32[width * height];
@@ -516,6 +593,11 @@ static int RunSelfTest()
         DrawWorldPixel(3, 0);
         DrawWorldPixel(4, (0xA55A33 - (8388608 - 61834) -
             (8388608 + 123456) - (8388608 + 8765)) & 0xFFFFFF);
+        DrawWorldPixel(5, 3);
+        DrawWorldPixel(6, (0xA56622 - 3) & 0xFFFFFF);
+        DrawSpellGridSlot(1, VisualSpellIdSource.SpellId, 6603);
+        DrawSpellGridSlot(2, VisualSpellIdSource.ActionId, 270);
+        DrawSpellGridSlot(3, VisualSpellIdSource.SpellId, 7744);
         for (int slot = 1; slot <= VisualActionBarSnapshot.SlotCount; slot++)
             DrawActionGridSlot(slot, 0, 0);
         DrawActionGridSlot(4, 1, 7744);
@@ -542,9 +624,26 @@ static int RunSelfTest()
             || result.WatchedAction is not { Slot: 4, Kind: VisualActionKind.Spell, Id: 7744 }
             || result.ActionBar is not { ReadableCount: 120, OccupiedCount: 2 } actionBar
             || actionBar.GetSlot(4) is not { Kind: VisualActionKind.Spell, Id: 7744 }
-            || actionBar.GetSlot(26) is not { Kind: VisualActionKind.Flyout, Id: 270 })
+            || actionBar.GetSlot(26) is not { Kind: VisualActionKind.Flyout, Id: 270 }
+            || result.SpellBook is not { Count: 3, ReadableCount: 3 } spellBook
+            || spellBook.GetSlot(1) is not { Source: VisualSpellIdSource.SpellId, Id: 6603 }
+            || spellBook.GetSlot(2) is not { Source: VisualSpellIdSource.ActionId, Id: 270 }
+            || spellBook.GetSlot(3) is not { Source: VisualSpellIdSource.SpellId, Id: 7744 })
         {
             Console.Error.WriteLine($"Visual reader self-test failed at UI scale {scale}.");
+            return 1;
+        }
+
+        spellBookReader.UpdateForever(result.SpellBook);
+        if (!spellBookReader.IsInitialized ||
+            !spellBookReader.AllRanksReceived ||
+            spellBookReader.ExpectedCount != 3 ||
+            spellBookReader.Count != 2 ||
+            !spellBookReader.HasExact(6603) ||
+            !spellBookReader.HasExact(7744) ||
+            spellBookReader.HasExact(270))
+        {
+            Console.Error.WriteLine($"Forever spellbook adapter failed at UI scale {scale}.");
             return 1;
         }
 
@@ -585,6 +684,46 @@ static int RunSelfTest()
         }
         DrawPositionPixel(11, 742);
         DrawPositionPixel(12, (0xA55A11 - 742) & 0xFFFFFF);
+
+        DrawWorldPixel(6, 0);
+        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
+            result.SpellBook is not null)
+        {
+            Console.Error.WriteLine($"Visual reader accepted missing spellbook marker at UI scale {scale}.");
+            return 1;
+        }
+        DrawWorldPixel(6, (0xA56622 - 3) & 0xFFFFFF);
+        DrawEncodedRect(left + (int)Math.Round(16 * scale),
+            top + (int)Math.Round(205 * scale), (int)Math.Round(8 * scale),
+            270 + (4 << 16));
+        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
+            result.SpellBook is not { Count: 3, ReadableCount: 2 })
+        {
+            Console.Error.WriteLine($"Visual reader accepted a corrupted spellbook ID at UI scale {scale}.");
+            return 1;
+        }
+        spellBookReader.UpdateForever(result.SpellBook);
+        if (spellBookReader.IsInitialized ||
+            spellBookReader.AllRanksReceived || spellBookReader.Count != 0)
+        {
+            Console.Error.WriteLine($"Forever spellbook adapter kept a partial snapshot at UI scale {scale}.");
+            return 1;
+        }
+        DrawSpellGridSlot(2, VisualSpellIdSource.ActionId, 270);
+
+        DrawWorldPixel(5, 200);
+        DrawWorldPixel(6, (0xA56622 - 200) & 0xFFFFFF);
+        DrawSpellGridSlot(200, VisualSpellIdSource.SpellId, 12345);
+        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
+            result.SpellBook is not { Count: 200, ReadableCount: 4 } longBook ||
+            longBook.GetSlot(200) is not
+                { Source: VisualSpellIdSource.SpellId, Id: 12345 })
+        {
+            Console.Error.WriteLine($"Visual reader missed the final spellbook row at UI scale {scale}.");
+            return 1;
+        }
+        DrawWorldPixel(5, 3);
+        DrawWorldPixel(6, (0xA56622 - 3) & 0xFFFFFF);
 
         DrawWorldPixel(4, 0);
         if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
@@ -751,6 +890,19 @@ static int RunSelfTest()
                 yStart, side, id);
             DrawEncodedRect(left + (int)Math.Round((column * 16 + 8) * scale),
                 yStart, side, kind < 0 ? 0 : 0xA50000 + kind);
+        }
+
+        void DrawSpellGridSlot(int slot, VisualSpellIdSource source, int id)
+        {
+            int column = (slot - 1) % 20;
+            int row = (slot - 1) / 20;
+            int yStart = top + (int)Math.Round((205 + row * 8) * scale);
+            int side = (int)Math.Round(8 * scale);
+            int checksum = (0xA56611 - id - slot) & 0xFFFFFF;
+            DrawEncodedRect(left + (int)Math.Round(column * 16 * scale),
+                yStart, side, id);
+            DrawEncodedRect(left + (int)Math.Round((column * 16 + 8) * scale),
+                yStart, side, (checksum & 0xFFFFF0) | (int)source);
         }
 
         void DrawEncodedRect(int xStart, int yStart, int side, int encoded)

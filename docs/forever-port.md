@@ -30,6 +30,10 @@ stops before creating pixel frames or changing CVars on Forever.
    ID and a validity/type/slot marker; missing or mismatched pixels are rejected.
    A compact six-row grid beneath the bars carries type and ID for all 120
    action slots; each slot explicitly distinguishes empty from unreadable.
+   A second grid carries up to 200 spellbook slots. Each entry contains a
+   checksummed numeric ID and whether it is a spell ID or a flyout action ID.
+   The count has its own marker; an incomplete grid does not initialize the
+   spellbook reader. A book with more than 200 slots is unavailable.
    A second pixel row carries `UnitPosition` world X/Y/Z and instance map ID
    at 0.01-yard resolution. Map coordinates, world coordinates, and player
    vital maxima include a checksum marker; a damaged pixel is treated as
@@ -74,6 +78,8 @@ preflight with zero new bakes. One 200 ms Up Arrow press moved the character
 1.35 yards: 1.34 yards along facing and 0.05 yards laterally. A five-second
 read-only follow-up showed no continued movement after key release. This
 validates one bounded input step, not route following or autonomous combat.
+A second requested press passed the same preflight and moved 2.11 yards along
+facing with no measurable lateral displacement.
 
 The Blazor dashboard now also has a **Forever diagnostic mode**. With Forever
 running, start `BlazorServer` normally and open its dashboard. It selects WGC,
@@ -294,6 +300,16 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   A live `PlayerReader` smoke check confirmed that the grid is rejected after
   the visual sample expires. This is metadata only: bindings, usability,
   range, and cooldowns for every slot are still not ported.
+- A checksummed visual spellbook grid now feeds `SpellBookReader` on Forever.
+  The decoder covers up to 200 slots and rejects missing or damaged count and
+  entry markers. Synthetic checks at 75%, 100%, and 125% UI scale include the
+  final row, a corrupt entry, and a flyout action ID that must not be treated
+  as a learned spell. A live beta capture after `/reload` decoded 29/29 slots:
+  26 spell IDs and three flyout action IDs. The live `--reader-smoke` check
+  populated `SpellBookReader` from that snapshot and confirmed that both the
+  visual sample and reader state are cleared after capture expiry. This is
+  learned-spell metadata; key bindings, spell usability, range, and complete
+  cooldown data are still missing.
 - The Forever dashboard was smoke-tested against the live beta on this machine.
   It returned HTTP 200 and displayed 100% player health, 100% power, and 0%
   target health with no target selected. The log confirmed WGC capture and the

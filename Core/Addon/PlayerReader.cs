@@ -180,6 +180,19 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         return false;
     }
 
+    public bool TryGetForeverSpellBook(out VisualSpellBookSnapshot spellBook)
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars) &&
+            bars.SpellBook is { } latest)
+        {
+            spellBook = latest;
+            return true;
+        }
+
+        spellBook = null!;
+        return false;
+    }
+
     private bool IsForever => foreverVisualBars?.IsEnabled == true;
 
     private VisualBarSample RequiredForeverVitals()
