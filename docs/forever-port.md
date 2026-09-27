@@ -338,8 +338,15 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   rejects flyouts, unbound slots, partial grids, and expired captures, and
   never falls back to a similar icon. Synthetic checks passed at three UI
   scales; a live reader check resolved one learned, bound action and rejected
-  it after capture expiry. Slot validation and action-state readers still need
-  the same Forever-specific treatment before gameplay.
+  it after capture expiry. Action-state readers still need the same
+  Forever-specific treatment before gameplay.
+- Forever profile slot validation now compares the checked action kind and
+  spell ID with the learned spell name. A fresh empty slot is distinct from a
+  mismatched spell; an unreadable or expired grid is reported as unavailable.
+  It does not offer automatic placement while the Forever addon is guarded.
+  Synthetic checks cover valid, empty, mismatched, and flyout slots at three
+  UI scales; the live reader validated a bound spell and rejected its slot
+  after capture expiry.
 - The Forever dashboard was smoke-tested against the live beta on this machine.
   It returned HTTP 200 and displayed 100% player health, 100% power, and 0%
   target health with no target selected. The log confirmed WGC capture and the

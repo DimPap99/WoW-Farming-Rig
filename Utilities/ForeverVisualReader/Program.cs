@@ -379,7 +379,11 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
 
             KeyReader.ForeverActionBarProvider =
                 () => player.TryGetForeverActionBar(out var live) ? live : null;
+            ActionBarSlotValidator slotValidator = new(
+                NullLogger<ActionBarSlotValidator>.Instance, null!, null!,
+                player, spellBook);
             bool spellActionResolved = false;
+            bool spellSlotValidated = false;
             string? resolvedSpellName = null;
             if (spellBookMatches && bindingMatches && bars.ActionBar is { } liveActions)
                 for (int slot = 1; slot <= VisualActionBarSnapshot.SlotCount; slot++)
@@ -402,6 +406,11 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                         matchedSpell.Name == spell.Name;
                     if (spellActionResolved)
                     {
+                        spellSlotValidated = slotValidator.Validate(candidate) ==
+                            SlotValidationStatus.Valid &&
+                            slotValidator.Validate(new KeyAction
+                                { Name = "Unlearned Spell", Slot = candidate.Slot }) ==
+                            SlotValidationStatus.Mismatch;
                         resolvedSpellName = spell.Name;
                         break;
                     }
@@ -420,6 +429,10 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool staleSpellActionRejected = resolvedSpellName is { } name &&
                 !KeyReader.ReadKey(NullLogger.Instance,
                     new KeyAction { Name = name });
+            bool staleSlotValidationUnavailable = resolvedSpellName is { } staleName &&
+                slotValidator.Validate(new KeyAction
+                    { Name = staleName, Slot = 1 }) ==
+                SlotValidationStatus.Unavailable;
             bool staleWorldPositionRejected = !player.TryGetForeverWorldPosition(out _);
             bool staleSpellBookRejected = !player.TryGetForeverSpellBook(out _);
             bool staleBindingsRejected = !player.TryGetForeverBindings(out _);
@@ -458,7 +471,9 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"bindings={BindingsText(visualBindings)}, " +
                 $"bindingMatches={bindingMatches}, " +
                 $"spellActionResolved={spellActionResolved}, " +
+                $"spellSlotValidated={spellSlotValidated}, " +
                 $"staleSpellActionRejected={staleSpellActionRejected}, " +
+                $"staleSlotValidationUnavailable={staleSlotValidationUnavailable}, " +
                 $"staleBindingsRejected={staleBindingsRejected}, " +
                 $"staleBindingReaderReset={staleBindingReaderReset}, " +
                 $"positionMatches={positionMatches}, " +
@@ -471,8 +486,9 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 worldPositionMatches && staleWorldPositionRejected &&
                 spellBookMatches && staleSpellBookRejected &&
                 staleSpellBookReaderReset &&
-                bindingMatches && spellActionResolved &&
-                staleSpellActionRejected && staleBindingsRejected &&
+                bindingMatches && spellActionResolved && spellSlotValidated &&
+                staleSpellActionRejected && staleSlotValidationUnavailable &&
+                staleBindingsRejected &&
                 staleBindingReaderReset &&
                 positionMatches && stalePositionRejected && staleMapIdCleared &&
                 staleMaximumRejected && absoluteRejected && staleRejected &&
@@ -815,6 +831,22 @@ static int RunSelfTest()
         }
 
         string spellName = spellBookReader.SpellDB.Spells[7744].Name;
+        if (ActionBarSlotValidator.ValidateForeverAction(
+                new KeyAction { Name = spellName, Slot = 4 }, 4,
+                actionBar, spellBookReader) != SlotValidationStatus.Valid ||
+            ActionBarSlotValidator.ValidateForeverAction(
+                new KeyAction { Name = spellName, Slot = 1 }, 1,
+                actionBar, spellBookReader) != SlotValidationStatus.EmptySlot ||
+            ActionBarSlotValidator.ValidateForeverAction(
+                new KeyAction { Name = spellName, Slot = 26 }, 26,
+                actionBar, spellBookReader) != SlotValidationStatus.Mismatch ||
+            ActionBarSlotValidator.ValidateForeverAction(
+                new KeyAction { Name = "Unlearned Spell", Slot = 4 }, 4,
+                actionBar, spellBookReader) != SlotValidationStatus.Mismatch)
+        {
+            Console.Error.WriteLine($"Forever action slot validation failed at UI scale {scale}.");
+            return 1;
+        }
         KeyReader.ForeverActionBarProvider = () => actionBar;
         if (KeyReader.ReadKey(NullLogger.Instance,
                 new KeyAction { Name = spellName }))
