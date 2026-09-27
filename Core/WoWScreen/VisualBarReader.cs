@@ -155,7 +155,8 @@ public readonly record struct VisualBarSample(
     VisualSpellBookSnapshot? SpellBook = null,
     VisualBindingSnapshot? Bindings = null,
     VisualActionStateSnapshot? ActionStates = null,
-    VisualCooldownGridSnapshot? Cooldowns = null);
+    VisualCooldownGridSnapshot? Cooldowns = null,
+    int? PlayerPowerType = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -247,10 +248,12 @@ public static class VisualBarReader
             pixels, width, height, whiteLeft, whiteY, scale);
         VisualBindingSnapshot? bindings = TryReadBindings(
             pixels, width, height, whiteLeft, whiteY, scale);
+        int? playerPowerType = TryReadPowerType(
+            pixels, width, height, whiteLeft, whiteY, scale);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
             playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
-            actionStates, cooldowns);
+            actionStates, cooldowns, playerPowerType);
         return true;
     }
 
@@ -448,6 +451,27 @@ public static class VisualBarReader
 
         return new((x - 8388608) / 100.0, (y - 8388608) / 100.0,
             (z - 8388608) / 100.0, instanceMapId);
+    }
+
+    private static int? TryReadPowerType(Bgra32[] pixels, int width, int height,
+        int left, int whiteY, double scale)
+    {
+        int y = whiteY + (int)Math.Round(42 * scale);
+        int valueX = left + (int)Math.Round(185 * scale);
+        int markerX = left + (int)Math.Round(205 * scale);
+        if (y < 0 || y >= height || valueX < 0 || valueX >= width ||
+            markerX < 0 || markerX >= width)
+            return null;
+
+        Bgra32 valuePixel = pixels[y * width + valueX];
+        int value = (valuePixel.R << 16) | (valuePixel.G << 8) |
+            valuePixel.B;
+        Bgra32 markerPixel = pixels[y * width + markerX];
+        int marker = (markerPixel.R << 16) | (markerPixel.G << 8) |
+            markerPixel.B;
+        return value <= 255 &&
+            marker == ((0xA56644 - value) & 0xFFFFFF)
+            ? value : null;
     }
 
     private static int? TryReadMaximum(Bgra32[] pixels, int width, int height,

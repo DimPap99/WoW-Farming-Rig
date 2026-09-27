@@ -384,6 +384,17 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   ready/busy but still need explicit boolean rules before those existing
   profiles can run on Forever. `CD_MIN_TARGET_HP%` is a user-defined threshold,
   not an action cooldown, and remains valid.
+- A checksummed primary power-type pixel now identifies when the blue bar is
+  mana. `ManaPercent()` and `ManaMax()` use the fresh visual percentage and
+  maximum only for type 0 (mana); other or unreadable types fail closed.
+  Exact current health/power remain protected and unavailable. The melee-range
+  wait now watches the visual health percentage on Forever rather than reading
+  the unsupported exact current health. Profile expressions asking for exact
+  mana/energy/rage/focus/runic power or pet/focus health percentages are
+  rejected at load. Synthetic tests at three scales cover mana, another power
+  type, marker damage, and unsupported expressions. A live beta read after
+  `/reload` decoded power type 0 and matching 49% power/mana, then rejected
+  the stale capture.
 - The Forever dashboard was smoke-tested against the live beta on this machine.
   It returned HTTP 200 and displayed 100% player health, 100% power, and 0%
   target health with no target selected. The log confirmed WGC capture and the
@@ -459,9 +470,9 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
    learned spells in those slots. Existing profile `CD_` millisecond
    comparisons are audited and rejected on Forever until rewritten as explicit
    readiness rules or backed by a verified timer source.
-2. Finish gameplay data and rules. Replace exact current health/power uses
-   with safe percentage or action-state decisions where valid; provide
-   inactive mana, pet, and focus vitals when a chosen profile requires them.
+2. Finish gameplay data and rules. Player health/power percentages, maxima,
+   and checked primary mana percentage are live; exact current values remain
+   protected. Provide pet/focus vitals only if the chosen profile needs them.
    Port bag counts and design a combat-safe aura signal. Reject missing data
    rather than reading Classic pixel cells. The 24-bit numeric protocol cannot
    encode protected values as-is.

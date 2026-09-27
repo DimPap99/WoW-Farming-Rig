@@ -270,9 +270,23 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         ? VisualPercent(RequiredForeverVitals().PlayerPower)
         : PTCurrent() * 100 / PTMax(); // Power Type (dynamic) in terms of a percentage
 
-    public int ManaMax() => ClassicAbsoluteVital(14);
+    public int ManaMax() => IsForever
+        ? RequiredForeverManaVitals().PlayerPowerMax ?? throw new InvalidOperationException(
+            "Forever maximum mana is unavailable or unreadable.")
+        : ClassicAbsoluteVital(14);
     public int ManaCurrent() => ClassicAbsoluteVital(15);
-    public int ManaPercent() => (1 + ManaCurrent()) * 100 / (1 + ManaMax());
+    public int ManaPercent() => IsForever
+        ? VisualPercent(RequiredForeverManaVitals().PlayerPower)
+        : (1 + ManaCurrent()) * 100 / (1 + ManaMax());
+
+    private VisualBarSample RequiredForeverManaVitals()
+    {
+        VisualBarSample bars = RequiredForeverVitals();
+        if (bars.PlayerPowerType != 0)
+            throw new InvalidOperationException(
+                "Forever mana is unavailable: the checked primary power type is not mana.");
+        return bars;
+    }
 
     public int MaxRune() => reader.GetInt(14);
 

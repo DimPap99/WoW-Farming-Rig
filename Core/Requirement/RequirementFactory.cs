@@ -452,6 +452,11 @@ public sealed partial class RequirementFactory
                 throw new NotSupportedException(
                     $"Forever profile expression '{requirement}' uses {key} as milliseconds; replace it with a readiness rule.");
 
+            if (playerReader.IsForeverVisual &&
+                FindUnsupportedForeverVital(requirement) is { } vital)
+                throw new NotSupportedException(
+                    $"Forever profile expression '{requirement}' uses unavailable exact or secondary vital {vital}; use a checked percentage or action usability rule.");
+
             if (logger.IsEnabled(LogLevel.Information))
                 LogProcessing(logger, name, requirement);
 
@@ -473,6 +478,16 @@ public sealed partial class RequirementFactory
 
     [GeneratedRegex(@"(?<!\w)CD_[^<>=&|),]+", RegexOptions.IgnoreCase)]
     private static partial Regex ForeverCooldownVariable();
+
+    public static string? FindUnsupportedForeverVital(string expression)
+    {
+        Match match = ForeverUnsupportedVital().Match(expression);
+        return match.Success ? match.Value : null;
+    }
+
+    [GeneratedRegex(@"(?<![A-Za-z0-9_])(Mana|Energy|Rage|RunicPower|Focus|PetHealth%|FocusHealth%)(?![A-Za-z0-9_%])",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex ForeverUnsupportedVital();
 
     public void InitUserDefinedIntVariables(
         Dictionary<string, int[]> intKeyValues,
