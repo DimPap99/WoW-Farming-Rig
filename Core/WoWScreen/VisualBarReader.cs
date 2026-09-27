@@ -23,6 +23,13 @@ public readonly record struct VisualTargetFlags(
     bool Present, bool Attackable, bool Dead,
     bool PlayerCombat, bool PlayerDead);
 
+public readonly record struct VisualCastEvent(int Sequence, int SpellId)
+{
+    public bool ConfirmsNewSuccess(VisualCastEvent before, int expectedSpellId) =>
+        Sequence > 0 && Sequence != before.Sequence &&
+        SpellId == expectedSpellId;
+}
+
 public enum VisualActionKind : byte { Empty, Spell, Item, Macro, Flyout }
 
 public readonly record struct VisualActionSample(
@@ -202,7 +209,8 @@ public readonly record struct VisualBarSample(
     int? PlayerPowerType = null,
     VisualBagSnapshot? Bags = null,
     VisualPlayerIdentity? PlayerIdentity = null,
-    VisualTargetFlags? TargetFlags = null);
+    VisualTargetFlags? TargetFlags = null,
+    VisualCastEvent? LastCastEvent = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -302,11 +310,13 @@ public static class VisualBarReader
             pixels, width, height, whiteLeft, whiteY, scale);
         VisualTargetFlags? targetFlags = TryReadTargetFlags(
             pixels, width, height, whiteLeft, whiteY, scale);
+        VisualCastEvent? castEvent = TryReadCastEvent(
+            pixels, width, height, whiteLeft, whiteY, scale);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
             playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
             actionStates, cooldowns, playerPowerType, bags, playerIdentity,
-            targetFlags);
+            targetFlags, castEvent);
         return true;
     }
 
@@ -358,6 +368,29 @@ public static class VisualBarReader
         return !present && (attackable || dead)
             ? null : new(present, attackable, dead,
                 playerCombat, playerDead);
+    }
+
+    private static VisualCastEvent? TryReadCastEvent(Bgra32[] pixels,
+        int width, int height, int left, int whiteY, double scale)
+    {
+        int y = whiteY + (int)Math.Round(127 * scale);
+        int Read(int index)
+        {
+            int x = left + (int)Math.Round((5 + index * 20) * scale);
+            if (x < 0 || x >= width || y < 0 || y >= height)
+                return -1;
+            Bgra32 pixel = pixels[y * width + x];
+            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
+        }
+
+        int sequence = Read(0);
+        int spellId = Read(1);
+        int marker = Read(2);
+        if (sequence is < 0 or > 65535 || spellId < 0 || marker < 0 ||
+            (sequence == 0) != (spellId == 0) ||
+            marker != ((0xA5CC11 - sequence - spellId) & 0xFFFFFF))
+            return null;
+        return new(sequence, spellId);
     }
 
     private static VisualCooldownGridSnapshot? TryReadCooldownGrid(

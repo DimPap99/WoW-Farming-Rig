@@ -2,6 +2,7 @@ local probe = CreateFrame("Frame")
 local bars = {}
 local visual
 local cooldownSlot = 1
+local castSequence, castSpellId, castEventReadable = 0, 0, true
 local cooldownTimer = CreateFrame("StatusBar")
 local cooldownRadial = CreateFrame("Cooldown")
 local actionKindCodes = { spell = 1, item = 2, macro = 3, flyout = 4 }
@@ -220,7 +221,8 @@ end
 probe:RegisterEvent("PLAYER_ENTERING_WORLD")
 probe:RegisterEvent("PLAYER_REGEN_DISABLED")
 probe:RegisterEvent("PLAYER_REGEN_ENABLED")
-probe:SetScript("OnEvent", function(_, event)
+probe:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+probe:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
         capture("world")
     elseif event == "PLAYER_REGEN_DISABLED" then
@@ -231,8 +233,34 @@ probe:SetScript("OnEvent", function(_, event)
                 capture("combatLocked")
             end
         end)
-    else
+    elseif event == "PLAYER_REGEN_ENABLED" then
         capture("afterCombat")
+    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+        local unit = select(1, ...)
+        if type(issecretvalue) == "function" and issecretvalue(unit) then
+            castEventReadable = false
+            return
+        end
+        if unit ~= "player" then return end
+        local ok, spellId = pcall(function(...)
+            -- Payload shape varies by client. The last numeric argument is
+            -- the spell ID on the supported Classic event layouts.
+            for i = select("#", ...), 1, -1 do
+                local value = select(i, ...)
+                if type(issecretvalue) == "function" and
+                    issecretvalue(value) then return nil end
+                if type(value) == "number" then return value end
+            end
+        end, ...)
+        if not ok or type(spellId) ~= "number" or
+            spellId <= 0 or spellId > 16777215 or
+            spellId ~= math.floor(spellId) then
+            castEventReadable = false
+            return
+        end
+        castSequence = (castSequence % 65535) + 1
+        castSpellId = spellId
+        castEventReadable = true
     end
 end)
 
@@ -426,6 +454,9 @@ local function createVisual()
     frame.playerIdentityValidPixel = addPixel(12, 105)
     frame.targetFlagsPixel = addPixel(13, 105)
     frame.targetFlagsValidPixel = addPixel(14, 105)
+    frame.castSequencePixel = addPixel(0, 190)
+    frame.castSpellPixel = addPixel(1, 190)
+    frame.castValidPixel = addPixel(2, 190)
 
     -- Forty tiny pixels per row (ID, marker per action), six rows total.
     -- The marker distinguishes an empty slot from an unreadable one.
@@ -821,6 +852,14 @@ local function createVisual()
             setIntPixel(frame.targetFlagsValidPixel,
                 (0xA57755 - flags) % 16777216)
         end)
+
+        frame.castValidPixel:SetColorTexture(0, 0, 0, 1)
+        if castEventReadable then
+            setIntPixel(frame.castSequencePixel, castSequence)
+            setIntPixel(frame.castSpellPixel, castSpellId)
+            setIntPixel(frame.castValidPixel,
+                (0xA5CC11 - castSequence - castSpellId) % 16777216)
+        end
 
         frame.cooldownValidPixel:SetColorTexture(0, 0, 0, 1)
         local cooldownOk = pcall(function()
