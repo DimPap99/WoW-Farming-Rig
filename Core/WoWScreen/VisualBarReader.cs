@@ -23,6 +23,12 @@ public readonly record struct VisualTargetFlags(
     bool Present, bool Attackable, bool Dead,
     bool PlayerCombat, bool PlayerDead);
 
+public readonly record struct VisualTargetIdentity(
+    int GuidHash1, int GuidHash2, int Level, bool IsPlayer)
+{
+    public bool Present => Level > 0;
+}
+
 public readonly record struct VisualCastEvent(int Sequence, int SpellId)
 {
     public bool ConfirmsNewSuccess(VisualCastEvent before, int expectedSpellId) =>
@@ -210,7 +216,8 @@ public readonly record struct VisualBarSample(
     VisualBagSnapshot? Bags = null,
     VisualPlayerIdentity? PlayerIdentity = null,
     VisualTargetFlags? TargetFlags = null,
-    VisualCastEvent? LastCastEvent = null);
+    VisualCastEvent? LastCastEvent = null,
+    VisualTargetIdentity? TargetIdentity = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -312,11 +319,17 @@ public static class VisualBarReader
             pixels, width, height, whiteLeft, whiteY, scale);
         VisualCastEvent? castEvent = TryReadCastEvent(
             pixels, width, height, whiteLeft, whiteY, scale);
+        VisualTargetIdentity? targetIdentity = TryReadTargetIdentity(
+            pixels, width, height, whiteLeft, whiteY, scale);
+        if (targetFlags is { } checkedFlags &&
+            targetIdentity is { } checkedIdentity &&
+            checkedFlags.Present != checkedIdentity.Present)
+            targetIdentity = null;
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
             playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
             actionStates, cooldowns, playerPowerType, bags, playerIdentity,
-            targetFlags, castEvent);
+            targetFlags, castEvent, targetIdentity);
         return true;
     }
 
@@ -391,6 +404,36 @@ public static class VisualBarReader
             marker != ((0xA5CC11 - sequence - spellId) & 0xFFFFFF))
             return null;
         return new(sequence, spellId);
+    }
+
+    private static VisualTargetIdentity? TryReadTargetIdentity(Bgra32[] pixels,
+        int width, int height, int left, int whiteY, double scale)
+    {
+        int y = whiteY + (int)Math.Round(127 * scale);
+        int Read(int index)
+        {
+            int x = left + (int)Math.Round((5 + index * 20) * scale);
+            if (x < 0 || x >= width || y < 0 || y >= height)
+                return -1;
+            Bgra32 pixel = pixels[y * width + x];
+            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
+        }
+
+        int hash1 = Read(3);
+        int hash2 = Read(4);
+        int packedLevel = Read(5);
+        int marker = Read(6);
+        if (hash1 < 0 || hash2 < 0 || packedLevel < 0 || marker < 0 ||
+            marker != ((0xA58866 - hash1 - hash2 - packedLevel) & 0xFFFFFF))
+            return null;
+
+        if (hash1 == 0 && hash2 == 0 && packedLevel == 0)
+            return new(0, 0, 0, false);
+
+        int level = packedLevel / 2;
+        return level is >= 1 and <= 255 && (hash1 != 0 || hash2 != 0)
+            ? new(hash1, hash2, level, (packedLevel & 1) != 0)
+            : null;
     }
 
     private static VisualCooldownGridSnapshot? TryReadCooldownGrid(

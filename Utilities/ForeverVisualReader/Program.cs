@@ -47,6 +47,7 @@ if (args.Length == 1 && args[0] == "--self-test")
     return RunSelfTest();
 
 bool readerSmoke = args.Length == 1 && args[0] == "--reader-smoke";
+bool targetAudit = args.Length == 1 && args[0] == "--target-audit";
 bool routeProbe = args.Length == 1 && args[0] == "--route-probe";
 bool trialCheck = args.Length == 1 && args[0] == "--trial-check";
 bool trialMove = args.Length == 1 && args[0] == "--trial-move";
@@ -92,6 +93,9 @@ try
 
     if (readerSmoke)
         return await RunReaderSmoke(screen, tracker);
+
+    if (targetAudit)
+        return await RunTargetAudit(screen, tracker);
 
     if (routeProbe)
         return await RunRouteProbe(screen, tracker);
@@ -427,6 +431,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 AddonReader.HasForeverControllerFrame(bars);
             bool targetFlagsMatch = bars.TargetFlags is { } flags &&
                 flags.Present == bars.TargetPresent;
+            bool targetIdentityReady =
+                AddonReader.HasForeverTargetIdentity(bars);
             bool castEventMatches = bars.LastCastEvent is { } castEvent &&
                 player.TryGetForeverCastEvent(out VisualCastEvent readerCast) &&
                 readerCast == castEvent;
@@ -631,6 +637,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"controllerFrameReady={controllerFrameReady}, " +
                 $"targetFlags={bars.TargetFlags?.ToString() ?? "missing"}, " +
                 $"targetFlagsMatch={targetFlagsMatch}, " +
+                $"targetIdentity={bars.TargetIdentity?.ToString() ?? "missing"}, " +
+                $"targetIdentityReady={targetIdentityReady}, " +
                 $"targetBitsMatch={targetBitsMatch}, " +
                 $"stalePlayerFlagsRejected={stalePlayerFlagsRejected}, " +
                 $"castEvent={bars.LastCastEvent?.ToString() ?? "missing"}, " +
@@ -840,6 +848,66 @@ static bool HasTrialBinding(VisualBarSample sample, int slot,
         decoded.key1 == expected && decoded.mod1 == ModifierKey.None;
 }
 
+static async Task<int> RunTargetAudit(WowScreenWGC screen,
+    ForeverVisualBarTracker tracker,
+    Action<VisualTargetIdentity>? onEligible = null)
+{
+    VisualTargetIdentity? firstIdentity = null;
+    long firstFrame = 0;
+    for (int i = 0; i < 60; i++)
+    {
+        screen.Update();
+        tracker.Update();
+        if (!tracker.TryGetLatest(out VisualBarSample bars) ||
+            !AddonReader.HasForeverTargetIdentity(bars) ||
+            bars.TargetFlags is not { } flags ||
+            bars.TargetIdentity is not { } identity ||
+            bars.PlayerIdentity is not { } playerIdentity)
+        {
+            await Task.Delay(100);
+            continue;
+        }
+
+        if (!identity.Present)
+        {
+            await Task.Delay(100);
+            continue;
+        }
+
+        bool eligible = flags is
+                { Attackable: true, Dead: false, PlayerDead: false } &&
+            !identity.IsPlayer && identity.Level <= playerIdentity.Level + 1 &&
+            bars.TargetHealth > 0 && bars.PlayerHealth >= 0.70 &&
+            bars.PlayerPower >= (flags.PlayerCombat ? 0.25 : 0.60);
+        if (firstIdentity is null)
+        {
+            firstIdentity = identity;
+            firstFrame = tracker.LatestFrameId;
+            await Task.Delay(200);
+            continue;
+        }
+        if (tracker.LatestFrameId == firstFrame)
+        {
+            await Task.Delay(100);
+            continue;
+        }
+
+        bool stable = identity == firstIdentity.Value;
+        Console.WriteLine($"Target audit: identity={identity}, " +
+            $"playerLevel={playerIdentity.Level}, targetHealth={bars.TargetHealth:P0}, " +
+            $"playerHealth={bars.PlayerHealth:P0}, mana={bars.PlayerPower:P0}, " +
+            $"attackable={flags.Attackable}, combat={flags.PlayerCombat}, " +
+            $"stable={stable}, eligible={eligible}, " +
+            $"map={bars.Position?.UIMapId.ToString() ?? "missing"}; no input sent.");
+        if (stable && eligible)
+            onEligible?.Invoke(identity);
+        return stable && eligible ? 0 : 2;
+    }
+
+    Console.Error.WriteLine("No two fresh complete frames with a selected target; no input sent.");
+    return 2;
+}
+
 static async Task<int> RunTrialCheck(WowScreenWGC screen,
     ForeverVisualBarTracker tracker, bool requireNearRoute = true)
 {
@@ -898,12 +966,13 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
             bars.Cooldowns is not { ReadableCount: VisualCooldownGridSnapshot.SlotCount } cooldowns ||
             bars.SpellBook is not { Count: > 0 } book || book.ReadableCount != book.Count ||
             bars.Bindings is not { ReadableCount: VisualBindingSnapshot.Count } bindings ||
-            bars.Bags is not { IsComplete: true } || bars.PlayerPowerType != 0 ||
+            bars.PlayerPowerType != 0 ||
             bars.PlayerIdentity is not { ClassId: (int)UnitClass.Paladin } ||
             bars.TargetFlags is not { } targetFlags ||
             bars.LastCastEvent is null ||
             targetFlags.Present != bars.TargetPresent ||
-            targetFlags.PlayerCombat || targetFlags.PlayerDead)
+            (targetFlags.PlayerCombat && requireNearRoute) ||
+            targetFlags.PlayerDead)
         {
             Console.Error.WriteLine("Trial data is incomplete or the character left Tirisfal.");
             return 2;
@@ -970,7 +1039,7 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
         bool routeConnected = true;
         if (requireNearRoute)
         {
-            if (bars.PlayerHealth < 0.95 || bars.PlayerPower < 0.60 || targetFlags.Present)
+            if (bars.PlayerHealth < 0.70 || bars.PlayerPower < 0.60 || targetFlags.Present)
             {
                 Console.Error.WriteLine("Local route requires high health, mana, and no target.");
                 return 2;
@@ -1013,7 +1082,7 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
             $"health={bars.PlayerHealth:P0}, mana={bars.PlayerPower:P0}, " +
             $"target={bars.TargetPresent}, attackable={targetFlags.Attackable}, " +
             $"targetDead={targetFlags.Dead}, " +
-            $"identity={bars.PlayerIdentity}, bagSlots={bars.Bags.ReadableSlots}/200");
+            $"identity={bars.PlayerIdentity}, bagSlots={bars.Bags?.ReadableSlots.ToString() ?? "missing"}/200");
         return routeConnected ? 0 : 2;
     }
 
@@ -1050,7 +1119,7 @@ static async Task<int> RunTrialMove(WowScreenWGC screen,
         first.WorldPosition is not { } firstWorld ||
         current.WorldPosition is not { } startWorld ||
         current.Position is not { } startMap ||
-        first.PlayerHealth < 0.95 || current.PlayerHealth < 0.95 ||
+        first.PlayerHealth < 0.70 || current.PlayerHealth < 0.70 ||
         first.TargetFlags is not
             { Present: false, PlayerCombat: false, PlayerDead: false } ||
         current.TargetFlags is not
@@ -1060,7 +1129,7 @@ static async Task<int> RunTrialMove(WowScreenWGC screen,
         Vector2.Distance(new((float)firstWorld.X, (float)firstWorld.Y),
             new((float)startWorld.X, (float)startWorld.Y)) > 0.3f)
     {
-        Console.Error.WriteLine("Movement trial refused: the character is moving, targeted, or below 95% health.");
+        Console.Error.WriteLine("Movement trial refused: the character is moving, targeted, or below 70% health.");
         return 2;
     }
 
@@ -1094,7 +1163,7 @@ static async Task<int> RunTrialMove(WowScreenWGC screen,
         observed.Position is not { UIMapId: 1420 } ||
         observed.TargetFlags is not
             { Present: false, PlayerCombat: false, PlayerDead: false } ||
-        observed.PlayerHealth < 0.90)
+        observed.PlayerHealth < 0.65)
     {
         Console.Error.WriteLine("Movement trial failed to confirm a safe fresh endpoint.");
         return 2;
@@ -1141,13 +1210,13 @@ static async Task<int> RunTrialHeal(WowScreenWGC screen,
     screen.Update();
     tracker.Update();
     if (!tracker.TryGetLatest(out VisualBarSample before) ||
-        before.PlayerHealth < 0.95 || before.PlayerPower < 0.60 ||
+        before.PlayerHealth < 0.70 || before.PlayerPower < 0.60 ||
         before.TargetFlags is not
             { Present: false, PlayerCombat: false, PlayerDead: false } ||
         before.SpellBook is not { } visualBook ||
         before.LastCastEvent is not { } beforeCast)
     {
-        Console.Error.WriteLine("Heal trial refused: full health, mana, no target, or spellbook check failed.");
+        Console.Error.WriteLine("Heal trial refused: 70% health, 60% mana, no target, or spellbook check failed.");
         return 2;
     }
 
@@ -1237,43 +1306,49 @@ static async Task<int> RunTrialJudgement(WowScreenWGC screen,
     if (!profilePrechecked &&
         await RunTrialCheck(screen, tracker, requireNearRoute: false) != 0)
         return 2;
-    screen.Update();
-    tracker.Update();
-    if (!tracker.TryGetLatest(out VisualBarSample before))
-    {
-        Console.Error.WriteLine("Judgement trial refused: no fresh visual sample.");
+    VisualTargetIdentity? auditedTarget = null;
+    if (await RunTargetAudit(screen, tracker,
+            identity => auditedTarget = identity) != 0)
         return 2;
-    }
-    if (before.PlayerHealth < 0.95 || before.PlayerPower < 0.60)
-    {
-        Console.Error.WriteLine($"Judgement trial refused: health={before.PlayerHealth:P0}, mana={before.PlayerPower:P0}; need at least 95% and 60%.");
-        return 2;
-    }
-    if (before.TargetFlags is not
-            { Present: true, Attackable: true, Dead: false,
-              PlayerCombat: false, PlayerDead: false } ||
-        before.TargetHealth <= 0 ||
-        before.LastCastEvent is null)
-    {
-        Console.Error.WriteLine($"Judgement trial refused: target={before.TargetFlags}; need a living attackable target.");
-        return 2;
-    }
-    if (before.ActionStates?.GetSlot(2) is not { InRange: true } ||
-        before.SpellBook is not { } visualBook)
-    {
-        Console.Error.WriteLine("Judgement trial refused: range or spellbook is unreadable.");
-        return 2;
-    }
-
     DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
     SpellBookReader spellBook = new(new SpellDB(config));
-    spellBook.UpdateForever(visualBook);
     KeyAction judgement = new()
         { Name = "Judgement", SpellId = 20271, Slot = 2,
           ConsoleKey = ConsoleKey.D2 };
-    if (!ForeverCastGate.CanPress(before, judgement, spellBook))
+    VisualBarSample before = default;
+    bool ready = false;
+    for (int i = 0; i < 100; i++)
     {
-        Console.Error.WriteLine("Judgement trial refused: the verified action is not ready.");
+        screen.Update();
+        tracker.Update();
+        if (!tracker.TryGetLatest(out VisualBarSample current) ||
+            !AddonReader.HasForeverTargetIdentity(current))
+        {
+            await Task.Delay(100);
+            continue;
+        }
+        if (current.TargetIdentity != auditedTarget ||
+            current.TargetFlags is not
+                { Present: true, Attackable: true, Dead: false,
+                  PlayerDead: false } ||
+            current.TargetHealth <= 0 ||
+            current.PlayerHealth < 0.70)
+        {
+            Console.Error.WriteLine("Judgement trial refused: target changed, died, or player health fell below 70%; no input sent.");
+            return 2;
+        }
+        spellBook.UpdateForever(current.SpellBook);
+        if (ForeverCastGate.CanPress(current, judgement, spellBook))
+        {
+            before = current;
+            ready = true;
+            break;
+        }
+        await Task.Delay(100);
+    }
+    if (!ready)
+    {
+        Console.Error.WriteLine("Judgement trial refused: action was not safely ready within 10 seconds; no input sent.");
         return 2;
     }
 
@@ -1293,6 +1368,7 @@ static async Task<int> RunTrialJudgement(WowScreenWGC screen,
     double lastMana = before.PlayerPower;
     double lastTargetHealth = before.TargetHealth;
     bool flagsReadable = true;
+    bool identityStable = true;
     for (int i = 0; i < 30; i++)
     {
         screen.Update();
@@ -1300,6 +1376,7 @@ static async Task<int> RunTrialJudgement(WowScreenWGC screen,
         if (tracker.TryGetLatest(out VisualBarSample after))
         {
             flagsReadable &= after.TargetFlags is not null;
+            identityStable &= after.TargetIdentity == before.TargetIdentity;
             lastMana = after.PlayerPower;
             lastTargetHealth = after.TargetHealth;
             if (after.LastCastEvent is { } cast &&
@@ -1316,8 +1393,9 @@ static async Task<int> RunTrialJudgement(WowScreenWGC screen,
         $"castEvent={confirmedCast?.ToString() ?? "missing"}, " +
         $"mana={before.PlayerPower:P0}->{lastMana:P0}, " +
         $"targetHealth={before.TargetHealth:P0}->{lastTargetHealth:P0}, " +
-        $"targetFlagsReadable={flagsReadable}; finish the fight manually.");
-    return observedAction && flagsReadable ? 0 : 2;
+        $"targetFlagsReadable={flagsReadable}, identityStable={identityStable}; " +
+        "finish the fight manually.");
+    return observedAction && flagsReadable && identityStable ? 0 : 2;
 }
 
 static bool HasChanged(VisualBarSample previous, VisualBarSample current)
@@ -1330,6 +1408,7 @@ static bool HasChanged(VisualBarSample previous, VisualBarSample current)
     || previous.WorldPosition != current.WorldPosition
     || previous.WatchedAction != current.WatchedAction
     || previous.LastCastEvent != current.LastCastEvent
+    || previous.TargetIdentity != current.TargetIdentity
     || ActionBarChanged(previous.ActionBar, current.ActionBar)
     || SpellBookChanged(previous.SpellBook, current.SpellBook)
     || BindingsChanged(previous.Bindings, current.Bindings)
@@ -1461,6 +1540,13 @@ static int RunSelfTest()
         DrawCastPixel(0, 0);
         DrawCastPixel(1, 0);
         DrawCastPixel(2, 0xA5CC11);
+        const int targetHash1 = 123456;
+        const int targetHash2 = 654321;
+        const int targetLevel = 12;
+        DrawCastPixel(3, targetHash1);
+        DrawCastPixel(4, targetHash2);
+        DrawCastPixel(5, targetLevel * 2);
+        DrawCastPixel(6, (0xA58866 - targetHash1 - targetHash2 - targetLevel * 2) & 0xFFFFFF);
         DrawSpellGridSlot(1, VisualSpellIdSource.SpellId, 6603);
         DrawSpellGridSlot(2, VisualSpellIdSource.ActionId, 270);
         DrawSpellGridSlot(3, VisualSpellIdSource.SpellId, 7744);
@@ -1514,6 +1600,9 @@ static int RunSelfTest()
             || result.TargetFlags is not
                 { Present: true, Attackable: true, Dead: false,
                   PlayerCombat: false, PlayerDead: false }
+            || result.TargetIdentity is not
+                { GuidHash1: targetHash1, GuidHash2: targetHash2,
+                  Level: targetLevel, IsPlayer: false }
             || result.LastCastEvent is not { Sequence: 0, SpellId: 0 }
             || result.WatchedAction is not { Slot: 4, Kind: VisualActionKind.Spell, Id: 7744 }
             || result.ActionBar is not { ReadableCount: 120, OccupiedCount: 2 } actionBar
@@ -1545,6 +1634,8 @@ static int RunSelfTest()
             return 1;
         }
         if (!AddonReader.HasForeverControllerFrame(result) ||
+            !AddonReader.HasForeverTargetIdentity(result) ||
+            AddonReader.HasForeverTargetIdentity(result with { TargetIdentity = null }) ||
             AddonReader.HasForeverControllerFrame(result with { ActionStates = null }) ||
             AddonReader.HasForeverControllerFrame(result with { Bags = null }) ||
             AddonReader.HasForeverControllerFrame(result with { LastCastEvent = null }) ||
@@ -1686,6 +1777,23 @@ static int RunSelfTest()
         DrawCastPixel(0, 0);
         DrawCastPixel(1, 0);
         DrawCastPixel(2, 0xA5CC11);
+
+        DrawCastPixel(6, 0);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var damagedTargetIdentity) ||
+            damagedTargetIdentity.TargetIdentity is not null ||
+            AddonReader.HasForeverTargetIdentity(damagedTargetIdentity))
+            return 1;
+        DrawCastPixel(6, (0xA58866 - targetHash1 - targetHash2 - targetLevel * 2) & 0xFFFFFF);
+
+        DrawCastPixel(5, targetLevel * 2 + 1);
+        DrawCastPixel(6, (0xA58866 - targetHash1 - targetHash2 - targetLevel * 2 - 1) & 0xFFFFFF);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var playerTargetIdentity) ||
+            playerTargetIdentity.TargetIdentity is not { IsPlayer: true, Level: targetLevel })
+            return 1;
+        DrawCastPixel(5, targetLevel * 2);
+        DrawCastPixel(6, (0xA58866 - targetHash1 - targetHash2 - targetLevel * 2) & 0xFFFFFF);
 
         VisualTargetFlags? targetForBits = result.TargetFlags;
         AddonBits targetBits = new()
@@ -2220,6 +2328,7 @@ static int RunSelfTest()
         {
             PlayerHealth = 1,
             PlayerPower = 1,
+            TargetHealth = 1,
             Position = new(1420, 0.35, 0.79, 1.23),
             WorldPosition = new(100, 200, 0, 0)
         };
@@ -2230,6 +2339,24 @@ static int RunSelfTest()
             ConsoleKey = ConsoleKey.D2
         };
         if (!ForeverCastGate.CanPress(trialCastSample,
+                trialJudgement, spellBookReader) ||
+            !ForeverCastGate.CanPress(trialCastSample with
+                { PlayerHealth = 0.70, PlayerPower = 0.25,
+                  TargetHealth = 0.50,
+                  TargetFlags = new(true, true, false, true, false) },
+                trialJudgement, spellBookReader) ||
+            ForeverCastGate.CanPress(trialCastSample with
+                { PlayerHealth = 0.69, PlayerPower = 0.25,
+                  TargetHealth = 0.50,
+                  TargetFlags = new(true, true, false, true, false) },
+                trialJudgement, spellBookReader) ||
+            ForeverCastGate.CanPress(trialCastSample with { TargetIdentity = null },
+                trialJudgement, spellBookReader) ||
+            ForeverCastGate.CanPress(trialCastSample with
+                { TargetIdentity = new(targetHash1, targetHash2, 12, true) },
+                trialJudgement, spellBookReader) ||
+            ForeverCastGate.CanPress(trialCastSample with
+                { TargetIdentity = new(targetHash1, targetHash2, 14, false) },
                 trialJudgement, spellBookReader) ||
             ForeverCastGate.CanPress(trialCastSample with { Bindings = null },
                 trialJudgement, spellBookReader) ||
@@ -2246,7 +2373,7 @@ static int RunSelfTest()
         if (!VisualBarReader.TryRead(pixels, width, height,
                 out var reboundTrial) ||
             ForeverCastGate.CanPress(reboundTrial with
-                { PlayerHealth = 1, PlayerPower = 1,
+                { PlayerHealth = 1, PlayerPower = 1, TargetHealth = 1,
                   Position = trialCastSample.Position,
                   WorldPosition = trialCastSample.WorldPosition },
                 trialJudgement, spellBookReader))
@@ -2259,7 +2386,7 @@ static int RunSelfTest()
         if (!VisualBarReader.TryRead(pixels, width, height,
                 out var busyTrial) ||
             ForeverCastGate.CanPress(busyTrial with
-                { PlayerHealth = 1, PlayerPower = 1,
+                { PlayerHealth = 1, PlayerPower = 1, TargetHealth = 1,
                   Position = trialCastSample.Position,
                   WorldPosition = trialCastSample.WorldPosition },
                 trialJudgement, spellBookReader))
@@ -2272,7 +2399,7 @@ static int RunSelfTest()
         if (!VisualBarReader.TryRead(pixels, width, height,
                 out var distantTrial) ||
             ForeverCastGate.CanPress(distantTrial with
-                { PlayerHealth = 1, PlayerPower = 1,
+                { PlayerHealth = 1, PlayerPower = 1, TargetHealth = 1,
                   Position = trialCastSample.Position,
                   WorldPosition = trialCastSample.WorldPosition },
                 trialJudgement, spellBookReader))

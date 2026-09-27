@@ -457,6 +457,10 @@ local function createVisual()
     frame.castSequencePixel = addPixel(0, 190)
     frame.castSpellPixel = addPixel(1, 190)
     frame.castValidPixel = addPixel(2, 190)
+    frame.targetHash1Pixel = addPixel(3, 190)
+    frame.targetHash2Pixel = addPixel(4, 190)
+    frame.targetLevelPixel = addPixel(5, 190)
+    frame.targetIdentityValidPixel = addPixel(6, 190)
 
     -- Forty tiny pixels per row (ID, marker per action), six rows total.
     -- The marker distinguishes an empty slot from an unreadable one.
@@ -819,6 +823,7 @@ local function createVisual()
 
         frame.targetFlagsPixel:SetColorTexture(0, 0, 0, 1)
         frame.targetFlagsValidPixel:SetColorTexture(0, 0, 0, 1)
+        frame.targetIdentityValidPixel:SetColorTexture(0, 0, 0, 1)
         pcall(function()
             local guid = UnitGUID("target")
             if type(issecretvalue) == "function" and issecretvalue(guid) then
@@ -851,6 +856,30 @@ local function createVisual()
             setIntPixel(frame.targetFlagsPixel, flags)
             setIntPixel(frame.targetFlagsValidPixel,
                 (0xA57755 - flags) % 16777216)
+
+            local hash1, hash2, packedLevel = 0, 0, 0
+            if present then
+                local level = readableNumber(UnitLevel("target"))
+                local isPlayer = UnitIsPlayer("target")
+                if type(issecretvalue) == "function" and
+                    issecretvalue(isPlayer) then return end
+                if type(guid) ~= "string" or #guid == 0 or
+                    not level or level < 1 or level > 255 or
+                    level ~= math.floor(level) or
+                    type(isPlayer) ~= "boolean" then return end
+                hash1, hash2 = 5381, 7193
+                for i = 1, #guid do
+                    local byte = string.byte(guid, i)
+                    hash1 = (hash1 * 33 + byte) % 16777216
+                    hash2 = (hash2 * 131 + byte) % 16777216
+                end
+                packedLevel = level * 2 + (isPlayer and 1 or 0)
+            end
+            setIntPixel(frame.targetHash1Pixel, hash1)
+            setIntPixel(frame.targetHash2Pixel, hash2)
+            setIntPixel(frame.targetLevelPixel, packedLevel)
+            setIntPixel(frame.targetIdentityValidPixel,
+                (0xA58866 - hash1 - hash2 - packedLevel) % 16777216)
         end)
 
         frame.castValidPixel:SetColorTexture(0, 0, 0, 1)

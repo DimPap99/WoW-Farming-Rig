@@ -917,6 +917,7 @@ public sealed partial class CastingHandler
         // latches the cast path closed for this session. Do not retry a press
         // whose outcome cannot be proved from the visual event.
         foreverCastNeedsReset = true;
+        VisualTargetIdentity? targetIdentity = before.TargetIdentity;
         input.PressFixed(item.ConsoleKey, 75, CancellationToken.None);
         item.SetClicked();
 
@@ -929,7 +930,9 @@ public sealed partial class CastingHandler
                 flags.Present != current.TargetPresent ||
                 (item.SpellId == 635
                     ? flags.Present || flags.PlayerCombat
-                    : !flags.Present || !flags.Attackable))
+                    : !flags.Present || !flags.Attackable ||
+                      current.TargetIdentity is not { } currentTarget ||
+                      currentTarget != targetIdentity))
                 return false;
 
             if (current.LastCastEvent is { } castEvent &&

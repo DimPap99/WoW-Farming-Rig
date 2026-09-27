@@ -543,9 +543,10 @@ normal Forever controller still refuses gameplay, and its casting path relies
 on Classic-only event, aura, and cost data. Those gaps must be resolved before
 the startup guard can be removed.
 
-The optional `--trial-judgement` tool requires a fresh living attackable
-target in range, at least 95% health and 60% mana, and checked slot readiness
-before one keypress. Two live preflights refused input: the first target was
+The optional `--trial-judgement` tool originally required a fresh living
+attackable target in range, at least 95% health and 60% mana, and checked slot
+readiness before one keypress. Its current combat-aware gate is described
+below. Two live preflights refused input: the first target was
 already dead, and the second found the player at 89% health. An armed run then
 held the capture process open until the user's ready signal. Its immediate
 preflight refused input at 93% health. A subsequent armed run with a neutral
@@ -595,9 +596,10 @@ trial Paladin spells. Before a 75 ms keypress it checks the spell, current
 binding, usability, range, cooldown, player/target flags, mana, map, and cast
 event in one fresh visual capture. It confirms only a new successful event for
 the exact spell ID and latches closed after any unconfirmed press until a new
-controller session is created. Holy Light is limited to the verified
-no-target, out-of-combat case; the two attack spells require a living target,
-out-of-combat state, and at least 95% health and 60% mana. Unsupported
+controller session is created. Holy Light remains limited to the verified
+no-target, out-of-combat case. The attack spells now require the checked
+non-player target identity and level described below, at least 70% player
+health, and 60% mana out of combat or 25% mana in combat. Unsupported
 post-cast features fail closed. The bounded one-key utilities now call the
 same gate. Synthetic checks pass at 75%, 100%, and 125% UI scale for ready,
 missing binding/event, dead target, running cooldown, and out-of-range cases.
@@ -607,8 +609,9 @@ the checked Undead identity rather than a Classic pixel. Incomplete action,
 bag, or event data does not signal a controller frame; synthetic checks cover
 those cases at all three scales.
 This branch is unreachable from the Forever dashboard while its startup guard
-remains. The normal GOAP state flow and controller-run route/combat cycle have
-not been validated or enabled. A read-only trial check on 2026-09-27 refused
+remains. At this stage the normal GOAP state flow and controller-run
+route/combat cycle had not been validated or enabled. A read-only trial check
+on 2026-09-27 refused
 because the live trial's full data/idle conditions were not met; it sent no
 input. A later reader smoke found no fresh visual sample during its bounded
 capture window. The Debug `Core` and `ForeverVisualReader` builds and the
@@ -709,6 +712,49 @@ dotnet run --project Utilities/ForeverControllerTrial/ForeverControllerTrial.csp
 The run requires a person to select a safe target after the route step and
 finish the fight. It times out and releases its key after the stated limits;
 the dashboard remains guarded independently of this command.
+
+The next visual protocol addition carries a target's level, player/non-player
+flag, and two independently mixed 24-bit hashes of its GUID. Its checksum
+invalidates incomplete or stale rows, and the reader compares presence with
+the checked target flags. A new read-only `--target-audit` observes two distinct
+fresh frames at the player's current position and accepts only the same
+living, attackable, non-player target no more than one level above the player,
+with at least 70% player health and enough mana for the current combat state.
+The guarded
+trial cast gate now requires this identity, and the cast confirmation refuses a
+changed or unreadable target identity. This adds a target continuity check;
+it does not yet select targets or sustain combat.
+
+After installing the updated `ForeverProbe.lua` and reloading the beta client,
+the no-target identity decoded as zero hashes and level zero. A selected
+level-8 non-player target against the level-12 Paladin had the same hashes in
+two fresh captures and passed the read-only audit on map 1420 without input.
+Another level-9 target kept the same checked identity during combat. The first
+audit refused it because the initial cast gate incorrectly required an
+out-of-combat target at short Judgement range; no input was sent. The gate and
+bounded test now accept an in-combat target above the 70% health and 25% mana
+thresholds, as requested after the live range check. Out-of-combat attacks
+require 70% health and 60% mana. The target must stay the same across two
+distinct fresh frames before a trial keypress.
+The three-scale visual self-test passed, including damaged identity checksum,
+player target, over-level, and below-70%-health cast refusals. A live
+`--trial-judgement` run then passed in combat at the current position: player
+health was 89%, mana 88%, and the level-8 target was at 4% health. The target
+identity stayed unchanged across the two-frame audit and cast confirmation;
+Judgement event 20271 appeared, mana fell to 85%, and target health to 1%.
+The tool sent one keypress, then the person finished the fight. The updated
+controller goal now accepts that in-combat state and requires two stable target
+frames before casting. A subsequent `ForeverControllerTrial --check` passed at
+the current no-target position. Its bounded `--run` verified the short forward
+step, waited for the person's in-combat target selection, confirmed one
+Judgement, and returned `Controller trial status: Passed` after the person
+finished and cleared the target. The controller run returned exit code 0. The
+dashboard startup guard remains because target acquisition and sustained
+combat are still person-assisted or unimplemented.
+
+```powershell
+dotnet run --project Utilities/ForeverVisualReader/ForeverVisualReader.csproj -- --target-audit
+```
 
 For API signatures, use Blizzard's generated UI documentation from the
 [`1.60.1 (70009)` UI-source snapshot](https://github.com/Gethe/wow-ui-source/tree/bd2470aed543f72697a044e989285b6c83e63f73/Interface/AddOns/Blizzard_APIDocumentationGenerated)
