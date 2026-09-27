@@ -93,6 +93,12 @@ public sealed partial class AddonReader : IAddonReader
         bagReader.ForeverBagsProvider = foreverVisualBars?.IsEnabled == true
             ? () => playerReader.TryGetForeverBags(out var bags) ? bags : null
             : null;
+        sp.GetRequiredService<AddonBits>().ForeverTargetFlagsProvider =
+            foreverVisualBars?.IsEnabled == true
+                ? () => playerReader.TryGetForeverVisualVitals(out var bars) &&
+                    bars.TargetFlags is { } flags &&
+                    bars.TargetPresent == flags.Present ? flags : null
+                : null;
 
         GlobalTime = new(frames.Length - 2);
 

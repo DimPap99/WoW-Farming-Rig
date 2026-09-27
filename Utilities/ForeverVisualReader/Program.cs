@@ -25,8 +25,8 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 
-// Read-only capture diagnostic for the Forever visual status-bar prototype.
-// It deliberately does not construct BotController or send any game input.
+// Read-only capture diagnostics plus two explicitly bounded trial inputs.
+// It never constructs BotController or starts autonomous gameplay.
 int pidOption = Array.IndexOf(args, "--pid");
 int? requestedPid = null;
 if (pidOption >= 0)
@@ -47,6 +47,8 @@ if (args.Length == 1 && args[0] == "--self-test")
 bool readerSmoke = args.Length == 1 && args[0] == "--reader-smoke";
 bool routeProbe = args.Length == 1 && args[0] == "--route-probe";
 bool trialCheck = args.Length == 1 && args[0] == "--trial-check";
+bool trialMove = args.Length == 1 && args[0] == "--trial-move";
+bool trialHeal = args.Length == 1 && args[0] == "--trial-heal";
 
 if (args.Length == 2 && args[0] == "--read")
 {
@@ -92,6 +94,12 @@ try
 
     if (trialCheck)
         return await RunTrialCheck(screen, tracker);
+
+    if (trialMove)
+        return await RunTrialMove(screen, tracker, process, cts);
+
+    if (trialHeal)
+        return await RunTrialHeal(screen, tracker, process, cts);
 
     if (monitor)
     {
@@ -288,8 +296,13 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
     SpellBookReader spellBook = new(new SpellDB(config));
     KeyBindingsReader bindingReader = new(NullLogger<KeyBindingsReader>.Instance);
     KeyReader.RequireGameBindings = true;
-    PlayerReader player = new(screen, maps, null!, new AddonBits(),
+    AddonBits targetBits = new();
+    PlayerReader player = new(screen, maps, null!, targetBits,
         new SpellInRange(), new Stance(), tracker);
+    targetBits.ForeverTargetFlagsProvider = () =>
+        player.TryGetForeverVisualVitals(out var latest) &&
+        latest.TargetFlags is { } flags &&
+        latest.TargetPresent == flags.Present ? flags : null;
 
     for (int i = 0; i < 50; i++)
     {
@@ -388,6 +401,24 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 (bars.PlayerHealthMax is not { } healthMax || player.HealthMax() == healthMax) &&
                 (bars.PlayerPowerMax is not { } powerMax || player.PTMax() == powerMax);
             bool powerTypeReadable = bars.PlayerPowerType is >= 0 and <= 255;
+            bool identityReadable = bars.PlayerIdentity is
+                { ClassId: > 0, RaceId: > 0, Level: > 0 };
+            bool identityMatches = identityReadable &&
+                player.Class == (UnitClass)bars.PlayerIdentity!.Value.ClassId &&
+                player.Race == (UnitRace)bars.PlayerIdentity!.Value.RaceId &&
+                player.Level.Value == bars.PlayerIdentity!.Value.Level &&
+                player.Version == ClientVersion.Forever;
+            bool targetFlagsMatch = bars.TargetFlags is { } flags &&
+                flags.Present == bars.TargetPresent;
+            bool targetBitsMatch = bars.TargetFlags is { } targetFlags &&
+                targetFlagsMatch &&
+                targetBits.Target() == targetFlags.Present &&
+                targetBits.NoTarget() == !targetFlags.Present &&
+                targetBits.Target_Dead() ==
+                    (targetFlags.Present && targetFlags.Dead) &&
+                targetBits.Target_Hostile() ==
+                    (targetFlags.Present && targetFlags.Attackable &&
+                        !targetFlags.Dead);
             bool manaMatches = powerTypeReadable &&
                 (bars.PlayerPowerType != 0 || mana == power);
             bool worldPositionMatches = bars.WorldPosition is not { } world ||
@@ -566,6 +597,11 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             Console.WriteLine($"PlayerReader: health={health}%, power={power}%, " +
                 $"powerType={bars.PlayerPowerType?.ToString() ?? "missing"}, " +
                 $"powerTypeReadable={powerTypeReadable}, " +
+                $"identity={bars.PlayerIdentity?.ToString() ?? "missing"}, " +
+                $"identityMatches={identityMatches}, " +
+                $"targetFlags={bars.TargetFlags?.ToString() ?? "missing"}, " +
+                $"targetFlagsMatch={targetFlagsMatch}, " +
+                $"targetBitsMatch={targetBitsMatch}, " +
                 $"mana={(mana is { } mp ? mp + "%" : "unavailable")}, " +
                 $"manaMatches={manaMatches}, " +
                 $"staleManaRejected={staleManaRejected}, " +
@@ -622,7 +658,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 staleBagReaderRejected &&
                 staleCooldownGridRejected && liveReadinessMatches &&
                 staleCooldownReadinessRejected && maximaMatch &&
-                powerTypeReadable && manaMatches &&
+                powerTypeReadable && manaMatches && identityMatches &&
+                targetFlagsMatch && targetBitsMatch &&
                 worldPositionMatches && staleWorldPositionRejected &&
                 spellBookMatches && staleSpellBookRejected &&
                 staleSpellBookReaderReset &&
@@ -749,7 +786,8 @@ static async Task<int> RunRouteProbe(WowScreenWGC screen, ForeverVisualBarTracke
     return 2;
 }
 
-static async Task<int> RunTrialCheck(WowScreenWGC screen, ForeverVisualBarTracker tracker)
+static async Task<int> RunTrialCheck(WowScreenWGC screen,
+    ForeverVisualBarTracker tracker, bool requireNearRoute = true)
 {
     // Read-only gate for the candidate profile. No controller or input service
     // is constructed here; every value comes from one fresh visual capture.
@@ -808,7 +846,10 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen, ForeverVisualBarTracke
             bars.Cooldowns is not { ReadableCount: VisualCooldownGridSnapshot.SlotCount } cooldowns ||
             bars.SpellBook is not { Count: > 0 } book || book.ReadableCount != book.Count ||
             bars.Bindings is not { ReadableCount: VisualBindingSnapshot.Count } bindings ||
-            bars.Bags is not { IsComplete: true } || bars.PlayerPowerType != 0)
+            bars.Bags is not { IsComplete: true } || bars.PlayerPowerType != 0 ||
+            bars.PlayerIdentity is not { ClassId: (int)UnitClass.Paladin } ||
+            bars.TargetFlags is not { } targetFlags ||
+            targetFlags.Present != bars.TargetPresent)
         {
             Console.Error.WriteLine("Trial data is incomplete or the character left Tirisfal.");
             return 2;
@@ -912,12 +953,194 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen, ForeverVisualBarTracke
             $"mapError={mapError:F2} yd, routeConnected={routeConnected}, " +
             $"routeStartDistance={startDistance:F1} yd, " +
             $"health={bars.PlayerHealth:P0}, mana={bars.PlayerPower:P0}, " +
-            $"target={bars.TargetPresent}, bagSlots={bars.Bags.ReadableSlots}/200");
-        return routeConnected && startDistance <= 30 ? 0 : 2;
+            $"target={bars.TargetPresent}, attackable={targetFlags.Attackable}, " +
+            $"targetDead={targetFlags.Dead}, " +
+            $"identity={bars.PlayerIdentity}, bagSlots={bars.Bags.ReadableSlots}/200");
+        return routeConnected && (!requireNearRoute || startDistance <= 30)
+            ? 0 : 2;
     }
 
     Console.Error.WriteLine("No consistent fresh Forever trial sample was captured.");
     return 2;
+}
+
+static async Task<int> RunTrialMove(WowScreenWGC screen,
+    ForeverVisualBarTracker tracker, WowProcess process,
+    CancellationTokenSource cts)
+{
+    if (await RunTrialCheck(screen, tracker) != 0)
+        return 2;
+
+    async Task<VisualBarSample?> Capture()
+    {
+        for (int i = 0; i < 20; i++)
+        {
+            screen.Update();
+            tracker.Update();
+            if (tracker.TryGetLatest(out VisualBarSample sample) &&
+                sample.WorldPosition is not null && sample.Position is not null &&
+                sample.TargetFlags is not null)
+                return sample;
+            await Task.Delay(100);
+        }
+        return null;
+    }
+
+    VisualBarSample? before = await Capture();
+    await Task.Delay(400);
+    VisualBarSample? stationary = await Capture();
+    if (before is not { } first || stationary is not { } current ||
+        first.WorldPosition is not { } firstWorld ||
+        current.WorldPosition is not { } startWorld ||
+        current.Position is not { } startMap ||
+        first.PlayerHealth < 0.95 || current.PlayerHealth < 0.95 ||
+        first.TargetFlags is not { Present: false } ||
+        current.TargetFlags is not { Present: false } ||
+        current.TargetPresent != false ||
+        startMap.UIMapId != 1420 || startWorld.InstanceMapId != 0 ||
+        Vector2.Distance(new((float)firstWorld.X, (float)firstWorld.Y),
+            new((float)startWorld.X, (float)startWorld.Y)) > 0.3f)
+    {
+        Console.Error.WriteLine("Movement trial refused: the character is moving, targeted, or below 95% health.");
+        return 2;
+    }
+
+    InputWindowsNative input = new(process, cts, 0);
+    try
+    {
+        input.PressFixed((int)ConsoleKey.UpArrow, 200, cts.Token);
+    }
+    finally
+    {
+        input.KeyUp((int)ConsoleKey.UpArrow);
+    }
+
+    VisualBarSample? after = null;
+    for (int i = 0; i < 25; i++)
+    {
+        screen.Update();
+        tracker.Update();
+        if (tracker.TryGetLatest(out VisualBarSample sample) &&
+            sample.WorldPosition is { } end &&
+            Vector2.Distance(new((float)startWorld.X, (float)startWorld.Y),
+                new((float)end.X, (float)end.Y)) >= 0.25f)
+        {
+            after = sample;
+            break;
+        }
+        await Task.Delay(100);
+    }
+    if (after is not { } observed ||
+        observed.WorldPosition is not { } endWorld ||
+        observed.Position is not { UIMapId: 1420 } ||
+        observed.TargetFlags is not { Present: false } ||
+        observed.PlayerHealth < 0.90)
+    {
+        Console.Error.WriteLine("Movement trial failed to confirm a safe fresh endpoint.");
+        return 2;
+    }
+
+    float distance = Vector2.Distance(
+        new((float)startWorld.X, (float)startWorld.Y),
+        new((float)endWorld.X, (float)endWorld.Y));
+    DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
+    WorldMapAreaDB maps = new(config);
+    if (!maps.TryGet(1420, out WorldMapArea area))
+        return 2;
+    NavmeshBakeOptions bake = new();
+    string version = typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0";
+    string hash = NavmeshSettings.ComputeSettingsHash("forever", version,
+        bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope);
+    string cache = Path.Combine(config.Navmesh, area.Continent, hash);
+    using NavmeshPathfinder nav = new(NullLogger.Instance, null, cache,
+        bake, new NavmeshQueryOptions());
+    bool startWalkable = nav.TryGetHeight((float)startWorld.X,
+        (float)startWorld.Y, out float startZ);
+    bool endWalkable = nav.TryGetHeight((float)endWorld.X,
+        (float)endWorld.Y, out float endZ);
+    bool walkable = startWalkable && endWalkable;
+    if (!walkable)
+        return 2;
+    var path = nav.FindPath(
+        new((float)startWorld.X, (float)startWorld.Y, startZ),
+        new((float)endWorld.X, (float)endWorld.Y, endZ), null);
+    bool connected = path is { locations.Count: >= 2 } &&
+        nav.LastStats.TilesBaked == 0;
+    Console.WriteLine($"Single 200 ms Up Arrow: {distance:F2} yd, " +
+        $"meshConnected={connected}, health={observed.PlayerHealth:P0}, " +
+        $"target={observed.TargetFlags?.Present}");
+    return distance is >= 0.25f and <= 4f && connected ? 0 : 2;
+}
+
+static async Task<int> RunTrialHeal(WowScreenWGC screen,
+    ForeverVisualBarTracker tracker, WowProcess process,
+    CancellationTokenSource cts)
+{
+    if (await RunTrialCheck(screen, tracker, requireNearRoute: false) != 0)
+        return 2;
+    screen.Update();
+    tracker.Update();
+    if (!tracker.TryGetLatest(out VisualBarSample before) ||
+        before.PlayerHealth < 0.95 || before.PlayerPower < 0.60 ||
+        before.TargetFlags is not { Present: false } ||
+        before.SpellBook is not { } visualBook)
+    {
+        Console.Error.WriteLine("Heal trial refused: full health, mana, no target, or spellbook check failed.");
+        return 2;
+    }
+
+    DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
+    SpellBookReader spellBook = new(new SpellDB(config));
+    spellBook.UpdateForever(visualBook);
+    KeyAction heal = new() { Name = "Holy Light", SpellId = 635, Slot = 1 };
+    ActionBarCooldownReader cooldown = new()
+    {
+        ForeverSampleProvider = () => tracker.TryGetLatest(out var latest)
+            ? latest : null
+    };
+    if (!cooldown.IsForeverReady(heal, spellBook))
+    {
+        Console.Error.WriteLine("Heal trial refused: Holy Light is not verified ready.");
+        return 2;
+    }
+
+    InputWindowsNative input = new(process, cts, 0);
+    try
+    {
+        input.PressFixed((int)ConsoleKey.D1, 75, cts.Token);
+    }
+    finally
+    {
+        input.KeyUp((int)ConsoleKey.D1);
+    }
+
+    bool observedCast = false;
+    double lastMana = before.PlayerPower;
+    for (int i = 0; i < 50; i++)
+    {
+        screen.Update();
+        tracker.Update();
+        if (tracker.TryGetLatest(out VisualBarSample after))
+        {
+            if (after.PlayerHealth < 0.90 ||
+                after.TargetFlags is not { Present: false })
+            {
+                Console.Error.WriteLine("Heal trial stopped: health or target safety changed.");
+                return 2;
+            }
+            lastMana = after.PlayerPower;
+            if (after.PlayerPower < before.PlayerPower - 0.01 ||
+                after.Cooldowns?.GetSlot(1) is > 0)
+            {
+                observedCast = true;
+                break;
+            }
+        }
+        await Task.Delay(100);
+    }
+    Console.WriteLine($"Single Holy Light keypress: observed={observedCast}, " +
+        $"mana={before.PlayerPower:P0}->{lastMana:P0}, target=none");
+    return observedCast ? 0 : 2;
 }
 
 static bool HasChanged(VisualBarSample previous, VisualBarSample current)
@@ -1052,6 +1275,11 @@ static int RunSelfTest()
         DrawWorldPixel(8, (0xA57722 - VisualBindingSnapshot.Count) & 0xFFFFFF);
         DrawWorldPixel(9, 0);
         DrawWorldPixel(10, 0xA56644);
+        int identity = 2 + 5 * 64 + 12 * 16384;
+        DrawWorldPixel(11, identity);
+        DrawWorldPixel(12, (0xA57744 - identity) & 0xFFFFFF);
+        DrawWorldPixel(13, 3);
+        DrawWorldPixel(14, 0xA57755 - 3);
         DrawSpellGridSlot(1, VisualSpellIdSource.SpellId, 6603);
         DrawSpellGridSlot(2, VisualSpellIdSource.ActionId, 270);
         DrawSpellGridSlot(3, VisualSpellIdSource.SpellId, 7744);
@@ -1100,6 +1328,10 @@ static int RunSelfTest()
             || result.PlayerHealthMax != 742
             || result.PlayerPowerMax != 1000
             || result.PlayerPowerType != 0
+            || result.PlayerIdentity is not
+                { ClassId: 2, RaceId: 5, Level: 12 }
+            || result.TargetFlags is not
+                { Present: true, Attackable: true, Dead: false }
             || result.WatchedAction is not { Slot: 4, Kind: VisualActionKind.Spell, Id: 7744 }
             || result.ActionBar is not { ReadableCount: 120, OccupiedCount: 2 } actionBar
             || actionBar.GetSlot(4) is not { Kind: VisualActionKind.Spell, Id: 7744 }
@@ -1178,6 +1410,51 @@ static int RunSelfTest()
         }
         DrawWorldPixel(9, 0);
         DrawWorldPixel(10, 0xA56644);
+
+        DrawWorldPixel(12, 0);
+        DrawWorldPixel(14, 0);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var damagedIdentity) ||
+            damagedIdentity.PlayerIdentity is not null ||
+            damagedIdentity.TargetFlags is not null)
+        {
+            Console.Error.WriteLine($"Forever identity/target checksum failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawWorldPixel(12, (0xA57744 - identity) & 0xFFFFFF);
+        DrawWorldPixel(14, 0xA57755 - 3);
+        DrawWorldPixel(13, 0);
+        DrawWorldPixel(14, 0xA57755);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var noTargetFlags) ||
+            noTargetFlags.TargetFlags is not
+                { Present: false, Attackable: false, Dead: false })
+            return 1;
+        DrawWorldPixel(13, 6);
+        DrawWorldPixel(14, 0xA57755 - 6);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var impossibleTargetFlags) ||
+            impossibleTargetFlags.TargetFlags is not null)
+            return 1;
+        DrawWorldPixel(13, 3);
+        DrawWorldPixel(14, 0xA57755 - 3);
+
+        VisualTargetFlags? targetForBits = result.TargetFlags;
+        AddonBits targetBits = new()
+        {
+            ForeverTargetFlagsProvider = () => targetForBits
+        };
+        if (!targetBits.Target() || !targetBits.Target_Alive() ||
+            !targetBits.Target_Hostile() || targetBits.NoTarget() ||
+            targetBits.Target_Dead())
+            return 1;
+        targetForBits = null;
+        if (targetBits.Target() || targetBits.Target_Alive() ||
+            targetBits.Target_Hostile() || targetBits.NoTarget())
+            return 1;
+        targetForBits = new(false, false, false);
+        if (!targetBits.NoTarget() || targetBits.Target())
+            return 1;
 
         ActionBarBits<IUsableAction>.ForeverStatesProvider =
             () => result.ActionStates;

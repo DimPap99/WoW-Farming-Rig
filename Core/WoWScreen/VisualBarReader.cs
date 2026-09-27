@@ -16,6 +16,12 @@ public readonly record struct VisualWorldPositionSample(
     double Z,
     int InstanceMapId);
 
+public readonly record struct VisualPlayerIdentity(
+    int ClassId, int RaceId, int Level);
+
+public readonly record struct VisualTargetFlags(
+    bool Present, bool Attackable, bool Dead);
+
 public enum VisualActionKind : byte { Empty, Spell, Item, Macro, Flyout }
 
 public readonly record struct VisualActionSample(
@@ -193,7 +199,9 @@ public readonly record struct VisualBarSample(
     VisualActionStateSnapshot? ActionStates = null,
     VisualCooldownGridSnapshot? Cooldowns = null,
     int? PlayerPowerType = null,
-    VisualBagSnapshot? Bags = null);
+    VisualBagSnapshot? Bags = null,
+    VisualPlayerIdentity? PlayerIdentity = null,
+    VisualTargetFlags? TargetFlags = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -289,11 +297,62 @@ public static class VisualBarReader
             pixels, width, height, whiteLeft, whiteY, scale);
         VisualBagSnapshot? bags = TryReadBags(
             pixels, width, height, whiteLeft, whiteY, scale);
+        VisualPlayerIdentity? playerIdentity = TryReadPlayerIdentity(
+            pixels, width, height, whiteLeft, whiteY, scale);
+        VisualTargetFlags? targetFlags = TryReadTargetFlags(
+            pixels, width, height, whiteLeft, whiteY, scale);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
             playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
-            actionStates, cooldowns, playerPowerType, bags);
+            actionStates, cooldowns, playerPowerType, bags, playerIdentity,
+            targetFlags);
         return true;
+    }
+
+    private static int? TryReadCheckedWorldPixel(Bgra32[] pixels,
+        int width, int height, int left, int whiteY, double scale,
+        int index, int markerSeed)
+    {
+        int y = whiteY + (int)Math.Round(42 * scale);
+        int valueX = left + (int)Math.Round((5 + index * 20) * scale);
+        int markerX = left + (int)Math.Round((25 + index * 20) * scale);
+        if (y < 0 || y >= height || valueX < 0 || valueX >= width ||
+            markerX < 0 || markerX >= width)
+            return null;
+        Bgra32 valuePixel = pixels[y * width + valueX];
+        int value = (valuePixel.R << 16) | (valuePixel.G << 8) | valuePixel.B;
+        Bgra32 markerPixel = pixels[y * width + markerX];
+        int marker = (markerPixel.R << 16) | (markerPixel.G << 8) | markerPixel.B;
+        return marker == ((markerSeed - value) & 0xFFFFFF) ? value : null;
+    }
+
+    private static VisualPlayerIdentity? TryReadPlayerIdentity(Bgra32[] pixels,
+        int width, int height, int left, int whiteY, double scale)
+    {
+        int? packed = TryReadCheckedWorldPixel(pixels, width, height,
+            left, whiteY, scale, 11, 0xA57744);
+        if (packed is not { } value)
+            return null;
+        int classId = value % 64;
+        int raceId = value / 64 % 256;
+        int level = value / 16384;
+        return classId is >= 1 and <= 63 && raceId is >= 1 and <= 255 &&
+            level is >= 1 and <= 1023
+            ? new(classId, raceId, level) : null;
+    }
+
+    private static VisualTargetFlags? TryReadTargetFlags(Bgra32[] pixels,
+        int width, int height, int left, int whiteY, double scale)
+    {
+        int? flags = TryReadCheckedWorldPixel(pixels, width, height,
+            left, whiteY, scale, 13, 0xA57755);
+        if (flags is not int value || value is < 0 or > 7)
+            return null;
+        bool present = (value & 1) != 0;
+        bool attackable = (value & 2) != 0;
+        bool dead = (value & 4) != 0;
+        return !present && (attackable || dead)
+            ? null : new(present, attackable, dead);
     }
 
     private static VisualCooldownGridSnapshot? TryReadCooldownGrid(
