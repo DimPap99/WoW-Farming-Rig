@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -141,22 +142,26 @@ public sealed class NavmeshSettings
     public static string ComputeSettingsHash(string clientExpansion, string dotRecastVersion,
         float agentRadius, float agentMaxClimb, float walkableSlope, float? minWorldZ = null)
     {
+        // BakeTool runs with invariant globalization while the HTTP host uses
+        // the machine locale. Their hashes must name the same tile directory.
+        static string F(float value) => value.ToString(CultureInfo.InvariantCulture);
+
         StringBuilder sb = new();
         sb.Append(FormatVersion).Append('|')
-          .Append(CellSize).Append('|')
-          .Append(CellHeight).Append('|')
-          .Append(TileWorldSize).Append('|')
+          .Append(F(CellSize)).Append('|')
+          .Append(F(CellHeight)).Append('|')
+          .Append(F(TileWorldSize)).Append('|')
           .Append(TileSizeCells).Append('|')
-          .Append(AgentHeight).Append('|')
-          .Append(agentRadius).Append('|')
-          .Append(agentMaxClimb).Append('|')
-          .Append(walkableSlope).Append('|')
-          .Append(MinRegionAreaWorld).Append('|')
-          .Append(MergeRegionAreaWorld).Append('|')
-          .Append(MaxEdgeLenWorld).Append('|')
-          .Append(MaxSimplificationError).Append('|')
-          .Append(DetailSampleDistFactor).Append('|')
-          .Append(DetailSampleMaxErrorFactor).Append('|')
+          .Append(F(AgentHeight)).Append('|')
+          .Append(F(agentRadius)).Append('|')
+          .Append(F(agentMaxClimb)).Append('|')
+          .Append(F(walkableSlope)).Append('|')
+          .Append(F(MinRegionAreaWorld)).Append('|')
+          .Append(F(MergeRegionAreaWorld)).Append('|')
+          .Append(F(MaxEdgeLenWorld)).Append('|')
+          .Append(F(MaxSimplificationError)).Append('|')
+          .Append(F(DetailSampleDistFactor)).Append('|')
+          .Append(F(DetailSampleMaxErrorFactor)).Append('|')
           .Append(VertsPerPoly).Append('|')
           .Append(clientExpansion).Append('|')
           .Append(dotRecastVersion);
@@ -165,7 +170,7 @@ public sealed class NavmeshSettings
         // pre-existing hash and its baked tiles stay valid.
         if (minWorldZ.HasValue)
         {
-            sb.Append("|minZ").Append(minWorldZ.Value);
+            sb.Append("|minZ").Append(F(minWorldZ.Value));
         }
 
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
