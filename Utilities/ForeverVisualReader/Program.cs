@@ -48,6 +48,8 @@ if (args.Length == 1 && args[0] == "--self-test")
 
 bool readerSmoke = args.Length == 1 && args[0] == "--reader-smoke";
 bool targetAudit = args.Length == 1 && args[0] == "--target-audit";
+bool targetPositionAudit = args.Length == 1 && args[0] == "--target-position-audit";
+bool trialInteractApproach = args.Length == 1 && args[0] == "--trial-interact-approach";
 bool routeProbe = args.Length == 1 && args[0] == "--route-probe";
 bool trialCheck = args.Length == 1 && args[0] == "--trial-check";
 bool trialMove = args.Length == 1 && args[0] == "--trial-move";
@@ -96,6 +98,12 @@ try
 
     if (targetAudit)
         return await RunTargetAudit(screen, tracker);
+
+    if (targetPositionAudit)
+        return await RunTargetAudit(screen, tracker, requirePosition: true);
+
+    if (trialInteractApproach)
+        return await RunTrialInteractApproach(screen, tracker, process, cts);
 
     if (routeProbe)
         return await RunRouteProbe(screen, tracker);
@@ -223,6 +231,8 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
     Console.WriteLine(TargetText(bars.TargetPresent));
     Console.WriteLine(PositionText(bars.Position));
     Console.WriteLine(WorldPositionText(bars.WorldPosition));
+    Console.WriteLine($"selected nameplate={bars.NameplateProbe?.ToString() ?? "unavailable"}, " +
+        $"screen={bars.TargetScreenPosition?.ToString() ?? "unavailable"}");
     Console.WriteLine(CooldownText(bars.ActionCooldownFill));
     Console.WriteLine(ActionText(bars.WatchedAction));
     Console.WriteLine(ActionBarText(bars.ActionBar));
@@ -850,7 +860,8 @@ static bool HasTrialBinding(VisualBarSample sample, int slot,
 
 static async Task<int> RunTargetAudit(WowScreenWGC screen,
     ForeverVisualBarTracker tracker,
-    Action<VisualTargetIdentity>? onEligible = null)
+    Action<VisualTargetIdentity>? onEligible = null,
+    bool requirePosition = false)
 {
     VisualTargetIdentity? firstIdentity = null;
     long firstFrame = 0;
@@ -878,7 +889,18 @@ static async Task<int> RunTargetAudit(WowScreenWGC screen,
                 { Attackable: true, Dead: false, PlayerDead: false } &&
             !identity.IsPlayer && identity.Level <= playerIdentity.Level + 1 &&
             bars.TargetHealth > 0 && bars.PlayerHealth >= 0.70 &&
-            bars.PlayerPower >= (flags.PlayerCombat ? 0.25 : 0.60);
+            bars.PlayerPower >= (flags.PlayerCombat ? 0.25 : 0.60) &&
+            (!requirePosition ||
+                (bars.TargetWorldPosition is { } targetWorld &&
+                 bars.WorldPosition is { } playerWorld &&
+                 targetWorld.InstanceMapId == playerWorld.InstanceMapId &&
+                 Vector2.Distance(new((float)targetWorld.X, (float)targetWorld.Y),
+                     new((float)playerWorld.X, (float)playerWorld.Y)) <= 50) ||
+                bars.TargetMapPosition is { } targetMap &&
+                targetMap.UIMapId == bars.Position?.UIMapId ||
+                bars.NearestCreaturePosition is not null ||
+                bars.TargetScreenPosition is not null ||
+                bars.TargetDistanceSquared is not null);
         if (firstIdentity is null)
         {
             firstIdentity = identity;
@@ -898,6 +920,12 @@ static async Task<int> RunTargetAudit(WowScreenWGC screen,
             $"playerHealth={bars.PlayerHealth:P0}, mana={bars.PlayerPower:P0}, " +
             $"attackable={flags.Attackable}, combat={flags.PlayerCombat}, " +
             $"stable={stable}, eligible={eligible}, " +
+            $"targetWorld={bars.TargetWorldPosition?.ToString() ?? "missing"}, " +
+            $"targetMap={bars.TargetMapPosition?.ToString() ?? "missing"}, " +
+            $"nearestCreature={bars.NearestCreaturePosition?.ToString() ?? "missing"}, " +
+            $"targetScreen={bars.TargetScreenPosition?.ToString() ?? "missing"}, " +
+            $"targetDistanceSquared={bars.TargetDistanceSquared?.ToString() ?? "missing"}, " +
+            $"nameplates={bars.NameplateProbe?.ToString() ?? "missing"}, " +
             $"map={bars.Position?.UIMapId.ToString() ?? "missing"}; no input sent.");
         if (stable && eligible)
             onEligible?.Invoke(identity);
@@ -906,6 +934,69 @@ static async Task<int> RunTargetAudit(WowScreenWGC screen,
 
     Console.Error.WriteLine("No two fresh complete frames with a selected target; no input sent.");
     return 2;
+}
+
+static async Task<int> RunTrialInteractApproach(WowScreenWGC screen,
+    ForeverVisualBarTracker tracker, WowProcess process,
+    CancellationTokenSource cts)
+{
+    VisualTargetIdentity? auditedTarget = null;
+    if (await RunTargetAudit(screen, tracker,
+            identity => auditedTarget = identity) != 0)
+        return 2;
+
+    screen.Update();
+    tracker.Update();
+    if (!tracker.TryGetLatest(out VisualBarSample before) ||
+        before.TargetIdentity != auditedTarget ||
+        before.WorldPosition is not { } start ||
+        before.TargetFlags is not
+            { Present: true, Attackable: true, Dead: false,
+              PlayerCombat: false, PlayerDead: false } ||
+        before.Bindings?.GetCode(18) is not > 0 ||
+        KeyReader.DecodeBinding(before.Bindings.GetCode(18)!.Value) is not { } binding ||
+        binding.bindingId != BindingID.INTERACTTARGET ||
+        !((binding.key1 == ConsoleKey.D3 && binding.mod1 == ModifierKey.Shift) ||
+          (binding.key2 == ConsoleKey.D3 && binding.mod2 == ModifierKey.Shift)))
+    {
+        Console.Error.WriteLine("Interact approach refused: target or Shift+3 binding changed; no input sent.");
+        return 2;
+    }
+
+    WowProcessInput input = new(NullLogger<WowProcessInput>.Instance, cts, process);
+    try
+    {
+        input.PressRandomWithModifier(ConsoleKey.D3, ModifierKey.Shift, 75, cts.Token);
+    }
+    finally
+    {
+        input.Reset();
+    }
+
+    VisualBarSample after = default;
+    for (int i = 0; i < 30; i++)
+    {
+        screen.Update();
+        tracker.Update();
+        if (tracker.TryGetLatest(out VisualBarSample sample) &&
+            sample.TargetIdentity == auditedTarget &&
+            sample.WorldPosition is not null)
+            after = sample;
+        await Task.Delay(100);
+    }
+    if (after.TargetIdentity != auditedTarget ||
+        after.WorldPosition is not { } end)
+    {
+        Console.Error.WriteLine("Interact approach outcome unreadable; no further input sent.");
+        return 2;
+    }
+    float moved = Vector2.Distance(new((float)start.X, (float)start.Y),
+        new((float)end.X, (float)end.Y));
+    bool inRange = after.ActionStates?.GetSlot(2) is { InRange: true };
+    Console.WriteLine($"One verified Interact Target press: moved={moved:F2} yd, " +
+        $"JudgementInRange={inRange}, combat={after.TargetFlags?.PlayerCombat}, " +
+        $"targetStable={after.TargetIdentity == auditedTarget}.");
+    return moved >= 0.20 || inRange ? 0 : 2;
 }
 
 static async Task<int> RunTrialCheck(WowScreenWGC screen,
@@ -1409,6 +1500,8 @@ static bool HasChanged(VisualBarSample previous, VisualBarSample current)
     || previous.WatchedAction != current.WatchedAction
     || previous.LastCastEvent != current.LastCastEvent
     || previous.TargetIdentity != current.TargetIdentity
+    || previous.TargetWorldPosition != current.TargetWorldPosition
+    || previous.TargetMapPosition != current.TargetMapPosition
     || ActionBarChanged(previous.ActionBar, current.ActionBar)
     || SpellBookChanged(previous.SpellBook, current.SpellBook)
     || BindingsChanged(previous.Bindings, current.Bindings)
@@ -1547,6 +1640,37 @@ static int RunSelfTest()
         DrawCastPixel(4, targetHash2);
         DrawCastPixel(5, targetLevel * 2);
         DrawCastPixel(6, (0xA58866 - targetHash1 - targetHash2 - targetLevel * 2) & 0xFFFFFF);
+        const int targetX = 8388608 - 61234;
+        const int targetY = 8388608 + 123756;
+        const int targetZ = 8388608 + 8765;
+        DrawCastPixel(7, targetX);
+        DrawCastPixel(8, targetY);
+        DrawCastPixel(9, targetZ);
+        DrawCastPixel(10, 0);
+        DrawCastPixel(11, (0xA59977 - targetX - targetY - targetZ -
+            targetHash1 - targetHash2) & 0xFFFFFF);
+        const int targetMapId = 42;
+        const int targetMapX = 6000000;
+        const int targetMapY = 11000000;
+        DrawCastPixel(12, targetMapId);
+        DrawCastPixel(13, targetMapX);
+        DrawCastPixel(14, targetMapY);
+        DrawCastPixel(15, (0xA5AA88 - targetMapId - targetMapX - targetMapY -
+            targetHash1 - targetHash2) & 0xFFFFFF);
+        const int plateStatus = 257;
+        DrawCastPixel(26, plateStatus);
+        DrawCastPixel(27, (0xA5B488 - plateStatus - targetHash1 -
+            targetHash2) & 0xFFFFFF);
+        int markerSize = (int)Math.Round(16 * scale);
+        int markerCore = Math.Max(2, (int)Math.Round(4 * scale));
+        for (int y = 600 - markerSize / 2; y < 600 + markerSize / 2; y++)
+            for (int x = 500 - markerSize / 2; x < 500 + markerSize / 2; x++)
+                pixels[y * width + x] = new Bgra32
+                    { R = 255, B = 255, A = 255 };
+        for (int y = 600 - markerCore / 2; y < 600 + markerCore / 2; y++)
+            for (int x = 500 - markerCore / 2; x < 500 + markerCore / 2; x++)
+                pixels[y * width + x] = new Bgra32
+                    { G = 255, B = 255, A = 255 };
         DrawSpellGridSlot(1, VisualSpellIdSource.SpellId, 6603);
         DrawSpellGridSlot(2, VisualSpellIdSource.ActionId, 270);
         DrawSpellGridSlot(3, VisualSpellIdSource.SpellId, 7744);
@@ -1603,6 +1727,18 @@ static int RunSelfTest()
             || result.TargetIdentity is not
                 { GuidHash1: targetHash1, GuidHash2: targetHash2,
                   Level: targetLevel, IsPlayer: false }
+            || result.TargetWorldPosition is not { } targetPosition
+            || Math.Abs(targetPosition.X + 612.34) > 0.001
+            || Math.Abs(targetPosition.Y - 1237.56) > 0.001
+            || Math.Abs(targetPosition.Z - 87.65) > 0.001
+            || targetPosition.InstanceMapId != 0
+            || result.TargetMapPosition is not { UIMapId: targetMapId } targetMapPosition
+            || Math.Abs(targetMapPosition.MapX - targetMapX / 16777215.0) > 0.00001
+            || Math.Abs(targetMapPosition.MapY - targetMapY / 16777215.0) > 0.00001
+            || result.NameplateProbe is not { Count: 1, Matched: true }
+            || result.TargetScreenPosition is not { } targetScreen
+            || Math.Abs(targetScreen.X - 500.0 / width) > 0.01
+            || Math.Abs(targetScreen.Y - 0.4) > 0.01
             || result.LastCastEvent is not { Sequence: 0, SpellId: 0 }
             || result.WatchedAction is not { Slot: 4, Kind: VisualActionKind.Spell, Id: 7744 }
             || result.ActionBar is not { ReadableCount: 120, OccupiedCount: 2 } actionBar
@@ -1785,6 +1921,21 @@ static int RunSelfTest()
             AddonReader.HasForeverTargetIdentity(damagedTargetIdentity))
             return 1;
         DrawCastPixel(6, (0xA58866 - targetHash1 - targetHash2 - targetLevel * 2) & 0xFFFFFF);
+
+        DrawCastPixel(11, 0);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var damagedTargetPosition) ||
+            damagedTargetPosition.TargetWorldPosition is not null)
+            return 1;
+        DrawCastPixel(11, (0xA59977 - targetX - targetY - targetZ -
+            targetHash1 - targetHash2) & 0xFFFFFF);
+        DrawCastPixel(15, 0);
+        if (!VisualBarReader.TryRead(pixels, width, height,
+                out var damagedTargetMapPosition) ||
+            damagedTargetMapPosition.TargetMapPosition is not null)
+            return 1;
+        DrawCastPixel(15, (0xA5AA88 - targetMapId - targetMapX - targetMapY -
+            targetHash1 - targetHash2) & 0xFFFFFF);
 
         DrawCastPixel(5, targetLevel * 2 + 1);
         DrawCastPixel(6, (0xA58866 - targetHash1 - targetHash2 - targetLevel * 2 - 1) & 0xFFFFFF);

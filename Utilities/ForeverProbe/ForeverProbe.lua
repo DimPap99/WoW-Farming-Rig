@@ -387,6 +387,22 @@ local function createVisual()
     frame:SetSize(320, 190)
     frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -70)
 
+    -- The client may allow anchoring to its selected nameplate while hiding
+    -- the numeric frame center from Lua. This marker is decoded from pixels.
+    local locator = CreateFrame("Frame", nil, UIParent)
+    locator:SetSize(16, 16)
+    locator:SetFrameStrata("TOOLTIP")
+    local border = locator:CreateTexture(nil, "OVERLAY")
+    border:SetAllPoints(locator)
+    border:SetColorTexture(1, 0, 1, 1)
+    local center = locator:CreateTexture(nil, "OVERLAY")
+    center:SetSize(4, 4)
+    center:SetPoint("CENTER", locator, "CENTER")
+    center:SetColorTexture(0, 1, 1, 1)
+    locator:Hide()
+    frame.targetLocator = locator
+    frame:SetScript("OnHide", function() locator:Hide() end)
+
     local function addBar(row, red, green, blue)
         local bar = CreateFrame("StatusBar", nil, frame)
         bar:SetSize(320, 10)
@@ -461,6 +477,27 @@ local function createVisual()
     frame.targetHash2Pixel = addPixel(4, 190)
     frame.targetLevelPixel = addPixel(5, 190)
     frame.targetIdentityValidPixel = addPixel(6, 190)
+    frame.targetWorldXPixel = addPixel(7, 190)
+    frame.targetWorldYPixel = addPixel(8, 190)
+    frame.targetWorldZPixel = addPixel(9, 190)
+    frame.targetWorldMapPixel = addPixel(10, 190)
+    frame.targetWorldValidPixel = addPixel(11, 190)
+    frame.targetMapIdPixel = addPixel(12, 190)
+    frame.targetMapXPixel = addPixel(13, 190)
+    frame.targetMapYPixel = addPixel(14, 190)
+    frame.targetMapValidPixel = addPixel(15, 190)
+    frame.closestCreatureIdPixel = addPixel(16, 190)
+    frame.closestCreatureXPixel = addPixel(17, 190)
+    frame.closestCreatureYPixel = addPixel(18, 190)
+    frame.closestCreatureDistancePixel = addPixel(19, 190)
+    frame.closestCreatureValidPixel = addPixel(20, 190)
+    frame.targetScreenXPixel = addPixel(21, 190)
+    frame.targetScreenYPixel = addPixel(22, 190)
+    frame.targetScreenValidPixel = addPixel(23, 190)
+    frame.targetDistancePixel = addPixel(24, 190)
+    frame.targetDistanceValidPixel = addPixel(25, 190)
+    frame.nameplateProbePixel = addPixel(26, 190)
+    frame.nameplateProbeValidPixel = addPixel(27, 190)
 
     -- Forty tiny pixels per row (ID, marker per action), six rows total.
     -- The marker distinguishes an empty slot from an unreadable one.
@@ -824,6 +861,7 @@ local function createVisual()
         frame.targetFlagsPixel:SetColorTexture(0, 0, 0, 1)
         frame.targetFlagsValidPixel:SetColorTexture(0, 0, 0, 1)
         frame.targetIdentityValidPixel:SetColorTexture(0, 0, 0, 1)
+        local checkedTargetGuid, checkedTargetHash1, checkedTargetHash2
         pcall(function()
             local guid = UnitGUID("target")
             if type(issecretvalue) == "function" and issecretvalue(guid) then
@@ -880,7 +918,183 @@ local function createVisual()
             setIntPixel(frame.targetLevelPixel, packedLevel)
             setIntPixel(frame.targetIdentityValidPixel,
                 (0xA58866 - hash1 - hash2 - packedLevel) % 16777216)
+            if present then
+                checkedTargetGuid = guid
+                checkedTargetHash1, checkedTargetHash2 = hash1, hash2
+            end
         end)
+
+        frame.targetWorldValidPixel:SetColorTexture(0, 0, 0, 1)
+        if checkedTargetGuid then pcall(function()
+            local guid = UnitGUID("target")
+            if type(issecretvalue) == "function" and issecretvalue(guid) then
+                return
+            end
+            if guid ~= checkedTargetGuid then return end
+            local x, y, z, instanceMap = UnitPosition("target")
+            local function encodeAxis(value)
+                if type(value) ~= "number" or
+                    (type(issecretvalue) == "function" and issecretvalue(value)) or
+                    value ~= value then return nil end
+                local encoded = math.floor(value * 100 + 0.5) + 8388608
+                if encoded < 0 or encoded > 16777215 then return nil end
+                return encoded
+            end
+            local encodedX, encodedY, encodedZ =
+                encodeAxis(x), encodeAxis(y), encodeAxis(z)
+            if not encodedX or not encodedY or not encodedZ or
+                type(instanceMap) ~= "number" or
+                (type(issecretvalue) == "function" and issecretvalue(instanceMap)) or
+                instanceMap < 0 or instanceMap > 16777215 or
+                instanceMap ~= math.floor(instanceMap) then return end
+            setIntPixel(frame.targetWorldXPixel, encodedX)
+            setIntPixel(frame.targetWorldYPixel, encodedY)
+            setIntPixel(frame.targetWorldZPixel, encodedZ)
+            setIntPixel(frame.targetWorldMapPixel, instanceMap)
+            setIntPixel(frame.targetWorldValidPixel,
+                (0xA59977 - encodedX - encodedY - encodedZ - instanceMap -
+                    checkedTargetHash1 - checkedTargetHash2) % 16777216)
+        end) end
+
+        frame.targetMapValidPixel:SetColorTexture(0, 0, 0, 1)
+        if checkedTargetGuid then pcall(function()
+            local guid = UnitGUID("target")
+            if type(issecretvalue) == "function" and issecretvalue(guid) then
+                return
+            end
+            if guid ~= checkedTargetGuid then return end
+            local mapId = readableNumber(C_Map.GetBestMapForUnit("target"))
+            if not mapId or mapId <= 0 or mapId > 16777215 then return end
+            local pos = C_Map.GetPlayerMapPosition(mapId, "target")
+            if not pos or
+                (type(issecretvalue) == "function" and issecretvalue(pos)) then
+                return end
+            local x, y = pos:GetXY()
+            x, y = readableNumber(x), readableNumber(y)
+            if not x or not y or x < 0 or x > 1 or
+                y < 0 or y > 1 then return end
+            local encodedX = math.floor(x * 16777215)
+            local encodedY = math.floor(y * 16777215)
+            setIntPixel(frame.targetMapIdPixel, mapId)
+            setIntPixel(frame.targetMapXPixel, encodedX)
+            setIntPixel(frame.targetMapYPixel, encodedY)
+            setIntPixel(frame.targetMapValidPixel,
+                (0xA5AA88 - mapId - encodedX - encodedY -
+                    checkedTargetHash1 - checkedTargetHash2) % 16777216)
+        end) end
+
+        -- These three independent probes answer whether the beta exposes a
+        -- usable target direction even when UnitPosition(target) returns nil.
+        frame.closestCreatureValidPixel:SetColorTexture(0, 0, 0, 1)
+        frame.targetScreenValidPixel:SetColorTexture(0, 0, 0, 1)
+        frame.targetDistanceValidPixel:SetColorTexture(0, 0, 0, 1)
+        frame.nameplateProbeValidPixel:SetColorTexture(0, 0, 0, 1)
+        frame.targetLocator:Hide()
+        if checkedTargetGuid then pcall(function()
+            local guid = UnitGUID("target")
+            if type(issecretvalue) == "function" and issecretvalue(guid) then return end
+            if guid ~= checkedTargetGuid then return end
+
+            pcall(function()
+                if type(ClosestUnitPosition) ~= "function" then return end
+                local creatureId = readableNumber(UnitCreatureID("target"))
+                if not creatureId or creatureId <= 0 or creatureId > 16777215 or
+                    creatureId ~= math.floor(creatureId) then return end
+                local x, y, distance = ClosestUnitPosition(creatureId)
+                x, y, distance = readableNumber(x), readableNumber(y),
+                    readableNumber(distance)
+                if not x or not y or not distance or distance < 0 then return end
+                local ex = math.floor(x * 100 + 0.5) + 8388608
+                local ey = math.floor(y * 100 + 0.5) + 8388608
+                local ed = math.floor(distance * 100 + 0.5)
+                if ex < 0 or ex > 16777215 or ey < 0 or ey > 16777215 or
+                    ed > 16777215 then return end
+                setIntPixel(frame.closestCreatureIdPixel, creatureId)
+                setIntPixel(frame.closestCreatureXPixel, ex)
+                setIntPixel(frame.closestCreatureYPixel, ey)
+                setIntPixel(frame.closestCreatureDistancePixel, ed)
+                setIntPixel(frame.closestCreatureValidPixel,
+                    (0xA5B155 - creatureId - ex - ey - ed -
+                        checkedTargetHash1 - checkedTargetHash2) % 16777216)
+            end)
+
+            pcall(function()
+                if not C_NamePlate then return end
+                local count, matched = 0, false
+                local plate
+                if type(C_NamePlate.GetNamePlates) == "function" then
+                    local plates = C_NamePlate.GetNamePlates()
+                    if type(plates) == "table" and
+                        not (type(issecretvalue) == "function" and
+                            issecretvalue(plates)) then
+                        count = math.min(#plates, 255)
+                        for _, candidate in ipairs(plates) do
+                            local unit = type(candidate.GetUnit) == "function" and
+                                candidate:GetUnit() or candidate.namePlateUnitToken
+                            if type(unit) == "string" and
+                                not (type(issecretvalue) == "function" and
+                                    issecretvalue(unit)) then
+                                local same = UnitIsUnit(unit, "target")
+                                if not (type(issecretvalue) == "function" and
+                                    issecretvalue(same)) and
+                                    type(same) == "boolean" and same then
+                                    plate, matched = candidate, true
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+                local status = count + (matched and 256 or 0)
+                setIntPixel(frame.nameplateProbePixel, status)
+                setIntPixel(frame.nameplateProbeValidPixel,
+                    (0xA5B488 - status - checkedTargetHash1 -
+                        checkedTargetHash2) % 16777216)
+                if not plate and
+                    type(C_NamePlate.GetNamePlateForUnit) == "function" then
+                    plate = C_NamePlate.GetNamePlateForUnit("target")
+                end
+                if not plate or
+                    (type(issecretvalue) == "function" and issecretvalue(plate)) then
+                    return end
+                pcall(function()
+                    frame.targetLocator:ClearAllPoints()
+                    frame.targetLocator:SetPoint("CENTER", plate, "CENTER")
+                    frame.targetLocator:Show()
+                end)
+                local x, y = plate:GetCenter()
+                local width, height = UIParent:GetWidth(), UIParent:GetHeight()
+                x, y = readableNumber(x), readableNumber(y)
+                width, height = readableNumber(width), readableNumber(height)
+                if not x or not y or not width or not height or
+                    width <= 0 or height <= 0 then return end
+                x, y = x / width, y / height
+                if x < 0 or x > 1 or y < 0 or y > 1 then return end
+                local ex = math.floor(x * 16777215 + 0.5)
+                local ey = math.floor(y * 16777215 + 0.5)
+                setIntPixel(frame.targetScreenXPixel, ex)
+                setIntPixel(frame.targetScreenYPixel, ey)
+                setIntPixel(frame.targetScreenValidPixel,
+                    (0xA5B266 - ex - ey - checkedTargetHash1 -
+                        checkedTargetHash2) % 16777216)
+            end)
+
+            pcall(function()
+                if type(UnitDistanceSquared) ~= "function" then return end
+                local rawDistance, checked = UnitDistanceSquared("target")
+                if type(issecretvalue) == "function" and
+                    issecretvalue(checked) then return end
+                local distanceSquared = readableNumber(rawDistance)
+                if checked ~= true or not distanceSquared or
+                    distanceSquared <= 0 then return end
+                local encoded = math.floor(distanceSquared * 100 + 0.5)
+                if encoded > 16777215 then return end
+                setIntPixel(frame.targetDistancePixel, encoded)
+                setIntPixel(frame.targetDistanceValidPixel,
+                    (0xA5B377 - encoded - checkedTargetHash1 -
+                        checkedTargetHash2) % 16777216)
+            end)
+        end) end
 
         frame.castValidPixel:SetColorTexture(0, 0, 0, 1)
         if castEventReadable then
