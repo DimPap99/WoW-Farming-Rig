@@ -19,6 +19,7 @@
  */
 
 using StormDll;
+using PPather.Storage;
 
 using System;
 
@@ -26,10 +27,10 @@ namespace Wmo;
 
 public sealed class WMOManager : Manager<WMORoot>
 {
-    private readonly ArchiveSet archive;
+    private readonly IGameFileSource archive;
     private readonly ModelManager modelmanager;
 
-    public WMOManager(ArchiveSet archive, ModelManager modelmanager)
+    public WMOManager(IGameFileSource archive, ModelManager modelmanager)
     {
         this.archive = archive;
         this.modelmanager = modelmanager;

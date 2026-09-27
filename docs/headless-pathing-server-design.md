@@ -201,14 +201,11 @@ that any platform can then consume.
 
 ### 12.1 What already works today, with zero code changes
 
-**Windows-on-ARM in a VM.** Issue
-[#803](https://github.com/Xian55/WowClassicGrindBot/issues/803) is a user running the bot under
-Windows 11 ARM64 in a VM on an Apple-silicon host. It works: the repo already ships
+**Windows-on-ARM in a VM.** The bot has been run under Windows 11 ARM64 in a VM on an Apple-silicon host. It works: the repo already ships
 `StormLib_arm64.dll` and `StormDll.Resolve` already selects it from
 `RuntimeInformation.ProcessArchitecture`. Nothing to build, nothing to port.
 
-That issue is also where the shipped ARM64 DLL got its build flags settled, and the failure it
-produced is the single most important thing to know before attempting a native port — see
+The ARM64 DLL build also revealed the failure that is most important to know before attempting a native port — see
 §12.3.
 
 So: if the goal is just "use the Mac as a bake box", a Windows ARM VM is the zero-risk answer.

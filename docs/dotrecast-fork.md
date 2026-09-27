@@ -1,4 +1,4 @@
-# Why WowClassicGrindBot forks DotRecast
+# DotRecast fork history
 
 The bot needs a navmesh for a 34,000-yard-wide world, baked on the player's own
 machine, on first visit to an area, while the game client is running on the same
@@ -8,7 +8,7 @@ offline on a build server, ship the result".
 That constraint is what drove every change below. This page walks the fork
 commit by commit, with what was measured and how.
 
-Fork: [`Xian55/DotRecast @ wow-mods`](https://github.com/Xian55/DotRecast/tree/wow-mods)
+Fork: [DotRecast `wow-mods` branch](https://github.com/Xian55/DotRecast/tree/wow-mods)
 
 ---
 
@@ -26,7 +26,7 @@ machine - see "On how these were measured" for the protocol and the specific
 ways the naive version misled us.
 
 **A stale build silently poisons everything.** DotRecast is a submodule and is
-not in `MasterOfPuppets.sln`, so a solution-level Release build copies the
+not in `WoWFarmingRig.sln`, so a solution-level Release build copies the
 *Debug* DotRecast into the benchmark output. Every stage then reads 3–5× slower,
 including stages nothing touched. This cost us an entire invalidated measurement
 round. There is now a guard script that refuses to benchmark in that state.

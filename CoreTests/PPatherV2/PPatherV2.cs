@@ -238,7 +238,7 @@ public class PPatherV2
                 if (logger.IsEnabled(LogLevel.Information))
                     logger.LogInformation("[{MapName}] [{X},{Y}] verts: {VertCount} tris: {TriCount} - {ElapsedMs}ms", mapName.ToString(), x, y, terrain.Verts.Count, terrain.Tris.Count, GetElapsedTime(startTime).TotalMilliseconds);
 
-                terrain.ExportDebugObjFile($"X:\\Programming\\WowClassicGrindBot\\Json\\obj\\terrain_{mapName}_{x}_{y}.obj");
+                terrain.ExportDebugObjFile(Path.Combine(Path.GetTempPath(), $"terrain_{mapName}_{x}_{y}.obj"));
             }
             //);
 

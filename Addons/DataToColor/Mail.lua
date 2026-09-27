@@ -15,6 +15,10 @@
 local Load = select(2, ...)
 local DataToColor = unpack(Load)
 
+if DataToColor.IsForever() then
+    return
+end
+
 -- Early exit if mail functionality is not enabled
 -- Can be configured via DATA_CONFIG or left always available
 if DataToColor.DATA_CONFIG and DataToColor.DATA_CONFIG.MAIL_ENABLED == false then

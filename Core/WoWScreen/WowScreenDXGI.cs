@@ -50,6 +50,8 @@ public sealed class WowScreenDXGI : IWowScreen, IAddonDataProvider, IGpuTextureP
     private readonly Vortice.RawRect monitorRect;
 
     public Image<Bgra32> ScreenImage { get; init; }
+    private long screenFrameId;
+    public long ScreenFrameId => Interlocked.Read(ref screenFrameId);
 
     private readonly SixLabors.ImageSharp.Configuration ContiguousJpegConfiguration
         = new(new JpegConfigurationModule()) { PreferContiguousImageBuffers = true };
@@ -427,6 +429,7 @@ public sealed class WowScreenDXGI : IWowScreen, IAddonDataProvider, IGpuTextureP
             Span<byte> dest = MemoryMarshal.Cast<Bgra32, byte>(memory.Span);
 
             ScreenCaptureHelper.CopyRegion(src, rowPitch, 0, 0, dest, screenRect.Width, screenRect.Height);
+            Interlocked.Increment(ref screenFrameId);
 
 #if SAVE_SCREEN_IMAGE
             ScreenImage.SaveAsJpeg("screen.jpg");

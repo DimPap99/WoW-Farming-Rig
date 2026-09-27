@@ -18,6 +18,7 @@ public sealed class WowProcess
         "WowClassicT",
         "Wow-64",
         "WowClassicB",
+        "WowB", // World of Warcraft: Forever beta
         // Windows on ARM64 (e.g. WoW running natively inside a Win11 ARM64 VM
         // on Apple Silicon). Match is OrdinalIgnoreCase, so casing is irrelevant.
         "WowClassic-arm64"
@@ -105,7 +106,7 @@ public sealed class WowProcess
             Process p = processList[i];
             for (int j = 0; j < defaultProcessNames.Length; j++)
             {
-                if (defaultProcessNames[j].Contains(p.ProcessName, StringComparison.OrdinalIgnoreCase))
+                if (defaultProcessNames[j].Equals(p.ProcessName, StringComparison.OrdinalIgnoreCase))
                 {
                     return p;
                 }

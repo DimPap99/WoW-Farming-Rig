@@ -1,6 +1,12 @@
 local Load = select(2, ...)
 local DataToColor = unpack(Load)
 
+-- Forever's bot reader is disabled; do not register merchant automation even
+-- if this module is accidentally included by another TOC.
+if DataToColor.IsForever() then
+    return
+end
+
 if not DataToColor.DATA_CONFIG.AUTO_SELL_GREY_ITEMS then
     return
 end

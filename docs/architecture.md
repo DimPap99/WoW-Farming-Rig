@@ -8,7 +8,7 @@ Further detail about the early architecture can be found in [Blog post](http://w
 ## Solution Structure (13 projects)
 
 ```
-MasterOfPuppets.sln
+WoWFarmingRig.sln
 │
 ├── Hosts ─────────────────────────────────────────────────────────
 │   ├── BlazorServer/       ASP.NET Core Blazor Server — primary web UI
@@ -39,7 +39,7 @@ MasterOfPuppets.sln
     └── Addons/DataToColor/ Lua addon — game state → pixel color encoding
 ```
 
-Note that `Utilities/` projects are deliberately **not** part of `MasterOfPuppets.sln`,
+Note that `Utilities/` projects are deliberately **not** part of `WoWFarmingRig.sln`,
 so a solution build does not build them.
 
 ## Dependency Flow

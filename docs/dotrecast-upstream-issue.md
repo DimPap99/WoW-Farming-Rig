@@ -30,13 +30,12 @@ result — and it leans hard on `RcRecast` bake throughput and on allocation
 behaviour, since the GC competes with the foreground app for the same cores.
 
 Worth stating plainly so you can judge relevance: the project is
-[WowClassicGrindBot](https://github.com/Xian55/WowClassicGrindBot), a World of
-Warcraft automation tool. If that's not something you want associated with the
+WoW Farming Rig, a World of Warcraft automation tool. If that's not something you want associated with the
 project, that's entirely fair — the measurements below stand on their own and
 you're welcome to use them without any attribution or connection.
 
 Diffs, if useful: <https://github.com/Xian55/DotRecast/tree/wow-mods>
-Full write-up with methodology: **https://github.com/Xian55/DotRecast/wiki/Why-WowClassicGrindBot-forks-DotRecast**
+Full write-up with methodology: [DotRecast fork history](dotrecast-fork.md).
 
 ## Correctness
 

@@ -191,8 +191,7 @@ them is correct.
 
 ## 7. Profession and weapon-skill training is not implemented
 
-[Issue #671](https://github.com/Xian55/WowClassicGrindBot/issues/671) is titled *Skill
-Training*, and "skill" in WoW usually reads as a profession or weapon skill. The first
+"Skill training" in WoW usually reads as a profession or weapon skill. The first
 iteration covers **class trainers only**; `NpcFlags.ProfessionTrainer` is populated and
 the navigation half would work unchanged, but the filtering does not carry over - a
 profession advances through ranks (Apprentice, Journeyman, Expert...) gated on skill

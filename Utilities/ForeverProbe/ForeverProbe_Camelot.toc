@@ -1,0 +1,6 @@
+## Interface: 16001
+## Title: ForeverProbe
+## Notes: Local compatibility diagnostics for WoW Farming Rig
+## SavedVariables: ForeverProbeResults, ForeverProbeCatalog
+
+ForeverProbe.lua

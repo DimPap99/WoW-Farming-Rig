@@ -1,0 +1,8228 @@
+[
+  {
+    "AreaID": 1,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Dun Morogh"
+  },
+  {
+    "AreaID": 2,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Longshore"
+  },
+  {
+    "AreaID": 3,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Badlands"
+  },
+  {
+    "AreaID": 4,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Blasted Lands"
+  },
+  {
+    "AreaID": 7,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Blackwater Cove"
+  },
+  {
+    "AreaID": 8,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Swamp of Sorrows"
+  },
+  {
+    "AreaID": 9,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Northshire Valley"
+  },
+  {
+    "AreaID": 10,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Duskwood"
+  },
+  {
+    "AreaID": 11,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Wetlands"
+  },
+  {
+    "AreaID": 12,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Elwynn Forest"
+  },
+  {
+    "AreaID": 13,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "The World Tree"
+  },
+  {
+    "AreaID": 14,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Durotar"
+  },
+  {
+    "AreaID": 15,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Dustwallow Marsh"
+  },
+  {
+    "AreaID": 16,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Azshara"
+  },
+  {
+    "AreaID": 17,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "The Barrens"
+  },
+  {
+    "AreaID": 18,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Crystal Lake"
+  },
+  {
+    "AreaID": 19,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Zul'Gurub"
+  },
+  {
+    "AreaID": 20,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Moonbrook"
+  },
+  {
+    "AreaID": 21,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Kul Tiras"
+  },
+  {
+    "AreaID": 22,
+    "MapID": 451,
+    "ParentAreaId": 0,
+    "AreaName": "Programmer Isle"
+  },
+  {
+    "AreaID": 23,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Northshire River"
+  },
+  {
+    "AreaID": 24,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Northshire Abbey"
+  },
+  {
+    "AreaID": 25,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Blackrock Mountain"
+  },
+  {
+    "AreaID": 26,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Lighthouse"
+  },
+  {
+    "AreaID": 28,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Western Plaguelands"
+  },
+  {
+    "AreaID": 30,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Nine"
+  },
+  {
+    "AreaID": 32,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "The Cemetary"
+  },
+  {
+    "AreaID": 33,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Stranglethorn Vale"
+  },
+  {
+    "AreaID": 34,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Echo Ridge Mine"
+  },
+  {
+    "AreaID": 35,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Booty Bay"
+  },
+  {
+    "AreaID": 36,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Alterac Mountains"
+  },
+  {
+    "AreaID": 37,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Lake Nazferiti"
+  },
+  {
+    "AreaID": 38,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Loch Modan"
+  },
+  {
+    "AreaID": 40,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Westfall"
+  },
+  {
+    "AreaID": 41,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Deadwind Pass"
+  },
+  {
+    "AreaID": 42,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Darkshire"
+  },
+  {
+    "AreaID": 43,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Wild Shore"
+  },
+  {
+    "AreaID": 44,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Redridge Mountains"
+  },
+  {
+    "AreaID": 45,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Arathi Highlands"
+  },
+  {
+    "AreaID": 46,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Burning Steppes"
+  },
+  {
+    "AreaID": 47,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "The Hinterlands"
+  },
+  {
+    "AreaID": 49,
+    "MapID": 451,
+    "ParentAreaId": 22,
+    "AreaName": "Dead Man's Hole"
+  },
+  {
+    "AreaID": 51,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Searing Gorge"
+  },
+  {
+    "AreaID": 53,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Thieves Camp"
+  },
+  {
+    "AreaID": 54,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Jasperlode Mine"
+  },
+  {
+    "AreaID": 55,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Valley of Heroes UNUSED"
+  },
+  {
+    "AreaID": 56,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Heroes' Vigil"
+  },
+  {
+    "AreaID": 57,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Fargodeep Mine"
+  },
+  {
+    "AreaID": 59,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Northshire Vineyards"
+  },
+  {
+    "AreaID": 60,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Forest's Edge"
+  },
+  {
+    "AreaID": 61,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Thunder Falls"
+  },
+  {
+    "AreaID": 62,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Brackwell Pumpkin Patch"
+  },
+  {
+    "AreaID": 63,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "The Stonefield Farm"
+  },
+  {
+    "AreaID": 64,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "The Maclure Vineyards"
+  },
+  {
+    "AreaID": 65,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "***On Map Dungeon***"
+  },
+  {
+    "AreaID": 66,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "***On Map Dungeon***"
+  },
+  {
+    "AreaID": 67,
+    "MapID": 17,
+    "ParentAreaId": 0,
+    "AreaName": "***On Map Dungeon***"
+  },
+  {
+    "AreaID": 68,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Lake Everstill"
+  },
+  {
+    "AreaID": 69,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Lakeshire"
+  },
+  {
+    "AreaID": 70,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Stonewatch"
+  },
+  {
+    "AreaID": 71,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Stonewatch Falls"
+  },
+  {
+    "AreaID": 72,
+    "MapID": 0,
+    "ParentAreaId": 4,
+    "AreaName": "The Dark Portal"
+  },
+  {
+    "AreaID": 73,
+    "MapID": 0,
+    "ParentAreaId": 4,
+    "AreaName": "The Tainted Scar"
+  },
+  {
+    "AreaID": 74,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "Pool of Tears"
+  },
+  {
+    "AreaID": 75,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "Stonard"
+  },
+  {
+    "AreaID": 76,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "Fallow Sanctuary"
+  },
+  {
+    "AreaID": 77,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Anvilmar"
+  },
+  {
+    "AreaID": 80,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Stormwind Mountains"
+  },
+  {
+    "AreaID": 81,
+    "MapID": 451,
+    "ParentAreaId": 22,
+    "AreaName": "Jeff NE Quadrant Changed"
+  },
+  {
+    "AreaID": 82,
+    "MapID": 451,
+    "ParentAreaId": 22,
+    "AreaName": "Jeff NW Quadrant"
+  },
+  {
+    "AreaID": 83,
+    "MapID": 451,
+    "ParentAreaId": 22,
+    "AreaName": "Jeff SE Quadrant"
+  },
+  {
+    "AreaID": 84,
+    "MapID": 451,
+    "ParentAreaId": 22,
+    "AreaName": "Jeff SW Quadrant"
+  },
+  {
+    "AreaID": 85,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Tirisfal Glades"
+  },
+  {
+    "AreaID": 86,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Stone Cairn Lake"
+  },
+  {
+    "AreaID": 87,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Goldshire"
+  },
+  {
+    "AreaID": 88,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Eastvale Logging Camp"
+  },
+  {
+    "AreaID": 89,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Mirror Lake Orchard"
+  },
+  {
+    "AreaID": 91,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Tower of Azora"
+  },
+  {
+    "AreaID": 92,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Mirror Lake"
+  },
+  {
+    "AreaID": 93,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Vul'Gol Ogre Mound"
+  },
+  {
+    "AreaID": 94,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Raven Hill"
+  },
+  {
+    "AreaID": 95,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Redridge Canyons"
+  },
+  {
+    "AreaID": 96,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Tower of Ilgalar"
+  },
+  {
+    "AreaID": 97,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Alther's Mill"
+  },
+  {
+    "AreaID": 98,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Rethban Caverns"
+  },
+  {
+    "AreaID": 99,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Rebel Camp"
+  },
+  {
+    "AreaID": 100,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Nesingwary's Expedition"
+  },
+  {
+    "AreaID": 101,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Kurzen's Compound"
+  },
+  {
+    "AreaID": 102,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Ruins of Zul'Kunda"
+  },
+  {
+    "AreaID": 103,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Ruins of Zul'Mamwe"
+  },
+  {
+    "AreaID": 104,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "The Vile Reef"
+  },
+  {
+    "AreaID": 105,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Mosh'Ogg Ogre Mound"
+  },
+  {
+    "AreaID": 106,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "The Stockpile"
+  },
+  {
+    "AreaID": 107,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Saldean's Farm"
+  },
+  {
+    "AreaID": 108,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Sentinel Hill"
+  },
+  {
+    "AreaID": 109,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Furlbrow's Pumpkin Farm"
+  },
+  {
+    "AreaID": 111,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Jangolode Mine"
+  },
+  {
+    "AreaID": 113,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Gold Coast Quarry"
+  },
+  {
+    "AreaID": 115,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Westfall Lighthouse"
+  },
+  {
+    "AreaID": 116,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "Misty Valley"
+  },
+  {
+    "AreaID": 117,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Grom'gol Base Camp"
+  },
+  {
+    "AreaID": 118,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Whelgar's Excavation Site"
+  },
+  {
+    "AreaID": 120,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Westbrook Garrison"
+  },
+  {
+    "AreaID": 121,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Tranquil Gardens Cemetery"
+  },
+  {
+    "AreaID": 122,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Zuuldaia Ruins"
+  },
+  {
+    "AreaID": 123,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Bal'lal Ruins"
+  },
+  {
+    "AreaID": 125,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Kal'ai Ruins"
+  },
+  {
+    "AreaID": 126,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Tkashi Ruins"
+  },
+  {
+    "AreaID": 127,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Balia'mah Ruins"
+  },
+  {
+    "AreaID": 128,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Ziata'jai Ruins"
+  },
+  {
+    "AreaID": 129,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Mizjah Ruins"
+  },
+  {
+    "AreaID": 130,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Silverpine Forest"
+  },
+  {
+    "AreaID": 131,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Kharanos"
+  },
+  {
+    "AreaID": 132,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Coldridge Valley"
+  },
+  {
+    "AreaID": 133,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Gnomeregan"
+  },
+  {
+    "AreaID": 134,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Gol'Bolar Quarry"
+  },
+  {
+    "AreaID": 135,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Frostmane Hold"
+  },
+  {
+    "AreaID": 136,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "The Grizzled Den"
+  },
+  {
+    "AreaID": 137,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Brewnall Village"
+  },
+  {
+    "AreaID": 138,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Misty Pine Refuge"
+  },
+  {
+    "AreaID": 139,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Eastern Plaguelands"
+  },
+  {
+    "AreaID": 141,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Teldrassil"
+  },
+  {
+    "AreaID": 142,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "Ironband's Excavation Site"
+  },
+  {
+    "AreaID": 143,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "Mo'grosh Stronghold"
+  },
+  {
+    "AreaID": 144,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "Thelsamar"
+  },
+  {
+    "AreaID": 145,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "Algaz Gate"
+  },
+  {
+    "AreaID": 146,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "Stonewrought Dam"
+  },
+  {
+    "AreaID": 147,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "The Farstrider Lodge"
+  },
+  {
+    "AreaID": 148,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Darkshore"
+  },
+  {
+    "AreaID": 149,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "Silver Stream Mine"
+  },
+  {
+    "AreaID": 150,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Menethil Harbor"
+  },
+  {
+    "AreaID": 151,
+    "MapID": 451,
+    "ParentAreaId": 0,
+    "AreaName": "Designer Island"
+  },
+  {
+    "AreaID": 152,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "The Bulwark"
+  },
+  {
+    "AreaID": 153,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Ruins of Lordaeron"
+  },
+  {
+    "AreaID": 154,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Deathknell"
+  },
+  {
+    "AreaID": 155,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Night Web's Hollow"
+  },
+  {
+    "AreaID": 156,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Solliden Farmstead"
+  },
+  {
+    "AreaID": 157,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Agamand Mills"
+  },
+  {
+    "AreaID": 158,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Agamand Family Crypt"
+  },
+  {
+    "AreaID": 159,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Brill"
+  },
+  {
+    "AreaID": 160,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Whispering Gardens"
+  },
+  {
+    "AreaID": 161,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Terrace of Repose"
+  },
+  {
+    "AreaID": 162,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Brightwater Lake"
+  },
+  {
+    "AreaID": 163,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Gunther's Retreat"
+  },
+  {
+    "AreaID": 164,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Garren's Haunt"
+  },
+  {
+    "AreaID": 165,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Balnir Farmstead"
+  },
+  {
+    "AreaID": 166,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Cold Hearth Manor"
+  },
+  {
+    "AreaID": 167,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Crusader Outpost"
+  },
+  {
+    "AreaID": 168,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "The North Coast"
+  },
+  {
+    "AreaID": 169,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Whispering Shore"
+  },
+  {
+    "AreaID": 170,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Lordamere Lake"
+  },
+  {
+    "AreaID": 172,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "Fenris Isle"
+  },
+  {
+    "AreaID": 173,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Faol's Rest"
+  },
+  {
+    "AreaID": 186,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Dolanaar"
+  },
+  {
+    "AreaID": 187,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Darnassus UNUSED"
+  },
+  {
+    "AreaID": 188,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Shadowglen"
+  },
+  {
+    "AreaID": 189,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Steelgrill's Depot"
+  },
+  {
+    "AreaID": 190,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Hearthglen"
+  },
+  {
+    "AreaID": 192,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Northridge Lumber Camp"
+  },
+  {
+    "AreaID": 193,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Ruins of Andorhal"
+  },
+  {
+    "AreaID": 195,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "School of Necromancy"
+  },
+  {
+    "AreaID": 196,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Uther's Tomb"
+  },
+  {
+    "AreaID": 197,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Sorrow Hill"
+  },
+  {
+    "AreaID": 198,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "The Weeping Cave"
+  },
+  {
+    "AreaID": 199,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Felstone Field"
+  },
+  {
+    "AreaID": 200,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Dalson's Tears"
+  },
+  {
+    "AreaID": 201,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Gahrron's Withering"
+  },
+  {
+    "AreaID": 202,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "The Writhing Haunt"
+  },
+  {
+    "AreaID": 203,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Mardenholde Keep"
+  },
+  {
+    "AreaID": 204,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "Pyrewood Village"
+  },
+  {
+    "AreaID": 205,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Dun Modr"
+  },
+  {
+    "AreaID": 206,
+    "MapID": 36,
+    "ParentAreaId": 0,
+    "AreaName": "Westfall"
+  },
+  {
+    "AreaID": 207,
+    "MapID": 36,
+    "ParentAreaId": 0,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 208,
+    "MapID": 36,
+    "ParentAreaId": 0,
+    "AreaName": "Unused Ironcladcove"
+  },
+  {
+    "AreaID": 209,
+    "MapID": 33,
+    "ParentAreaId": 0,
+    "AreaName": "Shadowfang Keep"
+  },
+  {
+    "AreaID": 210,
+    "MapID": 36,
+    "ParentAreaId": 0,
+    "AreaName": "***On Map Dungeon***"
+  },
+  {
+    "AreaID": 211,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Iceflow Lake"
+  },
+  {
+    "AreaID": 212,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Helm's Bed Lake"
+  },
+  {
+    "AreaID": 213,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "Deep Elem Mine"
+  },
+  {
+    "AreaID": 214,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 215,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Mulgore"
+  },
+  {
+    "AreaID": 219,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Alexston Farmstead"
+  },
+  {
+    "AreaID": 220,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Red Cloud Mesa"
+  },
+  {
+    "AreaID": 221,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Camp Narache"
+  },
+  {
+    "AreaID": 222,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Bloodhoof Village"
+  },
+  {
+    "AreaID": 223,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Stonebull Lake"
+  },
+  {
+    "AreaID": 224,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Ravaged Caravan"
+  },
+  {
+    "AreaID": 225,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Red Rocks"
+  },
+  {
+    "AreaID": 226,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "The Skittering Dark"
+  },
+  {
+    "AreaID": 227,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "Valgan's Field"
+  },
+  {
+    "AreaID": 228,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "The Sepulcher"
+  },
+  {
+    "AreaID": 229,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "Olsen's Farthing"
+  },
+  {
+    "AreaID": 230,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "The Greymane Wall"
+  },
+  {
+    "AreaID": 231,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "Beren's Peril"
+  },
+  {
+    "AreaID": 232,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "The Dawning Isles"
+  },
+  {
+    "AreaID": 233,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "Ambermill"
+  },
+  {
+    "AreaID": 235,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "Fenris Keep"
+  },
+  {
+    "AreaID": 236,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "Shadowfang Keep"
+  },
+  {
+    "AreaID": 237,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "The Decrepit Ferry"
+  },
+  {
+    "AreaID": 238,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "Malden's Orchard"
+  },
+  {
+    "AreaID": 239,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "The Ivar Patch"
+  },
+  {
+    "AreaID": 240,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "The Dead Field"
+  },
+  {
+    "AreaID": 241,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "The Rotting Orchard"
+  },
+  {
+    "AreaID": 242,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Brightwood Grove"
+  },
+  {
+    "AreaID": 676,
+    "MapID": 150,
+    "ParentAreaId": 0,
+    "AreaName": "Outland"
+  },
+  {
+    "AreaID": 243,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Forlorn Rowe"
+  },
+  {
+    "AreaID": 244,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "The Whipple Estate"
+  },
+  {
+    "AreaID": 245,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "The Yorgen Farmstead"
+  },
+  {
+    "AreaID": 246,
+    "MapID": 0,
+    "ParentAreaId": 51,
+    "AreaName": "The Cauldron"
+  },
+  {
+    "AreaID": 247,
+    "MapID": 0,
+    "ParentAreaId": 51,
+    "AreaName": "Grimesilt Dig Site"
+  },
+  {
+    "AreaID": 249,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "Dreadmaul Rock"
+  },
+  {
+    "AreaID": 250,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "Ruins of Thaurissan"
+  },
+  {
+    "AreaID": 251,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "Flame Crest"
+  },
+  {
+    "AreaID": 252,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "Blackrock Stronghold"
+  },
+  {
+    "AreaID": 253,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "The Pillar of Ash"
+  },
+  {
+    "AreaID": 254,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "Blackrock Mountain"
+  },
+  {
+    "AreaID": 255,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "Altar of Storms"
+  },
+  {
+    "AreaID": 256,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Aldrassil"
+  },
+  {
+    "AreaID": 257,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Shadowthread Cave"
+  },
+  {
+    "AreaID": 258,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Fel Rock"
+  },
+  {
+    "AreaID": 259,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Lake Al'Ameth"
+  },
+  {
+    "AreaID": 260,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Starbreeze Village"
+  },
+  {
+    "AreaID": 261,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Gnarlpine Hold"
+  },
+  {
+    "AreaID": 262,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Ban'ethil Barrow Den"
+  },
+  {
+    "AreaID": 263,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "The Cleft"
+  },
+  {
+    "AreaID": 264,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "The Oracle Glade"
+  },
+  {
+    "AreaID": 265,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Wellspring River"
+  },
+  {
+    "AreaID": 266,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Wellspring Lake"
+  },
+  {
+    "AreaID": 267,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Hillsbrad Foothills"
+  },
+  {
+    "AreaID": 268,
+    "MapID": 37,
+    "ParentAreaId": 0,
+    "AreaName": "Azshara Crater"
+  },
+  {
+    "AreaID": 269,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Dun Algaz"
+  },
+  {
+    "AreaID": 271,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Southshore"
+  },
+  {
+    "AreaID": 272,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Tarren Mill"
+  },
+  {
+    "AreaID": 275,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Durnholde Keep"
+  },
+  {
+    "AreaID": 276,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "UNUSED Stonewrought Pass"
+  },
+  {
+    "AreaID": 277,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "The Foothill Caverns"
+  },
+  {
+    "AreaID": 278,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Lordamere Internment Camp"
+  },
+  {
+    "AreaID": 279,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Dalaran"
+  },
+  {
+    "AreaID": 280,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Strahnbrad"
+  },
+  {
+    "AreaID": 281,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Ruins of Alterac"
+  },
+  {
+    "AreaID": 282,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Crushridge Hold"
+  },
+  {
+    "AreaID": 283,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Slaughter Hollow"
+  },
+  {
+    "AreaID": 284,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "The Uplands"
+  },
+  {
+    "AreaID": 285,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Southpoint Tower"
+  },
+  {
+    "AreaID": 286,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Hillsbrad Fields"
+  },
+  {
+    "AreaID": 287,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Hillsbrad"
+  },
+  {
+    "AreaID": 288,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Azurelode Mine"
+  },
+  {
+    "AreaID": 289,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Nethander Stead"
+  },
+  {
+    "AreaID": 290,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Dun Garok"
+  },
+  {
+    "AreaID": 293,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Thoradin's Wall"
+  },
+  {
+    "AreaID": 294,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Eastern Strand"
+  },
+  {
+    "AreaID": 295,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Western Strand"
+  },
+  {
+    "AreaID": 296,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "South Seas UNUSED"
+  },
+  {
+    "AreaID": 297,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Jaguero Isle"
+  },
+  {
+    "AreaID": 298,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Baradin Bay"
+  },
+  {
+    "AreaID": 299,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Menethil Bay"
+  },
+  {
+    "AreaID": 300,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "Misty Reed Strand"
+  },
+  {
+    "AreaID": 301,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "The Savage Coast"
+  },
+  {
+    "AreaID": 302,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "The Crystal Shore"
+  },
+  {
+    "AreaID": 303,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Shell Beach"
+  },
+  {
+    "AreaID": 305,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "North Tide's Run"
+  },
+  {
+    "AreaID": 306,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "South Tide's Run"
+  },
+  {
+    "AreaID": 307,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "The Overlook Cliffs"
+  },
+  {
+    "AreaID": 308,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "The Forbidding Sea"
+  },
+  {
+    "AreaID": 309,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Ironbeard's Tomb"
+  },
+  {
+    "AreaID": 310,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Crystalvein Mine"
+  },
+  {
+    "AreaID": 311,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Ruins of Aboraz"
+  },
+  {
+    "AreaID": 312,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Janeiro's Point"
+  },
+  {
+    "AreaID": 313,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Northfold Manor"
+  },
+  {
+    "AreaID": 314,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Go'Shek Farm"
+  },
+  {
+    "AreaID": 315,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Dabyrie's Farmstead"
+  },
+  {
+    "AreaID": 316,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Boulderfist Hall"
+  },
+  {
+    "AreaID": 317,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Witherbark Village"
+  },
+  {
+    "AreaID": 318,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Drywhisker Gorge"
+  },
+  {
+    "AreaID": 320,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Refuge Pointe"
+  },
+  {
+    "AreaID": 321,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Hammerfall"
+  },
+  {
+    "AreaID": 322,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Blackwater Shipwrecks"
+  },
+  {
+    "AreaID": 323,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "O'Breen's Camp"
+  },
+  {
+    "AreaID": 324,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Stromgarde Keep"
+  },
+  {
+    "AreaID": 325,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "The Tower of Arathor"
+  },
+  {
+    "AreaID": 326,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "The Sanctum"
+  },
+  {
+    "AreaID": 327,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Faldir's Cove"
+  },
+  {
+    "AreaID": 328,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "The Drowned Reef"
+  },
+  {
+    "AreaID": 330,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Thandol Span"
+  },
+  {
+    "AreaID": 331,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Ashenvale"
+  },
+  {
+    "AreaID": 332,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 333,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Circle of East Binding"
+  },
+  {
+    "AreaID": 334,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Circle of West Binding"
+  },
+  {
+    "AreaID": 335,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Circle of Inner Binding"
+  },
+  {
+    "AreaID": 336,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Circle of Outer Binding"
+  },
+  {
+    "AreaID": 337,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Apocryphan's Rest"
+  },
+  {
+    "AreaID": 338,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Angor Fortress"
+  },
+  {
+    "AreaID": 339,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Lethlor Ravine"
+  },
+  {
+    "AreaID": 340,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Kargath"
+  },
+  {
+    "AreaID": 341,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Camp Kosh"
+  },
+  {
+    "AreaID": 342,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Camp Boff"
+  },
+  {
+    "AreaID": 343,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Camp Wurg"
+  },
+  {
+    "AreaID": 344,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Camp Cagg"
+  },
+  {
+    "AreaID": 345,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Agmond's End"
+  },
+  {
+    "AreaID": 346,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Hammertoe's Digsite"
+  },
+  {
+    "AreaID": 347,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Dustbelch Grotto"
+  },
+  {
+    "AreaID": 348,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Aerie Peak"
+  },
+  {
+    "AreaID": 349,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Wildhammer Keep"
+  },
+  {
+    "AreaID": 350,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Quel'Danil Lodge"
+  },
+  {
+    "AreaID": 351,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Skulk Rock"
+  },
+  {
+    "AreaID": 352,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Zun'watha"
+  },
+  {
+    "AreaID": 353,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Shadra'Alor"
+  },
+  {
+    "AreaID": 354,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Jintha'Alor"
+  },
+  {
+    "AreaID": 355,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "The Altar of Zul"
+  },
+  {
+    "AreaID": 356,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Seradane"
+  },
+  {
+    "AreaID": 357,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Feralas"
+  },
+  {
+    "AreaID": 358,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Brambleblade Ravine"
+  },
+  {
+    "AreaID": 359,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Bael Modan"
+  },
+  {
+    "AreaID": 360,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "The Venture Co. Mine"
+  },
+  {
+    "AreaID": 361,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Felwood"
+  },
+  {
+    "AreaID": 362,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Razor Hill"
+  },
+  {
+    "AreaID": 363,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Valley of Trials"
+  },
+  {
+    "AreaID": 364,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "The Den"
+  },
+  {
+    "AreaID": 365,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Burning Blade Coven"
+  },
+  {
+    "AreaID": 366,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Kolkar Crag"
+  },
+  {
+    "AreaID": 367,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Sen'jin Village"
+  },
+  {
+    "AreaID": 368,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Echo Isles"
+  },
+  {
+    "AreaID": 369,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Thunder Ridge"
+  },
+  {
+    "AreaID": 370,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Drygulch Ravine"
+  },
+  {
+    "AreaID": 371,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Dustwind Cave"
+  },
+  {
+    "AreaID": 372,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Tiragarde Keep"
+  },
+  {
+    "AreaID": 373,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Scuttle Coast"
+  },
+  {
+    "AreaID": 374,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Bladefist Bay"
+  },
+  {
+    "AreaID": 375,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Deadeye Shore"
+  },
+  {
+    "AreaID": 377,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Southfury River"
+  },
+  {
+    "AreaID": 378,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Camp Taurajo"
+  },
+  {
+    "AreaID": 379,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Far Watch Post"
+  },
+  {
+    "AreaID": 380,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "The Crossroads"
+  },
+  {
+    "AreaID": 381,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Boulder Lode Mine"
+  },
+  {
+    "AreaID": 382,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "The Sludge Fen"
+  },
+  {
+    "AreaID": 383,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "The Dry Hills"
+  },
+  {
+    "AreaID": 384,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Dreadmist Peak"
+  },
+  {
+    "AreaID": 385,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Northwatch Hold"
+  },
+  {
+    "AreaID": 386,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "The Forgotten Pools"
+  },
+  {
+    "AreaID": 387,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Lushwater Oasis"
+  },
+  {
+    "AreaID": 388,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "The Stagnant Oasis"
+  },
+  {
+    "AreaID": 390,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Field of Giants"
+  },
+  {
+    "AreaID": 391,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "The Merchant Coast"
+  },
+  {
+    "AreaID": 392,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Ratchet"
+  },
+  {
+    "AreaID": 393,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Darkspear Strand"
+  },
+  {
+    "AreaID": 394,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Darrowmere Lake UNUSED"
+  },
+  {
+    "AreaID": 395,
+    "MapID": 0,
+    "ParentAreaId": 394,
+    "AreaName": "Caer Darrow UNUSED"
+  },
+  {
+    "AreaID": 396,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Winterhoof Water Well"
+  },
+  {
+    "AreaID": 397,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Thunderhorn Water Well"
+  },
+  {
+    "AreaID": 398,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Wildmane Water Well"
+  },
+  {
+    "AreaID": 399,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Skyline Ridge"
+  },
+  {
+    "AreaID": 400,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Thousand Needles"
+  },
+  {
+    "AreaID": 401,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "The Tidus Stair"
+  },
+  {
+    "AreaID": 403,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Shady Rest Inn"
+  },
+  {
+    "AreaID": 404,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Bael'dun Digsite"
+  },
+  {
+    "AreaID": 405,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Desolace"
+  },
+  {
+    "AreaID": 406,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Stonetalon Mountains"
+  },
+  {
+    "AreaID": 407,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Orgrimmar UNUSED"
+  },
+  {
+    "AreaID": 408,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Gillijim's Isle"
+  },
+  {
+    "AreaID": 409,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Island of Doctor Lapidis"
+  },
+  {
+    "AreaID": 410,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Razorwind Canyon"
+  },
+  {
+    "AreaID": 411,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Bathran's Haunt"
+  },
+  {
+    "AreaID": 412,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "The Ruins of Ordil'Aran"
+  },
+  {
+    "AreaID": 413,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Maestra's Post"
+  },
+  {
+    "AreaID": 414,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "The Zoram Strand"
+  },
+  {
+    "AreaID": 415,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Astranaar"
+  },
+  {
+    "AreaID": 416,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "The Shrine of Aessina"
+  },
+  {
+    "AreaID": 417,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Fire Scar Shrine"
+  },
+  {
+    "AreaID": 418,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "The Ruins of Stardust"
+  },
+  {
+    "AreaID": 419,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "The Howling Vale"
+  },
+  {
+    "AreaID": 420,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Silverwind Refuge"
+  },
+  {
+    "AreaID": 421,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Mystral Lake"
+  },
+  {
+    "AreaID": 422,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Fallen Sky Lake"
+  },
+  {
+    "AreaID": 424,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Iris Lake"
+  },
+  {
+    "AreaID": 425,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Moonwell"
+  },
+  {
+    "AreaID": 426,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Raynewood Retreat"
+  },
+  {
+    "AreaID": 427,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "The Shady Nook"
+  },
+  {
+    "AreaID": 428,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Night Run"
+  },
+  {
+    "AreaID": 429,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Xavian"
+  },
+  {
+    "AreaID": 430,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Satyrnaar"
+  },
+  {
+    "AreaID": 431,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Splintertree Post"
+  },
+  {
+    "AreaID": 432,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "The Dor'Danil Barrow Den"
+  },
+  {
+    "AreaID": 433,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Falfarren River"
+  },
+  {
+    "AreaID": 434,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Felfire Hill"
+  },
+  {
+    "AreaID": 435,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Demon Fall Canyon"
+  },
+  {
+    "AreaID": 436,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Demon Fall Ridge"
+  },
+  {
+    "AreaID": 437,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Warsong Lumber Camp"
+  },
+  {
+    "AreaID": 438,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Bough Shadow"
+  },
+  {
+    "AreaID": 439,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "The Shimmering Flats"
+  },
+  {
+    "AreaID": 440,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Tanaris"
+  },
+  {
+    "AreaID": 441,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Lake Falathim"
+  },
+  {
+    "AreaID": 442,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Auberdine"
+  },
+  {
+    "AreaID": 443,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Ruins of Mathystra"
+  },
+  {
+    "AreaID": 444,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Tower of Althalaxx"
+  },
+  {
+    "AreaID": 445,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Cliffspring Falls"
+  },
+  {
+    "AreaID": 446,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Bashal'Aran"
+  },
+  {
+    "AreaID": 447,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Ameth'Aran"
+  },
+  {
+    "AreaID": 448,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Grove of the Ancients"
+  },
+  {
+    "AreaID": 449,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "The Master's Glaive"
+  },
+  {
+    "AreaID": 450,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Remtravel's Excavation"
+  },
+  {
+    "AreaID": 452,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Mist's Edge"
+  },
+  {
+    "AreaID": 453,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "The Long Wash"
+  },
+  {
+    "AreaID": 454,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Wildbend River"
+  },
+  {
+    "AreaID": 455,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Blackwood Den"
+  },
+  {
+    "AreaID": 456,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Cliffspring River"
+  },
+  {
+    "AreaID": 457,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "The Veiled Sea"
+  },
+  {
+    "AreaID": 458,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Gold Road"
+  },
+  {
+    "AreaID": 459,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Scarlet Watch Post"
+  },
+  {
+    "AreaID": 460,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Sun Rock Retreat"
+  },
+  {
+    "AreaID": 461,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Windshear Crag"
+  },
+  {
+    "AreaID": 463,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Cragpool Lake"
+  },
+  {
+    "AreaID": 464,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Mirkfallon Lake"
+  },
+  {
+    "AreaID": 465,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "The Charred Vale"
+  },
+  {
+    "AreaID": 466,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Valley of the Bloodfuries"
+  },
+  {
+    "AreaID": 467,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Stonetalon Peak"
+  },
+  {
+    "AreaID": 468,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "The Talon Den"
+  },
+  {
+    "AreaID": 469,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Greatwood Vale"
+  },
+  {
+    "AreaID": 470,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Thunder Bluff UNUSED"
+  },
+  {
+    "AreaID": 471,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Brave Wind Mesa"
+  },
+  {
+    "AreaID": 472,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Fire Stone Mesa"
+  },
+  {
+    "AreaID": 473,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Mantle Rock"
+  },
+  {
+    "AreaID": 474,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Galak Camp"
+  },
+  {
+    "AreaID": 475,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Spirit RiseUNUSED"
+  },
+  {
+    "AreaID": 476,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Elder RiseUNUSED"
+  },
+  {
+    "AreaID": 477,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Ruins of Jubuwal"
+  },
+  {
+    "AreaID": 478,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Pools of Arlithrien"
+  },
+  {
+    "AreaID": 479,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "The Rustmaul Dig Site"
+  },
+  {
+    "AreaID": 480,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Camp E'thok"
+  },
+  {
+    "AreaID": 481,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Splithoof Crag"
+  },
+  {
+    "AreaID": 482,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Highperch"
+  },
+  {
+    "AreaID": 483,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "The Screeching Canyon"
+  },
+  {
+    "AreaID": 484,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Freewind Post"
+  },
+  {
+    "AreaID": 485,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "The Great Lift"
+  },
+  {
+    "AreaID": 486,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Galak Hold"
+  },
+  {
+    "AreaID": 487,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Roguefeather Den"
+  },
+  {
+    "AreaID": 488,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "The Weathered Nook"
+  },
+  {
+    "AreaID": 489,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Thalanaar"
+  },
+  {
+    "AreaID": 490,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Un'Goro Crater"
+  },
+  {
+    "AreaID": 491,
+    "MapID": 47,
+    "ParentAreaId": 0,
+    "AreaName": "Razorfen Kraul"
+  },
+  {
+    "AreaID": 492,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Raven Hill Cemetery"
+  },
+  {
+    "AreaID": 493,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Moonglade"
+  },
+  {
+    "AreaID": 495,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "DELETE ME"
+  },
+  {
+    "AreaID": 496,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Brackenwall Village"
+  },
+  {
+    "AreaID": 497,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Swamplight Manor"
+  },
+  {
+    "AreaID": 498,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Bloodfen Burrow"
+  },
+  {
+    "AreaID": 499,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Darkmist Cavern"
+  },
+  {
+    "AreaID": 500,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Moggle Point"
+  },
+  {
+    "AreaID": 501,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Beezil's Wreck"
+  },
+  {
+    "AreaID": 502,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Witch Hill"
+  },
+  {
+    "AreaID": 503,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Sentry Point"
+  },
+  {
+    "AreaID": 504,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "North Point Tower"
+  },
+  {
+    "AreaID": 505,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "West Point Tower"
+  },
+  {
+    "AreaID": 506,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Lost Point"
+  },
+  {
+    "AreaID": 507,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Bluefen"
+  },
+  {
+    "AreaID": 508,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Stonemaul Ruins"
+  },
+  {
+    "AreaID": 509,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "The Den of Flame"
+  },
+  {
+    "AreaID": 510,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "The Dragonmurk"
+  },
+  {
+    "AreaID": 511,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Wyrmbog"
+  },
+  {
+    "AreaID": 512,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Onyxia's Lair UNUSED"
+  },
+  {
+    "AreaID": 513,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Theramore Isle"
+  },
+  {
+    "AreaID": 514,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Foothold Citadel"
+  },
+  {
+    "AreaID": 515,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Ironclad Prison"
+  },
+  {
+    "AreaID": 516,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Dustwallow Bay"
+  },
+  {
+    "AreaID": 517,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Tidefury Cove"
+  },
+  {
+    "AreaID": 518,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Dreadmurk Shore"
+  },
+  {
+    "AreaID": 536,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Addle's Stead"
+  },
+  {
+    "AreaID": 537,
+    "MapID": 1,
+    "ParentAreaId": 490,
+    "AreaName": "Fire Plume Ridge"
+  },
+  {
+    "AreaID": 538,
+    "MapID": 1,
+    "ParentAreaId": 490,
+    "AreaName": "Lakkari Tar Pits"
+  },
+  {
+    "AreaID": 539,
+    "MapID": 1,
+    "ParentAreaId": 490,
+    "AreaName": "Terror Run"
+  },
+  {
+    "AreaID": 540,
+    "MapID": 1,
+    "ParentAreaId": 490,
+    "AreaName": "The Slithering Scar"
+  },
+  {
+    "AreaID": 541,
+    "MapID": 1,
+    "ParentAreaId": 490,
+    "AreaName": "Marshal's Refuge"
+  },
+  {
+    "AreaID": 542,
+    "MapID": 1,
+    "ParentAreaId": 490,
+    "AreaName": "Fungal Rock"
+  },
+  {
+    "AreaID": 543,
+    "MapID": 1,
+    "ParentAreaId": 490,
+    "AreaName": "Golakka Hot Springs"
+  },
+  {
+    "AreaID": 556,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "The Loch"
+  },
+  {
+    "AreaID": 576,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Beggar's Haunt"
+  },
+  {
+    "AreaID": 596,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Kodo Graveyard"
+  },
+  {
+    "AreaID": 597,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Ghost Walker Post"
+  },
+  {
+    "AreaID": 598,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Sar'theris Strand"
+  },
+  {
+    "AreaID": 599,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Thunder Axe Fortress"
+  },
+  {
+    "AreaID": 600,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Bolgan's Hole"
+  },
+  {
+    "AreaID": 602,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Mannoroc Coven"
+  },
+  {
+    "AreaID": 603,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Sargeron"
+  },
+  {
+    "AreaID": 604,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Magram Village"
+  },
+  {
+    "AreaID": 606,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Gelkis Village"
+  },
+  {
+    "AreaID": 607,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Valley of Spears"
+  },
+  {
+    "AreaID": 608,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Nijel's Point"
+  },
+  {
+    "AreaID": 609,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Kolkar Village"
+  },
+  {
+    "AreaID": 616,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Mount Hyjal"
+  },
+  {
+    "AreaID": 618,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Winterspring"
+  },
+  {
+    "AreaID": 636,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Blackwolf River"
+  },
+  {
+    "AreaID": 637,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Kodo Rock"
+  },
+  {
+    "AreaID": 638,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Hidden Path"
+  },
+  {
+    "AreaID": 639,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Spirit Rock"
+  },
+  {
+    "AreaID": 640,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Shrine of the Dormant Flame"
+  },
+  {
+    "AreaID": 656,
+    "MapID": 1,
+    "ParentAreaId": 493,
+    "AreaName": "Lake Elune'ara"
+  },
+  {
+    "AreaID": 657,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "The Harborage"
+  },
+  {
+    "AreaID": 696,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Craftsmen's Terrace UNUSED"
+  },
+  {
+    "AreaID": 697,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Tradesmen's Terrace UNUSED"
+  },
+  {
+    "AreaID": 698,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "The Temple Gardens UNUSED"
+  },
+  {
+    "AreaID": 699,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Temple of Elune UNUSED"
+  },
+  {
+    "AreaID": 700,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Cenarion Enclave UNUSED"
+  },
+  {
+    "AreaID": 701,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Warrior's Terrace UNUSED"
+  },
+  {
+    "AreaID": 702,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Rut'theran Village"
+  },
+  {
+    "AreaID": 716,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Ironband's Compound"
+  },
+  {
+    "AreaID": 717,
+    "MapID": 34,
+    "ParentAreaId": 0,
+    "AreaName": "The Stockade"
+  },
+  {
+    "AreaID": 718,
+    "MapID": 43,
+    "ParentAreaId": 0,
+    "AreaName": "Wailing Caverns"
+  },
+  {
+    "AreaID": 719,
+    "MapID": 48,
+    "ParentAreaId": 0,
+    "AreaName": "Blackfathom Deeps"
+  },
+  {
+    "AreaID": 720,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Fray Island"
+  },
+  {
+    "AreaID": 721,
+    "MapID": 90,
+    "ParentAreaId": 0,
+    "AreaName": "Gnomeregan"
+  },
+  {
+    "AreaID": 722,
+    "MapID": 129,
+    "ParentAreaId": 0,
+    "AreaName": "Razorfen Downs"
+  },
+  {
+    "AreaID": 736,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "Ban'ethil Hollow"
+  },
+  {
+    "AreaID": 796,
+    "MapID": 189,
+    "ParentAreaId": 0,
+    "AreaName": "Scarlet Monastery"
+  },
+  {
+    "AreaID": 797,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Jerod's Landing"
+  },
+  {
+    "AreaID": 798,
+    "MapID": 0,
+    "ParentAreaId": 12,
+    "AreaName": "Ridgepoint Tower"
+  },
+  {
+    "AreaID": 799,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "The Darkened Bank"
+  },
+  {
+    "AreaID": 800,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Coldridge Pass"
+  },
+  {
+    "AreaID": 801,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Chill Breeze Valley"
+  },
+  {
+    "AreaID": 802,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Shimmer Ridge"
+  },
+  {
+    "AreaID": 803,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Amberstill Ranch"
+  },
+  {
+    "AreaID": 804,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "The Tundrid Hills"
+  },
+  {
+    "AreaID": 805,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "South Gate Pass"
+  },
+  {
+    "AreaID": 806,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "South Gate Outpost"
+  },
+  {
+    "AreaID": 807,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "North Gate Pass"
+  },
+  {
+    "AreaID": 808,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "North Gate Outpost"
+  },
+  {
+    "AreaID": 809,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Gates of Ironforge"
+  },
+  {
+    "AreaID": 810,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Stillwater Pond"
+  },
+  {
+    "AreaID": 811,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Nightmare Vale"
+  },
+  {
+    "AreaID": 812,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Venomweb Vale"
+  },
+  {
+    "AreaID": 813,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "The Bulwark"
+  },
+  {
+    "AreaID": 814,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Southfury River"
+  },
+  {
+    "AreaID": 815,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Southfury River"
+  },
+  {
+    "AreaID": 816,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Razormane Grounds"
+  },
+  {
+    "AreaID": 817,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Skull Rock"
+  },
+  {
+    "AreaID": 818,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Palemane Rock"
+  },
+  {
+    "AreaID": 819,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Windfury Ridge"
+  },
+  {
+    "AreaID": 820,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "The Golden Plains"
+  },
+  {
+    "AreaID": 821,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "The Rolling Plains"
+  },
+  {
+    "AreaID": 836,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Dun Algaz"
+  },
+  {
+    "AreaID": 837,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "Dun Algaz"
+  },
+  {
+    "AreaID": 838,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "North Gate Pass"
+  },
+  {
+    "AreaID": 839,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "South Gate Pass"
+  },
+  {
+    "AreaID": 856,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Twilight Grove"
+  },
+  {
+    "AreaID": 876,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "GM Island"
+  },
+  {
+    "AreaID": 877,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Delete ME"
+  },
+  {
+    "AreaID": 878,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Southfury River"
+  },
+  {
+    "AreaID": 879,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Southfury River"
+  },
+  {
+    "AreaID": 880,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Thandol Span"
+  },
+  {
+    "AreaID": 881,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Thandol Span"
+  },
+  {
+    "AreaID": 896,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Purgation Isle"
+  },
+  {
+    "AreaID": 916,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "The Jansen Stead"
+  },
+  {
+    "AreaID": 917,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "The Dead Acre"
+  },
+  {
+    "AreaID": 918,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "The Molsen Farm"
+  },
+  {
+    "AreaID": 919,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Stendel's Pond"
+  },
+  {
+    "AreaID": 920,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "The Dagger Hills"
+  },
+  {
+    "AreaID": 921,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Demont's Place"
+  },
+  {
+    "AreaID": 922,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "The Dust Plains"
+  },
+  {
+    "AreaID": 923,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "Stonesplinter Valley"
+  },
+  {
+    "AreaID": 924,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "Valley of Kings"
+  },
+  {
+    "AreaID": 925,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "Algaz Station"
+  },
+  {
+    "AreaID": 926,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "Bucklebree Farm"
+  },
+  {
+    "AreaID": 927,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "The Shining Strand"
+  },
+  {
+    "AreaID": 928,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "North Tide's Hollow"
+  },
+  {
+    "AreaID": 936,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "Grizzlepaw Ridge"
+  },
+  {
+    "AreaID": 956,
+    "MapID": 169,
+    "ParentAreaId": 0,
+    "AreaName": "The Verdant Fields"
+  },
+  {
+    "AreaID": 976,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Gadgetzan"
+  },
+  {
+    "AreaID": 977,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Steamwheedle Port"
+  },
+  {
+    "AreaID": 978,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Zul'Farrak"
+  },
+  {
+    "AreaID": 979,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Sandsorrow Watch"
+  },
+  {
+    "AreaID": 980,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Thistleshrub Valley"
+  },
+  {
+    "AreaID": 981,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "The Gaping Chasm"
+  },
+  {
+    "AreaID": 982,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "The Noxious Lair"
+  },
+  {
+    "AreaID": 983,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Dunemaul Compound"
+  },
+  {
+    "AreaID": 984,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Eastmoon Ruins"
+  },
+  {
+    "AreaID": 985,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Waterspring Field"
+  },
+  {
+    "AreaID": 986,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Zalashji's Den"
+  },
+  {
+    "AreaID": 987,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Land's End Beach"
+  },
+  {
+    "AreaID": 988,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Wavestrider Beach"
+  },
+  {
+    "AreaID": 989,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Uldum"
+  },
+  {
+    "AreaID": 990,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Valley of the Watchers"
+  },
+  {
+    "AreaID": 991,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Gunstan's Post"
+  },
+  {
+    "AreaID": 992,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Southmoon Ruins"
+  },
+  {
+    "AreaID": 996,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Render's Camp"
+  },
+  {
+    "AreaID": 997,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Render's Valley"
+  },
+  {
+    "AreaID": 998,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Render's Rock"
+  },
+  {
+    "AreaID": 999,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Stonewatch Tower"
+  },
+  {
+    "AreaID": 1000,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Galardell Valley"
+  },
+  {
+    "AreaID": 1001,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Lakeridge Highway"
+  },
+  {
+    "AreaID": 1002,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Three Corners"
+  },
+  {
+    "AreaID": 1016,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Direforge Hill"
+  },
+  {
+    "AreaID": 1017,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Raptor Ridge"
+  },
+  {
+    "AreaID": 1018,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Black Channel Marsh"
+  },
+  {
+    "AreaID": 1019,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "The Green Belt"
+  },
+  {
+    "AreaID": 1020,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Mosshide Fen"
+  },
+  {
+    "AreaID": 1021,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Thelgen Rock"
+  },
+  {
+    "AreaID": 1022,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Bluegill Marsh"
+  },
+  {
+    "AreaID": 1023,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Saltspray Glen"
+  },
+  {
+    "AreaID": 1024,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Sundown Marsh"
+  },
+  {
+    "AreaID": 1025,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "The Green Belt"
+  },
+  {
+    "AreaID": 1036,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Angerfang Encampment"
+  },
+  {
+    "AreaID": 1037,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Grim Batol"
+  },
+  {
+    "AreaID": 1038,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Dragonmaw Gates"
+  },
+  {
+    "AreaID": 1039,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "The Lost Fleet"
+  },
+  {
+    "AreaID": 1056,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Darrow Hill"
+  },
+  {
+    "AreaID": 1057,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "Thoradin's Wall"
+  },
+  {
+    "AreaID": 1076,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Webwinder Path"
+  },
+  {
+    "AreaID": 1097,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "The Hushed Bank"
+  },
+  {
+    "AreaID": 1098,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Manor Mistmantle"
+  },
+  {
+    "AreaID": 1099,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Camp Mojache"
+  },
+  {
+    "AreaID": 1100,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Grimtotem Compound"
+  },
+  {
+    "AreaID": 1101,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "The Writhing Deep"
+  },
+  {
+    "AreaID": 1102,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Wildwind Lake"
+  },
+  {
+    "AreaID": 1103,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Gordunni Outpost"
+  },
+  {
+    "AreaID": 1104,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Mok'Gordun"
+  },
+  {
+    "AreaID": 1105,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Feral Scar Vale"
+  },
+  {
+    "AreaID": 1106,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Frayfeather Highlands"
+  },
+  {
+    "AreaID": 1107,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Idlewind Lake"
+  },
+  {
+    "AreaID": 1108,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "The Forgotten Coast"
+  },
+  {
+    "AreaID": 1109,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "East Pillar"
+  },
+  {
+    "AreaID": 1110,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "West Pillar"
+  },
+  {
+    "AreaID": 1111,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Dream Bough"
+  },
+  {
+    "AreaID": 1112,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Jademir Lake"
+  },
+  {
+    "AreaID": 1113,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Oneiros"
+  },
+  {
+    "AreaID": 1114,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Ruins of Ravenwind"
+  },
+  {
+    "AreaID": 1115,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Rage Scar Hold"
+  },
+  {
+    "AreaID": 1116,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Feathermoon Stronghold"
+  },
+  {
+    "AreaID": 1117,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Ruins of Solarsal"
+  },
+  {
+    "AreaID": 1118,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Lower Wilds UNUSED"
+  },
+  {
+    "AreaID": 1119,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "The Twin Colossals"
+  },
+  {
+    "AreaID": 1120,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Sardor Isle"
+  },
+  {
+    "AreaID": 1121,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Isle of Dread"
+  },
+  {
+    "AreaID": 1136,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "High Wilderness"
+  },
+  {
+    "AreaID": 1137,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Lower Wilds"
+  },
+  {
+    "AreaID": 1156,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Southern Barrens"
+  },
+  {
+    "AreaID": 1157,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Southern Gold Road"
+  },
+  {
+    "AreaID": 1176,
+    "MapID": 209,
+    "ParentAreaId": 0,
+    "AreaName": "Zul'Farrak"
+  },
+  {
+    "AreaID": 1196,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "UNUSEDAlcaz Island"
+  },
+  {
+    "AreaID": 1216,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Blackmaw Hold"
+  },
+  {
+    "AreaID": 1217,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Vanndir Encampment"
+  },
+  {
+    "AreaID": 1218,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "TESTAzshara"
+  },
+  {
+    "AreaID": 1219,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Legashi Encampment"
+  },
+  {
+    "AreaID": 1220,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Thalassian Base Camp"
+  },
+  {
+    "AreaID": 1221,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Ruins of Eldarath"
+  },
+  {
+    "AreaID": 1222,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Hetaera's Clutch"
+  },
+  {
+    "AreaID": 1223,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Temple of Zin-Malor"
+  },
+  {
+    "AreaID": 1224,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Bear's Head"
+  },
+  {
+    "AreaID": 1225,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Ursolan"
+  },
+  {
+    "AreaID": 1226,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Temple of Arkkoran"
+  },
+  {
+    "AreaID": 1227,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Bay of Storms"
+  },
+  {
+    "AreaID": 1228,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "The Shattered Strand"
+  },
+  {
+    "AreaID": 1229,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Tower of Eldara"
+  },
+  {
+    "AreaID": 1230,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Jagged Reef"
+  },
+  {
+    "AreaID": 1231,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Southridge Beach"
+  },
+  {
+    "AreaID": 1232,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Ravencrest Monument"
+  },
+  {
+    "AreaID": 1233,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Forlorn Ridge"
+  },
+  {
+    "AreaID": 1234,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Lake Mennar"
+  },
+  {
+    "AreaID": 1235,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Shadowsong Shrine"
+  },
+  {
+    "AreaID": 1236,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Haldarr Encampment"
+  },
+  {
+    "AreaID": 1237,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Valormok"
+  },
+  {
+    "AreaID": 1256,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "The Ruined Reaches"
+  },
+  {
+    "AreaID": 1276,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "The Talondeep Path"
+  },
+  {
+    "AreaID": 1277,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "The Talondeep Path"
+  },
+  {
+    "AreaID": 1296,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Rocktusk Farm"
+  },
+  {
+    "AreaID": 1297,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Jaggedswine Farm"
+  },
+  {
+    "AreaID": 1316,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Razorfen Downs"
+  },
+  {
+    "AreaID": 1336,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Lost Rigger Cove"
+  },
+  {
+    "AreaID": 1337,
+    "MapID": 70,
+    "ParentAreaId": 0,
+    "AreaName": "Uldaman"
+  },
+  {
+    "AreaID": 1338,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "Lordamere Lake"
+  },
+  {
+    "AreaID": 1339,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Lordamere Lake"
+  },
+  {
+    "AreaID": 1357,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Gallows' Corner"
+  },
+  {
+    "AreaID": 1377,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Silithus"
+  },
+  {
+    "AreaID": 1397,
+    "MapID": 169,
+    "ParentAreaId": 0,
+    "AreaName": "Emerald Forest"
+  },
+  {
+    "AreaID": 1417,
+    "MapID": 109,
+    "ParentAreaId": 0,
+    "AreaName": "Sunken Temple"
+  },
+  {
+    "AreaID": 1437,
+    "MapID": 0,
+    "ParentAreaId": 4,
+    "AreaName": "Dreadmaul Hold"
+  },
+  {
+    "AreaID": 1438,
+    "MapID": 0,
+    "ParentAreaId": 4,
+    "AreaName": "Nethergarde Keep"
+  },
+  {
+    "AreaID": 1439,
+    "MapID": 0,
+    "ParentAreaId": 4,
+    "AreaName": "Dreadmaul Post"
+  },
+  {
+    "AreaID": 1440,
+    "MapID": 0,
+    "ParentAreaId": 4,
+    "AreaName": "Serpent's Coil"
+  },
+  {
+    "AreaID": 1441,
+    "MapID": 0,
+    "ParentAreaId": 4,
+    "AreaName": "Altar of Storms"
+  },
+  {
+    "AreaID": 1442,
+    "MapID": 0,
+    "ParentAreaId": 51,
+    "AreaName": "Firewatch Ridge"
+  },
+  {
+    "AreaID": 1443,
+    "MapID": 0,
+    "ParentAreaId": 51,
+    "AreaName": "The Slag Pit"
+  },
+  {
+    "AreaID": 1444,
+    "MapID": 0,
+    "ParentAreaId": 51,
+    "AreaName": "The Sea of Cinders"
+  },
+  {
+    "AreaID": 1445,
+    "MapID": 0,
+    "ParentAreaId": 51,
+    "AreaName": "Blackrock Mountain"
+  },
+  {
+    "AreaID": 1446,
+    "MapID": 0,
+    "ParentAreaId": 51,
+    "AreaName": "Thorium Point"
+  },
+  {
+    "AreaID": 1457,
+    "MapID": 0,
+    "ParentAreaId": 4,
+    "AreaName": "Garrison Armory"
+  },
+  {
+    "AreaID": 1477,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "The Temple of Atal'Hakkar"
+  },
+  {
+    "AreaID": 1497,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Undercity"
+  },
+  {
+    "AreaID": 1517,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Uldaman"
+  },
+  {
+    "AreaID": 1518,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "Not Used Deadmines"
+  },
+  {
+    "AreaID": 1519,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Stormwind City"
+  },
+  {
+    "AreaID": 1537,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Ironforge"
+  },
+  {
+    "AreaID": 1557,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Splithoof Hold"
+  },
+  {
+    "AreaID": 1577,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "The Cape of Stranglethorn"
+  },
+  {
+    "AreaID": 1578,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Southern Savage Coast"
+  },
+  {
+    "AreaID": 1579,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Unused The Deadmines 002"
+  },
+  {
+    "AreaID": 1580,
+    "MapID": 0,
+    "ParentAreaId": 1579,
+    "AreaName": "Unused Ironclad Cove 003"
+  },
+  {
+    "AreaID": 1581,
+    "MapID": 36,
+    "ParentAreaId": 0,
+    "AreaName": "The Deadmines"
+  },
+  {
+    "AreaID": 1582,
+    "MapID": 36,
+    "ParentAreaId": 1581,
+    "AreaName": "Ironclad Cove"
+  },
+  {
+    "AreaID": 1583,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Blackrock Spire"
+  },
+  {
+    "AreaID": 1584,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Blackrock Depths"
+  },
+  {
+    "AreaID": 1597,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Raptor Grounds UNUSED"
+  },
+  {
+    "AreaID": 1598,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Grol'dom Farm UNUSED"
+  },
+  {
+    "AreaID": 1599,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Mor'shan Base Camp"
+  },
+  {
+    "AreaID": 1600,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Honor's Stand UNUSED"
+  },
+  {
+    "AreaID": 1601,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Blackthorn Ridge UNUSED"
+  },
+  {
+    "AreaID": 1602,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Bramblescar UNUSED"
+  },
+  {
+    "AreaID": 1603,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Agama'gor UNUSED"
+  },
+  {
+    "AreaID": 1617,
+    "MapID": 0,
+    "ParentAreaId": 1519,
+    "AreaName": "Valley of Heroes"
+  },
+  {
+    "AreaID": 1637,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Orgrimmar"
+  },
+  {
+    "AreaID": 1638,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Thunder Bluff"
+  },
+  {
+    "AreaID": 1639,
+    "MapID": 1,
+    "ParentAreaId": 1638,
+    "AreaName": "Elder Rise"
+  },
+  {
+    "AreaID": 1640,
+    "MapID": 1,
+    "ParentAreaId": 1638,
+    "AreaName": "Spirit Rise"
+  },
+  {
+    "AreaID": 1641,
+    "MapID": 1,
+    "ParentAreaId": 1638,
+    "AreaName": "Hunter Rise"
+  },
+  {
+    "AreaID": 1657,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Darnassus"
+  },
+  {
+    "AreaID": 1658,
+    "MapID": 1,
+    "ParentAreaId": 1657,
+    "AreaName": "Cenarion Enclave"
+  },
+  {
+    "AreaID": 1659,
+    "MapID": 1,
+    "ParentAreaId": 1657,
+    "AreaName": "Craftsmen's Terrace"
+  },
+  {
+    "AreaID": 1660,
+    "MapID": 1,
+    "ParentAreaId": 1657,
+    "AreaName": "Warrior's Terrace"
+  },
+  {
+    "AreaID": 1661,
+    "MapID": 1,
+    "ParentAreaId": 1657,
+    "AreaName": "The Temple Gardens"
+  },
+  {
+    "AreaID": 1662,
+    "MapID": 1,
+    "ParentAreaId": 1657,
+    "AreaName": "Tradesmen's Terrace"
+  },
+  {
+    "AreaID": 1677,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Gavin's Naze"
+  },
+  {
+    "AreaID": 1678,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Sofera's Naze"
+  },
+  {
+    "AreaID": 1679,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Corrahn's Dagger"
+  },
+  {
+    "AreaID": 1680,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "The Headland"
+  },
+  {
+    "AreaID": 1681,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Misty Shore"
+  },
+  {
+    "AreaID": 1682,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Dandred's Fold"
+  },
+  {
+    "AreaID": 1683,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Growless Cave"
+  },
+  {
+    "AreaID": 1684,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Chillwind Point"
+  },
+  {
+    "AreaID": 1697,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Raptor Grounds"
+  },
+  {
+    "AreaID": 1698,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Bramblescar"
+  },
+  {
+    "AreaID": 1699,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Thorn Hill"
+  },
+  {
+    "AreaID": 1700,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Agama'gor"
+  },
+  {
+    "AreaID": 1701,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Blackthorn Ridge"
+  },
+  {
+    "AreaID": 1702,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Honor's Stand"
+  },
+  {
+    "AreaID": 1703,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "The Mor'shan Rampart"
+  },
+  {
+    "AreaID": 1704,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Grol'dom Farm"
+  },
+  {
+    "AreaID": 1717,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Razorfen Kraul"
+  },
+  {
+    "AreaID": 1718,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "The Great Lift"
+  },
+  {
+    "AreaID": 1737,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Mistvale Valley"
+  },
+  {
+    "AreaID": 1738,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Nek'mani Wellspring"
+  },
+  {
+    "AreaID": 1739,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Bloodsail Compound"
+  },
+  {
+    "AreaID": 1740,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Venture Co. Base Camp"
+  },
+  {
+    "AreaID": 1741,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Gurubashi Arena"
+  },
+  {
+    "AreaID": 1742,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Spirit Den"
+  },
+  {
+    "AreaID": 1757,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "The Crimson Veil"
+  },
+  {
+    "AreaID": 1758,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "The Riptide"
+  },
+  {
+    "AreaID": 1759,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "The Damsel's Luck"
+  },
+  {
+    "AreaID": 1760,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Venture Co. Operations Center"
+  },
+  {
+    "AreaID": 1761,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Deadwood Village"
+  },
+  {
+    "AreaID": 1762,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Felpaw Village"
+  },
+  {
+    "AreaID": 1763,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Jaedenar"
+  },
+  {
+    "AreaID": 1764,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Bloodvenom River"
+  },
+  {
+    "AreaID": 1765,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Bloodvenom Falls"
+  },
+  {
+    "AreaID": 1766,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Shatter Scar Vale"
+  },
+  {
+    "AreaID": 1767,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Irontree Woods"
+  },
+  {
+    "AreaID": 1768,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Irontree Cavern"
+  },
+  {
+    "AreaID": 1769,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Timbermaw Hold"
+  },
+  {
+    "AreaID": 1770,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Shadow Hold"
+  },
+  {
+    "AreaID": 1771,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Shrine of the Deceiver"
+  },
+  {
+    "AreaID": 1777,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "Itharius's Cave"
+  },
+  {
+    "AreaID": 1778,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "Sorrowmurk"
+  },
+  {
+    "AreaID": 1779,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "Draenil'dur Village"
+  },
+  {
+    "AreaID": 1780,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "Splinterspear Junction"
+  },
+  {
+    "AreaID": 1797,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "Stagalbog"
+  },
+  {
+    "AreaID": 1798,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "The Shifting Mire"
+  },
+  {
+    "AreaID": 1817,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "Stagalbog Cave"
+  },
+  {
+    "AreaID": 1837,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Witherbark Caverns"
+  },
+  {
+    "AreaID": 1857,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Thoradin's Wall"
+  },
+  {
+    "AreaID": 1858,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "Boulder'gor"
+  },
+  {
+    "AreaID": 1877,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Valley of Fangs"
+  },
+  {
+    "AreaID": 1878,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "The Dustbowl"
+  },
+  {
+    "AreaID": 1879,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Mirage Flats"
+  },
+  {
+    "AreaID": 1880,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Featherbeard's Hovel"
+  },
+  {
+    "AreaID": 1881,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Shindigger's Camp"
+  },
+  {
+    "AreaID": 1882,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Plaguemist Ravine"
+  },
+  {
+    "AreaID": 1883,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Valorwind Lake"
+  },
+  {
+    "AreaID": 1884,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Agol'watha"
+  },
+  {
+    "AreaID": 1885,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Hiri'watha"
+  },
+  {
+    "AreaID": 1886,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "The Creeping Ruin"
+  },
+  {
+    "AreaID": 1887,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Bogen's Ledge"
+  },
+  {
+    "AreaID": 1897,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "The Maker's Terrace"
+  },
+  {
+    "AreaID": 1898,
+    "MapID": 0,
+    "ParentAreaId": 3,
+    "AreaName": "Dustwind Gulch"
+  },
+  {
+    "AreaID": 1917,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Shaol'watha"
+  },
+  {
+    "AreaID": 1937,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Noonshade Ruins"
+  },
+  {
+    "AreaID": 1938,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Broken Pillar"
+  },
+  {
+    "AreaID": 1939,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Abyssal Sands"
+  },
+  {
+    "AreaID": 1940,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Southbreak Shore"
+  },
+  {
+    "AreaID": 1941,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Caverns of Time"
+  },
+  {
+    "AreaID": 1942,
+    "MapID": 1,
+    "ParentAreaId": 490,
+    "AreaName": "The Marshlands"
+  },
+  {
+    "AreaID": 1943,
+    "MapID": 1,
+    "ParentAreaId": 490,
+    "AreaName": "Ironstone Plateau"
+  },
+  {
+    "AreaID": 1957,
+    "MapID": 0,
+    "ParentAreaId": 51,
+    "AreaName": "Blackchar Cave"
+  },
+  {
+    "AreaID": 1958,
+    "MapID": 0,
+    "ParentAreaId": 51,
+    "AreaName": "Tanner Camp"
+  },
+  {
+    "AreaID": 1959,
+    "MapID": 0,
+    "ParentAreaId": 51,
+    "AreaName": "Dustfire Valley"
+  },
+  {
+    "AreaID": 1977,
+    "MapID": 309,
+    "ParentAreaId": 0,
+    "AreaName": "Zul'Gurub"
+  },
+  {
+    "AreaID": 1978,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "Misty Reed Post"
+  },
+  {
+    "AreaID": 1997,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Bloodvenom Post "
+  },
+  {
+    "AreaID": 1998,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Talonbranch Glade "
+  },
+  {
+    "AreaID": 2017,
+    "MapID": 329,
+    "ParentAreaId": 0,
+    "AreaName": "Stratholme"
+  },
+  {
+    "AreaID": 2037,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "UNUSEDShadowfang Keep 003"
+  },
+  {
+    "AreaID": 2057,
+    "MapID": 289,
+    "ParentAreaId": 0,
+    "AreaName": "Scholomance"
+  },
+  {
+    "AreaID": 2077,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Twilight Vale"
+  },
+  {
+    "AreaID": 2078,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "Twilight Shore"
+  },
+  {
+    "AreaID": 2079,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Alcaz Island"
+  },
+  {
+    "AreaID": 2097,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Darkcloud Pinnacle"
+  },
+  {
+    "AreaID": 2098,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Dawning Wood Catacombs"
+  },
+  {
+    "AreaID": 2099,
+    "MapID": 0,
+    "ParentAreaId": 44,
+    "AreaName": "Stonewatch Keep"
+  },
+  {
+    "AreaID": 2100,
+    "MapID": 349,
+    "ParentAreaId": 0,
+    "AreaName": "Maraudon"
+  },
+  {
+    "AreaID": 2101,
+    "MapID": 0,
+    "ParentAreaId": 38,
+    "AreaName": "Stoutlager Inn"
+  },
+  {
+    "AreaID": 2102,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Thunderbrew Distillery"
+  },
+  {
+    "AreaID": 2103,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Menethil Keep"
+  },
+  {
+    "AreaID": 2104,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Deepwater Tavern"
+  },
+  {
+    "AreaID": 2117,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Shadow Grave"
+  },
+  {
+    "AreaID": 2118,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Brill Town Hall"
+  },
+  {
+    "AreaID": 2119,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Gallows' End Tavern"
+  },
+  {
+    "AreaID": 2137,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "The Pools of VisionUNUSED"
+  },
+  {
+    "AreaID": 2138,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Dreadmist Den"
+  },
+  {
+    "AreaID": 2157,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Bael'dun Keep"
+  },
+  {
+    "AreaID": 2158,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "Emberstrife's Den"
+  },
+  {
+    "AreaID": 2159,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Onyxia's Lair"
+  },
+  {
+    "AreaID": 2160,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Windshear Mine"
+  },
+  {
+    "AreaID": 2161,
+    "MapID": 0,
+    "ParentAreaId": 10,
+    "AreaName": "Roland's Doom"
+  },
+  {
+    "AreaID": 2177,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Battle Ring"
+  },
+  {
+    "AreaID": 2197,
+    "MapID": 1,
+    "ParentAreaId": 1638,
+    "AreaName": "The Pools of Vision"
+  },
+  {
+    "AreaID": 2198,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Shadowbreak Ravine"
+  },
+  {
+    "AreaID": 2217,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Broken Spear Village"
+  },
+  {
+    "AreaID": 2237,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Whitereach Post"
+  },
+  {
+    "AreaID": 2238,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Gornia"
+  },
+  {
+    "AreaID": 2239,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Zane's Eye Crater"
+  },
+  {
+    "AreaID": 2240,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Mirage Raceway"
+  },
+  {
+    "AreaID": 2241,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Frostsaber Rock"
+  },
+  {
+    "AreaID": 2242,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "The Hidden Grove"
+  },
+  {
+    "AreaID": 2243,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Timbermaw Post"
+  },
+  {
+    "AreaID": 2244,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Winterfall Village"
+  },
+  {
+    "AreaID": 2245,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Mazthoril"
+  },
+  {
+    "AreaID": 2246,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Frostfire Hot Springs"
+  },
+  {
+    "AreaID": 2247,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Ice Thistle Hills"
+  },
+  {
+    "AreaID": 2248,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Dun Mandarr"
+  },
+  {
+    "AreaID": 2249,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Frostwhisper Gorge"
+  },
+  {
+    "AreaID": 2250,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Owl Wing Thicket"
+  },
+  {
+    "AreaID": 2251,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Lake Kel'Theril"
+  },
+  {
+    "AreaID": 2252,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "The Ruins of Kel'Theril"
+  },
+  {
+    "AreaID": 2253,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Starfall Village"
+  },
+  {
+    "AreaID": 2254,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Ban'Thallow Barrow Den"
+  },
+  {
+    "AreaID": 2255,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Everlook"
+  },
+  {
+    "AreaID": 2256,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Darkwhisper Gorge"
+  },
+  {
+    "AreaID": 2257,
+    "MapID": 369,
+    "ParentAreaId": 0,
+    "AreaName": "Deeprun Tram"
+  },
+  {
+    "AreaID": 2258,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "The Fungal Vale"
+  },
+  {
+    "AreaID": 2259,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "UNUSEDThe Marris Stead"
+  },
+  {
+    "AreaID": 2260,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "The Marris Stead"
+  },
+  {
+    "AreaID": 2261,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "The Undercroft"
+  },
+  {
+    "AreaID": 2262,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Darrowshire"
+  },
+  {
+    "AreaID": 2263,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Crown Guard Tower"
+  },
+  {
+    "AreaID": 2264,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Corin's Crossing"
+  },
+  {
+    "AreaID": 2265,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Scarlet Base Camp"
+  },
+  {
+    "AreaID": 2266,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Tyr's Hand"
+  },
+  {
+    "AreaID": 2267,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "The Scarlet Basilica"
+  },
+  {
+    "AreaID": 2268,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Light's Hope Chapel"
+  },
+  {
+    "AreaID": 2269,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Browman Mill"
+  },
+  {
+    "AreaID": 2270,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "The Noxious Glade"
+  },
+  {
+    "AreaID": 2271,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Eastwall Tower"
+  },
+  {
+    "AreaID": 2272,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Northdale"
+  },
+  {
+    "AreaID": 2273,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Zul'Mashar"
+  },
+  {
+    "AreaID": 2274,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Mazra'Alor"
+  },
+  {
+    "AreaID": 2275,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Northpass Tower"
+  },
+  {
+    "AreaID": 2276,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Quel'Lithien Lodge"
+  },
+  {
+    "AreaID": 2277,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Plaguewood"
+  },
+  {
+    "AreaID": 2278,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Scourgehold"
+  },
+  {
+    "AreaID": 2279,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Stratholme"
+  },
+  {
+    "AreaID": 2280,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "UNUSED Stratholme"
+  },
+  {
+    "AreaID": 2297,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Darrowmere Lake"
+  },
+  {
+    "AreaID": 2298,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Caer Darrow"
+  },
+  {
+    "AreaID": 2299,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Darrowmere Lake"
+  },
+  {
+    "AreaID": 2300,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "Caverns of Time"
+  },
+  {
+    "AreaID": 2301,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Thistlefur Village"
+  },
+  {
+    "AreaID": 2302,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "The Quagmire"
+  },
+  {
+    "AreaID": 2303,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Windbreak Canyon"
+  },
+  {
+    "AreaID": 2317,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "South Seas"
+  },
+  {
+    "AreaID": 2318,
+    "MapID": 1,
+    "ParentAreaId": 15,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 2319,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 2320,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 2321,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 2322,
+    "MapID": 1,
+    "ParentAreaId": 141,
+    "AreaName": "The Veiled Sea"
+  },
+  {
+    "AreaID": 2323,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "The Veiled Sea"
+  },
+  {
+    "AreaID": 2324,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "The Veiled Sea"
+  },
+  {
+    "AreaID": 2325,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "The Veiled Sea"
+  },
+  {
+    "AreaID": 2326,
+    "MapID": 1,
+    "ParentAreaId": 148,
+    "AreaName": "The Veiled Sea"
+  },
+  {
+    "AreaID": 2337,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Razor Hill Barracks"
+  },
+  {
+    "AreaID": 2338,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "South Seas"
+  },
+  {
+    "AreaID": 2339,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 2357,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Bloodtooth Camp"
+  },
+  {
+    "AreaID": 2358,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Forest Song"
+  },
+  {
+    "AreaID": 2359,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Greenpaw Village"
+  },
+  {
+    "AreaID": 2360,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Silverwing Outpost"
+  },
+  {
+    "AreaID": 2361,
+    "MapID": 1,
+    "ParentAreaId": 493,
+    "AreaName": "Nighthaven"
+  },
+  {
+    "AreaID": 2362,
+    "MapID": 1,
+    "ParentAreaId": 493,
+    "AreaName": "Shrine of Remulos"
+  },
+  {
+    "AreaID": 2363,
+    "MapID": 1,
+    "ParentAreaId": 493,
+    "AreaName": "Stormrage Barrow Dens"
+  },
+  {
+    "AreaID": 2364,
+    "MapID": 0,
+    "ParentAreaId": 40,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 2365,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 2366,
+    "MapID": 269,
+    "ParentAreaId": 0,
+    "AreaName": "The Black Morass"
+  },
+  {
+    "AreaID": 2367,
+    "MapID": 269,
+    "ParentAreaId": 0,
+    "AreaName": "Old Hillsbrad Foothills"
+  },
+  {
+    "AreaID": 2368,
+    "MapID": 269,
+    "ParentAreaId": 2367,
+    "AreaName": "Tarren Mill"
+  },
+  {
+    "AreaID": 2369,
+    "MapID": 269,
+    "ParentAreaId": 2367,
+    "AreaName": "Southshore"
+  },
+  {
+    "AreaID": 2370,
+    "MapID": 269,
+    "ParentAreaId": 2367,
+    "AreaName": "Durnholde Keep"
+  },
+  {
+    "AreaID": 2371,
+    "MapID": 269,
+    "ParentAreaId": 2367,
+    "AreaName": "Dun Garok"
+  },
+  {
+    "AreaID": 2372,
+    "MapID": 269,
+    "ParentAreaId": 2367,
+    "AreaName": "Hillsbrad Fields"
+  },
+  {
+    "AreaID": 2373,
+    "MapID": 269,
+    "ParentAreaId": 2367,
+    "AreaName": "Eastern Strand"
+  },
+  {
+    "AreaID": 2374,
+    "MapID": 269,
+    "ParentAreaId": 2367,
+    "AreaName": "Nethander Stead"
+  },
+  {
+    "AreaID": 2375,
+    "MapID": 269,
+    "ParentAreaId": 2367,
+    "AreaName": "Darrow Hill"
+  },
+  {
+    "AreaID": 2376,
+    "MapID": 269,
+    "ParentAreaId": 2367,
+    "AreaName": "Southpoint Tower"
+  },
+  {
+    "AreaID": 2377,
+    "MapID": 269,
+    "ParentAreaId": 2367,
+    "AreaName": "Thoradin's Wall"
+  },
+  {
+    "AreaID": 2378,
+    "MapID": 269,
+    "ParentAreaId": 2367,
+    "AreaName": "Western Strand"
+  },
+  {
+    "AreaID": 2379,
+    "MapID": 269,
+    "ParentAreaId": 2367,
+    "AreaName": "Azurelode Mine"
+  },
+  {
+    "AreaID": 2397,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 2398,
+    "MapID": 0,
+    "ParentAreaId": 130,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 2399,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "The Great Sea"
+  },
+  {
+    "AreaID": 2400,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "The Forbidding Sea"
+  },
+  {
+    "AreaID": 2401,
+    "MapID": 0,
+    "ParentAreaId": 45,
+    "AreaName": "The Forbidding Sea"
+  },
+  {
+    "AreaID": 2402,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "The Forbidding Sea"
+  },
+  {
+    "AreaID": 2403,
+    "MapID": 0,
+    "ParentAreaId": 8,
+    "AreaName": "The Forbidding Sea"
+  },
+  {
+    "AreaID": 2404,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Tethris Aran"
+  },
+  {
+    "AreaID": 2405,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Ethel Rethor"
+  },
+  {
+    "AreaID": 2406,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Ranazjar Isle"
+  },
+  {
+    "AreaID": 2407,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Kormek's Hut"
+  },
+  {
+    "AreaID": 2408,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Shadowprey Village"
+  },
+  {
+    "AreaID": 2417,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "Blackrock Pass"
+  },
+  {
+    "AreaID": 2418,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "Morgan's Vigil"
+  },
+  {
+    "AreaID": 2419,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "Slither Rock"
+  },
+  {
+    "AreaID": 2420,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "Terror Wing Path"
+  },
+  {
+    "AreaID": 2421,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "Draco'dar"
+  },
+  {
+    "AreaID": 2437,
+    "MapID": 389,
+    "ParentAreaId": 0,
+    "AreaName": "Ragefire Chasm"
+  },
+  {
+    "AreaID": 2457,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Nightsong Woods"
+  },
+  {
+    "AreaID": 2477,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "The Veiled Sea"
+  },
+  {
+    "AreaID": 2478,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Morlos'Aran"
+  },
+  {
+    "AreaID": 2479,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Emerald Sanctuary"
+  },
+  {
+    "AreaID": 2480,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Jadefire Glen"
+  },
+  {
+    "AreaID": 2481,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Ruins of Constellas"
+  },
+  {
+    "AreaID": 2497,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Bitter Reaches"
+  },
+  {
+    "AreaID": 2517,
+    "MapID": 0,
+    "ParentAreaId": 4,
+    "AreaName": "Rise of the Defiler"
+  },
+  {
+    "AreaID": 2518,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Lariss Pavilion"
+  },
+  {
+    "AreaID": 2519,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Woodpaw Hills"
+  },
+  {
+    "AreaID": 2520,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Woodpaw Den"
+  },
+  {
+    "AreaID": 2521,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Verdantis River"
+  },
+  {
+    "AreaID": 2522,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Ruins of Isildien"
+  },
+  {
+    "AreaID": 2537,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Grimtotem Post"
+  },
+  {
+    "AreaID": 2538,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Camp Aparaje"
+  },
+  {
+    "AreaID": 2539,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Malaka'jin"
+  },
+  {
+    "AreaID": 2540,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Boulderslide Ravine"
+  },
+  {
+    "AreaID": 2541,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Sishir Canyon"
+  },
+  {
+    "AreaID": 2557,
+    "MapID": 429,
+    "ParentAreaId": 0,
+    "AreaName": "Dire Maul"
+  },
+  {
+    "AreaID": 2558,
+    "MapID": 0,
+    "ParentAreaId": 41,
+    "AreaName": "Deadwind Ravine"
+  },
+  {
+    "AreaID": 2559,
+    "MapID": 0,
+    "ParentAreaId": 41,
+    "AreaName": "Diamondhead River"
+  },
+  {
+    "AreaID": 2560,
+    "MapID": 0,
+    "ParentAreaId": 41,
+    "AreaName": "Ariden's Camp"
+  },
+  {
+    "AreaID": 2561,
+    "MapID": 0,
+    "ParentAreaId": 41,
+    "AreaName": "The Vice"
+  },
+  {
+    "AreaID": 2562,
+    "MapID": 0,
+    "ParentAreaId": 41,
+    "AreaName": "Karazhan"
+  },
+  {
+    "AreaID": 2563,
+    "MapID": 0,
+    "ParentAreaId": 41,
+    "AreaName": "Morgan's Plot"
+  },
+  {
+    "AreaID": 2577,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Dire Maul"
+  },
+  {
+    "AreaID": 2597,
+    "MapID": 30,
+    "ParentAreaId": 0,
+    "AreaName": "Alterac Valley"
+  },
+  {
+    "AreaID": 2617,
+    "MapID": 1,
+    "ParentAreaId": 405,
+    "AreaName": "Scrabblescrew's Camp"
+  },
+  {
+    "AreaID": 2618,
+    "MapID": 1,
+    "ParentAreaId": 361,
+    "AreaName": "Jadefire Run"
+  },
+  {
+    "AreaID": 2619,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Thondroril River"
+  },
+  {
+    "AreaID": 2620,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Thondroril River"
+  },
+  {
+    "AreaID": 2621,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Lake Mereldar"
+  },
+  {
+    "AreaID": 2622,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Pestilent Scar"
+  },
+  {
+    "AreaID": 2623,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "The Infectis Scar"
+  },
+  {
+    "AreaID": 2624,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Blackwood Lake"
+  },
+  {
+    "AreaID": 2625,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Eastwall Gate"
+  },
+  {
+    "AreaID": 2626,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Terrorweb Tunnel"
+  },
+  {
+    "AreaID": 2627,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "Terrordale"
+  },
+  {
+    "AreaID": 2637,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Kargathia Keep"
+  },
+  {
+    "AreaID": 2657,
+    "MapID": 1,
+    "ParentAreaId": 16651,
+    "AreaName": "Valley of Bones"
+  },
+  {
+    "AreaID": 2677,
+    "MapID": 469,
+    "ParentAreaId": 0,
+    "AreaName": "Blackwing Lair"
+  },
+  {
+    "AreaID": 2697,
+    "MapID": 0,
+    "ParentAreaId": 41,
+    "AreaName": "Deadman's Crossing"
+  },
+  {
+    "AreaID": 2717,
+    "MapID": 409,
+    "ParentAreaId": 0,
+    "AreaName": "Molten Core"
+  },
+  {
+    "AreaID": 2737,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "The Scarab Wall"
+  },
+  {
+    "AreaID": 2738,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Southwind Village"
+  },
+  {
+    "AreaID": 2739,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Twilight Base Camp"
+  },
+  {
+    "AreaID": 2740,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "The Crystal Vale"
+  },
+  {
+    "AreaID": 2741,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "The Scarab Dais"
+  },
+  {
+    "AreaID": 2742,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Hive'Ashi"
+  },
+  {
+    "AreaID": 2743,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Hive'Zora"
+  },
+  {
+    "AreaID": 2744,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Hive'Regal"
+  },
+  {
+    "AreaID": 2757,
+    "MapID": 1,
+    "ParentAreaId": 17,
+    "AreaName": "Shrine of the Fallen Warrior"
+  },
+  {
+    "AreaID": 2777,
+    "MapID": 0,
+    "ParentAreaId": 267,
+    "AreaName": "UNUSED Alterac Valley"
+  },
+  {
+    "AreaID": 2797,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Blackfathom Deeps"
+  },
+  {
+    "AreaID": 2817,
+    "MapID": 30,
+    "ParentAreaId": 0,
+    "AreaName": "***On Map Dungeon***"
+  },
+  {
+    "AreaID": 2837,
+    "MapID": 0,
+    "ParentAreaId": 41,
+    "AreaName": "The Master's Cellar"
+  },
+  {
+    "AreaID": 2838,
+    "MapID": 0,
+    "ParentAreaId": 51,
+    "AreaName": "Stonewrought Pass"
+  },
+  {
+    "AreaID": 2839,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Alterac Valley"
+  },
+  {
+    "AreaID": 2857,
+    "MapID": 1,
+    "ParentAreaId": 440,
+    "AreaName": "The Rumble Cage"
+  },
+  {
+    "AreaID": 2877,
+    "MapID": 451,
+    "ParentAreaId": 22,
+    "AreaName": "Chunk Test"
+  },
+  {
+    "AreaID": 2897,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Zoram'gar Outpost"
+  },
+  {
+    "AreaID": 2917,
+    "MapID": 450,
+    "ParentAreaId": 0,
+    "AreaName": "Hall of Legends"
+  },
+  {
+    "AreaID": 2918,
+    "MapID": 449,
+    "ParentAreaId": 0,
+    "AreaName": "Champions' Hall"
+  },
+  {
+    "AreaID": 2937,
+    "MapID": 0,
+    "ParentAreaId": 41,
+    "AreaName": "Grosh'gok Compound"
+  },
+  {
+    "AreaID": 2938,
+    "MapID": 0,
+    "ParentAreaId": 41,
+    "AreaName": "Sleeping Gorge"
+  },
+  {
+    "AreaID": 2957,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Irondeep Mine"
+  },
+  {
+    "AreaID": 2958,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Stonehearth Outpost"
+  },
+  {
+    "AreaID": 2959,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Dun Baldar"
+  },
+  {
+    "AreaID": 2960,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Icewing Pass"
+  },
+  {
+    "AreaID": 2961,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Frostwolf Village"
+  },
+  {
+    "AreaID": 2962,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Tower Point"
+  },
+  {
+    "AreaID": 2963,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Coldtooth Mine"
+  },
+  {
+    "AreaID": 2964,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Winterax Hold"
+  },
+  {
+    "AreaID": 2977,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Iceblood Garrison"
+  },
+  {
+    "AreaID": 2978,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Frostwolf Keep"
+  },
+  {
+    "AreaID": 2979,
+    "MapID": 1,
+    "ParentAreaId": 14,
+    "AreaName": "Tor'kren Farm"
+  },
+  {
+    "AreaID": 3017,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Frost Dagger Pass"
+  },
+  {
+    "AreaID": 3037,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Ironstone Camp"
+  },
+  {
+    "AreaID": 3038,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Weazel's Crater"
+  },
+  {
+    "AreaID": 3039,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Tahonda Ruins"
+  },
+  {
+    "AreaID": 3057,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Field of Strife"
+  },
+  {
+    "AreaID": 3058,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Icewing Cavern"
+  },
+  {
+    "AreaID": 3077,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Valor's Rest"
+  },
+  {
+    "AreaID": 3097,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "The Swarming Pillar"
+  },
+  {
+    "AreaID": 3098,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Twilight Post"
+  },
+  {
+    "AreaID": 3099,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Twilight Outpost"
+  },
+  {
+    "AreaID": 3100,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Ravaged Twilight Camp"
+  },
+  {
+    "AreaID": 3117,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "Shalzaru's Lair"
+  },
+  {
+    "AreaID": 3137,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Talrendis Point"
+  },
+  {
+    "AreaID": 3138,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Rethress Sanctum"
+  },
+  {
+    "AreaID": 3139,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Moon Horror Den"
+  },
+  {
+    "AreaID": 3140,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Scalebeard's Cave"
+  },
+  {
+    "AreaID": 3157,
+    "MapID": 1,
+    "ParentAreaId": 406,
+    "AreaName": "Boulderslide Cavern"
+  },
+  {
+    "AreaID": 3177,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Warsong Labor Camp"
+  },
+  {
+    "AreaID": 3197,
+    "MapID": 0,
+    "ParentAreaId": 28,
+    "AreaName": "Chillwind Camp"
+  },
+  {
+    "AreaID": 3217,
+    "MapID": 1,
+    "ParentAreaId": 357,
+    "AreaName": "The Maul"
+  },
+  {
+    "AreaID": 3237,
+    "MapID": 429,
+    "ParentAreaId": 2557,
+    "AreaName": "The Maul UNUSED"
+  },
+  {
+    "AreaID": 3257,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Bones of Grakkarond"
+  },
+  {
+    "AreaID": 3277,
+    "MapID": 489,
+    "ParentAreaId": 0,
+    "AreaName": "Warsong Gulch"
+  },
+  {
+    "AreaID": 3297,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Frostwolf Graveyard"
+  },
+  {
+    "AreaID": 3298,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Frostwolf Pass"
+  },
+  {
+    "AreaID": 3299,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Dun Baldar Pass"
+  },
+  {
+    "AreaID": 3300,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Iceblood Graveyard"
+  },
+  {
+    "AreaID": 3301,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Snowfall Graveyard"
+  },
+  {
+    "AreaID": 3302,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Stonehearth Graveyard"
+  },
+  {
+    "AreaID": 3303,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Stormpike Graveyard"
+  },
+  {
+    "AreaID": 3304,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Icewing Bunker"
+  },
+  {
+    "AreaID": 3305,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Stonehearth Bunker"
+  },
+  {
+    "AreaID": 3306,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Wildpaw Ridge"
+  },
+  {
+    "AreaID": 3317,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Revantusk Village"
+  },
+  {
+    "AreaID": 3318,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Rock of Durotan"
+  },
+  {
+    "AreaID": 3319,
+    "MapID": 1,
+    "ParentAreaId": 331,
+    "AreaName": "Silverwing Grove"
+  },
+  {
+    "AreaID": 3320,
+    "MapID": 489,
+    "ParentAreaId": 3277,
+    "AreaName": "Warsong Lumber Mill"
+  },
+  {
+    "AreaID": 3321,
+    "MapID": 489,
+    "ParentAreaId": 3277,
+    "AreaName": "Silverwing Hold"
+  },
+  {
+    "AreaID": 3337,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "Wildpaw Cavern"
+  },
+  {
+    "AreaID": 3338,
+    "MapID": 30,
+    "ParentAreaId": 2597,
+    "AreaName": "The Veiled Cleft"
+  },
+  {
+    "AreaID": 3357,
+    "MapID": 0,
+    "ParentAreaId": 33,
+    "AreaName": "Yojamba Isle"
+  },
+  {
+    "AreaID": 3358,
+    "MapID": 529,
+    "ParentAreaId": 0,
+    "AreaName": "Arathi Basin"
+  },
+  {
+    "AreaID": 3377,
+    "MapID": 309,
+    "ParentAreaId": 1977,
+    "AreaName": "The Coil"
+  },
+  {
+    "AreaID": 3378,
+    "MapID": 309,
+    "ParentAreaId": 1977,
+    "AreaName": "Altar of Hir'eek"
+  },
+  {
+    "AreaID": 3379,
+    "MapID": 309,
+    "ParentAreaId": 1977,
+    "AreaName": "Shadra'zaar"
+  },
+  {
+    "AreaID": 3380,
+    "MapID": 309,
+    "ParentAreaId": 1977,
+    "AreaName": "Hakkari Grounds"
+  },
+  {
+    "AreaID": 3381,
+    "MapID": 309,
+    "ParentAreaId": 1977,
+    "AreaName": "Naze of Shirvallah"
+  },
+  {
+    "AreaID": 3382,
+    "MapID": 309,
+    "ParentAreaId": 1977,
+    "AreaName": "Temple of Bethekk"
+  },
+  {
+    "AreaID": 3383,
+    "MapID": 309,
+    "ParentAreaId": 1977,
+    "AreaName": "The Bloodfire Pit"
+  },
+  {
+    "AreaID": 3384,
+    "MapID": 309,
+    "ParentAreaId": 1977,
+    "AreaName": "Altar of the Blood God"
+  },
+  {
+    "AreaID": 3397,
+    "MapID": 309,
+    "ParentAreaId": 1977,
+    "AreaName": "Zanza's Rise"
+  },
+  {
+    "AreaID": 3398,
+    "MapID": 309,
+    "ParentAreaId": 1977,
+    "AreaName": "Edge of Madness"
+  },
+  {
+    "AreaID": 3417,
+    "MapID": 529,
+    "ParentAreaId": 3358,
+    "AreaName": "Trollbane Hall"
+  },
+  {
+    "AreaID": 3418,
+    "MapID": 529,
+    "ParentAreaId": 3358,
+    "AreaName": "Defiler's Den"
+  },
+  {
+    "AreaID": 3419,
+    "MapID": 309,
+    "ParentAreaId": 1977,
+    "AreaName": "Pagle's Pointe"
+  },
+  {
+    "AreaID": 3420,
+    "MapID": 529,
+    "ParentAreaId": 3358,
+    "AreaName": "Farm"
+  },
+  {
+    "AreaID": 3421,
+    "MapID": 529,
+    "ParentAreaId": 3358,
+    "AreaName": "Blacksmith"
+  },
+  {
+    "AreaID": 3422,
+    "MapID": 529,
+    "ParentAreaId": 3358,
+    "AreaName": "Lumber Mill"
+  },
+  {
+    "AreaID": 3423,
+    "MapID": 529,
+    "ParentAreaId": 3358,
+    "AreaName": "Gold Mine"
+  },
+  {
+    "AreaID": 3424,
+    "MapID": 529,
+    "ParentAreaId": 3358,
+    "AreaName": "Stables"
+  },
+  {
+    "AreaID": 3425,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Cenarion Hold"
+  },
+  {
+    "AreaID": 3426,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Staghelm Point"
+  },
+  {
+    "AreaID": 3427,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Bronzebeard Encampment"
+  },
+  {
+    "AreaID": 3428,
+    "MapID": 531,
+    "ParentAreaId": 0,
+    "AreaName": "Ahn'Qiraj"
+  },
+  {
+    "AreaID": 3429,
+    "MapID": 509,
+    "ParentAreaId": 0,
+    "AreaName": "Ruins of Ahn'Qiraj"
+  },
+  {
+    "AreaID": 3446,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Twilight's Run"
+  },
+  {
+    "AreaID": 3447,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Ortell's Hideout"
+  },
+  {
+    "AreaID": 3448,
+    "MapID": 509,
+    "ParentAreaId": 3429,
+    "AreaName": "Scarab Terrace"
+  },
+  {
+    "AreaID": 3449,
+    "MapID": 509,
+    "ParentAreaId": 3429,
+    "AreaName": "General's Terrace"
+  },
+  {
+    "AreaID": 3450,
+    "MapID": 509,
+    "ParentAreaId": 3429,
+    "AreaName": "The Reservoir"
+  },
+  {
+    "AreaID": 3451,
+    "MapID": 509,
+    "ParentAreaId": 3429,
+    "AreaName": "The Hatchery"
+  },
+  {
+    "AreaID": 3452,
+    "MapID": 509,
+    "ParentAreaId": 3429,
+    "AreaName": "The Comb"
+  },
+  {
+    "AreaID": 3453,
+    "MapID": 509,
+    "ParentAreaId": 3429,
+    "AreaName": "Watchers' Terrace"
+  },
+  {
+    "AreaID": 3454,
+    "MapID": 1,
+    "ParentAreaId": 1377,
+    "AreaName": "Ruins of Ahn'Qiraj"
+  },
+  {
+    "AreaID": 3456,
+    "MapID": 533,
+    "ParentAreaId": 0,
+    "AreaName": "Naxxramas"
+  },
+  {
+    "AreaID": 3459,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "City"
+  },
+  {
+    "AreaID": 3478,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Gates of Ahn'Qiraj"
+  },
+  {
+    "AreaID": 3486,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Ravenholdt Manor"
+  },
+  {
+    "AreaID": 13649,
+    "MapID": 13,
+    "ParentAreaId": 0,
+    "AreaName": "Test Dungeon"
+  },
+  {
+    "AreaID": 15159,
+    "MapID": 0,
+    "ParentAreaId": 51,
+    "AreaName": "The Searing Basin"
+  },
+  {
+    "AreaID": 15475,
+    "MapID": 2784,
+    "ParentAreaId": 0,
+    "AreaName": "Demon Fall Canyon"
+  },
+  {
+    "AreaID": 15531,
+    "MapID": 2789,
+    "ParentAreaId": 0,
+    "AreaName": "The Tainted Scar"
+  },
+  {
+    "AreaID": 15532,
+    "MapID": 2791,
+    "ParentAreaId": 0,
+    "AreaName": "Storm Cliffs"
+  },
+  {
+    "AreaID": 15540,
+    "MapID": 2784,
+    "ParentAreaId": 15475,
+    "AreaName": "Demon Fall Barrow"
+  },
+  {
+    "AreaID": 15793,
+    "MapID": 269,
+    "ParentAreaId": 0,
+    "AreaName": "Elsewhen"
+  },
+  {
+    "AreaID": 15809,
+    "MapID": 2806,
+    "ParentAreaId": 0,
+    "AreaName": "Felwood"
+  },
+  {
+    "AreaID": 15810,
+    "MapID": 2806,
+    "ParentAreaId": 15809,
+    "AreaName": "Bloodvenom Post "
+  },
+  {
+    "AreaID": 15811,
+    "MapID": 2806,
+    "ParentAreaId": 15809,
+    "AreaName": "Bloodvenom Falls"
+  },
+  {
+    "AreaID": 15812,
+    "MapID": 2806,
+    "ParentAreaId": 15809,
+    "AreaName": "Bloodvenom River"
+  },
+  {
+    "AreaID": 15813,
+    "MapID": 2806,
+    "ParentAreaId": 15809,
+    "AreaName": "Jaedenar"
+  },
+  {
+    "AreaID": 15814,
+    "MapID": 2806,
+    "ParentAreaId": 15809,
+    "AreaName": "Shatter Scar Vale"
+  },
+  {
+    "AreaID": 15815,
+    "MapID": 2806,
+    "ParentAreaId": 15809,
+    "AreaName": "Ruins of Constellas"
+  },
+  {
+    "AreaID": 15816,
+    "MapID": 2806,
+    "ParentAreaId": 16362,
+    "AreaName": "Grove of the Ancients"
+  },
+  {
+    "AreaID": 15817,
+    "MapID": 2806,
+    "ParentAreaId": 16362,
+    "AreaName": "Wildbend River"
+  },
+  {
+    "AreaID": 15818,
+    "MapID": 2806,
+    "ParentAreaId": 16362,
+    "AreaName": "Twilight Shore"
+  },
+  {
+    "AreaID": 15819,
+    "MapID": 2806,
+    "ParentAreaId": 16362,
+    "AreaName": "Twilight Vale"
+  },
+  {
+    "AreaID": 15820,
+    "MapID": 2806,
+    "ParentAreaId": 16362,
+    "AreaName": "The Master's Glaive"
+  },
+  {
+    "AreaID": 15821,
+    "MapID": 2806,
+    "ParentAreaId": 16362,
+    "AreaName": "Ameth'Aran"
+  },
+  {
+    "AreaID": 15822,
+    "MapID": 2806,
+    "ParentAreaId": 16362,
+    "AreaName": "Blackwood Den"
+  },
+  {
+    "AreaID": 15825,
+    "MapID": 2804,
+    "ParentAreaId": 0,
+    "AreaName": "The Crystal Vale"
+  },
+  {
+    "AreaID": 15828,
+    "MapID": 2807,
+    "ParentAreaId": 0,
+    "AreaName": "The Burning of Andorhal"
+  },
+  {
+    "AreaID": 15938,
+    "MapID": 2817,
+    "ParentAreaId": 0,
+    "AreaName": "Starfall Village"
+  },
+  {
+    "AreaID": 16003,
+    "MapID": 2832,
+    "ParentAreaId": 0,
+    "AreaName": "Azshara"
+  },
+  {
+    "AreaID": 16004,
+    "MapID": 2832,
+    "ParentAreaId": 0,
+    "AreaName": "Mount Hyjal"
+  },
+  {
+    "AreaID": 16005,
+    "MapID": 1,
+    "ParentAreaId": 618,
+    "AreaName": "Darkwhisper Gorge"
+  },
+  {
+    "AreaID": 16006,
+    "MapID": 2832,
+    "ParentAreaId": 16169,
+    "AreaName": "Xavian"
+  },
+  {
+    "AreaID": 16007,
+    "MapID": 2832,
+    "ParentAreaId": 16169,
+    "AreaName": "Satyrnaar"
+  },
+  {
+    "AreaID": 16008,
+    "MapID": 2832,
+    "ParentAreaId": 16169,
+    "AreaName": "Bough Shadow"
+  },
+  {
+    "AreaID": 16009,
+    "MapID": 2832,
+    "ParentAreaId": 16169,
+    "AreaName": "Forest Song"
+  },
+  {
+    "AreaID": 16010,
+    "MapID": 2832,
+    "ParentAreaId": 16169,
+    "AreaName": "Warsong Lumber Camp"
+  },
+  {
+    "AreaID": 16011,
+    "MapID": 2832,
+    "ParentAreaId": 16169,
+    "AreaName": "Southfury River"
+  },
+  {
+    "AreaID": 16012,
+    "MapID": 2832,
+    "ParentAreaId": 16169,
+    "AreaName": "Nightsong Woods"
+  },
+  {
+    "AreaID": 16013,
+    "MapID": 2832,
+    "ParentAreaId": 16169,
+    "AreaName": "Shadowsong Shrine"
+  },
+  {
+    "AreaID": 16014,
+    "MapID": 2832,
+    "ParentAreaId": 16003,
+    "AreaName": "Southfury River"
+  },
+  {
+    "AreaID": 16015,
+    "MapID": 2832,
+    "ParentAreaId": 16169,
+    "AreaName": "Haldarr Encampment"
+  },
+  {
+    "AreaID": 16016,
+    "MapID": 2832,
+    "ParentAreaId": 16169,
+    "AreaName": "Talrendis Point"
+  },
+  {
+    "AreaID": 16017,
+    "MapID": 2832,
+    "ParentAreaId": 0,
+    "AreaName": "Desolace"
+  },
+  {
+    "AreaID": 16018,
+    "MapID": 2832,
+    "ParentAreaId": 0,
+    "AreaName": "Feralas"
+  },
+  {
+    "AreaID": 16019,
+    "MapID": 2832,
+    "ParentAreaId": 16018,
+    "AreaName": "The Maul"
+  },
+  {
+    "AreaID": 16020,
+    "MapID": 2832,
+    "ParentAreaId": 16018,
+    "AreaName": "Valley of Bones"
+  },
+  {
+    "AreaID": 16021,
+    "MapID": 2832,
+    "ParentAreaId": 16018,
+    "AreaName": "Gelkis Village"
+  },
+  {
+    "AreaID": 16022,
+    "MapID": 2832,
+    "ParentAreaId": 16018,
+    "AreaName": "Mannoroc Coven"
+  },
+  {
+    "AreaID": 16023,
+    "MapID": 2832,
+    "ParentAreaId": 16018,
+    "AreaName": "Dream Bough"
+  },
+  {
+    "AreaID": 16024,
+    "MapID": 2832,
+    "ParentAreaId": 16018,
+    "AreaName": "Jademir Lake"
+  },
+  {
+    "AreaID": 16025,
+    "MapID": 2832,
+    "ParentAreaId": 16018,
+    "AreaName": "Ruins of Ravenwind"
+  },
+  {
+    "AreaID": 16026,
+    "MapID": 2832,
+    "ParentAreaId": 16018,
+    "AreaName": "The Twin Colossals"
+  },
+  {
+    "AreaID": 16027,
+    "MapID": 2832,
+    "ParentAreaId": 16018,
+    "AreaName": "Oneiros"
+  },
+  {
+    "AreaID": 16028,
+    "MapID": 2832,
+    "ParentAreaId": 0,
+    "AreaName": "Eastern Plaguelands"
+  },
+  {
+    "AreaID": 16029,
+    "MapID": 2832,
+    "ParentAreaId": 0,
+    "AreaName": "The Hinterlands"
+  },
+  {
+    "AreaID": 16030,
+    "MapID": 2832,
+    "ParentAreaId": 16029,
+    "AreaName": "Lake Mereldar"
+  },
+  {
+    "AreaID": 16031,
+    "MapID": 2832,
+    "ParentAreaId": 16029,
+    "AreaName": "The Undercroft"
+  },
+  {
+    "AreaID": 16032,
+    "MapID": 2832,
+    "ParentAreaId": 16029,
+    "AreaName": "Scarlet Base Camp"
+  },
+  {
+    "AreaID": 16033,
+    "MapID": 2832,
+    "ParentAreaId": 16029,
+    "AreaName": "Darrowshire"
+  },
+  {
+    "AreaID": 16034,
+    "MapID": 2832,
+    "ParentAreaId": 16029,
+    "AreaName": "The Creeping Ruin"
+  },
+  {
+    "AreaID": 16035,
+    "MapID": 2832,
+    "ParentAreaId": 16029,
+    "AreaName": "The Forbidding Sea"
+  },
+  {
+    "AreaID": 16036,
+    "MapID": 2832,
+    "ParentAreaId": 16029,
+    "AreaName": "Skulk Rock"
+  },
+  {
+    "AreaID": 16037,
+    "MapID": 2832,
+    "ParentAreaId": 16029,
+    "AreaName": "Seradane"
+  },
+  {
+    "AreaID": 16038,
+    "MapID": 2832,
+    "ParentAreaId": 16029,
+    "AreaName": "The Overlook Cliffs"
+  },
+  {
+    "AreaID": 16039,
+    "MapID": 2832,
+    "ParentAreaId": 16029,
+    "AreaName": "Agol'watha"
+  },
+  {
+    "AreaID": 16040,
+    "MapID": 2832,
+    "ParentAreaId": 16029,
+    "AreaName": "Shaol'watha"
+  },
+  {
+    "AreaID": 16041,
+    "MapID": 2832,
+    "ParentAreaId": 16029,
+    "AreaName": "Valorwind Lake"
+  },
+  {
+    "AreaID": 16074,
+    "MapID": 2875,
+    "ParentAreaId": 0,
+    "AreaName": "Karazhan Crypts"
+  },
+  {
+    "AreaID": 16076,
+    "MapID": 531,
+    "ParentAreaId": 0,
+    "AreaName": "Temple of Ahn'Qiraj"
+  },
+  {
+    "AreaID": 16113,
+    "MapID": 2853,
+    "ParentAreaId": 0,
+    "AreaName": "Redridge Mountains"
+  },
+  {
+    "AreaID": 16114,
+    "MapID": 2853,
+    "ParentAreaId": 0,
+    "AreaName": "Deadwind Pass"
+  },
+  {
+    "AreaID": 16115,
+    "MapID": 2853,
+    "ParentAreaId": 0,
+    "AreaName": "Blasted Lands"
+  },
+  {
+    "AreaID": 16116,
+    "MapID": 2853,
+    "ParentAreaId": 0,
+    "AreaName": "Swamp of Sorrows"
+  },
+  {
+    "AreaID": 16117,
+    "MapID": 2853,
+    "ParentAreaId": 0,
+    "AreaName": "Stranglethorn Vale"
+  },
+  {
+    "AreaID": 16118,
+    "MapID": 2853,
+    "ParentAreaId": 0,
+    "AreaName": "Elwynn Forest"
+  },
+  {
+    "AreaID": 16119,
+    "MapID": 2853,
+    "ParentAreaId": 0,
+    "AreaName": "Duskwood"
+  },
+  {
+    "AreaID": 16120,
+    "MapID": 2853,
+    "ParentAreaId": 16113,
+    "AreaName": "Lakeridge Highway"
+  },
+  {
+    "AreaID": 16121,
+    "MapID": 2853,
+    "ParentAreaId": 16113,
+    "AreaName": "Three Corners"
+  },
+  {
+    "AreaID": 16122,
+    "MapID": 2853,
+    "ParentAreaId": 16114,
+    "AreaName": "Deadman's Crossing"
+  },
+  {
+    "AreaID": 16123,
+    "MapID": 2853,
+    "ParentAreaId": 16114,
+    "AreaName": "Sleeping Gorge"
+  },
+  {
+    "AreaID": 16124,
+    "MapID": 2853,
+    "ParentAreaId": 16114,
+    "AreaName": "The Vice"
+  },
+  {
+    "AreaID": 16125,
+    "MapID": 2853,
+    "ParentAreaId": 16114,
+    "AreaName": "Morgan's Plot"
+  },
+  {
+    "AreaID": 16126,
+    "MapID": 2853,
+    "ParentAreaId": 16114,
+    "AreaName": "Karazhan"
+  },
+  {
+    "AreaID": 16127,
+    "MapID": 2853,
+    "ParentAreaId": 16114,
+    "AreaName": "Ariden's Camp"
+  },
+  {
+    "AreaID": 16128,
+    "MapID": 2853,
+    "ParentAreaId": 16114,
+    "AreaName": "Deadwind Ravine"
+  },
+  {
+    "AreaID": 16129,
+    "MapID": 2853,
+    "ParentAreaId": 16117,
+    "AreaName": "Zul'Gurub"
+  },
+  {
+    "AreaID": 16130,
+    "MapID": 2853,
+    "ParentAreaId": 16118,
+    "AreaName": "Ridgepoint Tower"
+  },
+  {
+    "AreaID": 16131,
+    "MapID": 2853,
+    "ParentAreaId": 16118,
+    "AreaName": "Eastvale Logging Camp"
+  },
+  {
+    "AreaID": 16132,
+    "MapID": 2853,
+    "ParentAreaId": 16119,
+    "AreaName": "Beggar's Haunt"
+  },
+  {
+    "AreaID": 16133,
+    "MapID": 2853,
+    "ParentAreaId": 16119,
+    "AreaName": "Tranquil Gardens Cemetery"
+  },
+  {
+    "AreaID": 16134,
+    "MapID": 2853,
+    "ParentAreaId": 16119,
+    "AreaName": "Darkshire"
+  },
+  {
+    "AreaID": 16135,
+    "MapID": 2853,
+    "ParentAreaId": 16119,
+    "AreaName": "Brightwood Grove"
+  },
+  {
+    "AreaID": 16136,
+    "MapID": 2853,
+    "ParentAreaId": 16119,
+    "AreaName": "Manor Mistmantle"
+  },
+  {
+    "AreaID": 16137,
+    "MapID": 2853,
+    "ParentAreaId": 16119,
+    "AreaName": "The Darkened Bank"
+  },
+  {
+    "AreaID": 16138,
+    "MapID": 2853,
+    "ParentAreaId": 16116,
+    "AreaName": "Misty Valley"
+  },
+  {
+    "AreaID": 16139,
+    "MapID": 2853,
+    "ParentAreaId": 16116,
+    "AreaName": "Itharius's Cave"
+  },
+  {
+    "AreaID": 16140,
+    "MapID": 2853,
+    "ParentAreaId": 16116,
+    "AreaName": "Splinterspear Junction"
+  },
+  {
+    "AreaID": 16141,
+    "MapID": 2853,
+    "ParentAreaId": 16115,
+    "AreaName": "Altar of Storms"
+  },
+  {
+    "AreaID": 16142,
+    "MapID": 2853,
+    "ParentAreaId": 16115,
+    "AreaName": "The Tainted Scar"
+  },
+  {
+    "AreaID": 16143,
+    "MapID": 2853,
+    "ParentAreaId": 16115,
+    "AreaName": "Dreadmaul Hold"
+  },
+  {
+    "AreaID": 16144,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Elwynn Forest (Blue Whelpling Inn Prototype)"
+  },
+  {
+    "AreaID": 16147,
+    "MapID": 2832,
+    "ParentAreaId": 0,
+    "AreaName": "Elwynn Forest"
+  },
+  {
+    "AreaID": 16148,
+    "MapID": 2832,
+    "ParentAreaId": 0,
+    "AreaName": "Duskwood"
+  },
+  {
+    "AreaID": 16149,
+    "MapID": 2832,
+    "ParentAreaId": 0,
+    "AreaName": "Westfall"
+  },
+  {
+    "AreaID": 16150,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Jerod's Landing"
+  },
+  {
+    "AreaID": 16151,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Forest's Edge"
+  },
+  {
+    "AreaID": 16152,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "The Stonefield Farm"
+  },
+  {
+    "AreaID": 16153,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "The Maclure Vineyards"
+  },
+  {
+    "AreaID": 16154,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Tower of Azora"
+  },
+  {
+    "AreaID": 16155,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Fargodeep Mine"
+  },
+  {
+    "AreaID": 16156,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Brackwell Pumpkin Patch"
+  },
+  {
+    "AreaID": 16157,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "The Hushed Bank"
+  },
+  {
+    "AreaID": 16158,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "The Darkened Bank"
+  },
+  {
+    "AreaID": 16159,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Addle's Stead"
+  },
+  {
+    "AreaID": 16160,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Twilight Grove"
+  },
+  {
+    "AreaID": 16161,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Darkshire"
+  },
+  {
+    "AreaID": 16162,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Raven Hill Cemetery"
+  },
+  {
+    "AreaID": 16163,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "The Yorgen Farmstead"
+  },
+  {
+    "AreaID": 16164,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Vul'Gol Ogre Mound"
+  },
+  {
+    "AreaID": 16165,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Forlorn Rowe"
+  },
+  {
+    "AreaID": 16166,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Brightwood Grove"
+  },
+  {
+    "AreaID": 16167,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "The Rotting Orchard"
+  },
+  {
+    "AreaID": 16168,
+    "MapID": 2832,
+    "ParentAreaId": 16148,
+    "AreaName": "Raven Hill"
+  },
+  {
+    "AreaID": 16169,
+    "MapID": 2832,
+    "ParentAreaId": 0,
+    "AreaName": "Ashenvale"
+  },
+  {
+    "AreaID": 16234,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Legashi Stronghold"
+  },
+  {
+    "AreaID": 16236,
+    "MapID": 2856,
+    "ParentAreaId": 0,
+    "AreaName": "Scarlet Enclave"
+  },
+  {
+    "AreaID": 16295,
+    "MapID": 2902,
+    "ParentAreaId": 0,
+    "AreaName": "The Scarab Dais"
+  },
+  {
+    "AreaID": 16335,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "New Avalon"
+  },
+  {
+    "AreaID": 16361,
+    "MapID": 0,
+    "ParentAreaId": 139,
+    "AreaName": "The Forbidding Sea"
+  },
+  {
+    "AreaID": 16362,
+    "MapID": 2806,
+    "ParentAreaId": 0,
+    "AreaName": "Shadow Hold"
+  },
+  {
+    "AreaID": 16369,
+    "MapID": 2856,
+    "ParentAreaId": 16236,
+    "AreaName": "Prison"
+  },
+  {
+    "AreaID": 16370,
+    "MapID": 2856,
+    "ParentAreaId": 16236,
+    "AreaName": "Tyr's Hand"
+  },
+  {
+    "AreaID": 16371,
+    "MapID": 2856,
+    "ParentAreaId": 16236,
+    "AreaName": "New Avalon"
+  },
+  {
+    "AreaID": 16372,
+    "MapID": 2856,
+    "ParentAreaId": 16236,
+    "AreaName": "The Forbidding Expanse"
+  },
+  {
+    "AreaID": 16373,
+    "MapID": 2856,
+    "ParentAreaId": 16236,
+    "AreaName": "Mine"
+  },
+  {
+    "AreaID": 16374,
+    "MapID": 2856,
+    "ParentAreaId": 16236,
+    "AreaName": "Arcane Sanctum"
+  },
+  {
+    "AreaID": 16394,
+    "MapID": 2921,
+    "ParentAreaId": 0,
+    "AreaName": "Naxxramas"
+  },
+  {
+    "AreaID": 16508,
+    "MapID": 2940,
+    "ParentAreaId": 0,
+    "AreaName": "Burning Steppes"
+  },
+  {
+    "AreaID": 16509,
+    "MapID": 2940,
+    "ParentAreaId": 0,
+    "AreaName": "Stormwind City"
+  },
+  {
+    "AreaID": 16510,
+    "MapID": 2940,
+    "ParentAreaId": 0,
+    "AreaName": "Elwynn Forest"
+  },
+  {
+    "AreaID": 16511,
+    "MapID": 2940,
+    "ParentAreaId": 16509,
+    "AreaName": "Valley of Heroes"
+  },
+  {
+    "AreaID": 16512,
+    "MapID": 2940,
+    "ParentAreaId": 16508,
+    "AreaName": "Draco'dar"
+  },
+  {
+    "AreaID": 16513,
+    "MapID": 2940,
+    "ParentAreaId": 16508,
+    "AreaName": "Blackrock Mountain"
+  },
+  {
+    "AreaID": 16514,
+    "MapID": 2940,
+    "ParentAreaId": 16510,
+    "AreaName": "Echo Ridge Mine"
+  },
+  {
+    "AreaID": 16515,
+    "MapID": 2940,
+    "ParentAreaId": 16510,
+    "AreaName": "Tower of Azora"
+  },
+  {
+    "AreaID": 16516,
+    "MapID": 2940,
+    "ParentAreaId": 16510,
+    "AreaName": "Heroes' Vigil"
+  },
+  {
+    "AreaID": 16517,
+    "MapID": 2940,
+    "ParentAreaId": 16510,
+    "AreaName": "Mirror Lake"
+  },
+  {
+    "AreaID": 16518,
+    "MapID": 2940,
+    "ParentAreaId": 16510,
+    "AreaName": "Mirror Lake Orchard"
+  },
+  {
+    "AreaID": 16519,
+    "MapID": 2940,
+    "ParentAreaId": 16510,
+    "AreaName": "Jasperlode Mine"
+  },
+  {
+    "AreaID": 16520,
+    "MapID": 2940,
+    "ParentAreaId": 16510,
+    "AreaName": "Northshire Vineyards"
+  },
+  {
+    "AreaID": 16521,
+    "MapID": 2940,
+    "ParentAreaId": 16510,
+    "AreaName": "Crystal Lake"
+  },
+  {
+    "AreaID": 16522,
+    "MapID": 2940,
+    "ParentAreaId": 16510,
+    "AreaName": "Stone Cairn Lake"
+  },
+  {
+    "AreaID": 16523,
+    "MapID": 2940,
+    "ParentAreaId": 16510,
+    "AreaName": "Northshire Valley"
+  },
+  {
+    "AreaID": 16524,
+    "MapID": 2940,
+    "ParentAreaId": 16510,
+    "AreaName": "Goldshire"
+  },
+  {
+    "AreaID": 16532,
+    "MapID": 2908,
+    "ParentAreaId": 0,
+    "AreaName": "Tyler's Test Map (Desolace)"
+  },
+  {
+    "AreaID": 16537,
+    "MapID": 2940,
+    "ParentAreaId": 16510,
+    "AreaName": "Northshire Valley - Camelot"
+  },
+  {
+    "AreaID": 16544,
+    "MapID": 2959,
+    "ParentAreaId": 0,
+    "AreaName": "City of Dalaran"
+  },
+  {
+    "AreaID": 16558,
+    "MapID": 2959,
+    "ParentAreaId": 16544,
+    "AreaName": "Dalaran"
+  },
+  {
+    "AreaID": 16559,
+    "MapID": 2959,
+    "ParentAreaId": 16544,
+    "AreaName": "Fel Grove"
+  },
+  {
+    "AreaID": 16560,
+    "MapID": 2959,
+    "ParentAreaId": 0,
+    "AreaName": "City of Dalaran"
+  },
+  {
+    "AreaID": 16562,
+    "MapID": 2959,
+    "ParentAreaId": 0,
+    "AreaName": "Hillsbrad Foothills"
+  },
+  {
+    "AreaID": 16577,
+    "MapID": 1,
+    "ParentAreaId": 16,
+    "AreaName": "Thalassian Vanguard Camp"
+  },
+  {
+    "AreaID": 16591,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Riverglades"
+  },
+  {
+    "AreaID": 16593,
+    "MapID": 2991,
+    "ParentAreaId": 0,
+    "AreaName": "Zephras Isle"
+  },
+  {
+    "AreaID": 16602,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Bandarion Keep"
+  },
+  {
+    "AreaID": 16603,
+    "MapID": 2996,
+    "ParentAreaId": 0,
+    "AreaName": "Warsong Gulch"
+  },
+  {
+    "AreaID": 16604,
+    "MapID": 2996,
+    "ParentAreaId": 16603,
+    "AreaName": "Silverwing Hold"
+  },
+  {
+    "AreaID": 16605,
+    "MapID": 2996,
+    "ParentAreaId": 16603,
+    "AreaName": "Warsong Lumber Mill"
+  },
+  {
+    "AreaID": 16606,
+    "MapID": 2997,
+    "ParentAreaId": 0,
+    "AreaName": "Darkspear Islands"
+  },
+  {
+    "AreaID": 16607,
+    "MapID": 2997,
+    "ParentAreaId": 16606,
+    "AreaName": "Ruins"
+  },
+  {
+    "AreaID": 16608,
+    "MapID": 2997,
+    "ParentAreaId": 16606,
+    "AreaName": "Camp"
+  },
+  {
+    "AreaID": 16609,
+    "MapID": 2997,
+    "ParentAreaId": 16606,
+    "AreaName": "Shipwreck Cove"
+  },
+  {
+    "AreaID": 16610,
+    "MapID": 2997,
+    "ParentAreaId": 16606,
+    "AreaName": "Abandoned Tower"
+  },
+  {
+    "AreaID": 16611,
+    "MapID": 2999,
+    "ParentAreaId": 0,
+    "AreaName": "Ruins of Lordaeron"
+  },
+  {
+    "AreaID": 16612,
+    "MapID": 2999,
+    "ParentAreaId": 16611,
+    "AreaName": "King's Alley"
+  },
+  {
+    "AreaID": 16614,
+    "MapID": 2999,
+    "ParentAreaId": 16611,
+    "AreaName": "Lordaeron Graveyard"
+  },
+  {
+    "AreaID": 16615,
+    "MapID": 2999,
+    "ParentAreaId": 16611,
+    "AreaName": "Lordamere Overlook"
+  },
+  {
+    "AreaID": 16616,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Whispering Forest"
+  },
+  {
+    "AreaID": 16617,
+    "MapID": 2999,
+    "ParentAreaId": 16611,
+    "AreaName": "Market Street"
+  },
+  {
+    "AreaID": 16622,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Thendal Grove"
+  },
+  {
+    "AreaID": 16623,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Shen'dar Highlands"
+  },
+  {
+    "AreaID": 16624,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Shen'dar Village"
+  },
+  {
+    "AreaID": 16625,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Windsong Lake"
+  },
+  {
+    "AreaID": 16626,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Gustberry Lowlands"
+  },
+  {
+    "AreaID": 16628,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Valanaar Skydocks"
+  },
+  {
+    "AreaID": 16629,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Shrine of Akir"
+  },
+  {
+    "AreaID": 16630,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Rohashi Spires"
+  },
+  {
+    "AreaID": 16631,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Shadowgale Forest"
+  },
+  {
+    "AreaID": 16632,
+    "MapID": 3002,
+    "ParentAreaId": 0,
+    "AreaName": "Half-Pint Tavern"
+  },
+  {
+    "AreaID": 16635,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Thendal Village"
+  },
+  {
+    "AreaID": 16636,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Falaath Village"
+  },
+  {
+    "AreaID": 16637,
+    "MapID": 1,
+    "ParentAreaId": 490,
+    "AreaName": "Stomping Grounds"
+  },
+  {
+    "AreaID": 16638,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Valanaar"
+  },
+  {
+    "AreaID": 16650,
+    "MapID": 2908,
+    "ParentAreaId": 16532,
+    "AreaName": "Tyler's Test Subzone (Desolace)"
+  },
+  {
+    "AreaID": 16651,
+    "MapID": 1,
+    "ParentAreaId": 0,
+    "AreaName": "Shen'dralas"
+  },
+  {
+    "AreaID": 16653,
+    "MapID": 3005,
+    "ParentAreaId": 0,
+    "AreaName": "Battle for Gilneas"
+  },
+  {
+    "AreaID": 16654,
+    "MapID": 3005,
+    "ParentAreaId": 16653,
+    "AreaName": "Lighthouse"
+  },
+  {
+    "AreaID": 16655,
+    "MapID": 3005,
+    "ParentAreaId": 16653,
+    "AreaName": "Waterworks"
+  },
+  {
+    "AreaID": 16656,
+    "MapID": 3005,
+    "ParentAreaId": 16653,
+    "AreaName": "Mines"
+  },
+  {
+    "AreaID": 16657,
+    "MapID": 3005,
+    "ParentAreaId": 16653,
+    "AreaName": "Horde Landing"
+  },
+  {
+    "AreaID": 16658,
+    "MapID": 3005,
+    "ParentAreaId": 16653,
+    "AreaName": "Gilnean Stronghold"
+  },
+  {
+    "AreaID": 16659,
+    "MapID": 3005,
+    "ParentAreaId": 16653,
+    "AreaName": "The Overlook"
+  },
+  {
+    "AreaID": 16660,
+    "MapID": 3005,
+    "ParentAreaId": 16653,
+    "AreaName": "Gilnean Coast"
+  },
+  {
+    "AreaID": 16661,
+    "MapID": 3005,
+    "ParentAreaId": 16653,
+    "AreaName": "Beneath the Double Rainbow"
+  },
+  {
+    "AreaID": 16662,
+    "MapID": 3006,
+    "ParentAreaId": 0,
+    "AreaName": "Stormr's Test Map"
+  },
+  {
+    "AreaID": 16663,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Windfield Orchard"
+  },
+  {
+    "AreaID": 16672,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Shriekling Den"
+  },
+  {
+    "AreaID": 16673,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Thendal Cave"
+  },
+  {
+    "AreaID": 16674,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Bandit Hideout"
+  },
+  {
+    "AreaID": 16675,
+    "MapID": 1,
+    "ParentAreaId": 16651,
+    "AreaName": "Magram Front"
+  },
+  {
+    "AreaID": 16676,
+    "MapID": 1,
+    "ParentAreaId": 16651,
+    "AreaName": "Outcast Hideaway"
+  },
+  {
+    "AreaID": 16677,
+    "MapID": 1,
+    "ParentAreaId": 16651,
+    "AreaName": "Bristleback Retreat"
+  },
+  {
+    "AreaID": 16678,
+    "MapID": 1,
+    "ParentAreaId": 16651,
+    "AreaName": "Evenshade's Overlook"
+  },
+  {
+    "AreaID": 16679,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Sanctum of Storms"
+  },
+  {
+    "AreaID": 16685,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Twilight's Shroud"
+  },
+  {
+    "AreaID": 16720,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Nightclaw Cavern"
+  },
+  {
+    "AreaID": 16723,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Sunnyglade"
+  },
+  {
+    "AreaID": 16724,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Farholde Keep"
+  },
+  {
+    "AreaID": 16725,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Wheeler's Grange"
+  },
+  {
+    "AreaID": 16726,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Bolder'ok"
+  },
+  {
+    "AreaID": 16727,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Powderfuse Port"
+  },
+  {
+    "AreaID": 16728,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Eastwind Shore"
+  },
+  {
+    "AreaID": 16729,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Terral's Watch"
+  },
+  {
+    "AreaID": 16731,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Windstead"
+  },
+  {
+    "AreaID": 16732,
+    "MapID": 2998,
+    "ParentAreaId": 0,
+    "AreaName": "Excavation Site: Wetlands"
+  },
+  {
+    "AreaID": 16734,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Elbrim's Farm"
+  },
+  {
+    "AreaID": 16735,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Meadowsbrook"
+  },
+  {
+    "AreaID": 16736,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Turner's Logging Camp"
+  },
+  {
+    "AreaID": 16737,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Bristle Hills"
+  },
+  {
+    "AreaID": 16739,
+    "MapID": 0,
+    "ParentAreaId": 46,
+    "AreaName": "Poacher's Den"
+  },
+  {
+    "AreaID": 16740,
+    "MapID": 0,
+    "ParentAreaId": 47,
+    "AreaName": "Martsirt"
+  },
+  {
+    "AreaID": 16741,
+    "MapID": 0,
+    "ParentAreaId": 1,
+    "AreaName": "Ironforge Submarine Facility"
+  },
+  {
+    "AreaID": 16742,
+    "MapID": 1,
+    "ParentAreaId": 16651,
+    "AreaName": "Forlorn Gardens"
+  },
+  {
+    "AreaID": 16743,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Rog'mar"
+  },
+  {
+    "AreaID": 16744,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Southern Watch"
+  },
+  {
+    "AreaID": 16756,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Ruins of Gilneas"
+  },
+  {
+    "AreaID": 16757,
+    "MapID": 0,
+    "ParentAreaId": 16756,
+    "AreaName": "Gilneas City"
+  },
+  {
+    "AreaID": 16758,
+    "MapID": 0,
+    "ParentAreaId": 16756,
+    "AreaName": "Northern Headlands"
+  },
+  {
+    "AreaID": 16759,
+    "MapID": 0,
+    "ParentAreaId": 16756,
+    "AreaName": "Dreadwatch Outpost"
+  },
+  {
+    "AreaID": 16760,
+    "MapID": 0,
+    "ParentAreaId": 16756,
+    "AreaName": "Rutsak's Guard"
+  },
+  {
+    "AreaID": 16761,
+    "MapID": 0,
+    "ParentAreaId": 16756,
+    "AreaName": "Emberstone Village"
+  },
+  {
+    "AreaID": 16762,
+    "MapID": 0,
+    "ParentAreaId": 16756,
+    "AreaName": "Emberstone Mine"
+  },
+  {
+    "AreaID": 16763,
+    "MapID": 0,
+    "ParentAreaId": 16756,
+    "AreaName": "Tempest's Reach"
+  },
+  {
+    "AreaID": 16764,
+    "MapID": 0,
+    "ParentAreaId": 16756,
+    "AreaName": "The Blackwald"
+  },
+  {
+    "AreaID": 16765,
+    "MapID": 0,
+    "ParentAreaId": 16756,
+    "AreaName": "Hayward Fishery"
+  },
+  {
+    "AreaID": 16772,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Unused"
+  },
+  {
+    "AreaID": 16820,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "The Forbidding Sea"
+  },
+  {
+    "AreaID": 16833,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Ruins of Ban'aethal"
+  },
+  {
+    "AreaID": 16848,
+    "MapID": 1,
+    "ParentAreaId": 616,
+    "AreaName": "Elderwild"
+  },
+  {
+    "AreaID": 16849,
+    "MapID": 1,
+    "ParentAreaId": 616,
+    "AreaName": "Summit of Eternity"
+  },
+  {
+    "AreaID": 16853,
+    "MapID": 1,
+    "ParentAreaId": 616,
+    "AreaName": "Tainted Foothills"
+  },
+  {
+    "AreaID": 16866,
+    "MapID": 1,
+    "ParentAreaId": 616,
+    "AreaName": "Dae'gun"
+  },
+  {
+    "AreaID": 16867,
+    "MapID": 1,
+    "ParentAreaId": 616,
+    "AreaName": "Shrine of Aviana"
+  },
+  {
+    "AreaID": 16868,
+    "MapID": 1,
+    "ParentAreaId": 616,
+    "AreaName": "Mourning's Rest"
+  },
+  {
+    "AreaID": 16876,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Whelgar's Excavation Site"
+  },
+  {
+    "AreaID": 16877,
+    "MapID": 2998,
+    "ParentAreaId": 16732,
+    "AreaName": "Lost Marsh"
+  },
+  {
+    "AreaID": 16878,
+    "MapID": 2998,
+    "ParentAreaId": 16732,
+    "AreaName": "Stalker's Thicket"
+  },
+  {
+    "AreaID": 16879,
+    "MapID": 2998,
+    "ParentAreaId": 16732,
+    "AreaName": "Site of the Guardian"
+  },
+  {
+    "AreaID": 16880,
+    "MapID": 2998,
+    "ParentAreaId": 16732,
+    "AreaName": "Lost Dig Site"
+  },
+  {
+    "AreaID": 16881,
+    "MapID": 0,
+    "ParentAreaId": 85,
+    "AreaName": "Shadowvale"
+  },
+  {
+    "AreaID": 16916,
+    "MapID": 1,
+    "ParentAreaId": 493,
+    "AreaName": "Stormrage Barrow Dens"
+  },
+  {
+    "AreaID": 16919,
+    "MapID": 3065,
+    "ParentAreaId": 0,
+    "AreaName": "The Hall of Thanes"
+  },
+  {
+    "AreaID": 16941,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Crafting"
+  },
+  {
+    "AreaID": 16985,
+    "MapID": 1,
+    "ParentAreaId": 490,
+    "AreaName": "The Shaper's Terrace"
+  },
+  {
+    "AreaID": 16986,
+    "MapID": 1,
+    "ParentAreaId": 490,
+    "AreaName": "Pillar of Assimilation"
+  },
+  {
+    "AreaID": 16988,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Rise of Spirits"
+  },
+  {
+    "AreaID": 17044,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Gloomrise"
+  },
+  {
+    "AreaID": 17045,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Skywatcher Plateau"
+  },
+  {
+    "AreaID": 17050,
+    "MapID": 1,
+    "ParentAreaId": 616,
+    "AreaName": "Felblood Scar"
+  },
+  {
+    "AreaID": 17052,
+    "MapID": 1,
+    "ParentAreaId": 400,
+    "AreaName": "Scalding Ridge"
+  },
+  {
+    "AreaID": 17065,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Gilneas"
+  },
+  {
+    "AreaID": 17066,
+    "MapID": 0,
+    "ParentAreaId": 0,
+    "AreaName": "Shark-Infested Waters"
+  },
+  {
+    "AreaID": 17144,
+    "MapID": 1,
+    "ParentAreaId": 616,
+    "AreaName": "Malorne's Retreat"
+  },
+  {
+    "AreaID": 17145,
+    "MapID": 1,
+    "ParentAreaId": 616,
+    "AreaName": "Cradle of Tranquility"
+  },
+  {
+    "AreaID": 17191,
+    "MapID": 3109,
+    "ParentAreaId": 0,
+    "AreaName": "Manor Mistmantle"
+  },
+  {
+    "AreaID": 17203,
+    "MapID": 0,
+    "ParentAreaId": 1519,
+    "AreaName": "Stormwind Harbor"
+  },
+  {
+    "AreaID": 17221,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Skywall"
+  },
+  {
+    "AreaID": 17223,
+    "MapID": 1,
+    "ParentAreaId": 215,
+    "AreaName": "Camp Gev'rek"
+  },
+  {
+    "AreaID": 17674,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "West Pylon Watchtower"
+  },
+  {
+    "AreaID": 17675,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "East Pylon Watchtower"
+  },
+  {
+    "AreaID": 17676,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Windsong Standing Stones"
+  },
+  {
+    "AreaID": 17677,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Overlook Standing Stones"
+  },
+  {
+    "AreaID": 17678,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Thendal Standing Stones"
+  },
+  {
+    "AreaID": 17684,
+    "MapID": 2991,
+    "ParentAreaId": 16593,
+    "AreaName": "Fairweather Stables"
+  },
+  {
+    "AreaID": 17707,
+    "MapID": 0,
+    "ParentAreaId": 36,
+    "AreaName": "Old Dalaran Ruins"
+  },
+  {
+    "AreaID": 17716,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Dragonmaw Retreat"
+  },
+  {
+    "AreaID": 17732,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "Excavation Site: Wetlands"
+  },
+  {
+    "AreaID": 17738,
+    "MapID": 0,
+    "ParentAreaId": 11,
+    "AreaName": "The Drunken Dwarf"
+  },
+  {
+    "AreaID": 17780,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Krol'dok Stronghold"
+  },
+  {
+    "AreaID": 17803,
+    "MapID": 230,
+    "ParentAreaId": 0,
+    "AreaName": "Blackrock Depths"
+  },
+  {
+    "AreaID": 17804,
+    "MapID": 229,
+    "ParentAreaId": 0,
+    "AreaName": "Blackrock Spire"
+  },
+  {
+    "AreaID": 17808,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Ashwood's Fall"
+  },
+  {
+    "AreaID": 17809,
+    "MapID": 0,
+    "ParentAreaId": 16591,
+    "AreaName": "Forlorn Pit"
+  },
+  {
+    "AreaID": 17824,
+    "MapID": 0,
+    "ParentAreaId": 279,
+    "AreaName": "The Eventide"
+  }
+]

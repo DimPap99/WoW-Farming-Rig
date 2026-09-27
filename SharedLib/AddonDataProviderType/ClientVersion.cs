@@ -9,6 +9,7 @@ public enum ClientVersion
     Wrath = 11,
     Cata = 14,
     Mop = 19,
+    Forever = 20,
     //
     Legacy_Vanilla = 91,
     Legacy_TBC = 92,

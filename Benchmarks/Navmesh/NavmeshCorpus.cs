@@ -43,11 +43,11 @@ public static class NavmeshCorpus
         throw new ArgumentOutOfRangeException(nameof(name), $"Unknown corpus tile '{name}'");
     }
 
-    /// <summary>Directory containing MasterOfPuppets.sln, walking up from the binary.</summary>
+    /// <summary>Directory containing WoWFarmingRig.sln, walking up from the binary.</summary>
     public static string SolutionRoot()
     {
         string? dir = AppContext.BaseDirectory;
-        while (dir is not null && !File.Exists(Path.Combine(dir, "MasterOfPuppets.sln")))
+        while (dir is not null && !File.Exists(Path.Combine(dir, "WoWFarmingRig.sln")))
         {
             dir = Path.GetDirectoryName(dir);
         }

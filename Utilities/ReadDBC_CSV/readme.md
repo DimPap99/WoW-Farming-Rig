@@ -1,6 +1,6 @@
 # ReadDBC_CSV
 
-A CLI tool to extract WoW DBC data from [wago.tools](https://wago.tools) and generate JSON files for WowClassicGrindBot.
+A CLI tool to extract WoW DBC data from [wago.tools](https://wago.tools) and generate JSON files for WoW Farming Rig.
 
 ## Usage
 
@@ -26,6 +26,7 @@ ReadDBC_CSV [options] [extractors...]
 | `wrath` | 3.4.5.63697 | WotLK Classic |
 | `cata` | 4.4.2.60895 | Cataclysm Classic |
 | `mop` | 5.5.4.68806 | MoP Classic |
+| `forever` | 1.60.1.70009 | WoW: Forever beta (data extraction in progress) |
 | `legacy_cata` | 8.1.0.27826 | Legacy Cataclysm data |
 | `legacy_mop` | 5.5.4.68806 | Legacy MoP data (sourced from MoP Classic) |
 
@@ -95,7 +96,7 @@ ReadDBC_CSV --clean item
 
 Generated JSON files are automatically copied to:
 ```
-WowClassicGrindBot/Json/dbc/{version}/
+WoW-Farming-Rig/Json/dbc/{version}/
 ```
 
 Downloaded CSV files are cached in:
@@ -186,7 +187,7 @@ The extractor can extend zone data with subzone boundaries from pre-generated su
 
 **Subzone files location:**
 ```
-WowClassicGrindBot/Json/subzones/{expansion}/
+WoW-Farming-Rig/Json/subzones/{expansion}/
 ```
 
 **File format:** Numeric filenames representing continent IDs:

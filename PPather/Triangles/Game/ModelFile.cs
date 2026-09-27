@@ -19,6 +19,7 @@
  */
 
 using StormDll;
+using PPather.Storage;
 
 using System;
 using System.Buffers;
@@ -32,9 +33,17 @@ namespace Wmo;
 public static class ModelFile
 {
     [SkipLocalsInit]
-    public static Model Read(ArchiveSet archive, ReadOnlySpan<char> fileName)
+    public static Model Read(IGameFileSource archive, ReadOnlySpan<char> fileName) =>
+        Read(archive.OpenRead(fileName));
+
+    [SkipLocalsInit]
+    public static Model Read(IGameFileSource archive, uint fileDataId) =>
+        Read(archive.OpenRead(fileDataId));
+
+    [SkipLocalsInit]
+    private static Model Read(System.IO.Stream input)
     {
-        using MpqFileStream mpq = archive.GetStream(fileName);
+        using System.IO.Stream mpq = input;
         int length = (int)mpq.Length;
 
         var pooler = ArrayPool<byte>.Shared;
@@ -44,7 +53,16 @@ public static class ModelFile
             ? stackalloc byte[length]
             : (array = pooler.Rent(length)).AsSpan(0, length);
 
-        mpq.Read(stream);
+        mpq.ReadExactly(stream);
+
+        // Modern CASC M2s wrap the otherwise compatible MD20 payload in MD21.
+        // All offsets below are relative to MD20, not the outer wrapper.
+        const uint MD20 = 0x3032444D;
+        const uint MD21 = 0x3132444D;
+        if (stream.Length >= 12 && ReadUInt32LittleEndian(stream) == MD21)
+            stream = stream[8..];
+        if (stream.Length < 12 || ReadUInt32LittleEndian(stream) != MD20)
+            throw new System.IO.InvalidDataException("Expected MD20 model payload.");
 
         ReadOnlySpan<byte> begining = stream;
 

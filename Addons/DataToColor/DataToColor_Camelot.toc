@@ -1,0 +1,34 @@
+## Interface: 16001
+## Title: DataToColor
+## Author: FreeHongKongMMO
+## Notes: Displays data as colors (World of Warcraft: Forever)
+## Version: 1.13.5
+## RequiredDeps:
+## OptionalDeps: Ace3, LibRangeCheck
+## SavedVariables:
+
+embeds-ace3-forever.xml
+
+init.lua
+
+Collections.lua
+
+Versions.lua
+
+Constants.lua
+Query.lua
+BitCache.lua
+AuraCache.lua
+
+Storage.lua
+
+Diagnostics.lua
+
+EventHandlers.lua
+
+SetupDefaultBindings.lua
+
+ActionBarTextures.lua
+ActionBarMacros.lua
+
+DataToColor.lua

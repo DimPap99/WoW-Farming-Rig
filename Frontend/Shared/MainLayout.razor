@@ -127,10 +127,20 @@
 
     private async Task<Sidebar2DataProviderResult> Sidebar2DataProvider(Sidebar2DataProviderRequest request)
     {
-        navItems = ConfigExists ? GetNormalNavItems() : GetConfigNavItems();
+        navItems = client.Version == ClientVersion.Forever
+            ? GetForeverNavItems()
+            : ConfigExists ? GetNormalNavItems() : GetConfigNavItems();
 
         return await Task.FromResult(request.ApplyTo(navItems));
     }
+
+    private static List<NavItem> GetForeverNavItems() =>
+    [
+        new() { Id = "0", Href = "/", Text = "Forever status", Match = NavLinkMatch.All },
+        new() { Id = "1", Href = "/Screenshot", Text = "Screenshot" },
+        new() { Id = "2", Href = "/Log", Text = "Log" },
+        new() { Id = "3", Href = "/RestartServer", Text = "Restart" }
+    ];
 
     private List<NavItem> GetNormalNavItems()
     {

@@ -12,6 +12,8 @@ public sealed class StartupClientVersion
     {
         (Version, Path) = v switch
         {
+            // Forever is its own client and world, despite using a 1.x version.
+            { Major: 1, Minor: >= 60 } => (ClientVersion.Forever, "forever"),
             // --- Classic branch ---
             { Major: 1, Minor: >= 13 } => (ClientVersion.SoM, "som"), // Vanilla / SoM
             { Major: 2, Minor: >= 5 } => (ClientVersion.TBC, "tbc"),  // TBC Classic

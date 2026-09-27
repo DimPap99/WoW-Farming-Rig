@@ -1,11 +1,11 @@
-# WowClassicGrindBot - Claude Code Guidelines
+# WoW Farming Rig - Claude Code Guidelines
 
 ## bash commands
 * don't pipe to /dev/nul. we run git bash on windows and it doesn't work.
-* in case the file exists use `rm -f "./WowClassicGrindBot/nul"`
+* in case the file exists use `rm -f "./WoW-Farming-Rig/nul"`
 
 ## Project Overview
-Multi-project .NET 10 solution (MasterOfPuppets.sln) with Blazor Server frontend, SignalR communication, and various utility projects.
+Multi-project .NET 10 solution (WoWFarmingRig.sln) with Blazor Server frontend, SignalR communication, and various utility projects.
 
 ## Language & Framework
 - **Target:** .NET 10 (`net10.0`) with C# 14 (`LangVersion: preview`)
@@ -15,7 +15,7 @@ Multi-project .NET 10 solution (MasterOfPuppets.sln) with Blazor Server frontend
 
 ## Build & Test Commands
 ```bash
-dotnet build MasterOfPuppets.sln
+dotnet build WoWFarmingRig.sln
 dotnet test
 dotnet run --project BlazorServer
 dotnet run --project Benchmarks -c Release
@@ -26,7 +26,7 @@ dotnet run --project Benchmarks -c Release
   - Place constants in the owning class to enable Find All References and compile-time safety
 
 ## User facing API changes
-- When the `Core\Requirement\RequirementFactory.cs` is changed, a user facing API is added, removed, renamed make sure to update the `README.md` file
+- When `Core\Requirement\RequirementFactory.cs` changes a user-facing requirement, update `docs/requirements.md` and the README if the feature summary changes.
 
 ## Code Style
 Existing `.editorconfig` defines style rules. Key conventions:
@@ -74,5 +74,5 @@ Central package management via `Directory.Packages.props`:
 - Use BenchmarkDotNet `[Benchmark]` attributes for performance testing
 
 ## Git Workflow
-- Main branch: `dev`
-- Create feature branches from `dev`
+- Main branch: `main`
+- Create feature branches from `main`

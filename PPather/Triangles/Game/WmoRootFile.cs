@@ -19,6 +19,7 @@
  */
 
 using PPather.Extensions;
+using PPather.Storage;
 
 using StormDll;
 
@@ -32,15 +33,16 @@ namespace Wmo;
 
 internal static class WmoRootFile
 {
-    public static void Load(ArchiveSet archive, ReadOnlySpan<char> name, WMORoot wmo, ModelManager modelmanager)
+    public static void Load(IGameFileSource archive, ReadOnlySpan<char> name, WMORoot wmo, ModelManager modelmanager)
     {
-        using MpqFileStream mpq = archive.GetStream(name);
+        using Stream mpq = archive.OpenRead(name);
 
         var pooler = ArrayPool<byte>.Shared;
-        byte[] buffer = pooler.Rent((int)mpq.Length);
-        mpq.ReadAllBytesTo(buffer);
+        int length = checked((int)mpq.Length);
+        byte[] buffer = pooler.Rent(length);
+        mpq.ReadExactly(buffer.AsSpan(0, length));
 
-        using MemoryStream stream = new(buffer, 0, (int)mpq.Length, false);
+        using MemoryStream stream = new(buffer, 0, length, false);
         using BinaryReader file = new(stream);
 
         do

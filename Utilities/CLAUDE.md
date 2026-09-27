@@ -1,9 +1,9 @@
 # Utilities — offline data tools
 
 One-shot console tools that generate data into `Json/`. **None of these are in
-`MasterOfPuppets.sln`**, which has two consequences worth internalising:
+`WoWFarmingRig.sln`**, which has two consequences worth internalising:
 
-* `dotnet build MasterOfPuppets.sln` does **not** build them.
+* `dotnet build WoWFarmingRig.sln` does **not** build them.
 * `dotnet run --no-build` therefore silently runs a **stale binary**. Build the project
   directly (`dotnet build Utilities/<Tool>`) or omit `--no-build`.
 
@@ -17,6 +17,7 @@ because the old binary ran and fell through to a different code path.
 | `WowheadDB_Extractor` | zone NPC/herb/vein data from Wowhead |
 | `ClassifyVendorFlags`, `TransferTrainerFlags` | NPC flag maintenance |
 | `DangerZoneGenerator` | authored danger-zone data |
+| `ForeverVisualReader` | read-only WGC capture and status-bar percentage diagnostic for the Forever port |
 | `PathMaker`, `ReadItems` | loose scripts, no csproj |
 
 ## BakeTool

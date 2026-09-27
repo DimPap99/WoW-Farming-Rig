@@ -4,6 +4,7 @@ using Game;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PPather.Storage;
 
 using Serilog;
 using Serilog.Extensions.Logging;
@@ -99,6 +100,10 @@ internal sealed class Program
         {
             Test_NavmeshCoords(remaining.GetRange(1, remaining.Count - 1).ToArray());
             Test_CostZones(remaining.GetRange(1, remaining.Count - 1).ToArray());
+            Test_CascGeometryListfile();
+            Test_ModelInstanceScale();
+            Test_WmoFileDataIdReferences();
+            Test_WmoMPY2();
             Log.CloseAndFlush();
             return;
         }
@@ -696,6 +701,190 @@ internal sealed class Program
         test.TestExpressionScope();
         test.TestGenerate(zone, subzone, mobs, stops, Enum.Parse<RouteFocus>(focus, true),
             Enum.Parse<RouteGenMode>(mode, true), seedArg, outputDir, format);
+    }
+
+    private static void Test_CascGeometryListfile()
+    {
+        using System.IO.StringReader reader = new(
+            "775971;world/maps/azeroth/azeroth.wdt\n" +
+            "778027;world/maps/azeroth/azeroth_32_48.adt\n" +
+            "778027;WORLD\\MAPS\\AZEROTH\\AZEROTH_32_48.ADT\n" +
+            "123;interface/icons/unused.blp\n");
+
+        CascGeometryListfile list = CascGeometryListfile.Load(reader);
+        if (list.Count != 2 ||
+            !list.TryGetFileDataId(@"World\Maps\Azeroth\Azeroth.wdt", out uint wdtId) || wdtId != 775971 ||
+            !list.TryGetFileDataId("WORLD/MAPS/AZEROTH/AZEROTH_32_48.ADT", out uint adtId) || adtId != 778027 ||
+            list.TryGetFileDataId("interface/icons/unused.blp", out _))
+        {
+            throw new Exception("CASC listfile path normalization failed.");
+        }
+
+        try
+        {
+            using System.IO.StringReader conflicting = new(
+                "1;world/maps/azeroth/azeroth.wdt\n2;WORLD\\MAPS\\AZEROTH\\AZEROTH.WDT\n");
+            _ = CascGeometryListfile.Load(conflicting);
+            throw new Exception("CASC listfile conflict was accepted.");
+        }
+        catch (System.IO.InvalidDataException)
+        {
+            logger.LogInformation("CASC geometry listfile normalization/conflict checks passed.");
+        }
+    }
+
+    private static void Test_ModelInstanceScale()
+    {
+        using System.IO.MemoryStream stream = new();
+        using (System.IO.BinaryWriter writer = new(stream, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(1U); // unique ID
+            for (int i = 0; i < 6; i++)
+                writer.Write(0f); // position and direction
+            writer.Write((ushort)1536); // 1.5x scale
+            writer.Write((ushort)0x40); // FileDataID placement flag
+        }
+
+        stream.Position = 0;
+        using System.IO.BinaryReader reader = new(stream);
+        Wmo.Model model = new([], [], []);
+        Wmo.ModelInstance placement = new(reader, model);
+        if (Math.Abs(placement.scale - 1.5f) > 0.0001f || stream.Position != 32)
+            throw new Exception("MDDF scale was contaminated by placement flags.");
+
+        logger.LogInformation("MDDF scale/flags separation passed.");
+    }
+
+    private static void Test_WmoFileDataIdReferences()
+    {
+        static byte[] MakeRoot(uint doodadIndex, bool incompleteGroups = false)
+        {
+            using System.IO.MemoryStream stream = new();
+            using System.IO.BinaryWriter writer = new(stream);
+
+            static void Chunk(System.IO.BinaryWriter writer, string reversedTag, byte[] payload)
+            {
+                writer.Write(System.Text.Encoding.ASCII.GetBytes(reversedTag));
+                writer.Write((uint)payload.Length);
+                writer.Write(payload);
+            }
+
+            using (System.IO.MemoryStream payload = new())
+            {
+                using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
+                data.Write(0U); // materials
+                data.Write(2U); // MOHD group count
+                data.Write(new byte[56]);
+                Chunk(writer, "DHOM", payload.ToArray());
+            }
+
+            using (System.IO.MemoryStream payload = new())
+            {
+                using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
+                data.Write(101U);
+                if (!incompleteGroups)
+                {
+                    data.Write(102U);
+                    data.Write(201U); // lower-detail group 0
+                    data.Write(202U); // lower-detail group 1
+                }
+                Chunk(writer, "DIFG", payload.ToArray());
+            }
+
+            using (System.IO.MemoryStream payload = new())
+            {
+                using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
+                data.Write(doodadIndex | 0x10000000U); // high byte is flags
+                data.Write(new byte[36]);
+                Chunk(writer, "DDOM", payload.ToArray()); // MODD precedes MODI
+            }
+
+            using (System.IO.MemoryStream payload = new())
+            {
+                using System.IO.BinaryWriter data = new(payload, System.Text.Encoding.ASCII, leaveOpen: true);
+                data.Write(301U);
+                data.Write(302U);
+                Chunk(writer, "IDOM", payload.ToArray());
+            }
+
+            return stream.ToArray();
+        }
+
+        using (System.IO.MemoryStream valid = new(MakeRoot(1)))
+        {
+            Wmo.WmoFileDataIdReferences refs = Wmo.WmoFileDataIdReferences.Read(valid);
+            if (refs.GroupCount != 2 || refs.LodCount != 2 ||
+                !refs.FullDetailGroupIds.SequenceEqual([101U, 102U]) ||
+                !refs.DoodadModelIds.SequenceEqual([301U, 302U]) ||
+                !refs.DoodadPlacementModelIndexes.SequenceEqual([1U]))
+            {
+                throw new Exception("Numeric WMO references were not parsed correctly.");
+            }
+        }
+
+        foreach (byte[] malformed in new[] { MakeRoot(2), MakeRoot(0, incompleteGroups: true) })
+        {
+            try
+            {
+                using System.IO.MemoryStream file = new(malformed);
+                _ = Wmo.WmoFileDataIdReferences.Read(file);
+                throw new Exception("Malformed WMO references were accepted.");
+            }
+            catch (System.IO.InvalidDataException)
+            {
+            }
+        }
+
+        logger.LogInformation("Numeric WMO group/LOD and doodad-reference checks passed.");
+    }
+
+    private static void Test_WmoMPY2()
+    {
+        using System.IO.MemoryStream file = new();
+        using (System.IO.BinaryWriter writer = new(file, System.Text.Encoding.ASCII, leaveOpen: true))
+        {
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("REVM"));
+            writer.Write(4U);
+            writer.Write(17U);
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("PGOM"));
+            writer.Write(68U);
+            writer.Write(new byte[68]);
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("2YPM"));
+            writer.Write(4U);
+            writer.Write((ushort)0x28); // collision + render flags
+            writer.Write((ushort)17); // material ID is not a collision flag
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("IVOM"));
+            writer.Write(6U);
+            writer.Write((ushort)0);
+            writer.Write((ushort)1);
+            writer.Write((ushort)2);
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("TVOM"));
+            writer.Write(36U);
+            foreach (float coordinate in new float[] { 0, 0, 0, 1, 0, 0, 0, 1, 0 })
+                writer.Write(coordinate);
+        }
+
+        using WmoGroupTestSource source = new(file.ToArray());
+        Wmo.WMOGroup group = new();
+        Wmo.WmoGroupFile.Load(source, 123U, new Wmo.WMORoot(), group);
+        if (group.nTriangles != 1 || group.nVertices != 3 ||
+            group.materials[0] != 0x28 ||
+            !group.triangles.SequenceEqual(new ushort[] { 0, 1, 2 }))
+        {
+            throw new Exception("WMO MPY2 flags/material and triangle parsing failed.");
+        }
+
+        logger.LogInformation("WMO MPY2 collision flag parsing passed.");
+    }
+
+    private sealed class WmoGroupTestSource(byte[] bytes) : PPather.Storage.IGameFileSource
+    {
+        public bool SupportsFileDataIds => true;
+        public System.IO.Stream OpenRead(uint fileDataId) => new System.IO.MemoryStream(bytes, writable: false);
+        public System.IO.Stream OpenRead(ReadOnlySpan<char> name) => throw new NotSupportedException();
+        public bool Exists(uint fileDataId) => fileDataId == 123U;
+        public bool Exists(ReadOnlySpan<char> name) => false;
+        public void Dispose() { }
     }
 
     private static void Test_NavmeshCoords(string[] args)

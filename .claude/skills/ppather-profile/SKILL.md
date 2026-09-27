@@ -41,8 +41,8 @@ Output goes to `artifacts/profile/<UTC-timestamp>/`. Benchmark reports go to `lo
 
 `bench.ps1` refuses to run against a **stale Debug DotRecast**.
 
-DotRecast is a submodule and is **not** in `MasterOfPuppets.sln`, so
-`dotnet build MasterOfPuppets.sln -c Release` copies the *Debug* DotRecast
+DotRecast is a submodule and is **not** in `WoWFarmingRig.sln`, so
+`dotnet build WoWFarmingRig.sln -c Release` copies the *Debug* DotRecast
 assemblies into the Benchmarks output. Every stage then measures 3-5x slower —
 including stages nothing touched — and it reads as a catastrophic regression
 rather than a build problem. This has burned real measurement rounds twice.

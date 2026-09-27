@@ -22,6 +22,7 @@ using Microsoft.Extensions.Logging;
 
 using PPather;
 using PPather.Navmesh;
+using PPather.Storage;
 
 using SharedLib;
 using SharedLib.Data;
@@ -44,7 +45,7 @@ namespace WowTriangles;
 public sealed class MPQTriangleSupplier
 {
     private readonly ILogger logger;
-    private readonly StormDll.ArchiveSet archive;
+    private readonly IGameFileSource archive;
     private readonly ModelManager modelmanager;
     private readonly WMOManager wmomanager;
     private readonly WDT wdt;
@@ -53,11 +54,16 @@ public sealed class MPQTriangleSupplier
     private readonly float mapId;
 
     public MPQTriangleSupplier(ILogger logger, DataConfig dataConfig, float mapId)
+        : this(logger, new StormDll.ArchiveSet(logger, GetArchiveNames(dataConfig)), mapId)
+    {
+    }
+
+    public MPQTriangleSupplier(ILogger logger, IGameFileSource archive, float mapId)
     {
         this.logger = logger;
         this.mapId = mapId;
 
-        archive = new StormDll.ArchiveSet(logger, GetArchiveNames(dataConfig));
+        this.archive = archive;
         modelmanager = new ModelManager(archive);
         wmomanager = new WMOManager(archive, modelmanager);
 
@@ -74,7 +80,7 @@ public sealed class MPQTriangleSupplier
 
     public void Clear()
     {
-        archive.Close();
+        archive.Dispose();
         modelmanager.Clear();
         wmomanager.Clear();
     }

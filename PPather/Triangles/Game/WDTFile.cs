@@ -21,6 +21,7 @@
 using Microsoft.Extensions.Logging;
 
 using PPather.Extensions;
+using PPather.Storage;
 
 using SharedLib.Data;
 
@@ -38,13 +39,13 @@ internal sealed class WDTFile
     private readonly WMOManager wmomanager;
     private readonly ModelManager modelmanager;
     private readonly WDT wdt;
-    private readonly ArchiveSet archive;
+    private readonly IGameFileSource archive;
 
     private readonly string pathName;
 
     public bool loaded;
 
-    public WDTFile(ArchiveSet archive, float mapId, WDT wdt, WMOManager wmomanager, ModelManager modelmanager, ILogger logger)
+    public WDTFile(IGameFileSource archive, float mapId, WDT wdt, WMOManager wmomanager, ModelManager modelmanager, ILogger logger)
     {
         this.logger = logger;
         this.pathName = ContinentDB.IdToName[mapId];
@@ -62,13 +63,14 @@ internal sealed class WDTFile
         // macOS/Linux and matches nothing in the archive - the sibling ADT lookups
         // below already build their paths this way.
         ReadOnlySpan<char> wdtfile = $"World\\Maps\\{path}\\{path}.wdt";
-        using MpqFileStream mpq = archive.GetStream(wdtfile);
+        using Stream mpq = archive.OpenRead(wdtfile);
 
         var pooler = ArrayPool<byte>.Shared;
-        byte[] buffer = pooler.Rent((int)mpq.Length);
-        mpq.ReadAllBytesTo(buffer);
+        int length = checked((int)mpq.Length);
+        byte[] buffer = pooler.Rent(length);
+        mpq.ReadExactly(buffer.AsSpan(0, length));
 
-        using MemoryStream stream = new(buffer, 0, (int)mpq.Length, false);
+        using MemoryStream stream = new(buffer, 0, length, false);
         using BinaryReader file = new(stream);
 
         string[] gwmos = [];

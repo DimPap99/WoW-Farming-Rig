@@ -46,6 +46,7 @@ internal static class ChunkReader
     public const uint MODS = 0b_01001101_01001111_01000100_01010011;
     public const uint MODD = 0b_01001101_01001111_01000100_01000100;
     public const uint MOPY = 0b_01001101_01001111_01010000_01011001;
+    public const uint MPY2 = 0x4D505932;
     public const uint MOVI = 0b_01001101_01001111_01010110_01001001;
     public const uint MOVT = 0b_01001101_01001111_01010110_01010100;
     public const uint MCIN = 0b_01001101_01000011_01001001_01001110;
