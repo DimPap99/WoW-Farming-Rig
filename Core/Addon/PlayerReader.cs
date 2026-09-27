@@ -193,6 +193,19 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         return false;
     }
 
+    public bool TryGetForeverBindings(out VisualBindingSnapshot bindings)
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars) &&
+            bars.Bindings is { } latest)
+        {
+            bindings = latest;
+            return true;
+        }
+
+        bindings = null!;
+        return false;
+    }
+
     private bool IsForever => foreverVisualBars?.IsEnabled == true;
 
     private VisualBarSample RequiredForeverVitals()

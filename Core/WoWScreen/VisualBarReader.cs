@@ -78,6 +78,25 @@ public sealed class VisualSpellBookSnapshot
         slot <= entries.Length ? entries[slot - 1] : null;
 }
 
+public sealed class VisualBindingSnapshot
+{
+    public const int Count = 62;
+    private readonly int?[] codes;
+
+    public int ReadableCount { get; }
+
+    internal VisualBindingSnapshot(int?[] codes)
+    {
+        this.codes = codes;
+        foreach (int? code in codes)
+            if (code is not null)
+                ReadableCount++;
+    }
+
+    public int? GetCode(int index) => index is >= 1 and <= Count
+        ? codes[index - 1] : null;
+}
+
 public readonly record struct VisualBarSample(
     double PlayerHealth,
     double PlayerPower,
@@ -94,7 +113,8 @@ public readonly record struct VisualBarSample(
     int? PlayerHealthMax = null,
     int? PlayerPowerMax = null,
     VisualWorldPositionSample? WorldPosition = null,
-    VisualSpellBookSnapshot? SpellBook = null);
+    VisualSpellBookSnapshot? SpellBook = null,
+    VisualBindingSnapshot? Bindings = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -180,10 +200,46 @@ public static class VisualBarReader
             pixels, width, height, whiteLeft, whiteY, scale);
         VisualSpellBookSnapshot? spellBook = TryReadSpellBook(
             pixels, width, height, whiteLeft, whiteY, scale);
+        VisualBindingSnapshot? bindings = TryReadBindings(
+            pixels, width, height, whiteLeft, whiteY, scale);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
-            playerHealthMax, playerPowerMax, worldPosition, spellBook);
+            playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings);
         return true;
+    }
+
+    private static VisualBindingSnapshot? TryReadBindings(
+        Bgra32[] pixels, int width, int height, int left, int whiteY, double scale)
+    {
+        int ReadAt(int x, int y)
+        {
+            if (x < 0 || x >= width || y < 0 || y >= height)
+                return -1;
+            Bgra32 pixel = pixels[y * width + x];
+            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
+        }
+        int countY = whiteY + (int)Math.Round(42 * scale);
+        int ReadCount(int index) => ReadAt(
+            left + (int)Math.Round((5 + index * 20) * scale), countY);
+        if (ReadCount(7) != VisualBindingSnapshot.Count ||
+            ReadCount(8) != ((0xA57722 - VisualBindingSnapshot.Count) & 0xFFFFFF))
+            return null;
+
+        int?[] codes = new int?[VisualBindingSnapshot.Count];
+        for (int index = 1; index <= VisualBindingSnapshot.Count; index++)
+        {
+            int column = (index - 1) % 20;
+            int row = (index - 1) / 20;
+            int y = whiteY + (int)Math.Round((236 + row * 8) * scale);
+            int code = ReadAt(left + (int)Math.Round((4 + column * 16) * scale), y);
+            int valid = ReadAt(left + (int)Math.Round((12 + column * 16) * scale), y);
+            if (code < 0 || valid != ((0xA57711 - code - index) & 0xFFFFFF))
+                continue;
+            if (code > 0 && ((code >> 14) & 63) != index)
+                continue;
+            codes[index - 1] = code;
+        }
+        return new(codes);
     }
 
     private static VisualSpellBookSnapshot? TryReadSpellBook(

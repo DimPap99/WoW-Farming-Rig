@@ -17,6 +17,8 @@ public sealed partial class KeyBindingsReader : IReader
 
     private int expectedCount = -1;
     private int receivedCount;
+    private int[] foreverCodes = [];
+    private bool foreverActive;
 
     public int Count => bindings.Count;
     public int ExpectedCount => expectedCount;
@@ -50,6 +52,46 @@ public sealed partial class KeyBindingsReader : IReader
 
         receivedCount++;
 
+        ApplyEncodedBinding(encodedValue);
+    }
+
+    public void UpdateForever(VisualBindingSnapshot? snapshot)
+    {
+        if (snapshot is null ||
+            snapshot.ReadableCount != VisualBindingSnapshot.Count)
+        {
+            if (foreverActive)
+                Reset();
+            return;
+        }
+
+        bool same = foreverActive;
+        if (same)
+            for (int index = 1; index <= VisualBindingSnapshot.Count; index++)
+                if (snapshot.GetCode(index) != foreverCodes[index - 1])
+                {
+                    same = false;
+                    break;
+                }
+        if (same)
+            return;
+
+        Reset();
+        foreverCodes = new int[VisualBindingSnapshot.Count];
+        for (int index = 1; index <= VisualBindingSnapshot.Count; index++)
+        {
+            int code = snapshot.GetCode(index)!.Value;
+            foreverCodes[index - 1] = code;
+            if (code > 0)
+                ApplyEncodedBinding(code);
+        }
+        expectedCount = VisualBindingSnapshot.Count;
+        receivedCount = VisualBindingSnapshot.Count;
+        foreverActive = true;
+    }
+
+    private void ApplyEncodedBinding(int encodedValue)
+    {
         var decoded = KeyReader.DecodeBinding(encodedValue);
         if (!decoded.HasValue)
             return;
@@ -116,6 +158,8 @@ public sealed partial class KeyBindingsReader : IReader
         secondaryBindings.Clear();
         KeyReader.GameBindings.Clear();
         KeyReader.GameBindingsSecondary.Clear();
+        foreverCodes = [];
+        foreverActive = false;
         expectedCount = -1;
         receivedCount = 0;
     }
