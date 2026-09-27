@@ -332,6 +332,14 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   secondary-only slot, and stale data at three UI scales. A live read confirmed
   main slot 1 resolves to `1` while unbound bottom-right slot 49 and stale
   bindings resolve to no key. No action was pressed by this check.
+- Forever spell-name action lookup now uses the checked 120-slot action IDs,
+  the exact learned spellbook IDs, and current game bindings. It chooses a
+  bound slot for the requested spell (and preferred form range when given),
+  rejects flyouts, unbound slots, partial grids, and expired captures, and
+  never falls back to a similar icon. Synthetic checks passed at three UI
+  scales; a live reader check resolved one learned, bound action and rejected
+  it after capture expiry. Slot validation and action-state readers still need
+  the same Forever-specific treatment before gameplay.
 - The Forever dashboard was smoke-tested against the live beta on this machine.
   It returned HTTP 200 and displayed 100% player health, 100% power, and 0%
   target health with no target selected. The log confirmed WGC capture and the

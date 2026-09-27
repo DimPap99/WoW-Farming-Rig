@@ -36,6 +36,10 @@ public static class KeyReader
     /// </summary>
     public static SpellBookReader? SpellBookReader { get; set; }
 
+    // Supplied by AddonReader on Forever. The provider checks capture age on
+    // every call, so a previously decoded action bar cannot outlive its frame.
+    public static Func<VisualActionBarSnapshot?>? ForeverActionBarProvider { get; set; }
+
     /// <summary>
     /// Static reference to ItemDB for item alias (Food/Drink) resolution.
     /// Set during initialization.
@@ -266,6 +270,29 @@ public static class KeyReader
     /// </summary>
     private static bool ResolveFromSpellName(KeyAction key)
     {
+        if (RequireGameBindings)
+        {
+            VisualActionBarSnapshot? actionBar = ForeverActionBarProvider?.Invoke();
+            if (actionBar is null || SpellBookReader is not { IsInitialized: true,
+                    AllRanksReceived: true } book)
+                return false;
+
+            (int min, int max) = GetPreferredSlotRange(key);
+            int foreverSlot = FindForeverSpellSlot(actionBar, book, key.Name,
+                key.SpellId, min, max);
+            if (foreverSlot == 0)
+                return false;
+
+            KeyAction resolved = new() { Slot = foreverSlot };
+            if (!ResolveFromSlot(resolved))
+                return false;
+
+            key.Slot = foreverSlot;
+            key.ConsoleKey = resolved.ConsoleKey;
+            key.Modifier = resolved.Modifier;
+            return true;
+        }
+
         if (IconDB == null || TextureReader == null || !TextureReader.IsInitialized)
             return false;
 
@@ -307,6 +334,48 @@ public static class KeyReader
 
         // Now resolve the key from the slot
         return ResolveFromSlot(key);
+    }
+
+    /// <summary>
+    /// Resolve a learned spell from checked Forever action IDs. A spell icon
+    /// cannot prove which spell occupies a slot, and an unbound slot cannot be
+    /// activated through the current key map.
+    /// </summary>
+    public static int FindForeverSpellSlot(VisualActionBarSnapshot actionBar,
+        SpellBookReader book, string name, int spellId = 0,
+        int preferredMin = 0, int preferredMax = 0)
+    {
+        if (actionBar.ReadableCount != VisualActionBarSnapshot.SlotCount ||
+            !book.IsInitialized || !book.AllRanksReceived ||
+            string.IsNullOrEmpty(name) || char.IsLower(name[0]) ||
+            IsItemAlias(name))
+            return 0;
+
+        int fallback = 0;
+        for (int slot = 1; slot <= VisualActionBarSnapshot.SlotCount; slot++)
+        {
+            if (actionBar.GetSlot(slot) is not
+                    { Kind: VisualActionKind.Spell, Id: > 0 } action ||
+                (spellId > 0 && action.Id != spellId) ||
+                !book.HasExact(action.Id) ||
+                !book.TryGetValue(action.Id, out SharedLib.Spell spell) ||
+                !string.Equals(spell.Name, name, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            BindingID bindingId = SlotToBindingID(slot);
+            if (bindingId == BindingID.None ||
+                (!GameBindings.ContainsKey(bindingId) &&
+                 !GameBindingsSecondary.ContainsKey(bindingId)))
+                continue;
+
+            if (preferredMin > 0 && preferredMax > 0 &&
+                slot >= preferredMin && slot <= preferredMax)
+                return slot;
+            if (fallback == 0)
+                fallback = slot;
+        }
+
+        return fallback;
     }
 
     /// <summary>
