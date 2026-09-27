@@ -180,6 +180,19 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         return false;
     }
 
+    public bool TryGetForeverActionStates(out VisualActionStateSnapshot states)
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars) &&
+            bars.ActionStates is { ReadableCount: VisualActionBarSnapshot.SlotCount } latest)
+        {
+            states = latest;
+            return true;
+        }
+
+        states = null!;
+        return false;
+    }
+
     public bool TryGetForeverSpellBook(out VisualSpellBookSnapshot spellBook)
     {
         if (TryGetForeverVisualVitals(out VisualBarSample bars) &&

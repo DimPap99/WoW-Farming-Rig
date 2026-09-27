@@ -78,6 +78,11 @@ public sealed partial class AddonReader : IAddonReader
         KeyReader.ForeverActionBarProvider = foreverVisualBars?.IsEnabled == true
             ? () => playerReader.TryGetForeverActionBar(out var bar) ? bar : null
             : null;
+        ActionBarBits<IUsableAction>.ForeverStatesProvider =
+            foreverVisualBars?.IsEnabled == true
+                ? () => playerReader.TryGetForeverActionStates(out var states)
+                    ? states : null
+                : null;
 
         GlobalTime = new(frames.Length - 2);
 

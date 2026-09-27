@@ -391,6 +391,7 @@ local function createVisual()
     frame.actionIdPixel = addPixel(8)
     frame.actionMetaPixel = addPixel(9)
     frame.actionGridValidPixel = addPixel(10)
+    frame.actionStateValidPixel = addPixel(15)
     frame.healthMaxPixel = addPixel(11)
     frame.healthMaxValidPixel = addPixel(12)
     frame.powerMaxPixel = addPixel(13)
@@ -462,6 +463,23 @@ local function createVisual()
         }
     end
 
+    frame.actionStateGrid = {}
+    for slot = 1, 120 do
+        local column = (slot - 1) % 20
+        local row = math.floor((slot - 1) / 20)
+        local function statePixel(x)
+            local pixel = frame:CreateTexture(nil, "ARTWORK")
+            pixel:SetSize(8, 8)
+            pixel:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -340 - row * 8)
+            pixel:SetColorTexture(0, 0, 0, 1)
+            return pixel
+        end
+        frame.actionStateGrid[slot] = {
+            code = statePixel(column * 16),
+            valid = statePixel(column * 16 + 8),
+        }
+    end
+
     local function setIntPixel(pixel, value)
         value = math.floor(value)
         pixel:SetColorTexture(
@@ -473,7 +491,7 @@ local function createVisual()
     local function renderAction(slot, idPixel, metaPixel, markerSlot)
         idPixel:SetColorTexture(0, 0, 0, 1)
         metaPixel:SetColorTexture(0, 0, 0, 1)
-        pcall(function()
+        local ok, kind, id = pcall(function()
             local actionType, id = GetActionInfo(slot)
             if type(issecretvalue) == "function" and
                 (issecretvalue(actionType) or issecretvalue(id)) then
@@ -489,6 +507,42 @@ local function createVisual()
 
             setIntPixel(idPixel, id)
             setIntPixel(metaPixel, 0xA50000 + markerSlot * 256 + kind)
+            return kind, id
+        end)
+        if ok then return kind, id end
+    end
+
+    local function renderActionState(slot, kind, id, pair)
+        pair.code:SetColorTexture(0, 0, 0, 1)
+        pair.valid:SetColorTexture(0, 0, 0, 1)
+        if not kind then return end
+        pcall(function()
+            local usable, noMana, range = false, false, 0
+            if kind ~= 0 then
+                usable, noMana = IsUsableAction(slot)
+                if type(issecretvalue) == "function" and
+                    (issecretvalue(usable) or issecretvalue(noMana)) then return end
+                if usable == 1 then usable = true end
+                if usable == 0 or usable == nil then usable = false end
+                if noMana == 1 then noMana = true end
+                if noMana == 0 or noMana == nil then noMana = false end
+                if type(usable) ~= "boolean" or type(noMana) ~= "boolean" then
+                    return
+                end
+                local ok, inRange = pcall(C_ActionBar.IsActionInRange,
+                    slot, "target")
+                if ok and (type(issecretvalue) ~= "function" or
+                    not issecretvalue(inRange)) then
+                    if inRange == 1 or inRange == true then range = 1
+                    elseif inRange == 0 or inRange == false then range = 2
+                    elseif inRange ~= nil then return end
+                end
+            end
+            local code = 1 + (usable and 1 or 0) +
+                (noMana and 2 or 0) + range * 4
+            setIntPixel(pair.code, code)
+            setIntPixel(pair.valid,
+                (0xA58811 - id - slot - kind - code) % 16777216)
         end)
     end
 
@@ -608,12 +662,16 @@ local function createVisual()
         if elapsedSinceActionGrid >= 0.5 then
             elapsedSinceActionGrid = 0
             frame.actionGridValidPixel:SetColorTexture(0, 0, 0, 1)
+            frame.actionStateValidPixel:SetColorTexture(0, 0, 0, 1)
             for slot = 1, 120 do
                 local pair = frame.actionGrid[slot]
-                renderAction(slot, pair.id, pair.meta, 0)
+                local kind, id = renderAction(slot, pair.id, pair.meta, 0)
+                renderActionState(slot, kind, id, frame.actionStateGrid[slot])
             end
             frame.actionGridValidPixel:SetColorTexture(
                 90 / 255, 165 / 255, 90 / 255, 1)
+            frame.actionStateValidPixel:SetColorTexture(
+                90 / 255, 136 / 255, 165 / 255, 1)
         end
 
         if elapsedSinceSpellGrid >= 0.5 then

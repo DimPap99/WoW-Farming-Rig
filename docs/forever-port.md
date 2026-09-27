@@ -347,6 +347,20 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   Synthetic checks cover valid, empty, mismatched, and flyout slots at three
   UI scales; the live reader validated a bound spell and rejected its slot
   after capture expiry.
+- The visual probe now exports a checked usability and range state for each
+  of the 120 action slots, with each checksum tied to the action kind and ID.
+  The reader distinguishes true/false usability, insufficient power, and
+  in/out/unknown range. `IUsableAction` uses only a fresh, complete snapshot;
+  unreadable or stale state fails closed. Synthetic checks passed at 75%,
+  100%, and 125% UI scale, including a corrupted state and an action-ID
+  mismatch. A live beta read after `/reload` decoded 120/120 states and 18
+  usable actions; a manual fight kept all 120 states readable at 87% player
+  and 32% target health. The first range call used the missing legacy global
+  and left every occupied slot unknown. The corrected
+  `C_ActionBar.IsActionInRange(slot, "target")` call yielded three in-range
+  actions in a later live capture. Unknown range remains distinct from false.
+  The state sample was rejected after capture expiry. This does not establish
+  cooldown readiness, and the startup guard remains.
 - The Forever dashboard was smoke-tested against the live beta on this machine.
   It returned HTTP 200 and displayed 100% player health, 100% power, and 0%
   target health with no target selected. The log confirmed WGC capture and the
