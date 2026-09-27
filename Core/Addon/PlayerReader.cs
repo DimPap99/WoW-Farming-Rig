@@ -193,6 +193,19 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
         return false;
     }
 
+    public bool TryGetForeverCooldowns(out VisualCooldownGridSnapshot cooldowns)
+    {
+        if (TryGetForeverVisualVitals(out VisualBarSample bars) &&
+            bars.Cooldowns is { ReadableCount: VisualCooldownGridSnapshot.SlotCount } latest)
+        {
+            cooldowns = latest;
+            return true;
+        }
+
+        cooldowns = null!;
+        return false;
+    }
+
     public bool TryGetForeverSpellBook(out VisualSpellBookSnapshot spellBook)
     {
         if (TryGetForeverVisualVitals(out VisualBarSample bars) &&

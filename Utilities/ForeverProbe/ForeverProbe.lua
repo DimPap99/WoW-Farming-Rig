@@ -480,6 +480,23 @@ local function createVisual()
         }
     end
 
+    frame.cooldownGrid = {}
+    for slot = 1, 12 do
+        local bar = CreateFrame("StatusBar", nil, frame)
+        bar:SetSize(320, 6)
+        bar:SetPoint("TOPLEFT", frame, "TOPLEFT", 0,
+            -400 - (slot - 1) * 8)
+        bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        bar:SetStatusBarColor(0, 1, 1)
+        local background = bar:CreateTexture(nil, "BACKGROUND")
+        background:SetAllPoints(bar)
+        background:SetColorTexture(0, 0, 0, 1)
+        frame.cooldownGrid[slot] = {
+            bar = bar,
+            marker = addPixel(slot - 1, 130),
+        }
+    end
+
     local function setIntPixel(pixel, value)
         value = math.floor(value)
         pixel:SetColorTexture(
@@ -667,6 +684,25 @@ local function createVisual()
                 local pair = frame.actionGrid[slot]
                 local kind, id = renderAction(slot, pair.id, pair.meta, 0)
                 renderActionState(slot, kind, id, frame.actionStateGrid[slot])
+                if slot <= 12 then
+                    local cooldown = frame.cooldownGrid[slot]
+                    cooldown.marker:SetColorTexture(0, 0, 0, 1)
+                    cooldown.bar:Hide()
+                    if kind then
+                        local cooldownReady = kind == 0 or pcall(function()
+                            local duration =
+                                C_ActionBar.GetActionCooldownDuration(slot, true)
+                            cooldown.bar:SetTimerDuration(duration,
+                                Enum.StatusBarInterpolation.Immediate,
+                                Enum.StatusBarTimerDirection.RemainingTime)
+                        end)
+                        if cooldownReady then
+                            cooldown.bar:SetShown(kind ~= 0)
+                            setIntPixel(cooldown.marker,
+                                (0xA59911 - slot - kind - id) % 16777216)
+                        end
+                    end
+                end
             end
             frame.actionGridValidPixel:SetColorTexture(
                 90 / 255, 165 / 255, 90 / 255, 1)

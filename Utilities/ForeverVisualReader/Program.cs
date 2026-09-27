@@ -316,6 +316,10 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                     { ReadableCount: VisualActionBarSnapshot.SlotCount } &&
                 player.TryGetForeverActionStates(out var states) &&
                 ReferenceEquals(states, liveStates);
+            bool cooldownGridMatches = bars.Cooldowns is
+                    { ReadableCount: VisualCooldownGridSnapshot.SlotCount } liveCooldowns &&
+                player.TryGetForeverCooldowns(out var cooldowns) &&
+                ReferenceEquals(cooldowns, liveCooldowns);
             int usableActionCount = 0;
             int inRangeActionCount = 0;
             int outOfRangeActionCount = 0;
@@ -461,6 +465,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool staleActionBarRejected = !player.TryGetForeverActionBar(out _);
             bool staleActionStatesRejected =
                 !player.TryGetForeverActionStates(out _);
+            bool staleCooldownGridRejected =
+                !player.TryGetForeverCooldowns(out _);
             bool staleUsableReaderReset = usableReader.Count == 0 &&
                 !usableReader.Any && !usableReader.IsSlotUsable(1);
             ActionBarBits<IUsableAction>.ForeverStatesProvider = null;
@@ -498,6 +504,11 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"actionMatches={actionMatches}, actionBarMatches={actionBarMatches}, " +
                 $"actionStates={liveStates?.ReadableCount.ToString() ?? "missing"}/120, " +
                 $"actionStatesMatch={actionStatesMatch}, usableActionCount={usableActionCount}, " +
+                $"cooldowns={bars.Cooldowns?.ReadableCount.ToString() ?? "missing"}/12, " +
+                $"cooldownSlot1={bars.Cooldowns?.GetSlot(1)?.ToString("P0") ?? "missing"}, " +
+                $"cooldownSlot4={bars.Cooldowns?.GetSlot(4)?.ToString("P0") ?? "missing"}, " +
+                $"cooldownGridMatches={cooldownGridMatches}, " +
+                $"staleCooldownGridRejected={staleCooldownGridRejected}, " +
                 $"inRangeActionCount={inRangeActionCount}, " +
                 $"outOfRangeActionCount={outOfRangeActionCount}, " +
                 $"unknownRangeActionCount={unknownRangeActionCount}, " +
@@ -529,7 +540,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"staleActionBarRejected={staleActionBarRejected}");
             return actionMatches && actionBarMatches && actionStatesMatch &&
                 usableReaderMatches && staleUsableReaderReset &&
-                staleActionStatesRejected && maximaMatch &&
+                staleActionStatesRejected && cooldownGridMatches &&
+                staleCooldownGridRejected && maximaMatch &&
                 worldPositionMatches && staleWorldPositionRejected &&
                 spellBookMatches && staleSpellBookRejected &&
                 staleSpellBookReaderReset &&
@@ -739,7 +751,7 @@ static int RunSelfTest()
     foreach (double scale in new[] { 0.75, 1.0, 1.25 })
     {
         const int width = 700;
-        const int height = 650;
+        const int height = 850;
         const int left = 16;
         const int top = 70;
         Bgra32[] pixels = new Bgra32[width * height];
@@ -797,6 +809,9 @@ static int RunSelfTest()
         DrawActionGridSlot(26, 4, 270);
         DrawActionStateSlot(4, 1, 7744, 6);
         DrawActionStateSlot(26, 4, 270, 1);
+        for (int slot = 1; slot <= VisualCooldownGridSnapshot.SlotCount; slot++)
+            DrawCooldownSlot(slot, slot == 4 ? 1 : 0,
+                slot == 4 ? 7744 : 0, slot == 4 ? 0.4 : 0);
 
         if (!VisualBarReader.TryRead(pixels, width, height, out VisualBarSample result)
             || Math.Abs(result.PlayerHealth - 0.75) > 0.02
@@ -826,6 +841,11 @@ static int RunSelfTest()
                 { Usable: true, NoMana: false, InRange: true }
             || actionStates.GetSlot(1) is not
                 { Usable: false, NoMana: false, InRange: null }
+            || result.Cooldowns is not
+                { ReadableCount: VisualCooldownGridSnapshot.SlotCount } cooldownGrid
+            || cooldownGrid.GetSlot(4) is not { } cooldown4 ||
+                Math.Abs(cooldown4 - 0.4) > 0.02
+            || cooldownGrid.GetSlot(1) != 0
             || result.SpellBook is not { Count: 3, ReadableCount: 3 } spellBook
             || spellBook.GetSlot(1) is not { Source: VisualSpellIdSource.SpellId, Id: 6603 }
             || spellBook.GetSlot(2) is not { Source: VisualSpellIdSource.ActionId, Id: 270 }
@@ -877,6 +897,26 @@ static int RunSelfTest()
             return 1;
         }
         ActionBarBits<IUsableAction>.ForeverStatesProvider = null;
+        DrawCooldownSlot(4, 1, 7744, 0.7);
+        if (!VisualBarReader.TryRead(pixels, width, height, out var changingCooldown) ||
+            changingCooldown.Cooldowns?.GetSlot(4) is not { } changedFill ||
+            Math.Abs(changedFill - 0.7) > 0.02)
+        {
+            Console.Error.WriteLine($"Forever cooldown fill change failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawCooldownSlot(4, 1, 7744, 0.4);
+        DrawEncodedRect(left + (int)Math.Round(3 * 20 * scale),
+            top + (int)Math.Round(130 * scale),
+            (int)Math.Round(10 * scale), 0);
+        if (!VisualBarReader.TryRead(pixels, width, height, out var missingCooldown) ||
+            missingCooldown.Cooldowns is not { ReadableCount: 11 } ||
+            missingCooldown.Cooldowns.GetSlot(4) is not null)
+        {
+            Console.Error.WriteLine($"Forever cooldown marker failed at UI scale {scale}.");
+            return 1;
+        }
+        DrawCooldownSlot(4, 1, 7744, 0.4);
 
         if (result.Bindings is not
                 { ReadableCount: VisualBindingSnapshot.Count } visualBindings ||
@@ -973,6 +1013,7 @@ static int RunSelfTest()
         if (!VisualBarReader.TryRead(pixels, width, height, out var flyoutResult) ||
             flyoutResult.ActionBar is not { } flyoutBar ||
             flyoutResult.ActionStates is not { ReadableCount: 119 } ||
+            flyoutResult.Cooldowns is not { ReadableCount: 11 } ||
             KeyReader.FindForeverSpellSlot(flyoutBar, spellBookReader,
                 spellName) != 0)
         {
@@ -1301,6 +1342,23 @@ static int RunSelfTest()
             DrawEncodedRect(left + (int)Math.Round((column * 16 + 8) * scale),
                 yStart, side, (0xA58811 - id - slot - kind -
                     (markerCode ?? code)) & 0xFFFFFF);
+        }
+
+        void DrawCooldownSlot(int slot, int kind, int id, double fill)
+        {
+            DrawEncodedRect(
+                left + (int)Math.Round((slot - 1) * 20 * scale),
+                top + (int)Math.Round(130 * scale),
+                (int)Math.Round(10 * scale),
+                (0xA59911 - slot - kind - id) & 0xFFFFFF);
+            int yStart = top + (int)Math.Round((400 + (slot - 1) * 8) * scale);
+            int barHeight = Math.Max(1, (int)Math.Round(6 * scale));
+            int fillWidth = (int)Math.Round(320 * scale * fill);
+            for (int y = yStart; y < yStart + barHeight; y++)
+                for (int x = left; x < left + barWidth; x++)
+                    pixels[y * width + x] = x - left < fillWidth
+                        ? new Bgra32 { G = 255, B = 255, A = 255 }
+                        : new Bgra32 { A = 255 };
         }
 
         void DrawEncodedRect(int xStart, int yStart, int side, int encoded)
