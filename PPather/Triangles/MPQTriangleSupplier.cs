@@ -53,6 +53,8 @@ public sealed class MPQTriangleSupplier
 
     private readonly float mapId;
 
+    public bool RequiresCompleteGeometry => archive.SupportsFileDataIds;
+
     public MPQTriangleSupplier(ILogger logger, DataConfig dataConfig, float mapId)
         : this(logger, new StormDll.ArchiveSet(logger, GetArchiveNames(dataConfig)), mapId)
     {
@@ -147,29 +149,28 @@ public sealed class MPQTriangleSupplier
         if (!wdt.loaded[index])
             return;
 
-        // Map tiles
-        for (int i = 0; i < MapTile.SIZE * MapTile.SIZE; i++)
+        try
         {
-            if (mapTile.hasChunk[i])
-                AddTriangles(triangles, mapTile.chunks[i]);
-        }
+            // Map tiles
+            for (int i = 0; i < MapTile.SIZE * MapTile.SIZE; i++)
+            {
+                if (mapTile.hasChunk[i])
+                    AddTriangles(triangles, mapTile.chunks[i]);
+            }
 
-        // Map Tile - World objects
-        for (int i = 0; i < mapTile.wmois.Length; i++)
+            // Map Tile - World objects
+            for (int i = 0; i < mapTile.wmois.Length; i++)
+                AddTriangles(triangles, mapTile.wmois[i]);
+
+            for (int i = 0; i < mapTile.modelis.Length; i++)
+                AddDetailedTriangles(triangles, mapTile.modelis[i]);
+        }
+        finally
         {
-            WMOInstance wi = mapTile.wmois[i];
-            AddTriangles(triangles, wi);
+            // A failed CASC group/model read must fail again on retry, rather
+            // than returning an apparently complete tile with no geometry.
+            wdt.loaded[index] = false;
         }
-
-        for (int i = 0; i < mapTile.modelis.Length; i++)
-        {
-            //if (mi.model.fileName.Contains("bridge"))
-            //AddBoundingTriangles(triangles, mapTile.modelis[i]);
-
-            AddDetailedTriangles(triangles, mapTile.modelis[i]);
-        }
-
-        wdt.loaded[index] = false;
     }
 
     [SkipLocalsInit]
@@ -250,42 +251,39 @@ public sealed class MPQTriangleSupplier
         if (!wdt.loaded[index])
             return;
 
-        // Get MCNK bounds for spatial filtering
-        MCNKHelper.GetMCNKBounds(adt_x, adt_y, mcnk_x, mcnk_y,
-            out float mcnk_minX, out float mcnk_minY, out float mcnk_maxX, out float mcnk_maxY);
-
-        // 1. Load ONLY this specific MCNK's terrain
-        int mcnk_index = MCNKHelper.GetMCNKIndex(mcnk_x, mcnk_y);
-        if (mapTile.hasChunk[mcnk_index])
+        try
         {
-            AddTriangles(tc, mapTile.chunks[mcnk_index]);
-        }
+            // Get MCNK bounds for spatial filtering
+            MCNKHelper.GetMCNKBounds(adt_x, adt_y, mcnk_x, mcnk_y,
+                out float mcnk_minX, out float mcnk_minY, out float mcnk_maxX, out float mcnk_maxY);
 
-        // 2. Load ONLY WMOs that intersect this MCNK's bounds
-        for (int i = 0; i < mapTile.wmois.Length; i++)
-        {
-            WMOInstance wi = mapTile.wmois[i];
-            if (MCNKHelper.WMOIntersectsMCNK(wi, mcnk_minX, mcnk_minY, mcnk_maxX, mcnk_maxY))
+            // 1. Load ONLY this specific MCNK's terrain
+            int mcnk_index = MCNKHelper.GetMCNKIndex(mcnk_x, mcnk_y);
+            if (mapTile.hasChunk[mcnk_index])
+                AddTriangles(tc, mapTile.chunks[mcnk_index]);
+
+            // 2. Load ONLY WMOs that intersect this MCNK's bounds
+            for (int i = 0; i < mapTile.wmois.Length; i++)
             {
-                AddTriangles(tc, wi);
+                WMOInstance wi = mapTile.wmois[i];
+                if (MCNKHelper.WMOIntersectsMCNK(wi, mcnk_minX, mcnk_minY, mcnk_maxX, mcnk_maxY))
+                    AddTriangles(tc, wi);
             }
-        }
 
-        // 3. Load ONLY M2 models that intersect this MCNK's bounds
-        for (int i = 0; i < mapTile.modelis.Length; i++)
-        {
-            ModelInstance mi = mapTile.modelis[i];
-            if (MCNKHelper.ModelIntersectsMCNK(mi, mcnk_minX, mcnk_minY, mcnk_maxX, mcnk_maxY))
+            // 3. Load ONLY M2 models that intersect this MCNK's bounds
+            for (int i = 0; i < mapTile.modelis.Length; i++)
             {
-                AddDetailedTriangles(tc, mi);
+                ModelInstance mi = mapTile.modelis[i];
+                if (MCNKHelper.ModelIntersectsMCNK(mi, mcnk_minX, mcnk_minY, mcnk_maxX, mcnk_maxY))
+                    AddDetailedTriangles(tc, mi);
             }
+
+            // Global WMOs span multiple MCNKs and are handled at a higher level.
         }
-
-        // Note: Global WMOs are handled at a higher level if needed
-        // They span multiple MCNKs so we don't include them here
-
-        // Mark as not loaded to allow garbage collection
-        wdt.loaded[index] = false;
+        finally
+        {
+            wdt.loaded[index] = false;
+        }
     }
 
     [SkipLocalsInit]
@@ -385,7 +383,7 @@ public sealed class MPQTriangleSupplier
     }
 
     [SkipLocalsInit]
-    private static void AddTriangles(TriangleCollection tc, WMOInstance wi)
+    private void AddTriangles(TriangleCollection tc, WMOInstance wi)
     {
         float dx = wi.pos.X;
         float dy = wi.pos.Y;
@@ -436,6 +434,13 @@ public sealed class MPQTriangleSupplier
                 float y = g.vertices[off + 2];
                 float z = g.vertices[off + 1];
 
+                if (wmo.numericPlacement)
+                {
+                    x *= wi.scale;
+                    y *= wi.scale;
+                    z *= wi.scale;
+                }
+
                 RotateBy(z, y, cosX, sinX, out z, out y);
                 RotateBy(x, y, cosZ, sinZ, out x, out y);
                 RotateBy(x, z, cosY, sinY, out x, out z);
@@ -483,6 +488,9 @@ public sealed class MPQTriangleSupplier
             ArrayPool<int>.Shared.Return(verticesRented);
         }
 
+        if (wmo.numericPlacement)
+            AddNumericWmoDoodads(tc, wi, cosX, sinX, cosY, sinY, cosZ, sinZ);
+
         /*
         int doodadset = wi.doodadset;
         if (doodadset < wmo.nDoodadSets)
@@ -502,6 +510,100 @@ public sealed class MPQTriangleSupplier
             }
         }
         */
+    }
+
+    private void AddNumericWmoDoodads(TriangleCollection tc, WMOInstance wi,
+        float cosX, float sinX, float cosY, float sinY, float cosZ, float sinZ)
+    {
+        WMORoot root = wi.wmo;
+        if (root.numericDoodads.Length == 0)
+            return;
+
+        if (wi.doodadset < 0 || wi.doodadset >= root.numericDoodadSets.Length)
+            throw new InvalidDataException($"Numeric WMO placement selects absent doodad set {wi.doodadset}.");
+
+        // Set zero is the default global set and is present alongside a
+        // selected alternative set. Never load an unselected alternative.
+        AddNumericWmoDoodadSet(tc, wi, root.numericDoodadSets[0], cosX, sinX, cosY, sinY, cosZ, sinZ);
+        if (wi.doodadset != 0)
+            AddNumericWmoDoodadSet(tc, wi, root.numericDoodadSets[wi.doodadset], cosX, sinX, cosY, sinY, cosZ, sinZ);
+    }
+
+    private void AddNumericWmoDoodadSet(TriangleCollection tc, WMOInstance wi, WmoDoodadSet set,
+        float cosX, float sinX, float cosY, float sinY, float cosZ, float sinZ)
+    {
+        for (uint index = set.First; index < set.First + set.Count; index++)
+        {
+            WmoDoodadPlacement placement = wi.wmo.numericDoodads[index];
+            Model model = placement.FileDataId != 0
+                ? modelmanager.LoadCollisionIfNeeded(placement.FileDataId)
+                : modelmanager.LoadCollisionIfNeeded(placement.Path!);
+            AddNumericWmoDoodad(tc, wi, placement, model, cosX, sinX, cosY, sinY, cosZ, sinZ);
+        }
+    }
+
+    private static void AddNumericWmoDoodad(TriangleCollection tc, WMOInstance wi,
+        WmoDoodadPlacement placement, Model model,
+        float cosX, float sinX, float cosY, float sinY, float cosZ, float sinZ)
+    {
+        if (model.boundingTriangles is null || model.boundingTriangles.Length == 0)
+            return;
+
+        if (model.boundingVertices is null || model.boundingVertices.Length % 3 != 0 ||
+            model.boundingTriangles.Length % 3 != 0)
+            throw new InvalidDataException("WMO doodad collision model has malformed vertices or triangles.");
+
+        int count = model.boundingVertices.Length / 3;
+        foreach (ushort index in model.boundingTriangles)
+        {
+            if (index >= count)
+                throw new InvalidDataException("WMO doodad collision triangle exceeds the model vertex count.");
+        }
+
+        const int MaxStackVertices = 4096;
+        int[]? rented = null;
+        Span<int> vertices = count <= MaxStackVertices
+            ? stackalloc int[count]
+            : (rented = ArrayPool<int>.Shared.Rent(count)).AsSpan(0, count);
+
+        try
+        {
+            for (int i = 0; i < count; i++)
+            {
+                int off = i * 3;
+                Vector3 local = new(model.boundingVertices[off],
+                    model.boundingVertices[off + 1], model.boundingVertices[off + 2]);
+                local = Vector3.Transform(local * placement.Scale, placement.Rotation) + placement.Position;
+
+                // M2, MODD, and WMO group coordinates share the client XYZ
+                // basis. Reuse the WMO instance's transform after the MODD
+                // quaternion and translation are applied in that basis.
+                float x = local.X * wi.scale;
+                float y = local.Z * wi.scale;
+                float z = local.Y * wi.scale;
+                RotateBy(z, y, cosX, sinX, out z, out y);
+                RotateBy(x, y, cosZ, sinZ, out x, out y);
+                RotateBy(x, z, cosY, sinY, out x, out z);
+
+                float xx = x + wi.pos.X;
+                float yy = y + wi.pos.Y;
+                float zz = -z + wi.pos.Z;
+                vertices[i] = tc.AddVertex(ChunkReader.ZEROPOINT - zz,
+                    ChunkReader.ZEROPOINT - xx, yy);
+            }
+
+            for (int i = 0; i < model.boundingTriangles.Length; i += 3)
+            {
+                tc.AddTriangle(vertices[model.boundingTriangles[i]],
+                    vertices[model.boundingTriangles[i + 1]],
+                    vertices[model.boundingTriangles[i + 2]], TriangleType.Model);
+            }
+        }
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<int>.Shared.Return(rented);
+        }
     }
 
     private static void AddTrianglesGroupDoodads(TriangleCollection s, ModelInstance mi, Vector3 world_dir, Vector3 world_off, float rot)

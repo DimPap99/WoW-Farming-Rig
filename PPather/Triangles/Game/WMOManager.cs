@@ -22,6 +22,7 @@ using StormDll;
 using PPather.Storage;
 
 using System;
+using System.Collections.Generic;
 
 namespace Wmo;
 
@@ -29,6 +30,7 @@ public sealed class WMOManager : Manager<WMORoot>
 {
     private readonly IGameFileSource archive;
     private readonly ModelManager modelmanager;
+    private readonly Dictionary<uint, WMORoot> fileDataIdRoots = new();
 
     public WMOManager(IGameFileSource archive, ModelManager modelmanager)
     {
@@ -50,5 +52,27 @@ public sealed class WMOManager : Manager<WMORoot>
             WmoGroupFile.Load(archive, name, wmoRoot, wmoRoot.groups[i]);
         }
         return true;
+    }
+
+    public WMORoot AddAndLoadIfNeeded(uint fileDataId)
+    {
+        if (!fileDataIdRoots.TryGetValue(fileDataId, out WMORoot? root))
+        {
+            root = new WMORoot();
+            uint[] groupIds = WmoRootFile.LoadNumeric(archive, fileDataId, root);
+            for (int i = 0; i < groupIds.Length; i++)
+            {
+                WmoGroupFile.Load(archive, groupIds[i], root, root.groups[i]);
+            }
+            fileDataIdRoots.Add(fileDataId, root);
+        }
+
+        return root;
+    }
+
+    public new void Clear()
+    {
+        base.Clear();
+        fileDataIdRoots.Clear();
     }
 }

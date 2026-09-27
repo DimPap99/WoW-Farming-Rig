@@ -34,14 +34,20 @@ public static class ModelFile
 {
     [SkipLocalsInit]
     public static Model Read(IGameFileSource archive, ReadOnlySpan<char> fileName) =>
-        Read(archive.OpenRead(fileName));
+        Read(archive.OpenRead(fileName), includeVisualVertices: true);
 
     [SkipLocalsInit]
     public static Model Read(IGameFileSource archive, uint fileDataId) =>
-        Read(archive.OpenRead(fileDataId));
+        Read(archive.OpenRead(fileDataId), includeVisualVertices: true);
+
+    public static Model ReadCollision(IGameFileSource archive, ReadOnlySpan<char> fileName) =>
+        Read(archive.OpenRead(fileName), includeVisualVertices: false);
+
+    public static Model ReadCollision(IGameFileSource archive, uint fileDataId) =>
+        Read(archive.OpenRead(fileDataId), includeVisualVertices: false);
 
     [SkipLocalsInit]
-    private static Model Read(System.IO.Stream input)
+    private static Model Read(System.IO.Stream input, bool includeVisualVertices)
     {
         using System.IO.Stream mpq = input;
         int length = (int)mpq.Length;
@@ -93,7 +99,7 @@ public static class ModelFile
         // `begining` aliases the rented array, so the reads below must happen
         // before it goes back to the pool.
         Model model = new(
-            ReadVertices(begining, nVertices, ofsVertices),
+            includeVisualVertices ? ReadVertices(begining, nVertices, ofsVertices) : [],
             ReadBoundingTriangles(begining, nBoundingTriangles, ofsBoundingTriangles),
             ReadBoundingVertices(begining, nBoundingVertices, ofsBoundingVertices));
 

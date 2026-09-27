@@ -50,7 +50,7 @@ public static class WmoGroupFile
         // The native MPQ handle leaked whenever parsing threw; `using` releases
         // it on every path.
         using Stream _ = mpq;
-        Load(mpq, wmoRoot, g);
+        Load(mpq, wmoRoot, g, strict: false);
     }
 
     /// <summary>Loads one full-detail group by its GFID FileDataID.</summary>
@@ -60,10 +60,10 @@ public static class WmoGroupFile
             throw new NotSupportedException("This game-file source has no FileDataID namespace.");
 
         using Stream stream = archive.OpenRead(fileDataId);
-        Load(stream, wmoRoot, g);
+        Load(stream, wmoRoot, g, strict: true);
     }
 
-    private static void Load(Stream mpq, WMORoot wmoRoot, WMOGroup g)
+    private static void Load(Stream mpq, WMORoot wmoRoot, WMOGroup g, bool strict)
     {
         var pooler = ArrayPool<byte>.Shared;
         int length = checked((int)mpq.Length);
@@ -76,6 +76,9 @@ public static class WmoGroupFile
             using BinaryReader file = new(stream);
             bool sawPolygons = false;
             bool sawIndices = false;
+            bool sawHeader = false;
+            bool sawVertices = false;
+            uint indexBytes = 0;
 
             do
             {
@@ -92,21 +95,34 @@ public static class WmoGroupFile
                 switch (type)
                 {
                     case ChunkReader.MOGP:
+                        if (strict && sawHeader)
+                            throw new InvalidDataException("Numeric WMO group has duplicate MOGP chunks.");
+                        sawHeader = true;
                         HandleMOGP(file, wmoRoot, g, size);
                         break;
                     case ChunkReader.MOPY:
+                        if (strict && (sawPolygons || size % 2 != 0))
+                            throw new InvalidDataException("Numeric WMO group has duplicate or malformed MOPY flags.");
                         sawPolygons = true;
                         HandleMOPY(file, g, size);
                         break;
                     case ChunkReader.MPY2:
+                        if (strict && sawPolygons)
+                            throw new InvalidDataException("Numeric WMO group has duplicate polygon flags.");
                         sawPolygons = true;
                         HandleMPY2(file, g, size);
                         break;
                     case ChunkReader.MOVI:
+                        if (strict && sawIndices)
+                            throw new InvalidDataException("Numeric WMO group has duplicate MOVI indices.");
                         sawIndices = true;
+                        indexBytes = size;
                         HandleMOVI(file, g, size);
                         break;
                     case ChunkReader.MOVT:
+                        if (strict && (sawVertices || size % 12 != 0))
+                            throw new InvalidDataException("Numeric WMO group has duplicate or malformed MOVT vertices.");
+                        sawVertices = true;
                         HandleMOVT(file, g, size);
                         break;
                     case ChunkReader.MLIQ:
@@ -116,6 +132,11 @@ public static class WmoGroupFile
 
                 file.BaseStream.Seek(nextPos, SeekOrigin.Begin);
             } while (!file.EOF());
+
+            if (strict && (!sawHeader || !sawVertices))
+                throw new InvalidDataException("Numeric WMO group is missing MOGP or MOVT geometry.");
+            if (strict && sawIndices && indexBytes != g.nTriangles * 3 * sizeof(ushort))
+                throw new InvalidDataException("Numeric WMO group MOVI size does not match its polygon flags.");
 
             if (sawIndices && !sawPolygons ||
                 sawPolygons && g.nTriangles != 0 && !sawIndices ||

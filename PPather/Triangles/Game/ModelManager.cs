@@ -31,6 +31,8 @@ public sealed class ModelManager : Manager<Model>
 {
     private readonly IGameFileSource archive;
     private readonly Dictionary<uint, Model> fileDataIdModels = new();
+    private readonly Dictionary<uint, Model> collisionModels = new();
+    private readonly Dictionary<string, Model> collisionModelsByPath = new(StringComparer.OrdinalIgnoreCase);
 
     public ModelManager(IGameFileSource archive)
     {
@@ -67,9 +69,36 @@ public sealed class ModelManager : Manager<Model>
         return model;
     }
 
+    public Model LoadCollisionIfNeeded(uint fileDataId)
+    {
+        if (!collisionModels.TryGetValue(fileDataId, out Model model))
+        {
+            model = ModelFile.ReadCollision(archive, fileDataId);
+            collisionModels.Add(fileDataId, model);
+        }
+        return model;
+    }
+
+    public Model LoadCollisionIfNeeded(string path)
+    {
+        string extension = Path.GetExtension(path);
+        if (extension.Equals(".mdx", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".mdl", StringComparison.OrdinalIgnoreCase))
+            path = Path.ChangeExtension(path, ".m2");
+
+        if (!collisionModelsByPath.TryGetValue(path, out Model model))
+        {
+            model = ModelFile.ReadCollision(archive, path);
+            collisionModelsByPath.Add(path, model);
+        }
+        return model;
+    }
+
     public new void Clear()
     {
         base.Clear();
         fileDataIdModels.Clear();
+        collisionModels.Clear();
+        collisionModelsByPath.Clear();
     }
 }

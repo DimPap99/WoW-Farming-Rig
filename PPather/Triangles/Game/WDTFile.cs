@@ -134,10 +134,10 @@ internal sealed class WDTFile
 
         for (uint i = 0; i < gnWMO; i++)
         {
-            int id = file.ReadInt32();
-            string path = gwmos[id];
-
-            WMORoot wmo = wmomanager.AddAndLoadIfNeeded(path);
+            uint id = file.ReadUInt32();
+            WMORoot wmo = gwmos.Length == 0
+                ? wmomanager.AddAndLoadIfNeeded(id)
+                : wmomanager.AddAndLoadIfNeeded(gwmos[checked((int)id)]);
             wdt.gwmois[i] = new(file, wmo);
         }
     }

@@ -84,12 +84,13 @@ beta client is running:
 dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" 775971
 dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" "World\Maps\Azeroth\Azeroth_32_48_obj0.adt"
 dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" --wdt-azeroth
+dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" --sample-bake-azeroth
 ```
 
 An optional fourth argument selects the product (default `wow_classic_beta`);
-an optional fifth argument selects the local cache directory. This source can
-be injected into `MPQTriangleSupplier`, but the Forever WMO placement gate still
-prevents a complete navmesh bake.
+an optional fifth argument selects the local cache directory. The sample bake
+reads collision geometry and builds one Detour tile in memory; it does not
+write a tile to the runtime cache or enable gameplay.
 
 ## Live findings from the beta client
 
@@ -221,7 +222,7 @@ prevents a complete navmesh bake.
   parsed as 30 collision vertices and 48 triangles, with all indices in range.
   That M2 uses an `MD21` wrapper around an `MD20` v272 payload. The first WMO
   uses MVER 17 but has a `GFID` group-ID table and modern doodad references.
-  A new strict, metadata-only WMO reader decoded its 290 full-detail groups,
+  A strict WMO reference reader decoded its 290 full-detail groups,
   four LOD sets, 6,752 `MODI` model IDs, and 6,106 `MODD` doodad placements.
   It validates that full-detail group IDs and doodad indices exist; synthetic
   malformed-reference checks pass. The numeric group loader also parses
@@ -229,10 +230,15 @@ prevents a complete navmesh bake.
   ID), which replace the old `MOPY` records. A scan of all 290 full-detail
   groups in the large WMO yielded 992,821 raw triangles with indices in range;
   a smaller one-group WMO yielded 1,752. These are raw faces, not a validated
-  walkable/collision-only navmesh. Three other roots on the same tile still use
-  legacy `MODN` doodad names despite being referenced by numeric MODF IDs.
-  WMO root/doodad placement loading remains explicitly unsupported, so no
-  Forever navmesh has been baked.
+  walkable/collision-only navmesh. The numeric WMO loader now reads the
+  full-detail groups, selected and default doodad sets, model references,
+  collision meshes, and transforms. It accepts `MODI` IDs or legacy `MODN`
+  names and rejects missing referenced groups or models. Three other roots on
+  this tile have no doodad placements; the earlier `MODN` claim was incorrect.
+  A read-only in-memory bake of Azeroth tile `126,61` extracted 30,165 ground
+  triangles, including 20,129 WMO faces and 4,636 model faces on the sample
+  ADT, and produced 561 Detour polygons. This checks one local tile, not the
+  visual placement, path connectivity, or full-continent collision quality.
 
 ## Required work before attempting gameplay automation
 
@@ -252,11 +258,11 @@ prevents a complete navmesh bake.
    geometry readers now accept a container-neutral `IGameFileSource`, and the
    supplier can be given one directly. `Utilities/ForeverCasc` provides a
    local-only CASC source, but the bake host does not select it yet. Modern
-   ADT object placements use FileDataIDs. M2 loading has passed one real
-   collision-model probe. Numeric WMO group and doodad references now decode,
-   and full-detail group files parse with `MPY2`, but mixed modern/legacy root
-   handling, instance transforms and doodad collision remain before baking.
-   The storage
+   ADT object placements use FileDataIDs. Numeric WMO groups, doodad sets,
+   transforms, and M2 collision are loaded; one read-only sample tile bake
+   passed. The bake host still does not select the CASC source. Inspect WMO
+   placement against the client, verify path queries and liquid/collision
+   flags on a small route, then expand coverage before gameplay uses it. The storage
    refactor builds and passes the navmesh coordinate/cost-zone/listfile tests,
    but its six-tile MPQ byte-identity bake could not run here because this
    workspace has no `Json/MPQ` archive corpus. Do not reuse the

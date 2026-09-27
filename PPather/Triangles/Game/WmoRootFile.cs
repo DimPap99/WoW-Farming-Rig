@@ -31,7 +31,7 @@ using System.Runtime.InteropServices;
 
 namespace Wmo;
 
-internal static class WmoRootFile
+internal static partial class WmoRootFile
 {
     public static void Load(IGameFileSource archive, ReadOnlySpan<char> name, WMORoot wmo, ModelManager modelmanager)
     {

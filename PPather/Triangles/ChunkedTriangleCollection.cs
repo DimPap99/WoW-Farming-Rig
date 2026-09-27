@@ -77,6 +77,8 @@ public sealed class ChunkedTriangleCollection
         EvictAll();
     }
 
+    public bool RequiresCompleteGeometry => supplier.RequiresCompleteGeometry;
+
     public void EvictAll()
     {
         lock (cacheLock)
