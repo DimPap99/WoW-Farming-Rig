@@ -1,0 +1,258 @@
+﻿@using System.Text
+@using Core
+@using Core.GOAP
+@using Core.Goals
+@using System.Text.RegularExpressions
+@using SharedLib
+
+@inject WApi api
+
+@inject IBotController botController
+
+@inject ActionBarCooldownReader ActionBarCooldownReader
+
+@inject ActionBarCastTimeReader castTimeReader
+
+@inject KeyBindingsReader keyBindingsReader
+
+@inject PlayerReader playerReader
+
+@{
+    bool singleKeyCasting = goal.Keys.Length == 1 && IsCastingThis(goal.Keys[0]);
+}
+<tr class="@RowClass(IsSelected, 0, singleKeyCasting)" style="@CastBarStyle(singleKeyCasting ? goal.Keys[0] : null)">
+    <td>
+        <b style="color:@DisplayCanRun(goal.CanRun())">@goal.Cost: @GoalName(goal)</b>
+    </td>
+    <td>
+        @foreach ((GoapKey key, bool value) in goal.Preconditions)
+        {
+            <Badge style="margin-right:4px;" Color="Badge(botController.GoapAgent!.HasState(key) == value)">@(key.ToStringF(value))</Badge>
+        }
+        @if (goal.Keys.Length == 1)
+        {
+            KeyAction key = goal.Keys[0];
+            @for (int i = 0; i < key.RequirementsRuntime.Length; i++)
+            {
+                Requirement rq = key.RequirementsRuntime[i];
+                if (rq.VisibleIfHasRequirement || !rq.HasRequirement() || ShowAll)
+                {
+                    var enumerator = DisplayRequirementBadges(rq);
+                    while (enumerator.MoveNext())
+                    {
+                        var item = enumerator.Current;
+                        <Badge style="margin-right:4px;" Color="@item.color">@item.text</Badge>
+                    }
+                }
+            }
+        }
+    </td>
+</tr>
+@if (goal.Keys.Length > 1 && (IsSelected || Expand))
+{
+    int lastKey = KeyAction.LastKeyClicked();
+    ReadOnlySpan<KeyAction> span = goal.Keys.AsSpan();
+
+    @for (int k = 0; k < span.Length; k++)
+    {
+        KeyAction key = span[k];
+
+        int cooldown = 0;
+        if (key.Slot > 0)
+            cooldown = ActionBarCooldownReader.Get(key);
+
+        bool casting = IsCastingThis(key);
+
+        <tr class="@RowClass(goal == botController.GoapAgent!.CurrentGoal && lastKey == key.ConsoleKeyFormHash, cooldown, casting) goal-child-row"
+            style="@CastBarStyle(casting ? key : null)">
+            <td class="goal-child-cell">
+                @if (key.HasForm)
+                {
+                    <img style="margin-right:4px" src="@FormResourceName(key.FormValue)" />
+                }
+                <b style="color:@DisplayCanRun(key.CanRun())">@KeyActionSpellName(key)</b>
+            </td>
+            <td>
+                @{
+                    ReadOnlySpan<Requirement> reqSpan = key.RequirementsRuntime.AsSpan();
+                }
+                @for (int r = 0; r < reqSpan.Length; r++)
+                {
+                    Requirement rq = reqSpan[r];
+                    if (rq.VisibleIfHasRequirement || !rq.HasRequirement() || ShowAll)
+                    {
+                        var enumerator = DisplayRequirementBadges(rq);
+                        while (enumerator.MoveNext())
+                        {
+                            var item = enumerator.Current;
+                            <Badge style="margin-right:4px;" Color="@item.color">@item.text</Badge>
+                        }
+                    }
+                }
+            </td>
+        </tr>
+    }
+}
+
+@* Cast progress visualised as the row's own background gradient — *@
+@* the yellow "selected" highlight grows left → right as the cast progresses. *@
+<style>
+    /* Casting rows: cells must be transparent so the row-level
+       gradient (set via inline style) is visible.
+       !important overrides Bootstrap's per-cell --bs-table-bg. */
+    tr.cast-bar-row,
+    tr.cast-bar-row > td {
+        background-color: transparent !important;
+        transition: background-image 80ms linear;
+    }
+</style>
+
+@code {
+
+    [Parameter]
+    public bool IsSelected { get; set; }
+
+    [Parameter]
+    public bool Expand { get; set; } = false;
+
+    [Parameter]
+    public bool ShowAll { get; set; } = false;
+
+    [Parameter]
+    public GoapGoal goal { get; set; } = new NullGoal();
+
+    private static readonly Regex regex = new($"({Requirement.And})|({Requirement.Or})", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly StringBuilder stringBuilder = new();
+
+    private static IEnumerator<(BadgeColor color, string text)> DisplayRequirementBadges(Requirement requirement)
+    {
+        var renderText = requirement.LogMessage();
+
+        List<(BadgeColor color, string text)> items = new();
+
+        foreach (var part in regex.EnumerateSplits(renderText))
+        {
+            var text = renderText.AsSpan(part);
+            var trimmedPart = text.Trim();
+
+            if (trimmedPart.IsEmpty)
+                continue;
+
+            if (trimmedPart.StartsWith(Requirement.And) || trimmedPart.StartsWith(Requirement.Or))
+            {
+                items.Add(new(BadgeColor.Secondary, trimmedPart.ToString()));
+            }
+            else
+            {
+                var color = Badge(requirement.HasRequirement());
+                items.Add(new(color, trimmedPart.ToString()));
+            }
+        }
+
+        return items.GetEnumerator();
+    }
+
+    private static BadgeColor Badge(bool value)
+    {
+        return value ? BadgeColor.Success : BadgeColor.Danger;
+    }
+
+    private static string ActionClass(bool item, int cooldown)
+    {
+        if (cooldown > 0)
+            return "table-danger animate__animated animate__fadeIn";
+
+        return item ? "table-warning animate__animated animate__fadeIn" : "";
+    }
+
+    private bool IsCastingThis(KeyAction key)
+    {
+        // SpellId is set after the first successful cast — until then we can't
+        // match by id. Once known, it covers both regular casts and channels
+        // because the addon's CastingInfoSpellId falls back to UnitChannelInfo.
+        if (!playerReader.IsCasting() || key.SpellId == 0)
+            return false;
+
+        return key.SpellId == playerReader.SpellBeingCast;
+    }
+
+    private static string RowClass(bool current, int cooldown, bool casting)
+    {
+        // While casting, suppress the table-warning/table-info background so
+        // the inline cast-bar gradient (CastBarStyle) is the only paint on the row.
+        // The cast-bar-row class makes cells transparent so the gradient shows through.
+        if (casting)
+            return "cast-bar-row animate__animated animate__fadeIn";
+
+        return ActionClass(current, cooldown);
+    }
+
+    private string CastBarStyle(KeyAction? key)
+    {
+        if (key is null)
+            return string.Empty;
+
+        int total = castTimeReader.Get(key);
+        int remain = playerReader.RemainCastMs;
+        int pct = total > 0 ? Math.Clamp(100 * (total - remain) / total, 0, 100) : 100;
+
+        // Filled (#ffc107 — Bootstrap warning solid) grows left → right.
+        // Empty (#fff3cd — Bootstrap warning subtle) matches the original
+        // table-warning row colour so the rest of the row still looks "selected".
+        return $"background-image: linear-gradient(to right, " +
+               $"#ffc107 0%, #ffc107 {pct}%, " +
+               $"#fff3cd {pct}%, #fff3cd 100%);";
+    }
+
+    private static string DisplayCanRun(bool item)
+    {
+        return item ? "" : "gray";
+    }
+
+    private string FormResourceName(Form i)
+    {
+        return $"_content/Frontend/img/form/small/{i.ToString().ToLower()}.jpg";
+    }
+
+    public MarkupString GoalName(GoapGoal goal)
+    {
+        if (goal.Keys.Length == 1)
+            return KeyActionSpellName(goal.Keys[0]);
+
+        return new MarkupString(goal.DisplayName);
+    }
+
+    private string GetKeyDisplay(KeyAction keyAction)
+    {
+        // If Key is explicitly set, use it
+        if (!string.IsNullOrEmpty(keyAction.Key))
+            return keyAction.Key;
+
+        // If Slot is set, resolve the key binding
+        if (keyAction.Slot > 0)
+        {
+            var bindingId = KeyReader.SlotToBindingID(keyAction.Slot);
+            if (bindingId != BindingID.None &&
+                keyBindingsReader.TryGetBinding(bindingId, out var key, out var modifier))
+            {
+                var modPrefix = modifier != ModifierKey.None ? modifier.ToPrefix() : "";
+                return $"{modPrefix}{key}";
+            }
+            // Fallback to slot number if binding not found
+            return $"Slot {keyAction.Slot}";
+        }
+
+        return "";
+    }
+
+    public MarkupString KeyActionSpellName(KeyAction keyAction)
+    {
+        string keyDisplay = GetKeyDisplay(keyAction);
+        string keyPart = !string.IsNullOrEmpty(keyDisplay) ? $" [{keyDisplay}]" : "";
+
+        if (keyAction.SpellId == 0)
+            return new MarkupString($"{keyAction.Name}{keyPart}");
+
+        return new($"<a href=\"{api.SpellId}{keyAction.SpellId}\" target=\"_blank\" data-wowhead=\"spell={keyAction.SpellId}\" style=\"text-decoration:none;color:inherit\">{keyAction.Name}{keyPart}</a>");
+    }
+}

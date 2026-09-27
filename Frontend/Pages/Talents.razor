@@ -1,0 +1,209 @@
+@page "/Talents"
+
+@using Core.Talents
+@using Core.Database
+@using SharedLib
+
+@inject IAddonReader addonReader
+@inject WowProcessInput wowInput
+@inject WApi api
+@inject TalentReader talentReader
+@inject TalentDB talentDB
+@inject IconDB iconDB
+@inject PlayerReader playerReader
+@inject SpellDB spellDB
+
+@implements IDisposable
+
+<Card>
+    <CardHeader>
+        <div class="d-flex justify-content-between align-items-center">
+            <span>Talents</span>
+            <div class="d-flex align-items-center gap-3">
+                <Badge Color="BadgeColor.Info">Points Spent: @talentReader.Count</Badge>
+                <Button Color="ButtonColor.Primary" Size="ButtonSize.Small" @onpointerup="InitState">
+                    Init State
+                </Button>
+            </div>
+        </div>
+    </CardHeader>
+    <CardBody>
+        <div class="row g-2">
+            @for (int treeIndex = 0; treeIndex < talentTrees.Length; treeIndex++)
+            {
+                TalentTreeElement[] tree = talentTrees[treeIndex];
+                <div class="col-12 col-lg-4">
+                    <div class="talent-tree">
+                        @for (int tier = 0; tier <= treeMaxTier[treeIndex]; tier++)
+                        {
+                            <div class="talent-tier d-flex justify-content-center gap-1">
+                                @for (int col = 0; col < MaxTalentColumns; col++)
+                                {
+                                    TalentTreeElement talent = FindTalent(tree, tier, col);
+                                    @if (talent.SpellIds != null && talent.SpellIds.Length > 0 && talent.SpellIds[0] != 0)
+                                    {
+                                        int spellId = talent.SpellIds[0];
+                                        int spentRank = GetSpentRank(treeIndex + 1, tier + 1, col + 1);
+                                        var isSpent = spentRank > 0;
+
+                                        <div class="talent-icon-wrapper @(isSpent ? "" : "talent-unspent")">
+                                            <a href="@($"{api.SpellId}{spellId}")" target="_blank">
+                                                <img src="@iconDB.GetIconUrlForSpell(spellId, 36)"
+                                                     class="talent-icon"
+                                                     title="@GetTalentName(spellId)" />
+                                            </a>
+                                            @if (isSpent)
+                                            {
+                                                <span class="talent-rank-badge">@spentRank</span>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="talent-placeholder"></div>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </CardBody>
+</Card>
+
+<style>
+    .talent-tree {
+        background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+        border-radius: 8px;
+        padding: 10px;
+    }
+    .talent-tier {
+        margin-bottom: 4px;
+    }
+    .talent-icon-wrapper {
+        position: relative;
+        display: inline-block;
+        width: 36px;
+        height: 36px;
+    }
+    .talent-placeholder {
+        width: 36px;
+        height: 36px;
+    }
+    .talent-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 4px;
+        border: 2px solid #4a4a4a;
+    }
+    .talent-unspent .talent-icon {
+        filter: grayscale(100%) brightness(0.5);
+        border-color: #2a2a2a;
+    }
+    .talent-rank-badge {
+        position: absolute;
+        bottom: -2px;
+        right: -2px;
+        background: rgba(0, 0, 0, 0.9);
+        color: #00ff00;
+        font-size: 11px;
+        font-weight: bold;
+        padding: 0 3px;
+        border-radius: 2px;
+        border: 1px solid #00aa00;
+    }
+</style>
+
+@code {
+    private TalentTreeElement[][] talentTrees = [];
+
+    // Highest tier per tree, resolved once when the trees load. Doing it inline
+    // meant a Max() over every tree on every render, and it threw on a tree with
+    // no rows - which is every tree on 5.4.8, where the talent DBC carries tab
+    // ids that no talent row references.
+    private int[] treeMaxTier = [];
+
+    // Widest talent grid across the eras this renders: pre-5.0 trees are 4 columns.
+    private const int MaxTalentColumns = 4;
+
+    // Plain scan instead of FirstOrDefault: the predicate captured tier/col, so
+    // every cell of every tree allocated a closure on every render.
+    private static TalentTreeElement FindTalent(TalentTreeElement[] tree, int tier, int col)
+    {
+        for (int i = 0; i < tree.Length; i++)
+        {
+            if (tree[i].TierID == tier && tree[i].ColumnIndex == col)
+                return tree[i];
+        }
+
+        return default;
+    }
+
+    protected override void OnInitialized()
+    {
+        if (playerReader.Class != UnitClass.None)
+        {
+            LoadTalentTrees();
+        }
+
+        addonReader.AddonDataChanged += OnDataChanged;
+    }
+
+    private void LoadTalentTrees()
+    {
+        talentTrees = talentDB.GetTalentTreesForClass(playerReader.Class);
+        treeMaxTier = new int[talentTrees.Length];
+
+        for (int i = 0; i < talentTrees.Length; i++)
+        {
+            TalentTreeElement[] tree = talentTrees[i];
+            int max = -1;
+
+            for (int j = 0; j < tree.Length; j++)
+            {
+                if (tree[j].TierID > max)
+                    max = tree[j].TierID;
+            }
+
+            treeMaxTier[i] = max;
+        }
+    }
+
+    public void Dispose()
+    {
+        addonReader.AddonDataChanged -= OnDataChanged;
+    }
+
+    private void OnDataChanged()
+    {
+        if (talentTrees.Length == 0 && playerReader.Class != UnitClass.None)
+        {
+            LoadTalentTrees();
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void InitState()
+    {
+        addonReader.FullReset();
+        wowInput.PressFlushKey();
+    }
+
+    private int GetSpentRank(int tab, int tier, int column)
+    {
+        foreach (var (hash, talent) in talentReader.Talents)
+        {
+            if (talent.TabNum == tab && talent.TierNum == tier && talent.ColumnNum == column)
+                return talent.CurrentRank;
+        }
+        return 0;
+    }
+
+    private string GetTalentName(int spellId)
+    {
+        if (spellDB.Spells.TryGetValue(spellId, out var spell))
+            return spell.Name;
+        return "";
+    }
+}

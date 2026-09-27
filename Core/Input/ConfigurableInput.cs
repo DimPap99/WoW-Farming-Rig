@@ -1,0 +1,332 @@
+﻿using Game;
+
+using Microsoft.Extensions.Logging;
+
+using SharedLib;
+
+using System;
+using System.Threading;
+
+namespace Core;
+
+public sealed partial class ConfigurableInput
+{
+    private readonly ILogger<ConfigurableInput> logger;
+    private readonly WowProcessInput input;
+    private readonly ClassConfiguration classConfig;
+
+    private readonly bool Log;
+
+    public ConfigurableInput(ILogger<ConfigurableInput> logger,
+        WowProcessInput input, ClassConfiguration classConfig)
+    {
+        this.logger = logger;
+        this.input = input;
+        this.classConfig = classConfig;
+        Log = classConfig.Log;
+
+        input.ForwardKey = classConfig.ForwardKey;
+        input.BackwardKey = classConfig.BackwardKey;
+        input.TurnLeftKey = classConfig.TurnLeftKey;
+        input.TurnRightKey = classConfig.TurnRightKey;
+
+        WalkKey = classConfig.WalkKey;
+
+        input.InteractMouseover = classConfig.InteractMouseOver.ConsoleKey;
+        input.InteractMouseoverModifier = classConfig.InteractMouseOver.Modifier;
+        input.InteractMouseoverPress = classConfig.InteractMouseOver.PressDuration;
+    }
+
+    /// <summary>
+    /// Releases every key this class can hold, including the class-configured
+    /// Jump: a jump key the game believes is held makes the character jump
+    /// continuously, and nothing else in the stack ever releases it.
+    /// </summary>
+    public void Reset()
+    {
+        input.Reset();
+
+        if (Jump.ConsoleKey != default)
+        {
+            input.SetKeyState(Jump.ConsoleKey, false, true);
+        }
+    }
+
+    /// <summary>Class-config fallback for the walk toggle when the game binding
+    /// (<see cref="BindingID.TOGGLERUN"/>) has not been extracted.</summary>
+    public ConsoleKey WalkKey { get; }
+
+    private const int WalkTapMs = 40;
+
+    /// <summary>Walk toggling is possible when the game reported TOGGLERUN or a
+    /// WalkKey fallback is configured.</summary>
+    public bool CanWalk =>
+        KeyReader.GameBindings.ContainsKey(BindingID.TOGGLERUN) || WalkKey != default;
+
+    /// <summary>
+    /// Taps "Toggle Run/Walk". Prefers the key EXTRACTED from the game
+    /// (BindingID.TOGGLERUN, including its modifier) so the exact code the client
+    /// expects is sent; falls back to the class-config WalkKey. No-op if neither.
+    /// </summary>
+    public void ToggleWalk(CancellationToken token = default)
+    {
+        ConsoleKey key = WalkKey;
+        ModifierKey modifier = ModifierKey.None;
+
+        bool fromBinding = KeyReader.GameBindings.TryGetValue(BindingID.TOGGLERUN, out var bound);
+        if (fromBinding)
+        {
+            key = bound.Key;
+            modifier = bound.Modifier;
+        }
+
+        if (key == default)
+        {
+            LogWalkToggleNoKey(logger);
+            return;
+        }
+
+        if (modifier != ModifierKey.None)
+            input.PressRandomWithModifier(key, modifier, WalkTapMs, token);
+        else
+            input.PressRandom(key, WalkTapMs, token);
+
+        LogWalkToggle(logger, key, fromBinding);
+    }
+
+    [LoggerMessage(
+        EventId = 0070,
+        Level = LogLevel.Debug,
+        Message = "Walk toggle -> key {key} (from extracted TOGGLERUN binding: {fromBinding})")]
+    static partial void LogWalkToggle(ILogger logger, ConsoleKey key, bool fromBinding);
+
+    [LoggerMessage(
+        EventId = 0071,
+        Level = LogLevel.Debug,
+        Message = "Walk toggle requested but no walk key bound (TOGGLERUN/WalkKey)")]
+    static partial void LogWalkToggleNoKey(ILogger logger);
+
+    public void StartForward(bool forced)
+    {
+        input.SetKeyState(ForwardKey, true, forced);
+    }
+
+    public void StopForward(bool forced)
+    {
+        if (input.IsKeyDown(ForwardKey))
+            input.SetKeyState(ForwardKey, false, forced);
+    }
+
+    public void StartBackward(bool forced)
+    {
+        input.SetKeyState(BackwardKey, true, forced);
+    }
+
+    public void StopBackward(bool forced)
+    {
+        if (input.IsKeyDown(BackwardKey))
+            input.SetKeyState(BackwardKey, false, forced);
+    }
+
+    public void SetKeyState(ConsoleKey key, bool state, bool forced)
+    {
+        input.SetKeyState(key, state, forced);
+    }
+
+    public void TurnRandomDir(int milliseconds, CancellationToken token = default)
+    {
+        input.PressRandom(
+            Random.Shared.Next(2) == 0
+            ? input.TurnLeftKey
+            : input.TurnRightKey, milliseconds, token);
+    }
+
+    public int PressRandom(KeyAction keyAction, CancellationToken token = default)
+    {
+        int elapsedMs = keyAction.HasModifier
+            ? input.PressRandomWithModifier(keyAction.ConsoleKey, keyAction.Modifier, keyAction.PressDuration, token)
+            : input.PressRandom(keyAction.ConsoleKey, keyAction.PressDuration, token);
+
+        // Use modifier-aware pressing if the keyAction has a modifier
+
+        keyAction.SetClicked();
+
+        if (Log && keyAction.Log && logger.IsEnabled(LogLevel.Trace))
+        {
+            string prefix = keyAction.Modifier.ToPrefix();
+            if (keyAction.BaseAction)
+                LogBaseActionPressRandom(logger, keyAction.Name, keyAction.ConsoleKey, prefix, elapsedMs);
+            else
+                LogKeyActionPressRandom(logger, keyAction.Name, keyAction.ConsoleKey, prefix, elapsedMs);
+        }
+
+        return elapsedMs;
+    }
+
+    public void PressFixed(ConsoleKey key, int milliseconds, CancellationToken token)
+    {
+        input.PressFixed(key, milliseconds, token);
+    }
+
+    public void PressRandom(ConsoleKey key, int milliseconds)
+    {
+        input.PressRandom(key, milliseconds);
+    }
+
+    public bool IsKeyDown(ConsoleKey key) => input.IsKeyDown(key);
+
+    public void PressInteract(CancellationToken token = default) => PressRandom(Interact, token);
+
+    public void PressFastInteract(CancellationToken token = default)
+    {
+        if (Interact.HasModifier)
+            input.PressRandomWithModifier(Interact.ConsoleKey, Interact.Modifier, InputDuration.FastPress, token);
+        else
+            input.PressRandom(Interact.ConsoleKey, InputDuration.FastPress, token);
+        Interact.SetClicked();
+    }
+
+    public void PressVeryFastInteract()
+    {
+        if (Interact.HasModifier)
+            input.PressRandomWithModifier(Interact.ConsoleKey, Interact.Modifier, InputDuration.VeryFastPress);
+        else
+            input.PressRandom(Interact.ConsoleKey, InputDuration.VeryFastPress);
+        Interact.SetClicked();
+    }
+
+    public void PressApproachOnCooldown()
+    {
+        if (Approach.OnCooldown())
+        {
+            return;
+        }
+
+        if (Approach.HasModifier)
+            input.PressRandomWithModifier(Approach.ConsoleKey, Approach.Modifier, InputDuration.FastPress);
+        else
+            input.PressRandom(Approach.ConsoleKey, InputDuration.FastPress);
+        Approach.SetClicked();
+    }
+
+    public bool PressedApproachOnCooldown()
+    {
+        if (Approach.OnCooldown())
+        {
+            return false;
+        }
+
+        if (Approach.HasModifier)
+            input.PressRandomWithModifier(Approach.ConsoleKey, Approach.Modifier, InputDuration.FastPress);
+        else
+            input.PressRandom(Approach.ConsoleKey, InputDuration.FastPress);
+        Approach.SetClicked();
+        return true;
+    }
+
+    public void PressApproach(CancellationToken token = default) => PressRandom(Approach, token);
+
+    public void PressLastTarget(CancellationToken token = default) => PressRandom(TargetLastTarget, token);
+
+    /// <summary>
+    /// Presses TargetLastTarget and waits for a target to appear.
+    /// </summary>
+    /// <returns>True if target appeared within timeout, false if timed out.</returns>
+    public bool PressLastTargetAndWait(Wait wait, Func<bool> hasTarget, int timeoutMs = 300, CancellationToken token = default)
+    {
+        PressLastTarget(token);
+        return wait.Until(timeoutMs, hasTarget) > 0;
+    }
+
+    public void PressFastLastTarget(CancellationToken token = default)
+    {
+        if (TargetLastTarget.HasModifier)
+            input.PressRandomWithModifier(TargetLastTarget.ConsoleKey, TargetLastTarget.Modifier, InputDuration.FastPress, token);
+        else
+            input.PressRandom(TargetLastTarget.ConsoleKey, InputDuration.FastPress, token);
+        TargetLastTarget.SetClicked();
+    }
+
+    /// <summary>
+    /// Presses TargetLastTarget (fast) and waits for a target to appear.
+    /// </summary>
+    /// <returns>True if target appeared within timeout, false if timed out.</returns>
+    public bool PressFastLastTargetAndWait(Wait wait, Func<bool> hasTarget, int timeoutMs = 300, CancellationToken token = default)
+    {
+        PressFastLastTarget(token);
+        return wait.Until(timeoutMs, hasTarget) > 0;
+    }
+
+    public void PressStandUp(CancellationToken token = default) => PressRandom(StandUp, token);
+
+    public void PressClearTarget(CancellationToken token = default) => PressRandom(ClearTarget, token);
+
+    public void PressStopAttack(CancellationToken token = default) => PressRandom(StopAttack, token);
+
+    public void PressNearestTarget(CancellationToken token = default) => PressRandom(TargetNearestTarget, token);
+
+    public void PressTargetPet(CancellationToken token = default) => PressRandom(TargetPet, token);
+
+    public void PressTargetOfTarget(CancellationToken token = default) => PressRandom(TargetTargetOfTarget, token);
+
+    public void PressJump(CancellationToken token = default) => PressRandom(Jump, token);
+
+    /// <summary>
+    /// How long Jump is held to swim upward while drowning.
+    /// </summary>
+    public const int DROWNING_ASCEND_MS = 800;
+
+    /// <summary>
+    /// Holds Jump so a swimming character actually ascends. A tap barely lifts
+    /// them, which is why the drowning branches used to fire on every frame and
+    /// still not surface - from the outside that reads as a stuck spacebar.
+    /// <para>Press and release happen inside this call. Cancelling only cuts the
+    /// hold short: PressFixed waits on the token handle and posts the key-up
+    /// afterwards either way, so the key cannot be left latched.</para>
+    /// </summary>
+    public void PressJumpAscend(CancellationToken token = default)
+    {
+        if (Jump.ConsoleKey == default)
+            return;
+
+        input.PressFixed(Jump.ConsoleKey, DROWNING_ASCEND_MS, token);
+        Jump.SetClicked();
+    }
+
+    public void PressPetAttack(CancellationToken token = default) => PressRandom(PetAttack, token);
+
+    public void PressMount(CancellationToken token = default) => PressRandom(Mount, token);
+
+    public void PressDismount(CancellationToken token = default)
+    {
+        if (Mount.HasModifier)
+            input.PressRandomWithModifier(Mount.ConsoleKey, Mount.Modifier, Mount.PressDuration, token);
+        else
+            input.PressRandom(Mount.ConsoleKey, Mount.PressDuration, token);
+    }
+
+    public void PressTargetFocus(CancellationToken token = default) => PressRandom(TargetFocus, token);
+
+    public void PressFollowTarget(CancellationToken token = default) => PressRandom(FollowTarget, token);
+
+    public void PressESC(CancellationToken token = default)
+    {
+        input.PressRandom(ConsoleKey.Escape, InputDuration.VeryFastPress, token);
+    }
+
+    #region Logging
+
+    [LoggerMessage(
+        EventId = 5000,
+        Level = LogLevel.Trace,
+        Message = @"[{name}] {modifierPrefix}{key} pressed {milliseconds}ms")]
+    static partial void LogBaseActionPressRandom(ILogger logger, string name, ConsoleKey key, string modifierPrefix, int milliseconds);
+
+    [LoggerMessage(
+        EventId = 5001,
+        Level = LogLevel.Debug,
+        Message = @"[{name}] {modifierPrefix}{key} pressed {milliseconds}ms")]
+    static partial void LogKeyActionPressRandom(ILogger logger, string name, ConsoleKey key, string modifierPrefix, int milliseconds);
+
+    #endregion
+}
