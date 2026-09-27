@@ -16,6 +16,16 @@ public readonly record struct VisualWorldPositionSample(
     double Z,
     int InstanceMapId);
 
+public readonly record struct VisualMapPointSample(
+    int UIMapId, double MapX, double MapY);
+
+public readonly record struct VisualScreenPointSample(double X, double Y);
+
+public readonly record struct VisualNearestCreatureSample(
+    int CreatureId, double X, double Y, double Distance);
+
+public readonly record struct VisualNameplateProbeSample(int Count, bool Matched);
+
 public readonly record struct VisualPlayerIdentity(
     int ClassId, int RaceId, int Level);
 
@@ -217,12 +227,18 @@ public readonly record struct VisualBarSample(
     VisualPlayerIdentity? PlayerIdentity = null,
     VisualTargetFlags? TargetFlags = null,
     VisualCastEvent? LastCastEvent = null,
-    VisualTargetIdentity? TargetIdentity = null);
+    VisualTargetIdentity? TargetIdentity = null,
+    VisualWorldPositionSample? TargetWorldPosition = null,
+    VisualMapPointSample? TargetMapPosition = null,
+    VisualNearestCreatureSample? NearestCreaturePosition = null,
+    VisualScreenPointSample? TargetScreenPosition = null,
+    double? TargetDistanceSquared = null,
+    VisualNameplateProbeSample? NameplateProbe = null);
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
 /// half rows establish pixel position and scale without relying on the game's
-/// UI scale setting. This is a diagnostic prototype, not the bot data reader.
+/// UI scale setting. Checked samples feed the guarded Forever controller.
 /// </summary>
 public static class VisualBarReader
 {
@@ -325,11 +341,45 @@ public static class VisualBarReader
             targetIdentity is { } checkedIdentity &&
             checkedFlags.Present != checkedIdentity.Present)
             targetIdentity = null;
+        VisualWorldPositionSample? targetWorldPosition =
+            targetIdentity is { Present: true } targetId
+                ? TryReadTargetWorldPosition(pixels, width, height,
+                    whiteLeft, whiteY, scale, targetId)
+                : null;
+        VisualMapPointSample? targetMapPosition =
+            targetIdentity is { Present: true } mapTargetId
+                ? TryReadTargetMapPosition(pixels, width, height,
+                    whiteLeft, whiteY, scale, mapTargetId)
+                : null;
+        VisualNearestCreatureSample? nearestCreature =
+            targetIdentity is { Present: true } closestId
+                ? TryReadNearestCreature(pixels, width, height,
+                    whiteLeft, whiteY, scale, closestId)
+                : null;
+        VisualScreenPointSample? targetScreen =
+            targetIdentity is { Present: true } screenId
+                ? TryReadTargetScreen(pixels, width, height,
+                    whiteLeft, whiteY, scale, screenId)
+                : null;
+        double? targetDistanceSquared =
+            targetIdentity is { Present: true } distanceId
+                ? TryReadTargetDistance(pixels, width, height,
+                    whiteLeft, whiteY, scale, distanceId)
+                : null;
+        VisualNameplateProbeSample? nameplateProbe =
+            targetIdentity is { Present: true } plateId
+                ? TryReadNameplateProbe(pixels, width, height,
+                    whiteLeft, whiteY, scale, plateId)
+                : null;
+        if (targetScreen is null && nameplateProbe is { Matched: true })
+            targetScreen = TryReadTargetLocator(pixels, width, height, scale);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
             playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
             actionStates, cooldowns, playerPowerType, bags, playerIdentity,
-            targetFlags, castEvent, targetIdentity);
+            targetFlags, castEvent, targetIdentity, targetWorldPosition,
+            targetMapPosition, nearestCreature, targetScreen,
+            targetDistanceSquared, nameplateProbe);
         return true;
     }
 
@@ -434,6 +484,158 @@ public static class VisualBarReader
         return level is >= 1 and <= 255 && (hash1 != 0 || hash2 != 0)
             ? new(hash1, hash2, level, (packedLevel & 1) != 0)
             : null;
+    }
+
+    private static VisualWorldPositionSample? TryReadTargetWorldPosition(
+        Bgra32[] pixels, int width, int height, int left, int whiteY,
+        double scale, VisualTargetIdentity identity)
+    {
+        int centerY = whiteY + (int)Math.Round(127 * scale);
+        int ReadPixel(int index)
+        {
+            int x = left + (int)Math.Round((5 + index * 20) * scale);
+            if (centerY < 0 || centerY >= height || x < 0 || x >= width)
+                return -1;
+            Bgra32 pixel = pixels[centerY * width + x];
+            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
+        }
+
+        int x = ReadPixel(7), y = ReadPixel(8), z = ReadPixel(9);
+        int instanceMapId = ReadPixel(10);
+        if (x < 0 || y < 0 || z < 0 || instanceMapId < 0 ||
+            ReadPixel(11) != ((0xA59977 - x - y - z - instanceMapId -
+                identity.GuidHash1 - identity.GuidHash2) & 0xFFFFFF))
+            return null;
+
+        return new((x - 8388608) / 100.0, (y - 8388608) / 100.0,
+            (z - 8388608) / 100.0, instanceMapId);
+    }
+
+    private static VisualMapPointSample? TryReadTargetMapPosition(
+        Bgra32[] pixels, int width, int height, int left, int whiteY,
+        double scale, VisualTargetIdentity identity)
+    {
+        int centerY = whiteY + (int)Math.Round(127 * scale);
+        int ReadPixel(int index)
+        {
+            int x = left + (int)Math.Round((5 + index * 20) * scale);
+            if (centerY < 0 || centerY >= height || x < 0 || x >= width)
+                return -1;
+            Bgra32 pixel = pixels[centerY * width + x];
+            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
+        }
+
+        int mapId = ReadPixel(12), x = ReadPixel(13), y = ReadPixel(14);
+        if (mapId <= 0 || x < 0 || y < 0 ||
+            ReadPixel(15) != ((0xA5AA88 - mapId - x - y -
+                identity.GuidHash1 - identity.GuidHash2) & 0xFFFFFF))
+            return null;
+        return new(mapId, x / 16777215.0, y / 16777215.0);
+    }
+
+    private static int ReadTargetProbePixel(Bgra32[] pixels,
+        int width, int height, int left, int whiteY,
+        double scale, int index)
+    {
+        int y = whiteY + (int)Math.Round(127 * scale);
+        int x = left + (int)Math.Round((5 + index * 20) * scale);
+        if (x < 0 || x >= width || y < 0 || y >= height)
+            return -1;
+        Bgra32 pixel = pixels[y * width + x];
+        return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
+    }
+
+    private static VisualNearestCreatureSample? TryReadNearestCreature(
+        Bgra32[] pixels, int width, int height, int left,
+        int whiteY, double scale, VisualTargetIdentity identity)
+    {
+        int Read(int i) => ReadTargetProbePixel(pixels, width, height,
+            left, whiteY, scale, i);
+        int id = Read(16), x = Read(17), y = Read(18), distance = Read(19);
+        if (id <= 0 || x < 0 || y < 0 || distance < 0 ||
+            Read(20) != ((0xA5B155 - id - x - y - distance -
+                identity.GuidHash1 - identity.GuidHash2) & 0xFFFFFF))
+            return null;
+        return new(id, (x - 8388608) / 100.0,
+            (y - 8388608) / 100.0, distance / 100.0);
+    }
+
+    private static VisualScreenPointSample? TryReadTargetScreen(
+        Bgra32[] pixels, int width, int height, int left,
+        int whiteY, double scale, VisualTargetIdentity identity)
+    {
+        int Read(int i) => ReadTargetProbePixel(pixels, width, height,
+            left, whiteY, scale, i);
+        int x = Read(21), y = Read(22);
+        if (x < 0 || y < 0 ||
+            Read(23) != ((0xA5B266 - x - y - identity.GuidHash1 -
+                identity.GuidHash2) & 0xFFFFFF))
+            return null;
+        return new(x / 16777215.0, y / 16777215.0);
+    }
+
+    private static double? TryReadTargetDistance(
+        Bgra32[] pixels, int width, int height, int left,
+        int whiteY, double scale, VisualTargetIdentity identity)
+    {
+        int Read(int i) => ReadTargetProbePixel(pixels, width, height,
+            left, whiteY, scale, i);
+        int squared = Read(24);
+        return squared > 0 &&
+            Read(25) == ((0xA5B377 - squared - identity.GuidHash1 -
+                identity.GuidHash2) & 0xFFFFFF)
+                ? squared / 100.0 : null;
+    }
+
+    private static VisualNameplateProbeSample? TryReadNameplateProbe(
+        Bgra32[] pixels, int width, int height, int left,
+        int whiteY, double scale, VisualTargetIdentity identity)
+    {
+        int status = ReadTargetProbePixel(pixels, width, height,
+            left, whiteY, scale, 26);
+        int marker = ReadTargetProbePixel(pixels, width, height,
+            left, whiteY, scale, 27);
+        if (status is < 0 or > 511 ||
+            marker != ((0xA5B488 - status - identity.GuidHash1 -
+                identity.GuidHash2) & 0xFFFFFF))
+            return null;
+        return new(status & 255, (status & 256) != 0);
+    }
+
+    private static VisualScreenPointSample? TryReadTargetLocator(
+        Bgra32[] pixels, int width, int height, double scale)
+    {
+        int offset = Math.Max(3, (int)Math.Round(5 * scale));
+        int count = 0, minX = width, maxX = 0, minY = height, maxY = 0;
+        long sumX = 0, sumY = 0;
+        for (int y = offset; y < height - offset; y++)
+        {
+            for (int x = offset; x < width - offset; x++)
+            {
+                Bgra32 center = pixels[y * width + x];
+                if (center.R > 20 || center.G < 240 || center.B < 240 ||
+                    !Magenta(pixels[y * width + x - offset]) ||
+                    !Magenta(pixels[y * width + x + offset]) ||
+                    !Magenta(pixels[(y - offset) * width + x]) ||
+                    !Magenta(pixels[(y + offset) * width + x]))
+                    continue;
+                count++;
+                sumX += x;
+                sumY += y;
+                minX = Math.Min(minX, x);
+                maxX = Math.Max(maxX, x);
+                minY = Math.Min(minY, y);
+                maxY = Math.Max(maxY, y);
+            }
+        }
+        if (count < 2 || maxX - minX > 8 * scale ||
+            maxY - minY > 8 * scale)
+            return null;
+        return new((double)sumX / count / width,
+            1 - (double)sumY / count / height);
+
+        static bool Magenta(Bgra32 pixel) =>
+            pixel.R >= 240 && pixel.G <= 20 && pixel.B >= 240;
     }
 
     private static VisualCooldownGridSnapshot? TryReadCooldownGrid(
