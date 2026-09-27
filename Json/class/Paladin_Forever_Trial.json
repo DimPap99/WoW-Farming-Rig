@@ -1,0 +1,55 @@
+{
+  // Verified against the local Forever beta Paladin on 2026-09-27.
+  // This profile is held behind ForeverDiagnosticController until the live
+  // route, target, action, and recovery trial passes.
+  "Loot": false,
+  "UseMount": false,
+  "Paths": [
+    {
+      "PathFilename": "Forever_Tirisfal_LocalTrial.json",
+      "PathThereAndBack": false,
+      "UIMapId": 1420
+    }
+  ],
+  "Pull": {
+    "Sequence": [
+      {
+        "Name": "Judgement",
+        "SpellId": 20271,
+        "Slot": 2,
+        "Key": "2",
+        "WhenUsable": true,
+        "Requirements": ["Spell:20271", "TargetHealth% > 0"]
+      }
+    ]
+  },
+  "Combat": {
+    "Sequence": [
+      {
+        "Name": "Holy Light",
+        "SpellId": 635,
+        "Slot": 1,
+        "Key": "1",
+        "HasCastBar": true,
+        "WhenUsable": true,
+        "Requirements": ["Spell:635", "Health% < 60", "Mana% >= 25"]
+      },
+      {
+        "Name": "Holy Strike",
+        "SpellId": 679,
+        "Slot": 3,
+        "Key": "3",
+        "WhenUsable": true,
+        "Requirements": ["Spell:679", "TargetHealth% > 0"]
+      },
+      {
+        "Name": "Judgement",
+        "SpellId": 20271,
+        "Slot": 2,
+        "Key": "2",
+        "WhenUsable": true,
+        "Requirements": ["Spell:20271", "TargetHealth% > 0"]
+      }
+    ]
+  }
+}
