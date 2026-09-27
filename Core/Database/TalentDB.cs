@@ -26,17 +26,20 @@ public sealed class TalentDB
     {
         this.spellDB = spellDB;
 
-        talentTabs = LoadJsonSafe<TalentTab>(logger, Join(dataConfig.ExpDbc, "talenttab.json"));
-        talentTreeElements = LoadJsonSafe<TalentTreeElement>(logger, Join(dataConfig.ExpDbc, "talent.json"));
+        bool optional = string.Equals(dataConfig.Exp, "forever", StringComparison.OrdinalIgnoreCase);
+        talentTabs = LoadJsonSafe<TalentTab>(logger, Join(dataConfig.ExpDbc, "talenttab.json"), optional);
+        talentTreeElements = LoadJsonSafe<TalentTreeElement>(logger, Join(dataConfig.ExpDbc, "talent.json"), optional);
     }
 
-    private static T[] LoadJsonSafe<T>(ILogger<TalentDB> logger, string path)
+    private static T[] LoadJsonSafe<T>(ILogger<TalentDB> logger, string path, bool optional)
     {
         try
         {
             if (!System.IO.File.Exists(path))
             {
-                logger.LogWarning("Missing file: {Path}", path);
+                LogLevel level = optional ? LogLevel.Debug : LogLevel.Warning;
+                if (logger.IsEnabled(level))
+                    logger.Log(level, "Missing file: {Path}", path);
                 return [];
             }
 

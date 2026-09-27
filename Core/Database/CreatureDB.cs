@@ -27,7 +27,10 @@ public sealed class CreatureDB
         // Qualified: both File and Path are imported statically and each has Exists.
         if (!System.IO.File.Exists(path))
         {
-            logger.LogWarning("Missing file: {Path}", path);
+            LogLevel level = string.Equals(dataConfig.Exp, "forever", StringComparison.OrdinalIgnoreCase)
+                ? LogLevel.Debug : LogLevel.Warning;
+            if (logger.IsEnabled(level))
+                logger.Log(level, "Missing file: {Path}", path);
             Entries = FrozenDictionary<int, Creature>.Empty;
             return;
         }
