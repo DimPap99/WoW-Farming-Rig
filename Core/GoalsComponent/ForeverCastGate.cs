@@ -5,7 +5,7 @@ using SharedLib;
 namespace Core.Goals;
 
 /// <summary>
-/// One-capture preflight for the three spells in the guarded Paladin trial.
+/// One-capture preflight for the guarded Forever Paladin action set.
 /// The controller must still be stopped at startup until its state flow has
 /// a separate bounded live run.
 /// </summary>
@@ -52,7 +52,7 @@ public static class ForeverCastGate
 
         if (action.SpellId == 635)
             return !flags.Present && !flags.PlayerCombat &&
-                sample.PlayerHealth >= 0.70 && sample.PlayerPower >= 0.60;
+                sample.PlayerPower >= 0.25;
 
         bool resourcesSafe = sample.PlayerHealth >= 0.70 &&
             sample.PlayerPower >= (flags.PlayerCombat ? 0.25 : 0.60);
@@ -75,6 +75,7 @@ public static class ForeverCastGate
             (1, 635, "Holy Light") => true,
             (2, 20271, "Judgement") => true,
             (3, 679, "Holy Strike") => true,
+            (3, 678, "Holy Strike") => true,
             _ => false
         };
 }

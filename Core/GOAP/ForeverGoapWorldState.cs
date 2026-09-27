@@ -36,7 +36,7 @@ public static class ForeverGoapWorldState
                 actions.GetSlot(2) is { InRange: true });
             data |= Bit(GoapKey.incombatrange,
                 bar.GetSlot(3) is
-                    { Kind: VisualActionKind.Spell, Id: 679 } &&
+                    { Kind: VisualActionKind.Spell, Id: 678 or 679 } &&
                 actions.GetSlot(3) is { InRange: true });
         }
 
