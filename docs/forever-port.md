@@ -57,6 +57,24 @@ construct `BotController` or send keyboard/mouse input.
 walkable height from the baked local mesh, and plans one short disk-only route
 from that point. It uses neither the client's zero Z nor game input.
 
+The separate `ForeverMovementProbe` keeps its input path explicit. Run its
+`--check` mode from the repository root first; this only reads the screen and
+mesh. `--move` repeats the same preflight and sends one 200 ms Up Arrow press,
+then releases the key and measures displacement. It requires at least 95%
+health, no selected target, consistent map/world coordinates, and a short
+straight baked route. It never starts the normal bot or combat controller:
+
+```powershell
+dotnet run --project Utilities/ForeverMovementProbe -c Release -- --check
+dotnet run --project Utilities/ForeverMovementProbe -c Release -- --move
+```
+
+The first live `--move` test in Undercity passed its straight three-yard
+preflight with zero new bakes. One 200 ms Up Arrow press moved the character
+1.35 yards: 1.34 yards along facing and 0.05 yards laterally. A five-second
+read-only follow-up showed no continued movement after key release. This
+validates one bounded input step, not route following or autonomous combat.
+
 The Blazor dashboard now also has a **Forever diagnostic mode**. With Forever
 running, start `BlazorServer` normally and open its dashboard. It selects WGC,
 shows fresh player health/power and target-health percentages from the first
