@@ -1,16 +1,10 @@
 {
   // Verified against the local Forever beta Paladin on 2026-09-27.
-  // This profile is held behind ForeverDiagnosticController until the live
-  // route, target, action, and recovery trial passes.
+  // This profile remains behind ForeverDiagnosticController until automatic
+  // target, combat, and recovery behavior passes separate bounded tests.
   "Loot": false,
   "UseMount": false,
-  "Paths": [
-    {
-      "PathFilename": "Forever_Tirisfal_LocalTrial.json",
-      "PathThereAndBack": false,
-      "UIMapId": 1420
-    }
-  ],
+  "Paths": [],
   "Pull": {
     "Sequence": [
       {

@@ -127,12 +127,12 @@ public sealed partial class AddonReader : IAddonReader
             spellBookReader.UpdateForever(visualAvailable ? bars.SpellBook : null);
             keyBindingsReader.UpdateForever(visualAvailable ? bars.Bindings : null);
             bagReader.UpdateForever(visualAvailable ? bars.Bags : null);
-            // The normal controller waits on DataReady. Signal it only once
-            // per new, complete visual frame; the guarded addon has no
+            // The bounded trial waits on DataReady. Signal it only once
+            // per new frame with all trial inputs; the guarded addon has no
             // Classic GlobalTime cell to drive that signal.
             long frameId = foreverVisualBars.LatestFrameId;
             if (visualAvailable && frameId != lastForeverFrameId &&
-                HasForeverControllerFrame(bars))
+                HasForeverTrialFrame(bars))
             {
                 lastForeverFrameId = frameId;
                 DataReady.Set();
@@ -206,7 +206,10 @@ public sealed partial class AddonReader : IAddonReader
         DataReady.Set();
     }
 
-    public static bool HasForeverControllerFrame(VisualBarSample bars) =>
+    // The bounded route and one-cast trial does not read inventory. Keep its
+    // capture gate independent of the bag row, which can be incomplete when
+    // the bottom of the overlay is clipped.
+    public static bool HasForeverTrialFrame(VisualBarSample bars) =>
         bars.Position is { UIMapId: > 0 } &&
         bars.WorldPosition is not null &&
         bars.PlayerIdentity is { Level: > 0 } &&
@@ -224,8 +227,10 @@ public sealed partial class AddonReader : IAddonReader
         bars.SpellBook is { Count: > 0 } book &&
         book.ReadableCount == book.Count &&
         bars.Bindings is
-            { ReadableCount: VisualBindingSnapshot.Count } &&
-        bars.Bags is { IsComplete: true };
+            { ReadableCount: VisualBindingSnapshot.Count };
+
+    public static bool HasForeverControllerFrame(VisualBarSample bars) =>
+        HasForeverTrialFrame(bars) && bars.Bags is { IsComplete: true };
 
     public void SessionReset()
     {

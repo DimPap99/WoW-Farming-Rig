@@ -12,7 +12,7 @@ public static class ForeverGoapWorldState
     public static bool TryBuild(VisualBarSample sample, out BitVector32 state)
     {
         state = default;
-        if (!AddonReader.HasForeverControllerFrame(sample) ||
+        if (!AddonReader.HasForeverTrialFrame(sample) ||
             sample.TargetFlags is not { } flags)
             return false;
 

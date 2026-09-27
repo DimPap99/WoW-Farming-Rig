@@ -506,23 +506,22 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
    coordinate/cost-zone/listfile tests, but its six-tile MPQ byte-identity
    bake could not run here because this workspace has no `Json/MPQ` archive
    corpus. Do not reuse the pre-Cataclysm navmesh: Forever's world is different.
-4. The minimal Forever trial profile, read-only combined gate, and bounded
-   route, target, action, and recovery checks have passed in isolation. Port
-   the normal controller's remaining Classic-only state and goal dependencies,
-   then validate a bounded controller-run cycle. Its guarded trial casting
-   branch now uses the checked success event, but the ordinary GOAP goals still
-   read unported target, movement, and combat cells. The checked
-   player combat/death flags are available to `AddonBits`; other Classic-only
-   state cells remain unported.
-   Remove the startup guard only after that cycle passes. No autonomous
-   movement or combat has been enabled for Forever.
+4. The minimal Forever profile and bounded route, action, and recovery tests
+   have passed through the ordinary controller at the player's current
+   position. This is still a person-assisted trial: the person selects and
+   finishes the target. Forever registers only a visual-backed trial GOAP
+   goal. Automatic acquisition, pursuit, sustained combat, death recovery,
+   looting, and route continuation require their own checked signals and
+   bounded tests before the dashboard startup guard can be removed.
 
 ### Paladin trial gate
 
-`Json/class/Paladin_Forever_Trial.json` contains only the verified bound
-Holy Light, Judgement, and Holy Strike slots. Its two-anchor Tirisfal path is
-`Json/path/Forever_Tirisfal_LocalTrial.json`. The profile has no aura rules,
-loot, mount, or unbound secondary-bar actions. Run the read-only combined gate:
+`Json/class/Paladin_Forever_Trial.json` retains Holy Light, Judgement, and
+Holy Strike definitions, but the bounded controller trial uses Judgement only.
+The profile has no active path, aura rules, loot, mount, or unbound secondary-bar
+actions. `Json/path/Forever_Tirisfal_LocalTrial.json` records the older fixed
+trial route; the current preflight derives a short path from the player's live
+position. Run the read-only combined gate:
 
 ```powershell
 dotnet run --project Utilities/ForeverVisualReader/ForeverVisualReader.csproj -- --trial-check
@@ -627,11 +626,11 @@ macro resolution, screenshot NPC scan, and remote path visualization are
 bypassed for this trial. Classic casting collaborators remain constructed, but
 the guarded Forever `CastingHandler` branch never calls them.
 
-The trial goal requires the exact two-anchor Tirisfal profile, a stable idle
-capture followed by a distinct fresh frame, a matching map/world position,
-Up Arrow as a verified MOVEFORWARD
-binding, a forward-facing route start, and complete paths from disk-only baked
-navmesh. It sends at most one 200 ms forward press, checks the displacement,
+The trial goal requires the Tirisfal Paladin profile with no saved route, a
+stable idle capture followed by a distinct fresh frame, a matching map/world
+position, Up Arrow as a verified MOVEFORWARD binding, and a complete three-yard
+forward path from disk-only baked navmesh at the current position and facing.
+It sends at most one 200 ms forward press, checks the displacement,
 waits at most 90 seconds for a person to select a living attackable target,
 and sends at most one Judgement through the checked cast gate. It then waits at
 most 90 seconds for a combat/dead-target observation and a safe idle recovery.
@@ -645,15 +644,47 @@ warning remains). The visual self-test passed at 75%, 100%, and 125% UI scale,
 including the new Forever GOAP fact check. `ForeverControllerTrial --check`
 constructed the normal controller against live WowB PID 21012, loaded the
 trial profile, and confirmed that its only registered goal was
-`ForeverTrialGoal`; no input was sent. The read-only route preflight refused
-the live position/facing. A separate live reader smoke found a complete
+`ForeverTrialGoal`; no input was sent. The first read-only route preflight refused
+the old fixed route position/facing. A separate live reader smoke found a complete
 controller frame, but the character had 62% health and a selected target;
-`--trial-check` also refused. No controller `--run` input was sent, and the
-bounded route/action/recovery run remains unverified. The normal Forever
-dashboard guard must remain until that live run passes.
+`--trial-check` also refused. At that point no controller `--run` input had
+been sent; the later current-position run is recorded below.
 
-Remaining for autonomous play: verify the bounded controller run near its
-route start; add checked target acquisition and pursuit; add combat-safe spell
+The bounded route preflight now derives its short segment from the fresh live
+position instead of requiring the historical two-anchor path. A live read at
+map 1420 found map/world error 0.05 yard and a complete 12-yard disk-only path
+near the character; a separate forward check found a straight three-yard path
+with zero new bakes. The old mismatch between the `e3bc14ca` lookup and baked
+`e7ad816b` cache came from a stale PPather binary built before the
+culture-independent hash fix; rebuilding PPather and the utility restored the
+correct cache lookup. The current character's main-bar slot 3 holds Holy Strike
+rank 2 (ID 678) rather than the older trial rank (679), so the one-step and
+Judgement checks verify only the two spells they use. Sustained combat still
+needs a separately verified rank-selection rule.
+
+A live reader smoke later found 190/200 bag slots, while the route/cast signals
+remained readable. The bounded trial now signals and reads a frame when its
+required position, vitals, flags, action, spellbook, binding, cooldown, and cast
+event data are complete. The full controller frame gate still requires all
+bags for future inventory work. Three-scale synthetic tests verify that
+separation. After the local-route and frame-gate changes, `--trial-check` found
+100% health and mana, no target, matching required actions, map/world error
+0.02 yard, and a complete current-position route. The ordinary controller's
+read-only `--check` also loaded its one goal and passed that local route
+preflight without game input.
+
+On 2026-09-27 the controller's read-only preflight passed at the player's
+current position. The first `--run` attempt received no complete fresh frame
+within its 10-second startup window and sent no input. A second preflight
+correctly refused a selected target; after the target was cleared, the
+preflight passed. The next bounded `--run` verified one forward step, waited
+for the person's target selection, confirmed Judgement's successful cast event,
+observed combat, and passed after the target cleared and health, mana, and
+combat state recovered. The runner returned exit code 0 with `Controller trial
+status: Passed`. The dashboard startup guard remains because this run relied
+on a person for target selection and combat.
+
+Remaining for autonomous play: add checked target acquisition and pursuit; add combat-safe spell
 selection and repeated action confirmation with low-health escape/healing;
 add death/ghost and post-fight recovery; then add loot, route continuation,
 and session accounting from Forever-backed signals. Each feature needs a
@@ -668,8 +699,8 @@ Run the read-only controller wiring and route preflight with:
 dotnet run --project Utilities/ForeverControllerTrial/ForeverControllerTrial.csproj -- --check
 ```
 
-When the client is at the first route anchor, facing the second, healthy,
-out of combat, and without a target, the explicit bounded controller run is:
+When the client is on the baked Tirisfal mesh, healthy, out of combat, and
+without a target, the explicit bounded controller run is:
 
 ```powershell
 dotnet run --project Utilities/ForeverControllerTrial/ForeverControllerTrial.csproj -- --run

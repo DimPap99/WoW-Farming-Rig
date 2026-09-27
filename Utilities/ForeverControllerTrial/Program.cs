@@ -106,7 +106,7 @@ try
         screen.Update();
         tracker.Update();
         if (tracker.TryGetLatest(out VisualBarSample bars) &&
-            AddonReader.HasForeverControllerFrame(bars))
+            AddonReader.HasForeverTrialFrame(bars))
         {
             ready = true;
             break;
@@ -115,7 +115,7 @@ try
     }
     if (!ready)
     {
-        Console.Error.WriteLine("No complete fresh Forever controller frame; no input sent.");
+        Console.Error.WriteLine("No complete fresh Forever trial frame; no input sent.");
         return 2;
     }
 
@@ -128,20 +128,33 @@ try
     }
 
     Console.WriteLine("Normal Forever controller loaded with one bounded trial goal.");
+    bool routeReady = goal.TryReadOnlyRoutePreflight(out string routeReason);
+    if (!routeReady)
+    {
+        Console.Error.WriteLine($"Route preflight refused: {routeReason}. No game input sent.");
+        return 2;
+    }
+    Console.WriteLine("Route preflight passed.");
     if (!run)
     {
-        Console.WriteLine(goal.TryReadOnlyRoutePreflight(out string reason)
-            ? "Route preflight passed."
-            : $"Route preflight refused: {reason}.");
         Console.WriteLine("Read-only check passed; no game input sent.");
         return 0;
     }
 
     controller.ToggleBotStatus();
     DateTime deadline = DateTime.UtcNow.AddSeconds(195);
+    string lastStatus = string.Empty;
     while (!cts.IsCancellationRequested && DateTime.UtcNow < deadline &&
            goal.TrialStatus is not ("Passed" or "Failed"))
+    {
+        string status = goal.TrialStatus;
+        if (status != lastStatus)
+        {
+            Console.WriteLine($"Controller phase: {status}");
+            lastStatus = status;
+        }
         Thread.Sleep(100);
+    }
     if (controller.IsBotActive)
         controller.ToggleBotStatus();
 

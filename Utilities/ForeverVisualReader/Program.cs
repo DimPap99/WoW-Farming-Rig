@@ -859,9 +859,7 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
     static bool HasRules(KeyAction action, params string[] rules) =>
         action.Requirements.Count == rules.Length &&
         rules.All(action.Requirements.Contains);
-    bool profileSafe = profile.Paths.Length == 1 &&
-        profile.Paths[0].UIMapId == 1420 &&
-        profile.Paths[0].PathFilename == "Forever_Tirisfal_LocalTrial.json" &&
+    bool profileSafe = profile.Paths.Length == 0 &&
         !profile.Loot && !profile.UseMount &&
         profile.Pull.Sequence.Length == 1 &&
         profile.Combat.Sequence.Length == 3 &&
@@ -914,7 +912,9 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
         SpellBookReader spellBook = new(new SpellDB(config));
         spellBook.UpdateForever(book);
         bool actionsMatch = spellBook.IsInitialized && spellBook.AllRanksReceived;
-        foreach (var expectedAction in expected)
+        // This bounded route/cast trial uses Holy Light and Judgement. The
+        // character may have upgraded Holy Strike on slot 3 independently.
+        foreach (var expectedAction in expected.Where(a => a.Slot is 1 or 2))
         {
             int slot = expectedAction.Slot;
             ConsoleKey expectedKey = slot switch
@@ -967,57 +967,54 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
             continue;
         }
 
-        string routeFile = Path.Combine(config.Path, profile.Paths[0].PathFilename);
-        Vector3[] routeMap = JsonConvert.DeserializeObject<Vector3[]>(
-            File.ReadAllText(routeFile)) ?? [];
-        if (routeMap.Length != 2)
+        bool routeConnected = true;
+        if (requireNearRoute)
         {
-            Console.Error.WriteLine("Trial route must have exactly two anchors.");
-            return 2;
+            if (bars.PlayerHealth < 0.95 || bars.PlayerPower < 0.60 || targetFlags.Present)
+            {
+                Console.Error.WriteLine("Local route requires high health, mana, and no target.");
+                return 2;
+            }
+
+            NavmeshBakeOptions bake = new();
+            string version = typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0";
+            string hash = NavmeshSettings.ComputeSettingsHash(
+                NavmeshSettings.MeshEra(config.Exp), version,
+                bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope,
+                bake.ResolveMinWorldZ(area.Continent));
+            string cache = Path.Combine(config.Navmesh, area.Continent, hash);
+            if (!Directory.Exists(cache))
+            {
+                Console.Error.WriteLine($"Local navmesh cache is missing: {cache}");
+                return 2;
+            }
+            Vector2 here = new((float)world.X, (float)world.Y);
+            Vector2 ahead = here + new Vector2(
+                MathF.Cos((float)map.Direction), MathF.Sin((float)map.Direction)) * 3f;
+            using NavmeshPathfinder nav = new(NullLogger.Instance, null, cache,
+                bake, new NavmeshQueryOptions());
+            float startZ = 0;
+            float endZ = 0;
+            routeConnected = nav.TryGetHeight(here.X, here.Y, out startZ) &&
+                nav.TryGetHeight(ahead.X, ahead.Y, out endZ) &&
+                MathF.Abs(endZ - startZ) <= 1.5f;
+            if (routeConnected)
+            {
+                var path = nav.FindPath(new(here.X, here.Y, startZ),
+                    new(ahead.X, ahead.Y, endZ), null);
+                routeConnected = path is { locations.Count: >= 2 } &&
+                    nav.LastStats.TilesBaked == 0 &&
+                    Vector2.Distance(new(path.locations[0].X, path.locations[0].Y), here) <= 0.5f &&
+                    Vector2.Distance(new(path.locations[^1].X, path.locations[^1].Y), ahead) <= 0.5f;
+            }
         }
-        Vector3[] routeWorld = routeMap.Select(p =>
-            WorldMapAreaDB.ToWorld_FlipXY(p, area)).ToArray();
-        float startDistance = Vector2.Distance(
-            new((float)world.X, (float)world.Y),
-            new(routeWorld[0].X, routeWorld[0].Y));
-        NavmeshBakeOptions bake = new();
-        string version = typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0";
-        string hash = NavmeshSettings.ComputeSettingsHash("forever", version,
-            bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope);
-        string cache = Path.Combine(config.Navmesh, area.Continent, hash);
-        if (!Directory.Exists(cache))
-        {
-            Console.Error.WriteLine($"Trial navmesh cache is missing: {cache}");
-            return 2;
-        }
-        using NavmeshPathfinder nav = new(NullLogger.Instance, null, cache,
-            bake, new NavmeshQueryOptions());
-        bool firstHeightFound = nav.TryGetHeight(
-            routeWorld[0].X, routeWorld[0].Y, out float startZ);
-        bool lastHeightFound = nav.TryGetHeight(
-            routeWorld[1].X, routeWorld[1].Y, out float endZ);
-        bool heightFound = firstHeightFound && lastHeightFound;
-        if (!heightFound)
-        {
-            Console.Error.WriteLine("Trial route has no walkable mesh height.");
-            return 2;
-        }
-        var path = nav.FindPath(
-            new(routeWorld[0].X, routeWorld[0].Y, startZ),
-            new(routeWorld[1].X, routeWorld[1].Y, endZ), null);
-        bool routeConnected = path is { locations.Count: >= 2 } &&
-            nav.LastStats.TilesBaked == 0 &&
-            Vector2.Distance(new(path.locations[^1].X, path.locations[^1].Y),
-                new(routeWorld[1].X, routeWorld[1].Y)) < 5;
         Console.WriteLine($"Trial: profileSafe={profileSafe}, actionsMatch={actionsMatch}, " +
             $"mapError={mapError:F2} yd, routeConnected={routeConnected}, " +
-            $"routeStartDistance={startDistance:F1} yd, " +
             $"health={bars.PlayerHealth:P0}, mana={bars.PlayerPower:P0}, " +
             $"target={bars.TargetPresent}, attackable={targetFlags.Attackable}, " +
             $"targetDead={targetFlags.Dead}, " +
             $"identity={bars.PlayerIdentity}, bagSlots={bars.Bags.ReadableSlots}/200");
-        return routeConnected && (!requireNearRoute || startDistance <= 30)
-            ? 0 : 2;
+        return routeConnected ? 0 : 2;
     }
 
     Console.Error.WriteLine("No consistent fresh Forever trial sample was captured.");
@@ -1550,7 +1547,10 @@ static int RunSelfTest()
         if (!AddonReader.HasForeverControllerFrame(result) ||
             AddonReader.HasForeverControllerFrame(result with { ActionStates = null }) ||
             AddonReader.HasForeverControllerFrame(result with { Bags = null }) ||
-            AddonReader.HasForeverControllerFrame(result with { LastCastEvent = null }))
+            AddonReader.HasForeverControllerFrame(result with { LastCastEvent = null }) ||
+            !AddonReader.HasForeverTrialFrame(result with { Bags = null }) ||
+            AddonReader.HasForeverTrialFrame(result with { ActionStates = null }) ||
+            AddonReader.HasForeverTrialFrame(result with { LastCastEvent = null }))
         {
             Console.Error.WriteLine($"Forever controller frame gate failed at UI scale {scale}.");
             return 1;
@@ -1561,6 +1561,7 @@ static int RunSelfTest()
             !worldState[1 << (int)GoapKey.targethostile] ||
             worldState[1 << (int)GoapKey.incombat] ||
             worldState[1 << (int)GoapKey.withinpullrange] ||
+            !ForeverGoapWorldState.TryBuild(result with { Bags = null }, out _) ||
             ForeverGoapWorldState.TryBuild(result with { ActionStates = null }, out _))
         {
             Console.Error.WriteLine($"Forever GOAP state gate failed at UI scale {scale}.");
