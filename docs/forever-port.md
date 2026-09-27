@@ -45,6 +45,7 @@ PNG, or monitor those bars for a bounded time:
 ```powershell
 dotnet run --project Utilities/ForeverVisualReader -c Release -- --self-test
 dotnet run --project Utilities/ForeverVisualReader -c Release -- --reader-smoke
+dotnet run --project Utilities/ForeverVisualReader -c Release -- --route-probe
 dotnet run --project Utilities/ForeverVisualReader -c Release -- --monitor 45
 dotnet run --project Utilities/ForeverVisualReader -c Release -- --read path\to\capture.png
 ```
@@ -52,6 +53,9 @@ dotnet run --project Utilities/ForeverVisualReader -c Release -- --read path\to\
 If multiple `WowB.exe` processes are open, add `--pid <process-id>` to the
 monitor/capture command to select the intended window. The reader does not
 construct `BotController` or send keyboard/mouse input.
+`--route-probe` checks that the live map and world X/Y agree, samples a
+walkable height from the baked local mesh, and plans one short disk-only route
+from that point. It uses neither the client's zero Z nor game input.
 
 The Blazor dashboard now also has a **Forever diagnostic mode**. With Forever
 running, start `BlazorServer` normally and open its dashboard. It selects WGC,
@@ -217,6 +221,13 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   is not suitable for navigation until its meaning is resolved. The visual
   reader exposes fresh world values through `TryGetForeverWorldPosition` for
   diagnostics, without feeding Z into the movement controller.
+- The read-only live route probe in Tirisfal found map/world disagreement of
+  only 0.03 yards at `(2286.30, 366.20)`, sampled mesh height 34.42, and
+  planned a complete six-point route to a 12-yard local target. It used one
+  resident baked tile and zero new bakes. A second moving read at
+  `(2085.10, 141.20)` passed the same check across two resident tiles, also
+  with zero new bakes. This validates two live placements
+  and path query, not a movement trial or the full region's collision quality.
 - A later low-health capture showed color noise in the numeric pixel row:
   an expected maximum of 232 appeared as 262,376 in one frame. The map and
   world-position markers were also intermittently unreadable. The numeric

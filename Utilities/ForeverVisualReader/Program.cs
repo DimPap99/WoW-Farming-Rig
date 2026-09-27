@@ -5,6 +5,8 @@ using Game;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
+using PPather.Navmesh;
+
 using SharedLib;
 
 using SixLabors.ImageSharp;
@@ -16,6 +18,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -39,6 +42,7 @@ if (args.Length == 1 && args[0] == "--self-test")
     return RunSelfTest();
 
 bool readerSmoke = args.Length == 1 && args[0] == "--reader-smoke";
+bool routeProbe = args.Length == 1 && args[0] == "--route-probe";
 
 if (args.Length == 2 && args[0] == "--read")
 {
@@ -78,6 +82,9 @@ try
 
     if (readerSmoke)
         return await RunReaderSmoke(screen, tracker);
+
+    if (routeProbe)
+        return await RunRouteProbe(screen, tracker);
 
     if (monitor)
     {
@@ -296,6 +303,112 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
     }
 
     Console.Error.WriteLine("No fresh Forever visual sample was captured.");
+    return 2;
+}
+
+static async Task<int> RunRouteProbe(WowScreenWGC screen, ForeverVisualBarTracker tracker)
+{
+    // Read-only placement and connectivity check. The client reports Z=0 in
+    // the observed old-world zones, so use the baked walkable height instead.
+    DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
+    WorldMapAreaDB maps = new(config);
+    NavmeshBakeOptions bake = new();
+    string version = typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0";
+    string hash = NavmeshSettings.ComputeSettingsHash("forever", version,
+        bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope);
+
+    float lastMapError = 0;
+    for (int i = 0; i < 50; i++)
+    {
+        screen.Update();
+        tracker.Update();
+        if (!tracker.TryGetLatest(out VisualBarSample bars) ||
+            bars.Position is not { } map || bars.WorldPosition is not { } world)
+        {
+            await Task.Delay(100);
+            continue;
+        }
+
+        if (!maps.TryGet(map.UIMapId, out WorldMapArea area) ||
+            area.MapID != world.InstanceMapId)
+        {
+            Console.Error.WriteLine("Live map or instance ID is missing or inconsistent.");
+            return 2;
+        }
+
+        Vector3 fromMap = WorldMapAreaDB.ToWorld_FlipXY(
+            new Vector3((float)(map.MapX * 100), (float)(map.MapY * 100), 0), area);
+        Vector2 fromWorld = new((float)world.X, (float)world.Y);
+        float mapError = Vector2.Distance(new(fromMap.X, fromMap.Y), fromWorld);
+        if (mapError > 3f)
+        {
+            // The two Lua pixel rows can be captured across an OnUpdate while
+            // the player moves. Try the next screen frame before failing.
+            lastMapError = mapError;
+            await Task.Delay(100);
+            continue;
+        }
+
+        string cache = Path.Combine(config.Navmesh, area.Continent, hash);
+        if (!Directory.Exists(cache))
+        {
+            Console.Error.WriteLine($"No baked Forever navmesh at {cache}.");
+            return 2;
+        }
+
+        using NavmeshPathfinder nav = new(NullLogger.Instance, null, cache,
+            bake, new NavmeshQueryOptions());
+        if (!nav.TryGetHeight((float)world.X, (float)world.Y, out float startZ))
+        {
+            Console.Error.WriteLine("No walkable mesh covers the live player X/Y.");
+            return 2;
+        }
+
+        Vector3 start = new((float)world.X, (float)world.Y, startZ);
+        NavmeshCoords.GetTileIndex(start.X, start.Y, out int tileX, out int tileZ);
+        Console.WriteLine($"Live {area.AreaName} map={map.UIMapId} instance={world.InstanceMapId}; " +
+            $"world=({world.X:F2}, {world.Y:F2}, {world.Z:F2}); " +
+            $"map/world error={mapError:F2} yd; mesh Z={startZ:F2}; " +
+            $"tile={tileX},{tileZ}");
+
+        foreach (float radius in new[] { 12f, 24f })
+        {
+            for (int step = 0; step < 8; step++)
+            {
+                float angle = step * MathF.Tau / 8;
+                float targetX = start.X + radius * MathF.Cos(angle);
+                float targetY = start.Y + radius * MathF.Sin(angle);
+                if (!nav.TryGetHeight(targetX, targetY, out float targetZ))
+                    continue;
+
+                Vector3 target = new(targetX, targetY, targetZ);
+                var route = nav.FindPath(start, target, null);
+                if (route is null || route.locations.Count < 2 ||
+                    nav.LastStats.TilesBaked != 0)
+                    continue;
+
+                Vector3 end = route.locations[^1];
+                float endError = Vector2.Distance(new(end.X, end.Y),
+                    new(target.X, target.Y));
+                if (endError > 5f)
+                    continue;
+
+                Console.WriteLine($"Disk-only local route: {route.locations.Count} points, " +
+                    $"{radius:F0} yd target, end=({end.X:F2}, {end.Y:F2}, {end.Z:F2}), " +
+                    $"end error={endError:F2} yd, " +
+                    $"resident tiles={nav.LastStats.ResidentTiles}, " +
+                    $"new bakes={nav.LastStats.TilesBaked}");
+                return 0;
+            }
+        }
+
+        Console.Error.WriteLine("No complete short route from the live player position.");
+        return 2;
+    }
+
+    Console.Error.WriteLine(lastMapError > 0
+        ? $"No consistent live map/world position was captured; last error {lastMapError:F2} yd."
+        : "No fresh checksummed Forever position was captured.");
     return 2;
 }
 
