@@ -484,8 +484,13 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
 2. Finish gameplay data and rules. Player health/power percentages, maxima,
    and checked primary mana percentage are live; exact current values remain
    protected. Provide pet/focus vitals only if the chosen profile needs them.
-   Bag IDs, counts, and free slots are live in combat. Design a
-   combat-safe aura signal. Reject missing data
+   Bag IDs, counts, and free slots are live in combat. The beta's aura-list,
+   aura-instance, and indexed-aura reads failed during a delayed combat-lockdown
+   capture, then worked again after combat. The spell-ID lookup returned nil in
+   that capture, which does not establish whether the aura was absent or blocked.
+   Forever profile expressions using aura names, aura timer variables, or aura
+   post-cast flags now fail at load, and the Classic aura-count pixel is rejected.
+   Design and verify a combat-safe aura signal before using those rules. Reject missing data
    rather than reading Classic pixel cells. The 24-bit numeric protocol cannot
    encode protected values as-is.
 3. Validate Forever-specific world geometry before gameplay use. The installed

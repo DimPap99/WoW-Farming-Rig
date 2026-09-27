@@ -48,6 +48,8 @@ public sealed partial class RequirementFactory
     private readonly Dictionary<string, Func<int>> intVariables;
     private readonly HashSet<string> actionCooldownKeys =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> auraKeys =
+        new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, int[]> intArrayVariables = [];
 
     private readonly FrozenDictionary<string, Func<bool>> boolVariables;
@@ -223,9 +225,9 @@ public sealed partial class RequirementFactory
         bool CannibalizeCorpseNearby() =>
             corpseTracker.HasCannibalizeCorpseNearby(playerReader.WorldPos, playerReader.WorldMapArea);
 
-        AddAura("", boolVariables, playerBuffs);
-        AddAura("F_", boolVariables, focusBuffs);
-        AddAura("", boolVariables, targetDebuffs);
+        AddAura("", boolVariables, playerBuffs, auraKeys);
+        AddAura("F_", boolVariables, focusBuffs, auraKeys);
+        AddAura("", boolVariables, targetDebuffs, auraKeys);
 
         BindPathSettingsBoolVariables(classConfig.Paths, boolVariables);
 
@@ -328,7 +330,8 @@ public sealed partial class RequirementFactory
     }
 
     private static void AddAura<T>(string prefix,
-        Dictionary<string, Func<bool>> boolVariables, T t) where T : notnull
+        Dictionary<string, Func<bool>> boolVariables,
+        T t, HashSet<string> auraKeys) where T : notnull
     {
         foreach (MethodInfo mInfo in t.GetType().GetMethods(
             BindingFlags.DeclaredOnly |
@@ -345,14 +348,17 @@ public sealed partial class RequirementFactory
             {
                 foreach (string name in names.Values)
                 {
-                    boolVariables.Add($"{prefix}{name}",
+                    string key = $"{prefix}{name}";
+                    boolVariables.Add(key,
                         mInfo.CreateDelegate<Func<bool>>(t));
+                    auraKeys.Add(key);
                 }
             }
             else
             {
                 string name = $"{prefix}{mInfo.Name.Replace("_", " ")}";
                 boolVariables.Add(name, mInfo.CreateDelegate<Func<bool>>(t));
+                auraKeys.Add(name);
             }
         }
     }
@@ -380,6 +386,11 @@ public sealed partial class RequirementFactory
 
     public void Init(KeyAction item)
     {
+        if (playerReader.IsForeverVisual &&
+            (item.AfterCastWaitBuff || item.AfterCastAuraExpected))
+            throw new NotSupportedException(
+                $"Forever action '{item.Name}' requires an unverified aura signal.");
+
         if (item.Name is Drink or Food)
             AddConsumable(item);
 
@@ -457,6 +468,11 @@ public sealed partial class RequirementFactory
                 throw new NotSupportedException(
                     $"Forever profile expression '{requirement}' uses unavailable exact or secondary vital {vital}; use a checked percentage or action usability rule.");
 
+            if (playerReader.IsForeverVisual &&
+                FindUnsupportedForeverAura(requirement, auraKeys) is { } aura)
+                throw new NotSupportedException(
+                    $"Forever profile expression '{requirement}' uses unverified aura {aura}.");
+
             if (logger.IsEnabled(LogLevel.Information))
                 LogProcessing(logger, name, requirement);
 
@@ -489,6 +505,27 @@ public sealed partial class RequirementFactory
         RegexOptions.IgnoreCase)]
     private static partial Regex ForeverUnsupportedVital();
 
+    public static string? FindUnsupportedForeverAura(
+        string expression, IEnumerable<string> auraKeys)
+    {
+        foreach (string key in auraKeys.OrderByDescending(x => x.Length))
+        {
+            if (Regex.IsMatch(expression,
+                $@"(?<![A-Za-z0-9_]){Regex.Escape(key)}(?![A-Za-z0-9_])",
+                RegexOptions.IgnoreCase))
+                return key;
+        }
+
+        return null;
+    }
+
+    private static bool IsAuraVariable(string key) =>
+        key.StartsWith("Buff_", StringComparison.OrdinalIgnoreCase) ||
+        key.StartsWith("Debuff_", StringComparison.OrdinalIgnoreCase) ||
+        key.StartsWith("TDebuff_", StringComparison.OrdinalIgnoreCase) ||
+        key.StartsWith("TBuff_", StringComparison.OrdinalIgnoreCase) ||
+        key.StartsWith("FBuff_", StringComparison.OrdinalIgnoreCase);
+
     public void InitUserDefinedIntVariables(
         Dictionary<string, int[]> intKeyValues,
         Dictionary<string, string> stringKeyValues,
@@ -502,6 +539,10 @@ public sealed partial class RequirementFactory
 
         foreach ((string key, int[] values) in intKeyValues)
         {
+            if (playerReader.IsForeverVisual && IsAuraVariable(key))
+                throw new NotSupportedException(
+                    $"Forever profile variable '{key}' requires an unverified aura timer.");
+
             if (values.Length == 1)
             {
                 int value = values[0];

@@ -396,7 +396,10 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
     public int MinWeaponDurability() =>
         Math.Min(MainHandDurability(), Math.Min(OffHandDurability(), RangedDurability()));
 
-    public AuraCount AuraCount => new(reader, 55);
+    public AuraCount AuraCount => IsForever
+        ? throw new NotSupportedException(
+            "Forever aura counts are unavailable in combat.")
+        : new(reader, 55);
 
     public int TargetId => reader.GetInt(56);
     public int TargetGuid => reader.GetInt(57);
