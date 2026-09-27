@@ -73,6 +73,24 @@ dotnet run --project Utilities/ReadDBC_CSV --configuration Release -- -v forever
 The resulting intermediate CSV cache in `Utilities/ReadDBC_CSV/data` is ignored
 by Git; the generated JSON is not.
 
+The separate `Utilities/ForeverCasc` tool now contains a reproducible,
+read-only `IGameFileSource` backed by an MIT-licensed TACTSharp source snapshot.
+It opens only the installed client's local CASC data, with CDN and listfile
+downloads disabled. Supply a local wowdev-style `id;path` geometry listfile;
+the listfile is not shipped with this repository. To verify one file while the
+beta client is running:
+
+```powershell
+dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" 775971
+dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" "World\Maps\Azeroth\Azeroth_32_48_obj0.adt"
+dotnet run --project Utilities/ForeverCasc -c Release -- "C:\Program Files (x86)\World of Warcraft" "C:\path\to\community-listfile.csv" --wdt-azeroth
+```
+
+An optional fourth argument selects the product (default `wow_classic_beta`);
+an optional fifth argument selects the local cache directory. This source can
+be injected into `MPQTriangleSupplier`, but the Forever WMO placement gate still
+prevents a complete navmesh bake.
+
 ## Live findings from the beta client
 
 - `WOW_PROJECT_ID` equals `WOW_PROJECT_MAINLINE` (`1`), not Classic. The
@@ -184,12 +202,16 @@ by Git; the generated JSON is not.
   before the module's item-use/sell call.
 - The loaded add-on reported client version `20` in SavedVariables. This proves
   package loading, not bot functionality.
-- A local-only CASC read opened Forever's `Azeroth.wdt` (FileDataID 775971,
-  294,988 bytes), `Kalimdor.wdt` (782779, 294,988 bytes), and
+- The committed local-only CASC adapter opened Forever's `Azeroth.wdt`
+  (FileDataID 775971, 294,988 bytes) and `Azeroth_32_48_obj0.adt` (41,072
+  bytes) through numeric and path lookup while `WowB.exe` was running. The
+  `--wdt-azeroth` check also passed the source into `MPQTriangleSupplier`,
+  parsed the WDT, and found sample tile 32_48 present. An
+  earlier local prototype also opened `Kalimdor.wdt` (782779, 294,988 bytes) and
   `Azeroth_32_48.adt` (778027, 477,275 bytes) from the installed client with
-  network fallback disabled. The MIT-licensed TACTSharp reader needed a local
-  file-sharing adjustment to read while WoW was open; that patch and prototype
-  are still in ignored `local/forever-casc`, not in the shipped application.
+  network fallback disabled. The MIT-licensed TACTSharp reader needed a
+  file-sharing adjustment to read while WoW was open; that adjustment and a
+  stricter local-only guard are now in `external/TACTSharp`.
   `CascGeometryListfile` indexed 585,885 geometry paths from a downloaded
   wowdev community listfile without committing the listfile itself. The
   existing PPather parser accepted the Azeroth WDT and marked tile 32_48
@@ -228,8 +250,8 @@ by Git; the generated JSON is not.
    and spellbook shims help package loading but are not a full data reader.
 3. Import Forever-specific world geometry and build a matching navmesh. The
    geometry readers now accept a container-neutral `IGameFileSource`, and the
-   supplier can be given one directly. A local TACTSharp prototype reads CASC
-   bytes, but no redistributable production adapter is wired in yet. Modern
+   supplier can be given one directly. `Utilities/ForeverCasc` provides a
+   local-only CASC source, but the bake host does not select it yet. Modern
    ADT object placements use FileDataIDs. M2 loading has passed one real
    collision-model probe. Numeric WMO group and doodad references now decode,
    and full-detail group files parse with `MPY2`, but mixed modern/legacy root

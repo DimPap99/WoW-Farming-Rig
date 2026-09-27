@@ -18,6 +18,7 @@ because the old binary ran and fell through to a different code path.
 | `ClassifyVendorFlags`, `TransferTrainerFlags` | NPC flag maintenance |
 | `DangerZoneGenerator` | authored danger-zone data |
 | `ForeverVisualReader` | read-only WGC capture and status-bar percentage diagnostic for the Forever port |
+| `ForeverCasc` | read-only, local-only CASC geometry source and file probe for the Forever port |
 | `PathMaker`, `ReadItems` | loose scripts, no csproj |
 
 ## BakeTool

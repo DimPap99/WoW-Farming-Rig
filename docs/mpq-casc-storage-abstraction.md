@@ -20,8 +20,9 @@
 > **Forever beta update (2026-09-27).** The container-neutral source is in the
 > geometry readers, and `MPQTriangleSupplier` accepts an injected source.
 > `CascGeometryListfile` maps geometry names to FileDataIDs. A local-only,
-> MIT-licensed TACTSharp prototype reads actual Forever WDT and ADT files
-> with CDN fallback disabled. The production CASC source is not integrated;
+> MIT-licensed TACTSharp source snapshot and `Utilities/ForeverCasc` now read
+> actual Forever WDT and ADT files with CDN fallback disabled. The bake host
+> does not select this source yet;
 > modern ADT object placements use FileDataIDs rather than the legacy name
 > tables. One MD21-wrapped M2 collision model parsed successfully by ID, but
 > WMO groups and doodads remain unsupported, so navigation is not ready.
