@@ -1127,6 +1127,8 @@ static int RunSelfTest()
             SpellId = 7744 };
         var cooldownKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { "CD_Judgement", "CD_Judgement of Wisdom" };
+        var auraKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "Seal of Righteousness", "F_Devotion Aura" };
         bool millisecondsRejected = false;
         try { _ = foreverCooldown.Get(cooldownAction); }
         catch (NotSupportedException) { millisecondsRejected = true; }
@@ -1144,7 +1146,13 @@ static int RunSelfTest()
             RequirementFactory.FindUnsupportedForeverVital(
                 "Mana < 20") != "Mana" ||
             RequirementFactory.FindUnsupportedForeverVital(
-                "FocusHealth% < 50") != "FocusHealth%")
+                "FocusHealth% < 50") != "FocusHealth%" ||
+            RequirementFactory.FindUnsupportedForeverAura(
+                "!Seal of Righteousness", auraKeys) != "Seal of Righteousness" ||
+            RequirementFactory.FindUnsupportedForeverAura(
+                "F_Devotion Aura && Health% > 50", auraKeys) != "F_Devotion Aura" ||
+            RequirementFactory.FindUnsupportedForeverAura(
+                "Mana% > 30", auraKeys) is not null)
         {
             Console.Error.WriteLine($"Forever cooldown comparison audit failed at UI scale {scale}.");
             return 1;

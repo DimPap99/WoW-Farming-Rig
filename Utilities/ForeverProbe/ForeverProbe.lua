@@ -128,6 +128,19 @@ local function capture(phase)
         playerAura = status(UnitAura, "player", 1, "HELPFUL"),
         playerAuraModern = status(C_UnitAuras and C_UnitAuras.GetAuraDataByIndex,
             "player", 1, "HELPFUL"),
+        playerAuraBySpell = status(C_UnitAuras and
+            C_UnitAuras.GetPlayerAuraBySpellID, 19740),
+        playerAuraList = status(C_UnitAuras and C_UnitAuras.GetUnitAuras,
+            "player", "HELPFUL"),
+        playerAuraListCount = status(function()
+            return #C_UnitAuras.GetUnitAuras("player", "HELPFUL")
+        end),
+        playerAuraInstances = status(C_UnitAuras and
+            C_UnitAuras.GetUnitAuraInstanceIDs,
+            "player", "HELPFUL"),
+        playerAuraInstanceCount = status(function()
+            return #C_UnitAuras.GetUnitAuraInstanceIDs("player", "HELPFUL")
+        end),
         playerAuraSpellId = valueStatus(aura and aura.spellId),
         playerAuraName = valueStatus(aura and aura.name),
         playerAuraExpiration = valueStatus(aura and aura.expirationTime),
