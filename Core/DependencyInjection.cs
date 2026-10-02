@@ -178,8 +178,7 @@ public static class DependencyInjection
         s.ForwardSingleton<RouteGenerator>(sp);
         s.ForwardSingleton<SpellDB>(sp);
         s.ForwardSingleton<IconDB>(sp);
-        if (sp.GetRequiredService<StartupClientVersion>().Version != ClientVersion.Forever)
-            s.ForwardSingleton<TalentDB>(sp);
+        s.ForwardSingleton<TalentDB>(sp);
         s.ForwardSingleton<MailboxDB>(sp);
 
         s.ForwardSingleton<AddonReader>(sp);

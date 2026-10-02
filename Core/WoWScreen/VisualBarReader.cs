@@ -247,47 +247,73 @@ public static class VisualBarReader
 {
     private enum BarColor { White, Yellow, Green, Blue, Red, Cyan }
 
-    public static bool TryRead(Bgra32[] pixels, int width, int height, out VisualBarSample sample)
+    /// <summary>The white calibration row is searched for in this top-left window.</summary>
+    public const int SearchWidth = 650;
+    public const int SearchHeight = 250;
+
+    // Width of the white row at scale 1; every offset in this file uses these units.
+    private const double ReferenceWidth = 320.0;
+
+    // Furthest any telemetry read reaches right of the white row's left edge and
+    // below the row, in reference units: target probe pixel 29 (x 585) and the
+    // bottom of the aura icon strip (y 666). Grow these with /forevervisual; a
+    // read outside the copied region returns null rather than wrong data.
+    private const int ReadExtentX = 600;
+    private const int ReadExtentY = 680;
+
+    /// <summary>
+    /// Size of the top-left frame region that holds every telemetry read, so a
+    /// caller can copy that instead of the whole frame. <paramref name="pixels"/>
+    /// needs to cover only the search window. The nameplate marker is not
+    /// included; it needs the full viewport (see <see cref="TryLocateTarget"/>).
+    /// </summary>
+    public static bool TryGetReadRegion(Bgra32[] pixels, int width, int height,
+        int frameWidth, int frameHeight, out int regionWidth, out int regionHeight)
+    {
+        regionWidth = regionHeight = 0;
+        if (pixels.Length != width * height ||
+            !TryFindWhiteRow(pixels, width, height,
+                out int whiteLeft, out int whiteY, out int whiteWidth))
+            return false;
+
+        double scale = whiteWidth / ReferenceWidth;
+        regionWidth = Math.Min(frameWidth, Math.Max(SearchWidth,
+            whiteLeft + (int)Math.Ceiling(ReadExtentX * scale) + 1));
+        regionHeight = Math.Min(frameHeight, Math.Max(SearchHeight,
+            whiteY + (int)Math.Ceiling(ReadExtentY * scale) + 1));
+        return true;
+    }
+
+    /// <summary>True when the addon sent no target screen point but a matching
+    /// nameplate is shown, so the marker has to be found in the frame.</summary>
+    public static bool NeedsTargetLocator(VisualBarSample sample) =>
+        NeedsTargetLocator(sample.TargetScreenPosition, sample.NameplateProbe);
+
+    private static bool NeedsTargetLocator(VisualScreenPointSample? screen,
+        VisualNameplateProbeSample? probe) =>
+        screen is null && probe is { Matched: true };
+
+    /// <summary>Finds the selected nameplate marker in a full viewport frame.</summary>
+    public static VisualScreenPointSample? TryLocateTarget(Bgra32[] pixels,
+        int width, int height, VisualBarSample telemetry) =>
+        NeedsTargetLocator(telemetry) && pixels.Length == width * height
+            ? TryReadTargetLocator(pixels, width, height, telemetry.Width / ReferenceWidth)
+            : null;
+
+    /// <param name="locateTarget">Search the whole frame for the nameplate
+    /// marker. Pass false when <paramref name="pixels"/> is only the read region.</param>
+    public static bool TryRead(Bgra32[] pixels, int width, int height, out VisualBarSample sample,
+        bool locateTarget = true)
     {
         sample = default;
         if (pixels.Length != width * height || width < 200 || height < 100)
             return false;
 
-        int searchWidth = Math.Min(width, 650);
-        int searchHeight = Math.Min(height, 250);
-        int whiteLeft = -1;
-        int whiteY = -1;
-        int whiteWidth = 0;
-
-        for (int y = 20; y < searchHeight; y++)
-        {
-            int x = 0;
-            while (x < searchWidth)
-            {
-                if (!Matches(pixels[y * width + x], BarColor.White))
-                {
-                    x++;
-                    continue;
-                }
-
-                int start = x;
-                while (x < searchWidth && Matches(pixels[y * width + x], BarColor.White))
-                    x++;
-
-                int length = x - start;
-                if (length > whiteWidth)
-                {
-                    whiteLeft = start;
-                    whiteY = y;
-                    whiteWidth = length;
-                }
-            }
-        }
-
-        if (whiteWidth < 100 || whiteLeft < 0)
+        if (!TryFindWhiteRow(pixels, width, height,
+                out int whiteLeft, out int whiteY, out int whiteWidth))
             return false;
 
-        double scale = whiteWidth / 320.0;
+        double scale = whiteWidth / ReferenceWidth;
         int rowStep = (int)Math.Round(17 * scale);
         int tolerance = Math.Max(2, (int)Math.Round(3 * scale));
 
@@ -374,7 +400,7 @@ public static class VisualBarReader
                 ? TryReadNameplateProbe(pixels, width, height,
                     whiteLeft, whiteY, scale, plateId)
                 : null;
-        if (targetScreen is null && nameplateProbe is { Matched: true })
+        if (locateTarget && NeedsTargetLocator(targetScreen, nameplateProbe))
             targetScreen = TryReadTargetLocator(pixels, width, height, scale);
         bool? sealActive = TryReadSealAura(pixels, width, height,
             whiteLeft, whiteY, scale);
@@ -388,6 +414,43 @@ public static class VisualBarReader
             VisualLifecycleReader.ReadDeath(pixels, width, height, whiteLeft, whiteY, scale),
             VisualLifecycleReader.ReadLoot(pixels, width, height, whiteLeft, whiteY, scale));
         return true;
+    }
+
+    private static bool TryFindWhiteRow(Bgra32[] pixels, int width, int height,
+        out int whiteLeft, out int whiteY, out int whiteWidth)
+    {
+        int searchWidth = Math.Min(width, SearchWidth);
+        int searchHeight = Math.Min(height, SearchHeight);
+        whiteLeft = -1;
+        whiteY = -1;
+        whiteWidth = 0;
+
+        for (int y = 20; y < searchHeight; y++)
+        {
+            int x = 0;
+            while (x < searchWidth)
+            {
+                if (!Matches(pixels[y * width + x], BarColor.White))
+                {
+                    x++;
+                    continue;
+                }
+
+                int start = x;
+                while (x < searchWidth && Matches(pixels[y * width + x], BarColor.White))
+                    x++;
+
+                int length = x - start;
+                if (length > whiteWidth)
+                {
+                    whiteLeft = start;
+                    whiteY = y;
+                    whiteWidth = length;
+                }
+            }
+        }
+
+        return whiteWidth >= 100 && whiteLeft >= 0;
     }
 
     private static int? TryReadCheckedWorldPixel(Bgra32[] pixels,

@@ -16,7 +16,9 @@ public enum ForeverCombatResult { Waiting, ActionSent, NeedRange, TargetDead, Fa
 public interface IForeverCombatRoutine
 {
     bool InRange(VisualBarSample bars, VisualTargetIdentity identity);
-    bool EnsureSeal(VisualBarSample bars, out string reason);
+    /// <param name="beforeCast">Runs right before a blocking seal cast, so the
+    /// caller can release held movement before the wait for the success event.</param>
+    bool EnsureSeal(VisualBarSample bars, Action beforeCast, out string reason);
     ForeverCombatResult Update(VisualBarSample bars,
         VisualTargetIdentity identity, out string reason);
 }
@@ -130,7 +132,7 @@ public sealed class ForeverCombat : IForeverCombatRoutine
             (target != identity || !judgedTarget) &&
             ForeverTargetSelector.InJudgementRange(bars));
 
-    public bool EnsureSeal(VisualBarSample bars, out string reason)
+    public bool EnsureSeal(VisualBarSample bars, Action beforeCast, out string reason)
     {
         reason = string.Empty;
         if (bars.SealOfRighteousnessActive is null)
@@ -157,6 +159,7 @@ public sealed class ForeverCombat : IForeverCombatRoutine
             reason = "Seal of Righteousness action missing";
             return false;
         }
+        beforeCast();
         if (caster.TryCastForever(seal, () => token.IsCancellationRequested) ==
             ForeverCastResult.Failed)
             reason = "Seal cast success was not confirmed";

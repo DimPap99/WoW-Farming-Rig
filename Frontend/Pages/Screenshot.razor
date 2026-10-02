@@ -1,4 +1,10 @@
 ﻿@page "/Screenshot"
 
-<BotHeader />
+@inject StartupClientVersion client
+
+@* BotHeader reads Classic-only cells (exact health, power, bag items). *@
+@if (client.Version != ClientVersion.Forever)
+{
+    <BotHeader />
+}
 <ScreenshotComponent Stretch="true" />
