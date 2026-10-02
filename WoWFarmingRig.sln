@@ -35,6 +35,15 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HeadlessServer", "HeadlessS
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Benchmarks", "Benchmarks\Benchmarks.csproj", "{488984A0-F158-4EDA-A2CB-57C10D8596E1}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Addons", "Addons", "{8B3868E2-C9AB-4DCE-927D-07624FD5215F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ForeverProbe", "ForeverProbe", "{51926ADF-8441-424A-9A9D-33C31E0A7E67}"
+	ProjectSection(SolutionItems) = preProject
+		Addons\ForeverProbe\ForeverEvents.lua = Addons\ForeverProbe\ForeverEvents.lua
+		Addons\ForeverProbe\ForeverProbe.lua = Addons\ForeverProbe\ForeverProbe.lua
+		Addons\ForeverProbe\ForeverProbe_Camelot.toc = Addons\ForeverProbe\ForeverProbe_Camelot.toc
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -204,6 +213,9 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{51926ADF-8441-424A-9A9D-33C31E0A7E67} = {8B3868E2-C9AB-4DCE-927D-07624FD5215F}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {9395D174-0646-43EF-9C91-A7EED7678BA4}
