@@ -187,7 +187,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 phase == Phase.Recover && bars.PlayerHealth >= 0.90)
             {
                 if (!(flags.Present && flags.Dead) &&
-                    !combat.EnsureSeal(bars, out string sealReason))
+                    !combat.EnsureSeal(bars, navigator.StopPursuit, out string sealReason))
                 {
                     navigator.StopPursuit();
                     if (!string.IsNullOrEmpty(sealReason))
@@ -271,7 +271,6 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             {
                 target = selected;
                 targetSelectedAt = GetTimestamp();
-                targetRestoreAt = 0;
                 deathSequenceBefore = bars.LastDeathEvent?.Sequence ?? 0;
                 Enter(Phase.Pursue);
             }
@@ -376,6 +375,8 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 Fail("selected target disappeared and could not be restored for the death check");
             return;
         }
+        // The target is back; the next disappearance gets a fresh window.
+        targetRestoreAt = 0;
         if (bars.TargetIdentity is null)
         {
             targetUnreadableAt = targetUnreadableAt == 0 ? GetTimestamp() : targetUnreadableAt;
@@ -492,6 +493,13 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     {
         if (phase == Phase.Pursue && next != Phase.Pursue)
             navigator.StopPursuit();
+        if (next == Phase.Fight)
+        {
+            // Both Fight entry paths (pursuit and in-combat aggro) start with
+            // no pending restore or unreadable-identity window from earlier.
+            targetRestoreAt = 0;
+            targetUnreadableAt = 0;
+        }
         if (next == Phase.Acquire)
         {
             rejectedTargets.Clear();

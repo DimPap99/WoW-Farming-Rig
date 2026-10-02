@@ -23,7 +23,9 @@ public sealed class ForeverVisualBarTracker
     private readonly IWowScreen screen;
     private readonly bool enabled;
     public bool IsEnabled => enabled;
+    private Bgra32[] searchPixels = [];
     private Bgra32[] pixels = [];
+    private Bgra32[] framePixels = [];
     private long lastFrameId;
     public long LatestFrameId => lastFrameId;
     private Snapshot? current;
@@ -47,24 +49,52 @@ public sealed class ForeverVisualBarTracker
         lastFrameId = frameId;
 
         Image<Bgra32> image = screen.ScreenImage;
-        // The telemetry sits at the left, but the selected nameplate marker
-        // can be anywhere. Its normalized coordinates use the full viewport.
-        int width = image.Width;
-        int height = image.Height;
-        if (pixels.Length != width * height)
-            pixels = new Bgra32[width * height];
+        Volatile.Write(ref current, TryReadFrame(image, out VisualBarSample bars)
+            ? new Snapshot(bars, Stopwatch.GetTimestamp())
+            : null);
+    }
 
-        Bgra32[] buffer = pixels;
+    // The telemetry sits in the top-left corner, so copy only that region each
+    // frame. The selected nameplate marker can be anywhere and its normalized
+    // coordinates use the full viewport, so the whole frame is copied only on
+    // the frames that have to search for it.
+    private bool TryReadFrame(Image<Bgra32> image, out VisualBarSample bars)
+    {
+        bars = default;
+        int searchWidth = Math.Min(image.Width, VisualBarReader.SearchWidth);
+        int searchHeight = Math.Min(image.Height, VisualBarReader.SearchHeight);
+        Copy(image, ref searchPixels, searchWidth, searchHeight);
+        if (!VisualBarReader.TryGetReadRegion(searchPixels, searchWidth, searchHeight,
+                image.Width, image.Height, out int width, out int height))
+            return false;
+
+        Copy(image, ref pixels, width, height);
+        if (!VisualBarReader.TryRead(pixels, width, height, out bars, locateTarget: false))
+            return false;
+
+        if (VisualBarReader.NeedsTargetLocator(bars))
+        {
+            Copy(image, ref framePixels, image.Width, image.Height);
+            bars = bars with
+            {
+                TargetScreenPosition = VisualBarReader.TryLocateTarget(
+                    framePixels, image.Width, image.Height, bars)
+            };
+        }
+        return true;
+    }
+
+    private static void Copy(Image<Bgra32> image, ref Bgra32[] buffer, int width, int height)
+    {
+        if (buffer.Length != width * height)
+            buffer = new Bgra32[width * height];
+
+        Bgra32[] target = buffer;
         image.ProcessPixelRows(source =>
         {
             for (int y = 0; y < height; y++)
-                source.GetRowSpan(y).Slice(0, width).CopyTo(buffer.AsSpan(y * width, width));
+                source.GetRowSpan(y).Slice(0, width).CopyTo(target.AsSpan(y * width, width));
         });
-
-        Snapshot? next = VisualBarReader.TryRead(buffer, width, height, out VisualBarSample bars)
-            ? new(bars, Stopwatch.GetTimestamp())
-            : null;
-        Volatile.Write(ref current, next);
     }
 
     public bool TryGetLatest(out VisualBarSample bars)

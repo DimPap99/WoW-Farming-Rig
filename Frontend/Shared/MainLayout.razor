@@ -8,6 +8,7 @@
 @inject StartupClientVersion client
 @inject IJSRuntime JSRuntime
 @inject IconDB iconDB
+@inject NavigationManager navigation
 
 @implements IDisposable
 
@@ -26,7 +27,14 @@
     </SidebarSection>
 
     <ContentSection>
-        @Body
+        @if (IsUnavailableOnForever)
+        {
+            <p>This page is not available on WoW: Forever.</p>
+        }
+        else
+        {
+            @Body
+        }
     </ContentSection>
 </BlazorBootstrapLayout>
 
@@ -132,6 +140,21 @@
             : ConfigExists ? GetNormalNavItems() : GetConfigNavItems();
 
         return await Task.FromResult(request.ApplyTo(navItems));
+    }
+
+    // Other pages read Classic-only readers or services that are not
+    // registered on Forever. Not rendering @Body also skips their injection.
+    private bool IsUnavailableOnForever
+    {
+        get
+        {
+            if (client.Version != ClientVersion.Forever)
+                return false;
+
+            string path = "/" + navigation.ToBaseRelativePath(navigation.Uri).Split('?', '#')[0];
+            return !GetForeverNavItems().Exists(item =>
+                string.Equals(item.Href, path, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     private static List<NavItem> GetForeverNavItems() =>

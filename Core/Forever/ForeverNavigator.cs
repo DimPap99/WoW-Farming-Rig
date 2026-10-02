@@ -290,7 +290,10 @@ public sealed class ForeverNavigator : IDisposable
         foreach (float distance in new[] { 3f, 6f, 9f, 12f })
         {
             Vector2 end = here + Heading(direction) * distance;
-            var path = nav!.FindPath(new(here.X, here.Y, z), new(end.X, end.Y, 0), null);
+            // Seed the end with the player's height. A zero Z makes the shared
+            // resolver scan the whole column and prefer the highest surface,
+            // so a neighbouring hillside could win over the ground ahead.
+            var path = nav!.FindPath(new(here.X, here.Y, z), new(end.X, end.Y, z), null);
             if (path is not { locations.Count: >= 2 } ||
                 Vector2.Distance(here, new(path.locations[0].X, path.locations[0].Y)) > 0.5f ||
                 Vector2.Distance(end, new(path.locations[^1].X, path.locations[^1].Y)) > 1)
@@ -396,6 +399,10 @@ public sealed class ForeverNavigator : IDisposable
         reason = string.Empty;
         if (bars.Position is not { } map)
             return ForeverNavigationResult.Failed;
+        // A fixed step assumes the character is standing still. Release any
+        // forward, strafe or mouse-look held by SearchForTarget first, or the
+        // character keeps running and the step check measures the wrong motion.
+        StopPursuit();
         double delta = SignedAngle(desired - map.Direction);
         ConsoleKey key;
         int duration;

@@ -355,33 +355,40 @@ public sealed partial class PlayerReader : IMouseOverReader, IReader
     public RecordInt Money { get; } = new(44, 45, 1000000);
 
     // FACTION_ID * 1000000 + RACE_ID * 10000 + CLASS_ID * 100 + ClientVersion
+    // On Forever an unreadable identity reads as None, like an empty Classic
+    // cell, so BotController's startup loop keeps waiting instead of aborting.
     public UnitRace Race => IsForever
-        ? (UnitRace)RequiredForeverIdentity().RaceId
+        ? (UnitRace)(ForeverIdentity()?.RaceId ?? 0)
         : (UnitRace)(reader.GetInt(46) / 10000 % 100);
     public UnitClass Class => IsForever
-        ? (UnitClass)RequiredForeverIdentity().ClassId
+        ? (UnitClass)(ForeverIdentity()?.ClassId ?? 0)
         : (UnitClass)(reader.GetInt(46) / 100 % 100);
     public ClientVersion Version => IsForever
         ? ClientVersion.Forever
         : (ClientVersion)(reader.GetInt(46) % 100);
 
-    private VisualPlayerIdentity RequiredForeverIdentity()
-    {
-        if (TryGetForeverVisualVitals(out VisualBarSample bars) &&
-            bars.PlayerIdentity is { } identity)
-            return identity;
-        throw new InvalidOperationException(
-            "Forever player identity is unavailable or stale.");
-    }
+    private VisualPlayerIdentity? ForeverIdentity() =>
+        TryGetForeverVisualVitals(out VisualBarSample bars) ? bars.PlayerIdentity : null;
 
     // Sent by the addon rather than derived from the race: a Pandaren is
     // Neutral until the Wandering Isle is finished, then becomes either side.
     public PlayerFaction Faction => IsForever
-        ? RequiredForeverIdentity().RaceId == (int)UnitRace.Undead
-            ? PlayerFaction.Horde
-            : throw new NotSupportedException(
-                "Forever faction is only verified for the Undead Paladin trial.")
+        ? ForeverFaction(Race)
         : (PlayerFaction)(reader.GetInt(46) / 1000000);
+
+    // Forever's visual channel has no faction cell. The original eight races
+    // have a fixed side; any other race is refused rather than guessed.
+    private static PlayerFaction ForeverFaction(UnitRace race) => race switch
+    {
+        UnitRace.Human or UnitRace.Dwarf or UnitRace.NightElf or UnitRace.Gnome
+            => PlayerFaction.Alliance,
+        UnitRace.Orc or UnitRace.Undead or UnitRace.Tauren or UnitRace.Troll
+            => PlayerFaction.Horde,
+        UnitRace.None => throw new InvalidOperationException(
+            "Forever player identity is unavailable or stale."),
+        _ => throw new NotSupportedException(
+            $"Forever faction is not known for race {race}.")
+    };
 
     // 47 empty
 
