@@ -15,8 +15,10 @@ frames or changing CVars on Forever.
 3. Copy `Addons/DataToColor` to the Forever beta client's
    `_classic_beta_/Interface/AddOns/DataToColor` directory. The client must
    select `DataToColor_Camelot.toc`. Restart the game after copying add-on files.
-4. The separately installed `Utilities/ForeverProbe` add-on is optional. Its
-   `/foreverprobe` command records API value types in `ForeverProbeResults`
+4. Copy `Addons/ForeverProbe` to the beta client's
+   `_classic_beta_/Interface/AddOns/ForeverProbe` directory. It supplies the
+   visual data required by the Forever dashboard and controller trial. Its
+   optional `/foreverprobe` command records API value types in `ForeverProbeResults`
    under the beta client's account-wide SavedVariables. The out-of-combat
    `/forevercatalog` command records only numeric spellbook/action-slot IDs and
    action type labels in `ForeverProbeCatalog` (saved on `/reload`); it does not
