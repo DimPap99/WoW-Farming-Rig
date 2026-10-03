@@ -25,12 +25,6 @@ public static class ForeverFrame
     public const int DefaultMaxTargetLevelsAbove = 1;
 
     /// <summary>
-    /// The general Attack ability every class has. Its action button's range
-    /// is melee reach, which the rotation reads when one is on the main bar.
-    /// </summary>
-    public const int AttackSpellId = 6603;
-
-    /// <summary>
     /// Everything the route, target and cast decisions read. The bag rows are
     /// left out: the bounded trial does not read inventory, and the bottom of
     /// the overlay can be clipped.

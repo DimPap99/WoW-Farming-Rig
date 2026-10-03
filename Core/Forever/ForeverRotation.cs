@@ -69,10 +69,7 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     private readonly CancellationToken token;
     private readonly HashSet<KeyAction> usedPulls = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<string> unreadableRequirements = [];
-    // Where STARTATTACK was last pressed against the current target. With an
-    // Attack button it is pressed again on reaching melee: at range it can
-    // start a ranged auto attack instead (a hunter's Auto Shot).
-    private bool? attackStartedInMelee;
+    private bool attackStarted;
     private long auraUnreadableSince;
     private long buffMissingSince;
     private VisualTargetIdentity? target;
@@ -116,11 +113,6 @@ public sealed class ForeverRotation : IForeverCombatRoutine
                 reason = $"{action.Name} aura state is unreadable";
                 return false;
             }
-            if (action.AfterCastWaitSwing && AttackSlot(bars) is null)
-            {
-                reason = $"{action.Name} swings in melee; put the Attack ability on a main-bar slot for melee reach";
-                return false;
-            }
         }
         reason = string.Empty;
         return true;
@@ -146,7 +138,7 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         if (target != identity)
         {
             target = identity;
-            attackStartedInMelee = null;
+            attackStarted = false;
             usedPulls.Clear();
         }
 
@@ -167,7 +159,7 @@ public sealed class ForeverRotation : IForeverCombatRoutine
                     return ForeverCombatResult.Failed;
                 }
                 input.PressRandom(ForeverBindings.StartAttack.ToKeyAction("Forever Start Attack"), token);
-                attackStartedInMelee = MeleeReach(bars) != false;
+                attackStarted = true;
                 return ForeverCombatResult.ActionSent;
             case ForeverFightStep.Combat:
                 return Cast(plan.Action!, out reason);
@@ -189,53 +181,21 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         if (!combatRange)
             return new(ForeverFightStep.NeedRange);
 
-        bool? started = target == identity ? attackStartedInMelee : null;
-        bool? melee = MeleeReach(bars);
+        bool sameTarget = target == identity;
         foreach (KeyAction action in config.Combat.Sequence)
         {
             if (IsAutoAttack(action))
             {
-                // Once per target; with an Attack button, once more on
-                // reaching melee after a start at range.
-                if (started is null || (melee == true && started == false))
+                if (!(sameTarget && attackStarted))
                     return new(ForeverFightStep.StartAttack, action);
                 continue;
             }
-            if (!InReach(bars, action, melee))
-                continue;
             if (RequirementsMet(action) && ForeverCastGate.CanPress(bars, action, spells,
                     maxLevelsAbove: config.NPCMaxLevels_Above))
                 return new(ForeverFightStep.Combat, action);
         }
         return new(ForeverFightStep.Wait);
     }
-
-    /// <summary>
-    /// Whether the target is in melee reach, read from an Attack button
-    /// (<see cref="ForeverFrame.AttackSpellId"/>) on main-bar slots 1 to 12,
-    /// or null when the bar has none.
-    /// </summary>
-    public static bool? MeleeReach(VisualBarSample bars) =>
-        AttackSlot(bars) is { } slot ? bars.ActionStates?.GetSlot(slot)?.InRange : null;
-
-    private static int? AttackSlot(VisualBarSample bars)
-    {
-        for (int slot = 1; slot <= VisualCooldownGridSnapshot.SlotCount; slot++)
-        {
-            if (bars.ActionBar?.GetSlot(slot) is
-                { Kind: VisualActionKind.Spell, Id: ForeverFrame.AttackSpellId })
-                return slot;
-        }
-        return null;
-    }
-
-    // A next-swing action (AfterCastWaitSwing) resolves on a melee swing, and
-    // its own slot can report a range it cannot swing at; with an Attack
-    // button, melee reach decides. Any other action uses its slot's range.
-    private static bool InReach(VisualBarSample bars, KeyAction action, bool? melee) =>
-        action.AfterCastWaitSwing && melee is { } reach
-            ? reach
-            : bars.ActionStates?.GetSlot(action.Slot) is { InRange: true };
 
     // An opener counts only while it can actually be pressed. Otherwise
     // pursuit hands the target to the fight, the fight hands it back for
@@ -338,26 +298,18 @@ public sealed class ForeverRotation : IForeverCombatRoutine
 
     /// <summary>
     /// Any spell of <paramref name="actions"/> whose slot has a range to the
-    /// current target reports it in range, or, with an Attack button, the
-    /// melee start or a next-swing action within melee reach. Readiness is not
-    /// required, so a cooldown never sends the fight back to pursuit.
+    /// current target reports it in range. Readiness is not required, so a
+    /// cooldown never sends the fight back to pursuit.
     /// </summary>
     public static bool AnyInRange(VisualBarSample bars, ReadOnlySpan<KeyAction> actions)
     {
-        bool? melee = MeleeReach(bars);
         foreach (KeyAction action in actions)
         {
-            if (action.BaseAction)
-            {
-                // The only base action a Forever profile may hold is AutoAttack.
-                if (melee == true)
-                    return true;
-                continue;
-            }
-            if (bars.ActionBar?.GetSlot(action.Slot) is
+            if (!action.BaseAction &&
+                bars.ActionBar?.GetSlot(action.Slot) is
                     { Kind: VisualActionKind.Spell, Id: var placed } &&
                 (action.SpellId == 0 || placed == action.SpellId) &&
-                InReach(bars, action, melee))
+                bars.ActionStates?.GetSlot(action.Slot) is { InRange: true })
                 return true;
         }
         return false;
@@ -369,11 +321,9 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         if (!BuffsUp(bars, inCombat))
             return null;
         bool sameTarget = target == identity;
-        bool? melee = MeleeReach(bars);
         foreach (KeyAction action in config.Pull.Sequence)
         {
             if ((sameTarget && usedPulls.Contains(action)) ||
-                !InReach(bars, action, melee) ||
                 !RequirementsMet(action) ||
                 !ForeverCastGate.CanPress(bars, action, spells,
                     maxLevelsAbove: config.NPCMaxLevels_Above))

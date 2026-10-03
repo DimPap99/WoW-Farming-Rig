@@ -240,20 +240,16 @@ everything class-specific and the behaviour is shared:
   70% health and, for mana users only, 60% mana; rage and energy are not gated.
 - A profile `MacroText` is typed as a command, as upstream does. This is how
   `[@player]` self casts are expressed.
-- **Melee reach.** A next-swing ability (upstream `AfterCastWaitSwing`, e.g.
-  Raptor Strike) resolves on a melee swing, so its success event can take a
-  swing to arrive and the caster waits the longer window. Its own slot is not a
-  melee signal: the beta reports Raptor Strike in range at ranged distance. When
-  the Attack ability (`ForeverFrame.AttackSpellId`, 6603) is on a main-bar slot,
-  its button's range is melee reach: next-swing actions are pressed only inside
-  it, and `AutoAttack` presses `STARTATTACK` once at range and once more on
-  reaching melee. At range that starts a hunter's Auto Shot; in melee it starts
-  swings. The ranged minimum distance, where neither reaches, sends the fight
-  back to pursuit. A profile with a next-swing action refuses to start without
-  an Attack button. Without one, nothing changes.
-- **Too close to open.** Out of combat, a candidate that is inside melee reach
-  but outside every opener's range is skipped for another Tab target; aggro
-  still brings a close mob into the fight.
+- **Next-swing abilities.** An ability that resolves on the next melee swing
+  (upstream `AfterCastWaitSwing`, e.g. Raptor Strike) gets its success event
+  with the swing, so the caster waits the longer window for it. The beta gives
+  such an ability no usable melee-reach signal: Raptor Strike's slot reports in
+  range at any distance, and the Attack ability's slot (6603) reports no range.
+  A swing that never comes, because the mob is passive or out of reach, ends
+  the run fail-closed.
+- **Too close to open.** Out of combat, a candidate that is inside a Combat
+  spell's range but outside every opener's range is skipped for another Tab
+  target; aggro still brings a close mob into the fight.
 
 `Paladin_Forever_Auto.json` encodes the thresholds the Paladin code used to
 hard-wire: Holy Light below 70% in combat and below 90% out of combat, Seal at
@@ -270,14 +266,18 @@ the logged-in class. A new class or map needs a profile, a live bounded sweep,
 and an entry here. Rogue finishers, DoTs, forms and pets still need channel work
 first; the profile rules refuse them.
 
-Live results on 2026-10-03, level 6 Troll Hunter in Durotar with Attack on slot
-4: one `--auto-run` cycle and one `--sweep` each completed with a verified kill
-and status `Complete`. Serpent Sting opened from range (mana 100% to 90%), Start
-Attack began Auto Shot, the fight returned to pursuit inside the ranged minimum
-distance, and Raptor Strike's success event (2973) arrived with the melee swing.
-The game reported both corpses not lootable, so the loot path was not exercised
-on this character. Earlier attempts without the Attack button failed exactly as
-described above: Raptor Strike was pressed outside melee and never swung.
+Live results on 2026-10-03, level 6 Troll Hunter in Durotar: one `--auto-run`
+cycle and one `--sweep` each completed with a verified kill and status
+`Complete`. Serpent Sting opened from range (mana 100% to 90%), the mob came
+into contact, and Raptor Strike's success event (2973) arrived with the melee
+swing. The game reported both corpses not lootable, so the loot path was not
+exercised on this character. Three other attempts stopped fail-closed on
+"Raptor Strike success was not confirmed": twice a passive mob next to the
+character never came into swing reach, and once the target was a Makrura in
+the water below a shipwreck deck the character stood on. In that last run Start
+Attack had turned melee auto attack on; there was simply nothing to swing at. A
+reliable Hunter melee phase needs an ability with a real melee range check,
+such as Wing Clip at level 8.
 
 ## Live findings from the beta client
 
