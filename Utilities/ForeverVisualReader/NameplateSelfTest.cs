@@ -130,6 +130,18 @@ internal sealed class SyntheticPanel(int width, int height, double scale, int le
         Cells(17, 190, [slots, state, checksum & 0xFFFFFF]);
     }
 
+    /// <summary>
+    /// The soft-interact cells: the unit's hashes, dead and lootable as
+    /// tri-states, then <c>SoftTargetInteract</c> + 1 (0 unreadable) and Auto Loot.
+    /// </summary>
+    public void SoftInteract(int hash1, int hash2, int dead, int lootable, int level, int autoLoot,
+        int version = VisualInteractReader.ProtocolVersion)
+    {
+        int unit = dead + lootable * 4;
+        int settings = level + autoLoot * 8 + version * 64;
+        Cells(22, 205, [hash1, hash2, unit, settings, (0xA5E211 - hash1 - hash2 - unit - settings) & 0xFFFFFF]);
+    }
+
     /// <summary>The slot-coded marker centred at <paramref name="x"/>, <paramref name="y"/> pixels.</summary>
     public void Marker(int x, int y, int slot)
     {
@@ -258,6 +270,22 @@ internal static class NameplateSelfTest
             Check(Read(panel).Attack is null, "other attack-state version refused" + at);
             panel.Target(target);
             panel.Attack(current: 1, autoRepeat: 1 << 1, melee: 1, close: 2, target);
+
+            // The soft-interact unit: a lootable body, the Interact Key on for
+            // keyboard and mouse (3), Auto Loot on.
+            panel.SoftInteract(4242, 4343, dead: 2, lootable: 2, level: 4, autoLoot: 2);
+            Check(Read(panel).SoftInteract is { Present: true, Dead: true, Lootable: true, SoftTargetInteract: 3,
+                AutoLoot: true, InteractKeyEnabled: true, IsLootableCorpse: true }, $"soft-interact body{at}: {Read(panel).SoftInteract}");
+            panel.SoftInteract(0, 0, dead: 0, lootable: 0, level: 2, autoLoot: 1);
+            Check(Read(panel).SoftInteract is { Present: false, SoftTargetInteract: 1, InteractKeyEnabled: false,
+                AutoLoot: false, IsLootableCorpse: false }, "no soft-interact unit, gamepad-only key, Auto Loot off" + at);
+            panel.SoftInteract(0, 0, dead: 2, lootable: 0, level: 4, autoLoot: 2);
+            Check(Read(panel).SoftInteract is null, "unit flags without a unit refused" + at);
+            panel.SoftInteract(4242, 4343, dead: 2, lootable: 2, level: 4, autoLoot: 2, version: 2);
+            Check(Read(panel).SoftInteract is null, "other soft-interact version refused" + at);
+            panel.SoftInteract(4242, 4343, dead: 2, lootable: 1, level: 4, autoLoot: 2);
+            Check(Read(panel).SoftInteract is { Dead: true, Lootable: false, IsLootableCorpse: false },
+                "a looted body is not lootable" + at);
 
             // An old layout is refused rather than misread.
             panel.Header(RosterCodec.Header(6, 5, 1, version: 1));

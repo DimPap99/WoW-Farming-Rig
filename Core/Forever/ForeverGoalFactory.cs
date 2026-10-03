@@ -55,6 +55,7 @@ public static class ForeverGoalFactory
                 scope.GetRequiredService<IMouseInput>(),
                 scope.GetRequiredService<IWowScreen>()));
             services.AddScoped<IForeverCombatRoutine, ForeverRotation>();
+            services.AddScoped<ForeverCorpses>();
             services.AddScoped<IForeverLootRoutine, ForeverLoot>();
             services.AddScoped<GoapGoal, ForeverAutonomousGoal>();
         }

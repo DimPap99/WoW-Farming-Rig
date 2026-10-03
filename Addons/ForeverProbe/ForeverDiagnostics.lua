@@ -577,6 +577,16 @@ local function unitIndex(unit)
     return tostring(traceUnits[guid])
 end
 
+-- Whether a unit has loot and the player may loot it (CanLootUnit), as two
+-- answers; "--" without the unit.
+local function lootState(unit)
+    local okGuid, guid = pcall(UnitGUID, unit)
+    if not okGuid or isSecret(guid) or not guid then return "--" end
+    local okLoot, hasLoot, canLoot = pcall(CanLootUnit, guid)
+    if not okLoot then return "ee" end
+    return answer(function() return hasLoot end) .. answer(function() return canLoot end)
+end
+
 local function traceRow()
     local interact = {}
     for index = 1, 5 do
@@ -602,18 +612,13 @@ local function traceRow()
             answer(CheckInteractDistance, token, 3) ..
             answer(UnitIsUnit, token .. "target", "player")) or "."
     end
-    -- Whether the target has loot and the player may loot it (CanLootUnit).
-    local loot = "--"
-    local okGuid, guid = pcall(UnitGUID, "target")
-    if okGuid and not isSecret(guid) and guid then
-        local okLoot, hasLoot, canLoot = pcall(CanLootUnit, guid)
-        loot = okLoot and (answer(function() return hasLoot end) ..
-            answer(function() return canLoot end)) or "ee"
-    end
     return table.concat({
         "target=" .. unitIndex("target"),
         "dead=" .. answer(UnitIsDead, "target"),
-        "loot=" .. loot,
+        "loot=" .. lootState("target"),
+        -- The unit the Interact Key would act on: index, dead, loot.
+        "soft=" .. unitIndex("softinteract") .. answer(UnitIsDead, "softinteract") ..
+            lootState("softinteract"),
         "interact=" .. table.concat(interact),
         "range=" .. table.concat(range),
         "current=" .. table.concat(current),
