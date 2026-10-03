@@ -1,3 +1,5 @@
+using Game;
+
 using Microsoft.Extensions.Logging.Abstractions;
 
 using SharedLib;
@@ -6,74 +8,51 @@ using System;
 
 namespace Core.Forever;
 
-/// <summary>Checks the live target and the game's targeting binding before input.</summary>
+/// <summary>
+/// Makes the game target the unit the runtime chose, the way a person does:
+/// a <see cref="ForeverPointAndClick"/> on the unit's nameplate, done once the
+/// same plate reports itself the target. Also clears the target.
+/// </summary>
 public sealed class ForeverTargetSelector
 {
     private readonly ConfigurableInput input;
     private readonly ExecGameCommand command;
+    private readonly ForeverPointAndClick click;
     private readonly KeyAction? profileClearTarget;
 
     public ForeverTargetSelector(ConfigurableInput input,
-        ExecGameCommand command, ClassConfiguration config)
+        ExecGameCommand command, IMousePointer pointer, ClassConfiguration config)
     {
         this.input = input;
         this.command = command;
+        click = new(pointer);
         profileClearTarget = ProfileClearTarget(config);
     }
 
-    public static bool CanSelect(VisualBarSample bars) =>
-        ForeverFrame.HasTrialInputs(bars) &&
-        bars.TargetFlags is { Present: false, PlayerDead: false } flags &&
-        ForeverFrame.CanOpenFight(bars, flags.PlayerCombat) &&
-        ForeverBindings.TargetNearestEnemy.IsBoundIn(bars);
+    /// <summary>Starts selecting <paramref name="candidate"/>; <see cref="Select"/> follows it.</summary>
+    public void BeginSelect(VisualNameplate candidate) =>
+        click.Begin(new NameplateClickTarget(candidate.Slot, candidate.Incarnation));
 
-    public bool SelectNearest(VisualBarSample bars)
+    /// <summary>One step of the selection begun with <see cref="BeginSelect"/>, on a fresh frame.</summary>
+    public ForeverClickResult Select(VisualBarSample bars, out string reason) =>
+        click.Update(bars, out reason);
+
+    /// <summary>A roster slot's unit while the slot keeps it: clicked on its plate until it is the target.</summary>
+    private sealed class NameplateClickTarget(int slot, int incarnation) : IForeverClickTarget
     {
-        if (!CanSelect(bars))
-            return false;
-        return PressTargetNearestEnemy(bars);
-    }
+        public string Name => "the candidate's nameplate";
 
-    public bool CycleCandidate(VisualBarSample bars)
-    {
-        if (!ForeverFrame.HasTrialInputs(bars) ||
-            bars.TargetFlags is not
-                { Present: true, PlayerCombat: false, PlayerDead: false } ||
-            !ForeverFrame.CanOpenFight(bars, inCombat: false))
-            return false;
-        return PressTargetNearestEnemy(bars);
-    }
+        public bool IsGone(VisualBarSample bars) => Plate(bars) is null;
 
-    public static bool TrySafeTarget(VisualBarSample bars, int maxLevelsAbove,
-        out VisualTargetIdentity identity) =>
-        TryEligibleTarget(bars, maxLevelsAbove, out identity) &&
-        ForeverFrame.CanOpenFight(bars, bars.TargetFlags!.Value.PlayerCombat);
+        public VisualScreenPointSample? Where(VisualBarSample bars) => Plate(bars)?.Screen;
 
-    /// <param name="maxLevelsAbove">The profile's <see cref="ClassConfiguration.NPCMaxLevels_Above"/>.</param>
-    public static bool TryEligibleTarget(VisualBarSample bars, int maxLevelsAbove,
-        out VisualTargetIdentity identity)
-    {
-        identity = default;
-        if (!ForeverFrame.HasTargetIdentity(bars) ||
-            bars.TargetFlags is not
-                { Present: true, Attackable: true, Dead: false,
-                  PlayerDead: false } flags ||
-            bars.TargetIdentity is not { Present: true, IsPlayer: false } target ||
-            bars.PlayerIdentity is not { } player ||
-            target.Level > player.Level + maxLevelsAbove ||
-            bars.TargetHealth <= 0)
-            return false;
-        identity = target;
-        return true;
-    }
+        public bool IsHovered(VisualBarSample bars) => Plate(bars)?.IsMouseover == true;
 
-    public bool SelectNearbyOpponent(VisualBarSample bars)
-    {
-        if (bars.TargetFlags is not { PlayerCombat: true, PlayerDead: false } ||
-            !ForeverBindings.TargetNearestEnemy.IsBoundIn(bars))
-            return false;
-        ClearTarget(bars);
-        return PressTargetNearestEnemy(bars);
+        public bool IsDone(VisualBarSample bars) => Plate(bars)?.IsTarget == true;
+
+        private VisualNameplate? Plate(VisualBarSample bars) =>
+            bars.Nameplates?.GetSlot(slot) is { IsEmpty: false } plate && plate.Incarnation == incarnation
+                ? plate : null;
     }
 
     /// <summary>
@@ -99,8 +78,8 @@ public sealed class ForeverTargetSelector
     private KeyAction ClearTargetKey(VisualBarSample bars)
     {
         if (profileClearTarget is { } profile &&
-            ForeverBindings.MainBarSlotBoundTo(bars, profile.ConsoleKey, profile.Modifier) is int slot &&
-            bars.ActionBar?.GetSlot(slot) is { Kind: VisualActionKind.Macro })
+            ForeverBindings.MainBarSlotBoundTo(bars, profile.ConsoleKey, profile.Modifier) is int macroSlot &&
+            bars.ActionBar?.GetSlot(macroSlot) is { Kind: VisualActionKind.Macro })
             return profile;
         if (ForeverBindings.ClearTarget.TryGetKeyAction(bars, ClearTargetName, out KeyAction bound))
             return bound;
@@ -123,14 +102,5 @@ public sealed class ForeverTargetSelector
             PressDuration = ForeverBinding.PressMs
         };
         return KeyReader.ResolveFromKeyString(NullLogger.Instance, key) ? key : null;
-    }
-
-    private bool PressTargetNearestEnemy(VisualBarSample bars)
-    {
-        if (!ForeverBindings.TargetNearestEnemy.TryGetKeyAction(bars, "Forever Target Nearest Enemy",
-                out KeyAction tab))
-            return false;
-        input.PressRandom(tab);
-        return true;
     }
 }

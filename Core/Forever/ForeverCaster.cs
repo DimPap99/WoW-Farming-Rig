@@ -55,7 +55,10 @@ public sealed class ForeverCaster
     }
 
     /// <param name="selfCast">The action affects the player, so a target change does not void it.</param>
-    public ForeverCastResult TryCast(KeyAction item, Func<bool> interrupt, bool selfCast = false)
+    /// <param name="whileWaiting">Runs on each fresh frame while the cast is awaited, so the
+    /// caller can keep doing what a person does meanwhile, such as facing the target.</param>
+    public ForeverCastResult TryCast(KeyAction item, Func<bool> interrupt, bool selfCast = false,
+        Action<VisualBarSample>? whileWaiting = null)
     {
         if (needsReset || interrupt())
             return ForeverCastResult.Failed;
@@ -75,6 +78,7 @@ public sealed class ForeverCaster
         item.SetClicked();
 
         long start = GetTimestamp();
+        long lastFrame = before.FrameId;
         int timeoutMs = selfCast || item.HasCastBar || item.AfterCastWaitSwing
             ? LongCastTimeoutMs : InstantCastTimeoutMs;
         while (GetElapsedTime(start).TotalMilliseconds < timeoutMs)
@@ -87,6 +91,11 @@ public sealed class ForeverCaster
             {
                 Thread.Sleep(PollMs);
                 continue;
+            }
+            if (whileWaiting is not null && current.FrameId != lastFrame)
+            {
+                lastFrame = current.FrameId;
+                whileWaiting(current);
             }
             if (flags.PlayerDead)
             {

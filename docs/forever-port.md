@@ -183,7 +183,10 @@ Forever-owned code:
   bounds and release hooks both Forever goals run on), `ForeverCaster` (one
   checked keypress per cast),
   `ForeverRotation` (the class profile's Pull, Combat and Adhoc lists),
-  `ForeverLoot`, `ForeverNavigator`, `ForeverTargetSelector`,
+  `ForeverLoot`, `ForeverNavigator` (also `IForeverFacing`),
+  `ForeverTargetPolicy` (which units to fight, which plate next),
+  `ForeverTargetSelector`, `ForeverPointAndClick` (aim, confirm, click,
+  confirm), `ForeverExclusions` (units set aside for a while),
   `ForeverReaderFeed` (feeds each capture tick to the shared readers),
   `ForeverFrame` (which inputs a frame must carry and the resource levels),
   `ForeverBinding(s)` (the bindings checked and pressed), `ForeverNavmesh`,
@@ -192,8 +195,10 @@ Forever-owned code:
 - `Core/Goals/ForeverAutonomousGoal.cs`, `ForeverTrialGoal.cs`,
   `Core/GoalsComponent/ForeverCastGate.cs`, `Core/GOAP/ForeverGoapWorldState.cs`,
   `Core/ForeverDiagnosticController.cs`, `Core/Session/NoGrindSessionHandler.cs`.
-- `Core/WoWScreen/ForeverVisualBarTracker.cs` and the `Visual*Reader` decoders.
-- `Game/Input/MouseCameraInput.cs`, `Addons/ForeverProbe`, `Utilities/Forever*`.
+- `Core/WoWScreen/ForeverVisualBarTracker.cs`, the `Visual*Reader` decoders and
+  `VisualMarkerLocator`.
+- `Game/Input/MouseCameraInput.cs`, `Game/Input/MousePointerInput.cs`,
+  `Addons/ForeverProbe`, `Utilities/Forever*`.
 
 Where Forever still touches upstream code:
 
@@ -252,8 +257,9 @@ everything class-specific and the behaviour is shared:
   A swing that never comes, because the mob is passive or out of reach, ends
   the run fail-closed.
 - **Too close to open.** Out of combat, a candidate that is inside a Combat
-  spell's range but outside every opener's range is skipped for another Tab
-  target; aggro still brings a close mob into the fight.
+  spell's range but outside every opener's range is passed over, judged from
+  its nameplate's ranges before it is clicked; aggro still brings a close mob
+  into the fight.
 
 `Paladin_Forever_Auto.json` encodes the thresholds the Paladin code used to
 hard-wire: Holy Light below 70% in combat and below 90% out of combat, Seal at
@@ -894,7 +900,8 @@ value even when its documented return type is `number`.
 The new guarded `Paladin_Forever_Auto.json` profile constructs
 `ForeverAutonomousGoal` through the normal `BotController`. Its collaborators
 are separate target, navigation, combat, and loot components, with session policy
-in `ForeverRunOptions`. It acquires with the checked Tab binding, locks that
+in `ForeverRunOptions`. It chooses an opponent among the enemy nameplates and
+clicks it (see "Finding, selecting and facing targets" below), locks that
 opponent through pursuit and combat, holds forward while steering with the right
 mouse button, and uses checked spell range to stop. Seal (slot 5), Judgement
 (slot 2), melee start and Holy Strike (slot 3) are enabled. `Loot` is now true.
@@ -902,10 +909,11 @@ This profile remains available through the explicit bounded utility;
 `ForeverDiagnosticController` still guards dashboard startup.
 
 The run is an explicit state machine (`ForeverStateMachine`, since
-2026-10-03). The goal's constructor declares every state once: its work on a
-frame, the states it may move to, its hard time bound (Acquire 30 s, Pursue
-20 s, Fight 75 s) and the hooks that release what it holds, such as held
-movement when pursuit ends. A move the declaration does not allow ends the run
+2026-10-03): Start, Search, Select, Approach, Fight, Loot, Rest, then Complete
+or Failed. The goal's constructor declares every state once: its work on a
+frame, the states it may move to, its hard time bound (Search 45 s, Select
+8 s, Approach 20 s, Fight 75 s) and the hooks that release what it holds, such
+as held movement when pursuit ends. A move the declaration does not allow ends the run
 instead of acting on a bug; a bound is checked before the state's work on each
 frame. The bounded trial goal runs on the same class. Its checks, together
 with the rotation, preflight and key checks, run offline:
@@ -920,16 +928,18 @@ Read-only current-position preflight:
 dotnet run --project Utilities/ForeverControllerTrial/ForeverControllerTrial.csproj -- --auto-check
 # One complete kill / loot / recovery cycle:
 dotnet run --project Utilities/ForeverControllerTrial/ForeverControllerTrial.csproj -- --auto-run
-# Repeat cycles until Tab has no eligible target; no roaming:
+# Repeat cycles until a full look-around finds no eligible nameplate; no roaming:
 dotnet run --project Utilities/ForeverControllerTrial/ForeverControllerTrial.csproj -- --sweep
 ```
 
 Tests start at the current player position, without a fixed route origin. The
 single-cycle utility has a 170-second total bound; the sweep has a 600-second
-bound and stops after two unanswered Tab attempts, or after revisiting a rejected
-candidate. It uses the game's Tab targeting selection; it does not measure an
-exact 90-degree enemy cone. Each pursuit remains bounded to 35 yards / 20 seconds.
-The controller reports normal completion separately from failures.
+bound and stops once a full look-around shows no eligible nameplate. Each
+pursuit remains bounded to 35 yards / 20 seconds. The controller reports normal
+completion separately from failures. A run waits up to 60 seconds for the
+preflight (combat over, health and mana back) and then for the game window to
+be active: the run steers and clicks with the mouse, and Windows does not let a
+background process take focus right after someone typed elsewhere.
 
 The first attempts exposed several defects now fixed: marker detection had been
 cropped to the left 650 pixels; mouse focus changes could cancel a forward key
@@ -939,7 +949,7 @@ viewport, taking focus before key-down, retaining the acquired identity, and
 latching kill events address those cases.
 
 Every key the runtime presses comes from the client's own bindings, read from
-the binding grid on the frame it presses on: move forward, strafe, Tab, start
+the binding grid on the frame it presses on: move forward, strafe, start
 attack, interact and the main-bar buttons. Rebinding one in the game needs no
 change here. Clearing the target is a macro rather than a bindable command, so
 the profile names its key with upstream's syntax, for example
@@ -963,8 +973,7 @@ button steers toward the heading, and the next three yards along the current
 facing are re-checked on every frame. The character turns standing only for a
 correction over 90 degrees, a pursuit marker more than 35% of the screen off
 center, or a way ahead that is not walkable. Held movement must cover 0.2 yards
-every 3 seconds. Roaming keeps walking between Tab presses and stops when a
-candidate appears. The earlier roam tapped forward for 200 ms (or a turn key
+every 3 seconds. Roaming stops when a candidate appears. The earlier roam tapped forward for 200 ms (or a turn key
 for 45 to 120 ms), stopped to verify, and repeated. Key taps for casts and
 targeting last 60 to 90 ms at random instead of a fixed 75 ms. The one-step
 `--trial-move` test still sends its single 200 ms press by design.
@@ -1144,3 +1153,50 @@ other-version rows, three markers and a duplicate at three UI scales. A
 scratch check ran the old and new add-on against one mocked API (all 1,775
 existing telemetry entries identical in four scenarios) and decoded the new
 panel with `VisualBarReader`, so the Lua encoding and the C# decoding agree.
+
+### Finding, selecting and facing targets (2026-10-03)
+
+Tab is no longer pressed. The run finds its opponents among the nameplates in
+view and clicks one, as a person does:
+
+- **Search.** `ForeverTargetPolicy` decides which units may be fought (an
+  attackable, living non-player not tapped by someone else, inside the
+  profile's `NPCMaxLevels_Above`/`NPCMaxLevels_Below` window; the selected
+  unit passes the same rules) and which plate to take: one whose marker is on
+  screen, not set aside, preferring an attacker, then the current target, a
+  unit the camera can see, one an opener reaches, one a Combat spell reaches,
+  then the lowest on screen. In combat only units that fight the player count.
+  The rotation's ranges come from one place: `ForeverSlotRanges` is either the
+  target's action states or a plate's ranges, and `Reach` gives opener range,
+  combat range and too-close-to-open for either. With nothing to take, the
+  character looks around standing, one full circle, then roams a stretch and
+  looks again; a sweep completes after a look-around with nothing to take.
+- **Select.** `ForeverPointAndClick` aims at an `IForeverClickTarget`: the
+  cursor goes onto it in one swift eased stroke, the click comes only while
+  the game reports it under the cursor, and it is done once the game shows
+  the effect. For a nameplate that is the plate reporting itself the target;
+  a click without effect is retried once. A unit that cannot be selected, or
+  whose approach loses its marker, is set aside for a minute
+  (`ForeverExclusions`, by GUID hashes); four failed selections in a row end
+  the run.
+- **Facing.** Attacking implies facing. The combat routine asks
+  `IForeverFacing.FaceTarget` on every frame of the fight and while a cast is
+  awaited, and holds every targeted action until the target is in front. A
+  target that left the view is turned toward on the side it was last seen,
+  at full speed.
+
+The movement pieces are reusable for anything else the runtime will click or
+turn toward: `IMousePointer`/`MousePointerInput` (the eased, slightly arced
+stroke and the click), `MouseCameraInput` (right-button turning at a steady
+speed proportional to the error, pumped in small steps several dozen times a
+second, up to 1,200 pixels a second), `IForeverFacing`, and
+`ForeverPointAndClick` with an `IForeverClickTarget`.
+
+Preflight now requires the roster and enemy nameplates that are always shown,
+and no longer the Tab binding. Live on the Hunter in Durotar: the first click
+run ended in the fight on the known Raptor Strike limitation; the bot had
+opened on a mob at the screen edge without turning to it, which led to the
+facing rule. After facing (with a faster turn) and facing during cast waits,
+a sweep killed a mob, set aside one it could not select, looked around and
+completed with exit code 0; the person watching called the aim, click and
+turns indistinguishable from a player's.

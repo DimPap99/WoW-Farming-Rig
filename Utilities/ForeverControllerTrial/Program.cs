@@ -162,13 +162,21 @@ try
         bool autoReady = false;
         // BotController's addon thread now owns capture. Calling Update here
         // too would race it on the shared screen image and tracker buffers.
-        for (int attempt = 0; attempt < 50 && !cts.IsCancellationRequested;
+        // A live run waits for a fight to end or health to come back.
+        int attempts = run ? 600 : 50;
+        string waitingFor = string.Empty;
+        for (int attempt = 0; attempt < attempts && !cts.IsCancellationRequested;
              attempt++)
         {
             if (automatic.TryReadOnlyPreflight(out autoReason))
             {
                 autoReady = true;
                 break;
+            }
+            if (run && autoReason != waitingFor)
+            {
+                Console.WriteLine($"Waiting for the preflight: {autoReason}.");
+                waitingFor = autoReason;
             }
             Thread.Sleep(100);
         }
@@ -181,6 +189,14 @@ try
         if (!run)
             return 0;
 
+        // The run steers and clicks with the mouse, which the game follows only
+        // while it is the active window; Windows will not hand that over to a
+        // background process right after someone typed elsewhere.
+        if (!WaitForGameWindow(process, cts.Token))
+        {
+            Console.Error.WriteLine("The game window did not become active; no input sent.");
+            return 2;
+        }
         controller.ToggleBotStatus();
         DateTime autoDeadline = DateTime.UtcNow.AddSeconds(sweep ? 600 : 170);
         DateTime nextSnapshot = DateTime.MinValue;
@@ -270,6 +286,24 @@ finally
     cts.Cancel();
 }
 
+static bool WaitForGameWindow(WowProcess process, CancellationToken token)
+{
+    if (WinAPI.NativeMethods.GetForegroundWindow() == process.MainWindowHandle)
+        return true;
+    Console.WriteLine("Click into the game window to start the run (waiting up to 60 seconds).");
+    for (int i = 0; i < 600 && !token.IsCancellationRequested; i++)
+    {
+        if (WinAPI.NativeMethods.GetForegroundWindow() == process.MainWindowHandle)
+        {
+            // Let the click that activated the window finish first.
+            Thread.Sleep(1000);
+            return true;
+        }
+        Thread.Sleep(100);
+    }
+    return false;
+}
+
 sealed class TrialLoggerProvider : ILoggerProvider
 {
     public ILogger CreateLogger(string categoryName) => new TrialLogger(categoryName);
@@ -278,7 +312,9 @@ sealed class TrialLoggerProvider : ILoggerProvider
     private sealed class TrialLogger(string category) : ILogger
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel level) => level >= LogLevel.Warning;
+        // The Forever runtime's own decisions are worth reading in a trial log.
+        public bool IsEnabled(LogLevel level) => level >= LogLevel.Warning ||
+            level >= LogLevel.Information && category.Contains("Forever", StringComparison.Ordinal);
         public void Log<TState>(LogLevel level, EventId eventId, TState state,
             Exception? exception, Func<TState, Exception?, string> formatter)
         {

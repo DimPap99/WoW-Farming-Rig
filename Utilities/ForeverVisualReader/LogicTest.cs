@@ -174,7 +174,6 @@ internal static partial class LogicTest
         foreach (int slot in spellOnSlot.Keys)
             bindings[20 + slot - 1] = Encode(20 + slot, ConsoleKey.D0 + slot, ModifierKey.None);
         bindings[ForeverBindings.StartAttack.Index - 1] = Encode(ForeverBindings.StartAttack.Index, ConsoleKey.D2, ModifierKey.Shift);
-        bindings[ForeverBindings.TargetNearestEnemy.Index - 1] = Encode(ForeverBindings.TargetNearestEnemy.Index, ConsoleKey.Tab, ModifierKey.None);
         VisualBindingSnapshot bindingSnapshot = New<VisualBindingSnapshot>(bindings);
         Check("synthetic bindings decode as the runtime expects",
             ForeverBindings.StartAttack.IsBoundIn(new VisualBarSample(1, 1, 1, 0.5, 0, 0, 320, Bindings: bindingSnapshot)) &&
@@ -239,7 +238,7 @@ internal static partial class LogicTest
         }
 
         ForeverRotation NewRotation() => new(NullLogger<ForeverRotation>.Instance, null!, null!,
-            config, spells, new CancellationTokenSource<GoapAgent>());
+            new InFront(), config, spells, new CancellationTokenSource<GoapAgent>());
 
         string Describe(KeyAction? a) => a is null ? "none" : $"{a.Name} [{string.Join(", ", a.Requirements)}]";
 
@@ -399,7 +398,7 @@ internal static partial class LogicTest
             }
             ForeverRotation HRotation(bool? startedInMelee)
             {
-                ForeverRotation r = new(NullLogger<ForeverRotation>.Instance, null!, null!, hunterConfig, spells, new CancellationTokenSource<GoapAgent>());
+                ForeverRotation r = new(NullLogger<ForeverRotation>.Instance, null!, null!, new InFront(), hunterConfig, spells, new CancellationTokenSource<GoapAgent>());
                 if (startedInMelee is { } s)
                 {
                     typeof(ForeverRotation).GetField("target", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(r, (VisualTargetIdentity?)hmob);
@@ -484,7 +483,7 @@ internal static partial class LogicTest
             {
                 ClassConfiguration cfg = new();
                 cfg.ClearTarget.Key = profileKey;
-                ForeverTargetSelector selector = new(null!, null!, cfg);
+                ForeverTargetSelector selector = new(null!, null!, null!, cfg);
                 KeyAction k = (KeyAction)keyFor.Invoke(selector, [frame])!;
                 return k.ConsoleKey;
             }
@@ -500,12 +499,13 @@ internal static partial class LogicTest
                 ClearKey("", KeyFrame()) == ConsoleKey.Escape);
             ClassConfiguration none = new();
             Check("clear target: nothing pressed without a target",
-                !new ForeverTargetSelector(null!, null!, none).ClearTarget(KeyFrame(target: false)));
+                !new ForeverTargetSelector(null!, null!, null!, none).ClearTarget(KeyFrame(target: false)));
             Check("forward: the live binding, not a fixed W",
                 ForeverBindings.MoveForward.IsBoundTo(KeyFrame(forward: ConsoleKey.UpArrow), ConsoleKey.UpArrow) &&
                 !ForeverBindings.MoveForward.IsBoundTo(KeyFrame(forward: ConsoleKey.UpArrow), ConsoleKey.W));
-            Check("tab: the client's key decodes", ForeverBindings.TargetNearestEnemy.TryGetKey(KeyFrame(), out ConsoleKey tab, out _) && tab == ConsoleKey.Tab);
         }
+
+        TargetingChecks(Check, config, (target, inCombat) => Frame(target: target, combat: inCombat), NewRotation());
 
         Console.WriteLine(failures == 0 ? "All logic checks passed." : $"{failures} logic checks failed.");
         return failures == 0 ? 0 : 1;
