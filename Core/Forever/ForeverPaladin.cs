@@ -33,6 +33,10 @@ public static class ForeverPaladin
     public static bool IsHolyStrike(int spellId) =>
         spellId is HolyStrikeRank1 or HolyStrikeRank2;
 
+    /// <summary>Whether a player aura shows the Seal slot's icon; null while unreadable.</summary>
+    public static bool? SealActive(VisualBarSample bars) =>
+        bars.SlotAuras?.IsActive(SealSlot);
+
     /// <summary>Spells cast on the player, so a target change does not void them.</summary>
     public static bool IsSelfCast(int spellId) =>
         spellId is HolyLight or SealOfRighteousness;

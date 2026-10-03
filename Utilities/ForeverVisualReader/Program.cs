@@ -315,7 +315,7 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
     Console.WriteLine(WorldPositionText(bars.WorldPosition));
     Console.WriteLine($"selected nameplate={bars.NameplateProbe?.ToString() ?? "unavailable"}, " +
         $"screen={bars.TargetScreenPosition?.ToString() ?? "unavailable"}, " +
-        $"Seal of Righteousness={bars.SealOfRighteousnessActive?.ToString() ?? "unavailable"}");
+        $"Seal of Righteousness={ForeverPaladin.SealActive(bars)?.ToString() ?? "unavailable"}");
     Console.WriteLine(CooldownText(bars.ActionCooldownFill));
     Console.WriteLine(ActionText(bars.WatchedAction));
     Console.WriteLine(ActionBarText(bars.ActionBar));
@@ -828,6 +828,14 @@ static async Task<int> RunRouteProbe(WowScreenWGC screen, ForeverVisualBarTracke
         ? $"No consistent live map/world position was captured; last error {lastMapError:F2} yd."
         : "No fresh checksummed Forever position was captured.");
     return 2;
+}
+
+// Slot aura states with only the Seal slot set.
+static bool?[] SealSlotAura(bool? active)
+{
+    bool?[] states = new bool?[VisualSlotAuraSnapshot.SlotCount];
+    states[ForeverPaladin.SealSlot - 1] = active;
+    return states;
 }
 
 static bool HasTrialBinding(VisualBarSample sample, int slot,
@@ -1640,8 +1648,14 @@ static int RunSelfTest()
         DrawCastPixel(26, plateStatus);
         DrawCastPixel(27, (0xA5B488 - plateStatus - targetHash1 -
             targetHash2) & 0xFFFFFF);
-        DrawCastPixel(28, 1);
-        DrawCastPixel(29, 0xA5B5A8);
+        // Slot 5 (Seal) has a matching aura, slot 4 a reference without one,
+        // and every other slot is empty.
+        int auraTop = top + rowStep * 4 + (int)Math.Round(632 * scale);
+        DrawCastPixel(28, VisualBarReader.SlotAuraState);
+        DrawCastPixel(29, (0xA5B5A9 - VisualBarReader.SlotAuraState) & 0xFFFFFF);
+        DrawAuraIcon(pixels, VisualAuraReader.ReferenceColumn(ForeverPaladin.SealSlot), 0, 80);
+        DrawAuraIcon(pixels, VisualAuraReader.ReferenceColumn(4), 0, 200);
+        DrawAuraIcon(pixels, 7, 1, 80);
         DrawLifecycle(205, [7, targetHash1, targetHash2,
             (0xA5D611 - 7 - targetHash1 - targetHash2) & 0xFFFFFF]);
         DrawLifecycle(225, [3, 3, 8, 2, 0, 1, targetHash1, targetHash2,
@@ -1725,7 +1739,9 @@ static int RunSelfTest()
             || Math.Abs(targetMapPosition.MapX - targetMapX / 16777215.0) > 0.00001
             || Math.Abs(targetMapPosition.MapY - targetMapY / 16777215.0) > 0.00001
             || result.NameplateProbe is not { Count: 1, Matched: true }
-            || result.SealOfRighteousnessActive != true
+            || ForeverPaladin.SealActive(result) != true
+            || result.SlotAuras?.IsActive(4) != false
+            || result.SlotAuras?.IsActive(1) is not null
             || result.TargetScreenPosition is not { } targetScreen
             || Math.Abs(targetScreen.X - 780.0 / width) > 0.01
             || Math.Abs(targetScreen.Y - 0.4) > 0.01
@@ -1757,7 +1773,7 @@ static int RunSelfTest()
             || spellBook.GetSlot(3) is not { Source: VisualSpellIdSource.SpellId, Id: 7744 })
         {
             Console.Error.WriteLine($"Visual reader self-test failed at UI scale {scale}; " +
-                $"Seal={result.SealOfRighteousnessActive?.ToString() ?? "missing"}.");
+                $"Seal={ForeverPaladin.SealActive(result)?.ToString() ?? "missing"}.");
             return 1;
         }
         using (SyntheticWowScreen capture = new(Image.LoadPixelData(pixels, width, height)))
@@ -1776,27 +1792,29 @@ static int RunSelfTest()
         }
 
         // The reference and aura textures share scale and rendering. A
-        // different icon must not match; a missing reference is unknown.
-        int auraTop = top + rowStep * 4 + (int)Math.Round(632 * scale);
+        // different icon must not match; a missing reference is unknown. The
+        // last slot's reference and the last aura sit at the strip's far edges.
         Bgra32[] auraPixels = new Bgra32[width * height];
-        for (int index = 0; index <= 40; index += 40)
-            for (int y = 3; y <= 12; y++)
-                for (int x = 3; x <= 12; x++)
-                {
-                    int offset = (auraTop + (int)Math.Round((index / 21 * 18 + y) * scale)) * width +
-                        left + (int)Math.Round((index % 21 * 18 + x) * scale);
-                    auraPixels[offset] = new Bgra32((byte)(x * 15), (byte)(y * 15), 80);
-                }
-        if (VisualAuraReader.ContainsReference(auraPixels, width, height, left, auraTop, scale) != true)
+        DrawAuraIcon(auraPixels, VisualAuraReader.ReferenceColumn(12), 0, 80);
+        DrawAuraIcon(auraPixels, 40 % 21, 40 / 21, 80);
+        if (VisualAuraReader.Read(auraPixels, width, height, left, auraTop, scale) is not { } auras ||
+            auras.IsActive(12) != true || auras.IsActive(1) is not null)
             return 1;
-        for (int y = 0; y < height; y++)
-            Array.Clear(auraPixels, y * width + left + (int)Math.Ceiling(18 * scale),
-                width - left - (int)Math.Ceiling(18 * scale));
-        if (VisualAuraReader.ContainsReference(auraPixels, width, height, left, auraTop, scale) != false)
+        DrawAuraIcon(auraPixels, 40 % 21, 40 / 21, 200);
+        if (VisualAuraReader.Read(auraPixels, width, height, left, auraTop, scale)?.IsActive(12) != false)
             return 1;
         Array.Clear(auraPixels);
-        if (VisualAuraReader.ContainsReference(auraPixels, width, height, left, auraTop, scale) is not null)
+        if (VisualAuraReader.Read(auraPixels, width, height, left, auraTop, scale)?.IsActive(12) is not null ||
+            VisualAuraReader.Read(auraPixels, width, height, width - 100, auraTop, scale) is not null)
             return 1;
+        // The previous Seal-only layout (state 2) is refused rather than misread.
+        DrawCastPixel(28, 2);
+        DrawCastPixel(29, (0xA5B5A9 - 2) & 0xFFFFFF);
+        if (!VisualBarReader.TryRead(pixels, width, height, out VisualBarSample oldLayout) ||
+            oldLayout.SlotAuras is not null)
+            return 1;
+        DrawCastPixel(28, VisualBarReader.SlotAuraState);
+        DrawCastPixel(29, (0xA5B5A9 - VisualBarReader.SlotAuraState) & 0xFFFFFF);
 
         if (!ForeverFrame.HasControllerInputs(result) ||
             !ForeverFrame.HasTargetIdentity(result) ||
@@ -2422,9 +2440,9 @@ static int RunSelfTest()
                   TargetHealth = 0.50,
                   TargetFlags = new(true, true, false, false, false) },
                 trialJudgement, spells) ||
-            ForeverCastGate.CanPress(trialCastSample with { SealOfRighteousnessActive = false },
+            ForeverCastGate.CanPress(trialCastSample with { SlotAuras = new(SealSlotAura(false)) },
                 trialJudgement, spells) ||
-            ForeverCastGate.CanPress(trialCastSample with { SealOfRighteousnessActive = null },
+            ForeverCastGate.CanPress(trialCastSample with { SlotAuras = null },
                 trialJudgement, spells) ||
             ForeverCastGate.CanPress(trialCastSample with { TargetIdentity = null },
                 trialJudgement, spells) ||
@@ -2571,6 +2589,17 @@ static int RunSelfTest()
             int yStart = top + (int)Math.Round(190 * scale);
             int side = (int)Math.Round(10 * scale);
             DrawEncodedRect(xStart, yStart, side, encoded);
+        }
+
+        // Writes only the pixels the aura matcher samples, a gradient whose
+        // blue channel tells icons apart.
+        void DrawAuraIcon(Bgra32[] target, int column, int row, byte blue)
+        {
+            for (int y = 3; y <= 12; y++)
+                for (int x = 3; x <= 12; x++)
+                    target[(auraTop + (int)Math.Round((row * 18 + y) * scale)) * width +
+                        left + (int)Math.Round((column * 18 + x) * scale)] =
+                        new Bgra32((byte)(x * 15), (byte)(y * 15), blue);
         }
 
         void DrawLifecycle(int row, int[] values)

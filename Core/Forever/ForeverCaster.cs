@@ -103,7 +103,7 @@ public sealed class ForeverCaster
             // The checked player aura is direct proof of this self buff even
             // when the successful spellcast event arrives after the frame.
             if (item.SpellId == ForeverPaladin.SealOfRighteousness &&
-                current.SealOfRighteousnessActive == true)
+                ForeverPaladin.SealActive(current) == true)
                 return Succeeded(item);
 
             Thread.Sleep(PollMs);

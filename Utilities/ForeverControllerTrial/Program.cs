@@ -187,7 +187,7 @@ try
                 if (tracker.TryGetLatest(out VisualBarSample current))
                     Console.WriteLine($"  health={current.PlayerHealth:P0}, mana={current.PlayerPower:P0}, " +
                         $"target={current.TargetHealth:P0}, flags={current.TargetFlags}, " +
-                        $"seal={current.SealOfRighteousnessActive}, marker={current.TargetScreenPosition}, " +
+                        $"seal={ForeverPaladin.SealActive(current)}, marker={current.TargetScreenPosition}, " +
                         $"range2/3={current.ActionStates?.GetSlot(2)?.InRange}/{current.ActionStates?.GetSlot(3)?.InRange}, " +
                         $"cast={current.LastCastEvent}, death={current.LastDeathEvent}, loot={current.Loot}, " +
                         $"frameReady={ForeverFrame.HasTrialInputs(current)}");

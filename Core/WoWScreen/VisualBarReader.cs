@@ -248,7 +248,7 @@ public readonly record struct VisualBarSample(
     VisualScreenPointSample? TargetScreenPosition = null,
     double? TargetDistanceSquared = null,
     VisualNameplateProbeSample? NameplateProbe = null,
-    bool? SealOfRighteousnessActive = null,
+    VisualSlotAuraSnapshot? SlotAuras = null,
     VisualDeathEvent? LastDeathEvent = null,
     VisualLootState? Loot = null)
 {
@@ -273,12 +273,15 @@ public static class VisualBarReader
     public const int SearchWidth = 650;
     public const int SearchHeight = 250;
 
+    /// <summary>The aura state value the add-on writes once the slot reference icons rendered.</summary>
+    public const int SlotAuraState = 3;
+
     // Width of the white row at scale 1; every offset in this file uses these units.
     private const double ReferenceWidth = 320.0;
 
     // Furthest any telemetry read reaches right of the white row's left edge and
-    // below the row, in reference units: target probe pixel 29 (x 585) and the
-    // bottom of the aura icon strip (y 666). Grow these with /forevervisual; a
+    // below the row, in reference units: the last aura slot reference (x 592)
+    // and the bottom of the aura icon strip (y 666). Grow these with /forevervisual; a
     // read outside the copied region returns null rather than wrong data.
     private const int ReadExtentX = 600;
     private const int ReadExtentY = 680;
@@ -400,14 +403,14 @@ public static class VisualBarReader
                 : null;
         if (locateTarget && NeedsTargetLocator(targetScreen, nameplateProbe))
             targetScreen = TryReadTargetLocator(pixels, width, height, scale);
-        bool? sealActive = TryReadSealAura(probe);
+        VisualSlotAuraSnapshot? slotAuras = TryReadSlotAuras(probe);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
             playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
             actionStates, cooldowns, playerPowerType, bags, playerIdentity,
             targetFlags, castEvent, targetIdentity, targetWorldPosition,
             targetMapPosition, nearestCreature, targetScreen,
-            targetDistanceSquared, nameplateProbe, sealActive,
+            targetDistanceSquared, nameplateProbe, slotAuras,
             VisualLifecycleReader.ReadDeath(pixels, width, height, whiteLeft, whiteY, scale),
             VisualLifecycleReader.ReadLoot(pixels, width, height, whiteLeft, whiteY, scale));
         return true;
@@ -657,16 +660,16 @@ public static class VisualBarReader
         return new(status & 255, (status & 256) != 0);
     }
 
-    private static bool? TryReadSealAura(in Probe probe)
+    // The add-on writes the state only after the aura icons and every slot
+    // reference rendered; a failed aura enumeration in combat leaves it black.
+    // State 2 was the Seal-only layout and is refused.
+    private static VisualSlotAuraSnapshot? TryReadSlotAuras(in Probe probe)
     {
         int state = probe.Cell(TargetRow, 28);
         int marker = probe.Cell(TargetRow, 29);
-        if (marker != ((0xA5B5A9 - state) & 0xFFFFFF))
-            return null;
-        if (state is 0 or 1)
-            return state == 1;
-        return state == 2
-            ? VisualAuraReader.ContainsReference(probe.Pixels, probe.Width, probe.Height,
+        return state == SlotAuraState &&
+            marker == ((0xA5B5A9 - state) & 0xFFFFFF)
+            ? VisualAuraReader.Read(probe.Pixels, probe.Width, probe.Height,
                 probe.Left, probe.Y(AuraStripTop), probe.Scale)
             : null;
     }

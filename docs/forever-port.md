@@ -627,7 +627,10 @@ visual sample directly.)
 
 A separate checksummed pixel row carries the most recent successful player
 spellcast's sequence and exact spell ID. An unreadable event payload clears
-the validity marker, and the reader rejects stale captures. The bounded heal
+the validity marker, and the reader rejects stale captures. Since 2026-10-03
+`ForeverEvents.lua` registers the event with `RegisterUnitEvent(..., "player")`,
+so another unit's protected unit token can no longer blank the latch; the
+unfiltered registration and its checks remain only as a fallback. The bounded heal
 and Judgement trials now require a new success event for the expected spell;
 mana or target-health movement alone no longer confirms a cast. Synthetic
 tests passed at three UI scales, including a damaged checksum. After `/reload`
@@ -930,3 +933,17 @@ includes GCD, and casts wait for its refresh before another decision. In-combat
 health below 70% requests a self-heal rather than abandoning the fight. Holy
 Light recovery between fights is verified; healing while an attacker is still
 active needs a separate live case.
+
+### Slot aura references (2026-10-03)
+
+The aura signal is no longer tied to Seal of Righteousness. Beside the 40
+player aura icons, the add-on draws one reference icon per main-bar slot
+(`GetActionTexture(1..12)`), and `VisualAuraReader.Read` reports, per slot,
+whether an aura shows that slot's icon (`VisualBarSample.SlotAuras`). An empty
+slot reads as unknown, and the whole snapshot is unknown while aura enumeration
+is blocked, as before. The aura state cell moved from 2 to 3, so a capture from
+the previous add-on is refused rather than misread; reload the add-on together
+with the bot. The self-test covers matching, non-matching, empty and
+out-of-frame references. The live Seal check has to be repeated with this
+layout, because the reference now comes from the action button texture rather
+than `C_Spell.GetSpellTexture`.

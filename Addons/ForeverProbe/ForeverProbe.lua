@@ -2,7 +2,9 @@ local probe = CreateFrame("Frame")
 local bars = {}
 local visual
 local cooldownSlot = 1
-local castSequence, castSpellId, castEventReadable = 0, 0, true
+-- ForeverEvents.lua loads first (see the TOC) and owns the shared helpers.
+local events = ForeverProbeEvents
+local isSecret = events.IsSecret
 local cooldownTimer = CreateFrame("StatusBar")
 local cooldownRadial = CreateFrame("Cooldown")
 local actionKindCodes = { spell = 1, item = 2, macro = 3, flyout = 4 }
@@ -27,7 +29,7 @@ local function valueStatus(value)
     if value == nil then
         return "nil"
     end
-    if type(issecretvalue) == "function" and issecretvalue(value) then
+    if isSecret(value) then
         return "secret"
     end
     return type(value)
@@ -221,8 +223,7 @@ end
 probe:RegisterEvent("PLAYER_ENTERING_WORLD")
 probe:RegisterEvent("PLAYER_REGEN_DISABLED")
 probe:RegisterEvent("PLAYER_REGEN_ENABLED")
-probe:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-probe:SetScript("OnEvent", function(_, event, ...)
+probe:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_ENTERING_WORLD" then
         capture("world")
     elseif event == "PLAYER_REGEN_DISABLED" then
@@ -235,32 +236,6 @@ probe:SetScript("OnEvent", function(_, event, ...)
         end)
     elseif event == "PLAYER_REGEN_ENABLED" then
         capture("afterCombat")
-    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-        local unit = select(1, ...)
-        if type(issecretvalue) == "function" and issecretvalue(unit) then
-            castEventReadable = false
-            return
-        end
-        if unit ~= "player" then return end
-        local ok, spellId = pcall(function(...)
-            -- Payload shape varies by client. The last numeric argument is
-            -- the spell ID on the supported Classic event layouts.
-            for i = select("#", ...), 1, -1 do
-                local value = select(i, ...)
-                if type(issecretvalue) == "function" and
-                    issecretvalue(value) then return nil end
-                if type(value) == "number" then return value end
-            end
-        end, ...)
-        if not ok or type(spellId) ~= "number" or
-            spellId <= 0 or spellId > 16777215 or
-            spellId ~= math.floor(spellId) then
-            castEventReadable = false
-            return
-        end
-        castSequence = (castSequence % 65535) + 1
-        castSpellId = spellId
-        castEventReadable = true
     end
 end)
 
@@ -273,14 +248,14 @@ end
 -- The catalog is saved by WoW on /reload so the port can inspect the modern
 -- spellbook/action-bar layouts without enabling the old pixel runtime.
 local function readableNumber(value)
-    if type(issecretvalue) == "function" and issecretvalue(value) then
+    if isSecret(value) then
         return nil
     end
     return type(value) == "number" and value or nil
 end
 
 local function readableString(value)
-    if type(issecretvalue) == "function" and issecretvalue(value) then
+    if isSecret(value) then
         return nil
     end
     return type(value) == "string" and value or nil
@@ -505,8 +480,8 @@ local function createVisual()
     frame.targetDistanceValidPixel = addPixel(25, 190)
     frame.nameplateProbePixel = addPixel(26, 190)
     frame.nameplateProbeValidPixel = addPixel(27, 190)
-    frame.sealAuraPixel = addPixel(28, 190)
-    frame.sealAuraValidPixel = addPixel(29, 190)
+    frame.auraStatePixel = addPixel(28, 190)
+    frame.auraStateValidPixel = addPixel(29, 190)
 
     frame.deathPixels, frame.lootPixels = {}, {}
     for i = 1, 4 do frame.deathPixels[i] = addPixel(16 + i, 205) end
@@ -515,16 +490,25 @@ local function createVisual()
     -- Render permitted aura icons through native textures. In combat the
     -- spell-ID lookup may return nil for an active restricted aura, so nil
     -- cannot prove absence. The external reader compares these rendered
-    -- icons with the adjacent Seal reference from the same capture.
-    frame.auraIcons = {}
-    for index = 0, 40 do
+    -- icons with a reference icon per main-bar slot from the same capture, so
+    -- "the buff of the spell on slot N is active" works for any class.
+    local function addIcon(x, y)
         local icon = frame:CreateTexture(nil, "OVERLAY")
         icon:SetSize(16, 16)
-        icon:SetPoint("TOPLEFT", frame, "TOPLEFT",
-            (index % 21) * 18, -700 - math.floor(index / 21) * 18)
-        frame.auraIcons[index] = icon
+        icon:SetPoint("TOPLEFT", frame, "TOPLEFT", x, y)
+        icon:SetColorTexture(0, 0, 0, 1)
+        return icon
     end
-    frame.auraIcons[0]:SetTexture(C_Spell.GetSpellTexture(20287))
+    frame.auraIcons = {}
+    for index = 1, 40 do
+        frame.auraIcons[index] = addIcon((index % 21) * 18,
+            -700 - math.floor(index / 21) * 18)
+    end
+    -- Slot references continue the first aura row to its right.
+    frame.auraReferences = {}
+    for slot = 1, 12 do
+        frame.auraReferences[slot] = addIcon((20 + slot) * 18, -700)
+    end
 
     -- Forty tiny pixels per row (ID, marker per action), six rows total.
     -- The marker distinguishes an empty slot from an unreadable one.
@@ -648,13 +632,22 @@ local function createVisual()
             value % 256 / 255, 1)
     end
 
+    -- Signed centiyards with a 2^23 bias, or nil for a protected or
+    -- out-of-range axis. Shared by the player and target world positions.
+    local function encodeAxis(value)
+        if type(value) ~= "number" or isSecret(value) or
+            value ~= value then return nil end
+        local encoded = math.floor(value * 100 + 0.5) + 8388608
+        if encoded < 0 or encoded > 16777215 then return nil end
+        return encoded
+    end
+
     local function renderAction(slot, idPixel, metaPixel, markerSlot)
         idPixel:SetColorTexture(0, 0, 0, 1)
         metaPixel:SetColorTexture(0, 0, 0, 1)
         local ok, kind, id = pcall(function()
             local actionType, id = GetActionInfo(slot)
-            if type(issecretvalue) == "function" and
-                (issecretvalue(actionType) or issecretvalue(id)) then
+            if (isSecret(actionType) or isSecret(id)) then
                 return
             end
 
@@ -680,8 +673,7 @@ local function createVisual()
             local usable, noMana, range = false, false, 0
             if kind ~= 0 then
                 usable, noMana = IsUsableAction(slot)
-                if type(issecretvalue) == "function" and
-                    (issecretvalue(usable) or issecretvalue(noMana)) then return end
+                if (isSecret(usable) or isSecret(noMana)) then return end
                 if usable == 1 then usable = true end
                 if usable == 0 or usable == nil then usable = false end
                 if noMana == 1 then noMana = true end
@@ -691,8 +683,7 @@ local function createVisual()
                 end
                 local ok, inRange = pcall(C_ActionBar.IsActionInRange,
                     slot, "target")
-                if ok and (type(issecretvalue) ~= "function" or
-                    not issecretvalue(inRange)) then
+                if ok and not isSecret(inRange) then
                     if inRange == 1 or inRange == true then range = 1
                     elseif inRange == 0 or inRange == false then range = 2
                     elseif inRange ~= nil then return end
@@ -784,7 +775,7 @@ local function createVisual()
             print("ForeverProbe visual bars stopped: the client rejected an update")
         end
 
-        frame.sealAuraValidPixel:SetColorTexture(0, 0, 0, 1)
+        frame.auraStateValidPixel:SetColorTexture(0, 0, 0, 1)
         local auraOk, auraError = pcall(function()
             local auras = C_UnitAuras.GetUnitAuras("player", "HELPFUL")
             for index = 1, 40 do
@@ -795,9 +786,20 @@ local function createVisual()
                     frame.auraIcons[index]:SetColorTexture(0, 0, 0, 1)
                 end
             end
-            local state = 2 -- completed visual aura grid
-            setIntPixel(frame.sealAuraPixel, state)
-            setIntPixel(frame.sealAuraValidPixel,
+            -- Refreshed with the auras so both come from the same capture.
+            -- A protected texture still flows to the widget; an empty slot
+            -- stays black, which the reader reports as unknown.
+            for slot = 1, 12 do
+                local texture = GetActionTexture(slot)
+                if isSecret(texture) or texture then
+                    frame.auraReferences[slot]:SetTexture(texture)
+                else
+                    frame.auraReferences[slot]:SetColorTexture(0, 0, 0, 1)
+                end
+            end
+            local state = 3 -- slot reference grid; 2 was the Seal-only layout
+            setIntPixel(frame.auraStatePixel, state)
+            setIntPixel(frame.auraStateValidPixel,
                 (0xA5B5A9 - state) % 16777216)
         end)
         if not auraOk then
@@ -835,19 +837,11 @@ local function createVisual()
         frame.worldValidPixel:SetColorTexture(0, 0, 0, 1)
         pcall(function()
             local x, y, z, instanceMap = UnitPosition("player")
-            local function encodeAxis(value)
-                if type(value) ~= "number" or
-                    (type(issecretvalue) == "function" and issecretvalue(value)) or
-                    value ~= value then return nil end
-                local encoded = math.floor(value * 100 + 0.5) + 8388608
-                if encoded < 0 or encoded > 16777215 then return nil end
-                return encoded
-            end
             local encodedX, encodedY, encodedZ =
                 encodeAxis(x), encodeAxis(y), encodeAxis(z)
             if not encodedX or not encodedY or not encodedZ or
                 type(instanceMap) ~= "number" or
-                (type(issecretvalue) == "function" and issecretvalue(instanceMap)) or
+                (isSecret(instanceMap)) or
                 instanceMap < 0 or instanceMap > 16777215 or
                 instanceMap ~= math.floor(instanceMap) then return end
             setIntPixel(frame.worldXPixel, encodedX)
@@ -916,7 +910,7 @@ local function createVisual()
         local checkedTargetGuid, checkedTargetHash1, checkedTargetHash2
         pcall(function()
             local guid = UnitGUID("target")
-            if type(issecretvalue) == "function" and issecretvalue(guid) then
+            if isSecret(guid) then
                 return
             end
             local present = guid ~= nil
@@ -924,8 +918,7 @@ local function createVisual()
             if present then
                 attackable = UnitCanAttack("player", "target")
                 dead = UnitIsDead("target")
-                if type(issecretvalue) == "function" and
-                    (issecretvalue(attackable) or issecretvalue(dead)) then
+                if (isSecret(attackable) or isSecret(dead)) then
                     return
                 end
                 if type(attackable) ~= "boolean" or
@@ -933,8 +926,7 @@ local function createVisual()
             end
             local playerCombat = UnitAffectingCombat("player") or false
             local playerDead = UnitIsDeadOrGhost("player") or false
-            if type(issecretvalue) == "function" and
-                (issecretvalue(playerCombat) or issecretvalue(playerDead)) then
+            if (isSecret(playerCombat) or isSecret(playerDead)) then
                 return
             end
             if type(playerCombat) ~= "boolean" or
@@ -951,18 +943,12 @@ local function createVisual()
             if present then
                 local level = readableNumber(UnitLevel("target"))
                 local isPlayer = UnitIsPlayer("target")
-                if type(issecretvalue) == "function" and
-                    issecretvalue(isPlayer) then return end
+                if isSecret(isPlayer) then return end
                 if type(guid) ~= "string" or #guid == 0 or
                     not level or level < 1 or level > 255 or
                     level ~= math.floor(level) or
                     type(isPlayer) ~= "boolean" then return end
-                hash1, hash2 = 5381, 7193
-                for i = 1, #guid do
-                    local byte = string.byte(guid, i)
-                    hash1 = (hash1 * 33 + byte) % 16777216
-                    hash2 = (hash2 * 131 + byte) % 16777216
-                end
+                hash1, hash2 = events.Hashes(guid)
                 packedLevel = level * 2 + (isPlayer and 1 or 0)
             end
             setIntPixel(frame.targetHash1Pixel, hash1)
@@ -980,24 +966,16 @@ local function createVisual()
         frame.targetWorldValidPixel:SetColorTexture(0, 0, 0, 1)
         if checkedTargetGuid then pcall(function()
             local guid = UnitGUID("target")
-            if type(issecretvalue) == "function" and issecretvalue(guid) then
+            if isSecret(guid) then
                 return
             end
             if guid ~= checkedTargetGuid then return end
             local x, y, z, instanceMap = UnitPosition("target")
-            local function encodeAxis(value)
-                if type(value) ~= "number" or
-                    (type(issecretvalue) == "function" and issecretvalue(value)) or
-                    value ~= value then return nil end
-                local encoded = math.floor(value * 100 + 0.5) + 8388608
-                if encoded < 0 or encoded > 16777215 then return nil end
-                return encoded
-            end
             local encodedX, encodedY, encodedZ =
                 encodeAxis(x), encodeAxis(y), encodeAxis(z)
             if not encodedX or not encodedY or not encodedZ or
                 type(instanceMap) ~= "number" or
-                (type(issecretvalue) == "function" and issecretvalue(instanceMap)) or
+                (isSecret(instanceMap)) or
                 instanceMap < 0 or instanceMap > 16777215 or
                 instanceMap ~= math.floor(instanceMap) then return end
             setIntPixel(frame.targetWorldXPixel, encodedX)
@@ -1012,7 +990,7 @@ local function createVisual()
         frame.targetMapValidPixel:SetColorTexture(0, 0, 0, 1)
         if checkedTargetGuid then pcall(function()
             local guid = UnitGUID("target")
-            if type(issecretvalue) == "function" and issecretvalue(guid) then
+            if isSecret(guid) then
                 return
             end
             if guid ~= checkedTargetGuid then return end
@@ -1020,7 +998,7 @@ local function createVisual()
             if not mapId or mapId <= 0 or mapId > 16777215 then return end
             local pos = C_Map.GetPlayerMapPosition(mapId, "target")
             if not pos or
-                (type(issecretvalue) == "function" and issecretvalue(pos)) then
+                (isSecret(pos)) then
                 return end
             local x, y = pos:GetXY()
             x, y = readableNumber(x), readableNumber(y)
@@ -1045,7 +1023,7 @@ local function createVisual()
         frame.targetLocator:Hide()
         if checkedTargetGuid then pcall(function()
             local guid = UnitGUID("target")
-            if type(issecretvalue) == "function" and issecretvalue(guid) then return end
+            if isSecret(guid) then return end
             if guid ~= checkedTargetGuid then return end
 
             pcall(function()
@@ -1078,18 +1056,15 @@ local function createVisual()
                 if type(C_NamePlate.GetNamePlates) == "function" then
                     local plates = C_NamePlate.GetNamePlates()
                     if type(plates) == "table" and
-                        not (type(issecretvalue) == "function" and
-                            issecretvalue(plates)) then
+                        not (isSecret(plates)) then
                         count = math.min(#plates, 255)
                         for _, candidate in ipairs(plates) do
                             local unit = type(candidate.GetUnit) == "function" and
                                 candidate:GetUnit() or candidate.namePlateUnitToken
                             if type(unit) == "string" and
-                                not (type(issecretvalue) == "function" and
-                                    issecretvalue(unit)) then
+                                not (isSecret(unit)) then
                                 local same = UnitIsUnit(unit, "target")
-                                if not (type(issecretvalue) == "function" and
-                                    issecretvalue(same)) and
+                                if not (isSecret(same)) and
                                     type(same) == "boolean" and same then
                                     plate, matched = candidate, true
                                     break
@@ -1108,7 +1083,7 @@ local function createVisual()
                     plate = C_NamePlate.GetNamePlateForUnit("target")
                 end
                 if not plate or
-                    (type(issecretvalue) == "function" and issecretvalue(plate)) then
+                    (isSecret(plate)) then
                     return end
                 pcall(function()
                     frame.targetLocator:ClearAllPoints()
@@ -1135,8 +1110,7 @@ local function createVisual()
             pcall(function()
                 if type(UnitDistanceSquared) ~= "function" then return end
                 local rawDistance, checked = UnitDistanceSquared("target")
-                if type(issecretvalue) == "function" and
-                    issecretvalue(checked) then return end
+                if isSecret(checked) then return end
                 local distanceSquared = readableNumber(rawDistance)
                 if checked ~= true or not distanceSquared or
                     distanceSquared <= 0 then return end
@@ -1150,17 +1124,15 @@ local function createVisual()
         end) end
 
         frame.castValidPixel:SetColorTexture(0, 0, 0, 1)
-        for i, value in ipairs(ForeverProbeEvents.DeathPixels()) do
-            setIntPixel(frame.deathPixels[i], value)
-        end
-        for i, value in ipairs(ForeverProbeEvents.LootPixels()) do
-            setIntPixel(frame.lootPixels[i], value)
-        end
-        if castEventReadable then
-            setIntPixel(frame.castSequencePixel, castSequence)
-            setIntPixel(frame.castSpellPixel, castSpellId)
-            setIntPixel(frame.castValidPixel,
-                (0xA5CC11 - castSequence - castSpellId) % 16777216)
+        local death = events.DeathPixels()
+        for i = 1, #death do setIntPixel(frame.deathPixels[i], death[i]) end
+        local loot = events.LootPixels()
+        for i = 1, #loot do setIntPixel(frame.lootPixels[i], loot[i]) end
+        local cast = events.CastPixels()
+        if cast then
+            setIntPixel(frame.castSequencePixel, cast[1])
+            setIntPixel(frame.castSpellPixel, cast[2])
+            setIntPixel(frame.castValidPixel, cast[3])
         end
 
         frame.cooldownValidPixel:SetColorTexture(0, 0, 0, 1)
@@ -1249,7 +1221,7 @@ local function createVisual()
                     pair.meta:SetColorTexture(0, 0, 0, 1)
                     local item = C_SpellBook.GetSpellBookItemInfo(slot, bank)
                     if not item or
-                        (type(issecretvalue) == "function" and issecretvalue(item)) then
+                        (isSecret(item)) then
                         return
                     end
                     local spellId = readableNumber(item.spellID)
@@ -1310,7 +1282,7 @@ local function createVisual()
         frame.targetPresentPixel:SetColorTexture(0, 0, 0, 1)
         pcall(function()
             local guid = UnitGUID("target")
-            if type(issecretvalue) == "function" and issecretvalue(guid) then
+            if isSecret(guid) then
                 return
             end
             if guid then

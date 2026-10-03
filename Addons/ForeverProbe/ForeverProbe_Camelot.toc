@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: ForeverProbe
-## Notes: Local compatibility diagnostics for WoW Farming Rig
+## Notes: Forever visual telemetry channel and compatibility diagnostics for WoW Farming Rig
 ## SavedVariables: ForeverProbeResults, ForeverProbeCatalog
 
 ForeverEvents.lua

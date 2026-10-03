@@ -47,12 +47,12 @@ public static class ForeverCastGate
             return sample.PlayerPower >= 0.12;
 
         if (action.SpellId == ForeverPaladin.SealOfRighteousness)
-            return sample.SealOfRighteousnessActive == false &&
+            return ForeverPaladin.SealActive(sample) == false &&
                 sample.PlayerHealth >= 0.70 &&
                 sample.PlayerPower >= 0.25;
 
         if (action.SpellId == ForeverPaladin.Judgement &&
-            sample.SealOfRighteousnessActive != true)
+            ForeverPaladin.SealActive(sample) != true)
             return false;
         bool resourcesSafe = flags.PlayerCombat
             ? sample.PlayerHealth > 0
