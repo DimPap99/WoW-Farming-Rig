@@ -186,7 +186,7 @@ internal static partial class LogicTest
         VisualBarSample Frame(double health = 1, double mana = 1, bool target = true, bool combat = false,
             bool? sealAura = true, bool aurasReadable = true, bool judgementRange = false, bool strikeRange = false,
             double judgementCooldown = 0, double strikeCooldown = 0, int powerType = 0, int classId = 2,
-            int? unboundSlot = null)
+            int? unboundSlot = null, bool melee = false)
         {
             VisualActionSample?[] bar = new VisualActionSample?[VisualActionBarSnapshot.SlotCount];
             VisualActionState?[] states = new VisualActionState?[VisualActionBarSnapshot.SlotCount];
@@ -234,7 +234,8 @@ internal static partial class LogicTest
                 TargetFlags: new(target, target, false, combat, false),
                 LastCastEvent: new(0, 0),
                 TargetIdentity: target ? mob : new(0, 0, 0, false),
-                SlotAuras: aurasReadable ? new(auras) : null);
+                SlotAuras: aurasReadable ? new(auras) : null,
+                Attack: new VisualAttackState(0, 0, melee, TargetClose: target ? strikeRange : null));
         }
 
         ForeverRotation NewRotation() => new(NullLogger<ForeverRotation>.Instance, null!, null!,
@@ -295,14 +296,9 @@ internal static partial class LogicTest
             Check(name, plan.Step == step && (action is null || plan.Action?.Name == action),
                 $"{plan.Step} {Describe(plan.Action)}");
         }
-        void Started(ForeverRotation r)
-        {
-            typeof(ForeverRotation).GetField("target", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(r, (VisualTargetIdentity?)mob);
-            typeof(ForeverRotation).GetField("attackStarted", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(r, true);
-        }
         void Judged(ForeverRotation r)
         {
-            Started(r);
+            typeof(ForeverRotation).GetField("target", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(r, (VisualTargetIdentity?)mob);
             var used = (HashSet<KeyAction>)typeof(ForeverRotation).GetField("usedPulls", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(r)!;
             used.Add(config.Pull.Sequence[0]);
         }
@@ -310,17 +306,19 @@ internal static partial class LogicTest
         ExpectFight("Judgement range, Seal up: open with Judgement", Frame(judgementRange: true), ForeverFightStep.Pull, "Judgement");
         ExpectFight("Judgement range, Seal off: no opener, close in", Frame(judgementRange: true, sealAura: false), ForeverFightStep.NeedRange);
         ExpectFight("combat, auras blocked, Judgement range only: close in", Frame(combat: true, judgementRange: true, aurasReadable: false), ForeverFightStep.NeedRange);
-        ExpectFight("melee, Judgement on cooldown, new target: start attack", Frame(judgementRange: true, strikeRange: true, judgementCooldown: 0.4),
+        ExpectFight("melee, Judgement on cooldown, melee off: start attack", Frame(judgementRange: true, strikeRange: true, judgementCooldown: 0.4),
             ForeverFightStep.StartAttack, "AutoAttack");
-        ExpectFight("melee, attack started: Holy Strike", Frame(judgementRange: true, strikeRange: true, judgementCooldown: 0.4),
-            ForeverFightStep.Combat, "Holy Strike", Started);
-        ExpectFight("melee, Holy Strike on cooldown: wait, do not pursue", Frame(strikeRange: true, strikeCooldown: 0.5),
-            ForeverFightStep.Wait, setup: Started);
+        ExpectFight("melee, melee on: Holy Strike", Frame(judgementRange: true, strikeRange: true, judgementCooldown: 0.4, melee: true),
+            ForeverFightStep.Combat, "Holy Strike");
+        ExpectFight("melee, Holy Strike on cooldown: wait, do not pursue", Frame(strikeRange: true, strikeCooldown: 0.5, melee: true),
+            ForeverFightStep.Wait);
+        ExpectFight("melee, attack state unreadable: no start attack, Holy Strike", Frame(strikeRange: true) with { Attack = null },
+            ForeverFightStep.Combat, "Holy Strike");
         ExpectFight("out of every range: close in", Frame(), ForeverFightStep.NeedRange);
         ExpectFight("judged already, Judgement range only: close in", Frame(judgementRange: true), ForeverFightStep.NeedRange, setup: Judged);
         ExpectFight("out of combat at 50% mana: no opener", Frame(judgementRange: true, mana: 0.5), ForeverFightStep.NeedRange);
-        ExpectFight("in combat at 30% mana: Holy Strike still pressed", Frame(combat: true, strikeRange: true, mana: 0.3, aurasReadable: false),
-            ForeverFightStep.Combat, "Holy Strike", Started);
+        ExpectFight("in combat at 30% mana: Holy Strike still pressed", Frame(combat: true, strikeRange: true, mana: 0.3, aurasReadable: false, melee: true),
+            ForeverFightStep.Combat, "Holy Strike");
         {
             ForeverRotation close = NewRotation();
             Check("Paladin: melee range is never too close to open (Judgement covers it)",
@@ -366,16 +364,21 @@ internal static partial class LogicTest
             VisualSpellBookSnapshot hbook = New<VisualSpellBookSnapshot>(
                 (object)hunterSlots.Values.Select((id, i) => (VisualSpellBookEntry?)new VisualSpellBookEntry(i + 1, VisualSpellIdSource.SpellId, id)).ToArray());
 
-            VisualBarSample HFrame(bool ranged, bool? melee, bool combat = true, double stingCooldown = 0, bool attackButton = true)
+            // As observed live: Raptor Strike's slot (1) reads in range out to
+            // about 100 yards and the Attack slot (4) reads no range; Auto Shot
+            // (2) and Serpent Sting (3) read out of range inside 8 yards, where
+            // the target also turns close.
+            VisualBarSample HFrame(bool ranged, bool? close, bool combat = true, double stingCooldown = 0,
+                bool melee = false, bool autoShot = false, bool queued = false, bool attackReadable = true)
             {
                 VisualActionSample?[] bar = new VisualActionSample?[VisualActionBarSnapshot.SlotCount];
                 VisualActionState?[] states = new VisualActionState?[VisualActionBarSnapshot.SlotCount];
                 for (int slot = 1; slot <= bar.Length; slot++)
                 {
-                    if (hunterSlots.TryGetValue(slot, out int id) && (attackButton || slot != 4))
+                    if (hunterSlots.TryGetValue(slot, out int id))
                     {
                         bar[slot - 1] = new(slot, VisualActionKind.Spell, id);
-                        bool? range = slot switch { 1 => true, 2 or 3 => ranged, _ => melee };
+                        bool? range = slot switch { 1 => true, 2 or 3 => ranged, _ => null };
                         states[slot - 1] = new(slot, true, false, range);
                     }
                     else
@@ -394,46 +397,59 @@ internal static partial class LogicTest
                     ActionStates: New<VisualActionStateSnapshot>((object)states), Cooldowns: New<VisualCooldownGridSnapshot>((object)cd),
                     PlayerPowerType: 0, PlayerIdentity: new((int)UnitClass.Hunter, 8, 6),
                     TargetFlags: new(true, true, false, combat, false), LastCastEvent: new(0, 0),
-                    TargetIdentity: hmob, SlotAuras: null);
+                    TargetIdentity: hmob, SlotAuras: null,
+                    Attack: attackReadable ? new VisualAttackState(queued ? 1 : 0, autoShot ? 1 << 1 : 0, melee, close) : null);
             }
-            ForeverRotation HRotation(bool? startedInMelee)
-            {
-                ForeverRotation r = new(NullLogger<ForeverRotation>.Instance, null!, null!, new InFront(), hunterConfig, spells, new CancellationTokenSource<GoapAgent>());
-                if (startedInMelee is { } s)
-                {
-                    typeof(ForeverRotation).GetField("target", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(r, (VisualTargetIdentity?)hmob);
-                    typeof(ForeverRotation).GetField("attackStarted", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(r, s);
-                }
-                return r;
-            }
-            void HExpect(string name, VisualBarSample frame, bool? started, ForeverFightStep step, string? action = null)
+            ForeverRotation HRotation() =>
+                new(NullLogger<ForeverRotation>.Instance, null!, null!, new InFront(), hunterConfig, spells, new CancellationTokenSource<GoapAgent>());
+            void HExpect(string name, VisualBarSample frame, ForeverFightStep step, string? action = null)
             {
                 current = frame;
-                ForeverFightPlan plan = HRotation(started).Plan(frame, hmob);
+                ForeverFightPlan plan = HRotation().Plan(frame, hmob);
                 Check("hunter: " + name, plan.Step == step && (action is null || plan.Action?.Name == action), $"{plan.Step} {Describe(plan.Action)}");
             }
 
-            HExpect("at range: Serpent Sting first", HFrame(ranged: true, melee: false, combat: false), null, ForeverFightStep.Combat, "Serpent Sting");
-            HExpect("at range, sting cooling: start attack (Auto Shot)", HFrame(ranged: true, melee: false, stingCooldown: 0.5), null, ForeverFightStep.StartAttack);
-            // As observed live: Raptor Strike's slot reports in range at any distance and
-            // the Attack slot reports no range, so Raptor Strike follows the start.
-            HExpect("at range, attack started: Raptor Strike (its slot always reports in range)", HFrame(ranged: true, melee: null, stingCooldown: 0.5), true, ForeverFightStep.Combat, "Raptor Strike");
-            HExpect("inside ranged minimum: still fighting with Raptor Strike", HFrame(ranged: false, melee: null), true, ForeverFightStep.Combat, "Raptor Strike");
-            current = HFrame(ranged: false, melee: null);
-            Check("hunter: Raptor Strike's slot keeps the fight in combat range", HRotation(true).InRange(current, hmob));
-            HExpect("out of combat, ranged spells out of reach: close in (Raptor Strike's range ignored)", HFrame(ranged: false, melee: null, combat: false), null, ForeverFightStep.NeedRange);
-            current = HFrame(ranged: false, melee: null, combat: false);
-            Check("hunter: out of combat, Raptor Strike does not stop pursuit", !HRotation(null).InRange(current, hmob));
-            HExpect("out of combat, attack started, sting cooling: wait, no Raptor Strike", HFrame(ranged: true, melee: null, combat: false, stingCooldown: 0.5), true, ForeverFightStep.Wait);
+            HExpect("at range: Serpent Sting first", HFrame(ranged: true, close: false, combat: false), ForeverFightStep.Combat, "Serpent Sting");
+            HExpect("at range, sting cooling, no auto attack: start attack (Auto Shot)", HFrame(ranged: true, close: false, stingCooldown: 0.5),
+                ForeverFightStep.StartAttack);
+            HExpect("at range, Auto Shot running, sting cooling: wait; no Raptor Strike from range",
+                HFrame(ranged: true, close: false, stingCooldown: 0.5, autoShot: true), ForeverFightStep.Wait);
+            HExpect("close, the client switched to melee: Raptor Strike", HFrame(ranged: false, close: true, melee: true),
+                ForeverFightStep.Combat, "Raptor Strike");
+            HExpect("close, Auto Shot still on and melee off: start attack (melee)", HFrame(ranged: false, close: true, autoShot: true),
+                ForeverFightStep.StartAttack);
+            HExpect("close, Raptor Strike pending its swing: wait, no second press", HFrame(ranged: false, close: true, melee: true, queued: true),
+                ForeverFightStep.Wait);
+            current = HFrame(ranged: false, close: true, melee: true);
+            Check("hunter: close keeps the fight in combat range", HRotation().InRange(current, hmob));
+            HExpect("in combat, out of every ranged spell's range and not close: close in, Raptor Strike's slot ignored",
+                HFrame(ranged: false, close: false, melee: true), ForeverFightStep.NeedRange);
+            current = HFrame(ranged: false, close: false, melee: true);
+            Check("hunter: far, Raptor Strike does not stop pursuit", !HRotation().InRange(current, hmob));
+            HExpect("attack state unreadable: no start attack, no Raptor Strike",
+                HFrame(ranged: true, close: null, stingCooldown: 0.5, attackReadable: false), ForeverFightStep.Wait);
+            {
+                VisualNameplate plate = new(1, 1, 5, 6, 6, true, false, false, false, false, false, false, false, false,
+                    2, false, null, 1.0, new VisualSlotRanges(RosterRanges(1)));
+                current = HFrame(ranged: true, close: false, combat: false);
+                Check("hunter: a plate within duel distance is in Raptor Strike's reach",
+                    HRotation().Reach(current, ForeverSlotRanges.Of(plate with { Close = true })).Combat);
+                Check("hunter: a plate beyond it is not, whatever Raptor Strike's slot says",
+                    !HRotation().Reach(current, ForeverSlotRanges.Of(plate with { Close = false })).Combat &&
+                    !HRotation().Reach(current, ForeverSlotRanges.Of(plate)).Combat);
+            }
             hunterConfig.NPCMaxLevels_Above = 0;
-            HExpect("level cap from the profile: a level 6 mob is refused at +0? no, equal level passes", HFrame(ranged: true, melee: false, combat: false), null, ForeverFightStep.Combat, "Serpent Sting");
+            HExpect("level cap from the profile: a level 6 mob is refused at +0? no, equal level passes", HFrame(ranged: true, close: false, combat: false), ForeverFightStep.Combat, "Serpent Sting");
             VisualTargetIdentity higher = new(555, 666, 7, false);
-            current = HFrame(ranged: true, melee: false, combat: false) with { TargetIdentity = higher };
+            current = HFrame(ranged: true, close: false, combat: false) with { TargetIdentity = higher };
             Check("level cap from the profile: +1 mob refused when NPCMaxLevels_Above is 0",
-                HRotation(null).Plan(current, higher).Step != ForeverFightStep.Combat);
+                HRotation().Plan(current, higher).Step != ForeverFightStep.Combat);
             hunterConfig.NPCMaxLevels_Above = 1;
             Check("level cap from the profile: +1 mob accepted when NPCMaxLevels_Above is 1",
-                HRotation(null).Plan(current, higher).Step == ForeverFightStep.Combat);
+                HRotation().Plan(current, higher).Step == ForeverFightStep.Combat);
+
+            // Two-bit range codes for main-bar slots: 1 in range.
+            static int RosterRanges(params int[] inRange) => inRange.Sum(slot => 1 << ((slot - 1) * 2));
         }
 
         // ---- Preflight and GOAP facts ----

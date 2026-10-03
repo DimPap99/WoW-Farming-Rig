@@ -160,10 +160,10 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     /// Turns standing, as a person looking around: movement keys up, the mouse
     /// turning at <paramref name="rate"/> of full steering, positive to the right.
     /// </summary>
-    public ForeverNavigationResult TurnInPlace(double rate, out string reason)
+    public ForeverNavigationResult TurnInPlace(VisualBarSample bars, double rate, out string reason)
     {
         StopTranslation();
-        return TurnTowardMarker(rate, out reason);
+        return TurnTowardMarker(bars, rate, out reason);
     }
 
     /// <summary>
@@ -200,7 +200,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
             inFront = false;
             SetFacingState("turning to the target's marker");
             StopTranslation();
-            turned = TurnTowardMarker(rate, out _);
+            turned = TurnTowardMarker(bars, rate, out _);
         }
         else
         {
@@ -266,7 +266,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
                 {
                     SetFacingState("target out of view: turning to where it was last seen");
                     StopTranslation();
-                    turned = TurnTowardMarker(Math.Clamp(-delta / (Math.PI / 2), -1, 1), out _);
+                    turned = TurnTowardMarker(bars, Math.Clamp(-delta / (Math.PI / 2), -1, 1), out _);
                     return true;
                 }
                 bearingReached = true;
@@ -284,7 +284,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         }
         SetFacingState("target out of view: looking further round");
         StopTranslation();
-        turned = TurnTowardMarker(lastTargetMarkerX is < 0.5 ? -LookForTargetRate : LookForTargetRate, out _);
+        turned = TurnTowardMarker(bars, lastTargetMarkerX is < 0.5 ? -LookForTargetRate : LookForTargetRate, out _);
         return true;
     }
 
@@ -385,7 +385,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         if (Math.Abs(horizontalError) > MaxRunningMarkerError)
         {
             StopTranslation();
-            return TurnTowardMarker(MarkerRate(horizontalError), out reason);
+            return TurnTowardMarker(bars, MarkerRate(horizontalError), out reason);
         }
 
         if ((pursuitForwardHeld || pursuitStrafeKey is not null) &&
@@ -444,8 +444,13 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
 
         // Acquire foreground before key-down: WoW releases movement keys on
         // focus changes, so sending forward first can leave only our held flag.
-        if (TurnTowardMarker(MarkerRate(horizontalError), out reason) == ForeverNavigationResult.Failed)
-            return ForeverNavigationResult.Failed;
+        // A turn that has to wait for a clear place to start holds the step too.
+        ForeverNavigationResult turning = TurnTowardMarker(bars, MarkerRate(horizontalError), out reason);
+        if (turning is ForeverNavigationResult.Failed or ForeverNavigationResult.Waiting)
+        {
+            StopTranslation();
+            return turning;
+        }
         bool starting = !pursuitForwardHeld && pursuitStrafeKey is null;
         SetPursuitMovement(here, forward, strafe);
         return starting ? ForeverNavigationResult.StepSent : ForeverNavigationResult.StepVerified;
@@ -526,7 +531,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
             !HasShortPath(here, z, here + Heading(direction) * lookAhead, out _))
         {
             StopTranslation();
-            return TurnTowardMarker(steering, out reason);
+            return TurnTowardMarker(bars, steering, out reason);
         }
         if (!ForeverBindings.MoveForward.IsBoundTo(bars, input.ForwardKey))
         {
@@ -541,8 +546,13 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         }
         // Acquire foreground before key-down: WoW releases movement keys on
         // focus changes, so sending forward first can leave only our held flag.
-        if (TurnTowardMarker(steering, out reason) == ForeverNavigationResult.Failed)
-            return ForeverNavigationResult.Failed;
+        // A turn that has to wait for a clear place to start holds the step too.
+        ForeverNavigationResult turning = TurnTowardMarker(bars, steering, out reason);
+        if (turning is ForeverNavigationResult.Failed or ForeverNavigationResult.Waiting)
+        {
+            StopTranslation();
+            return turning;
+        }
         bool starting = !pursuitForwardHeld;
         SetPursuitMovement(here, true, null);
         return starting ? ForeverNavigationResult.StepSent : ForeverNavigationResult.StepVerified;
@@ -565,7 +575,11 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         return false;
     }
 
-    private ForeverNavigationResult TurnTowardMarker(double horizontalError, out string reason)
+    // A new hold presses the right button on empty ground, away from every
+    // nameplate and the unit under it: a press there would target that unit.
+    // With nowhere clear on this frame, the turn waits for the next.
+    private ForeverNavigationResult TurnTowardMarker(VisualBarSample bars, double horizontalError,
+        out string reason)
     {
         reason = string.Empty;
         lock (inputLock)
@@ -575,7 +589,17 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
                 reason = "controller stopped";
                 return ForeverNavigationResult.Failed;
             }
-            if (!camera.Turn(horizontalError))
+            (double X, double Y) press = (0.5, 2.0 / 3);
+            if (!camera.IsHeld)
+            {
+                if (ForeverDragPoint.Choose(bars) is not { } clear)
+                {
+                    reason = "no clear place to start turning";
+                    return ForeverNavigationResult.Waiting;
+                }
+                press = clear;
+            }
+            if (!camera.Turn(horizontalError, press.X, press.Y))
             {
                 StopPursuit();
                 reason = "game lost focus during mouse steering";

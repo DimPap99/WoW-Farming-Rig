@@ -27,6 +27,11 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private const double LookAroundRate = 0.25;
     // After a full look-around with nothing to take, walk on this long first.
     private const int RoamMs = 8000;
+    // Reach flickers at its edges: the action rows refresh every 0.5 s and
+    // the target distance every 0.1 s, and a mob closing in crosses a ranged
+    // weapon's minimum range between the two. The fight leaves for pursuit
+    // only once reach stayed lost this long.
+    private const int ReachLostMs = 1000;
 
     private readonly ILogger<ForeverAutonomousGoal> logger;
     private readonly ForeverVisualBarTracker tracker;
@@ -57,6 +62,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private long targetSelectedAt;
     private long targetUnreadableAt;
     private long targetRestoreAt;
+    private long reachLostAt;
     private int deathSequenceBefore;
     private volatile int observedDeaths;
     private volatile int completedLoots;
@@ -107,11 +113,12 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             .On(Phase.Fight, Fight, exits: [Phase.Approach, Phase.Loot, Phase.Rest],
                 timeoutMs: 75000, onTimeout: "fight did not end within the combat bound",
                 // Both entries, from pursuit and from aggro, start with no
-                // pending restore or unreadable-identity window from earlier.
+                // pending restore, unreadable-identity or lost-reach window from earlier.
                 enter: () =>
                 {
                     targetRestoreAt = 0;
                     targetUnreadableAt = 0;
+                    reachLostAt = 0;
                 })
             .On(Phase.Loot, Loot, exits: [Phase.Rest])
             .On(Phase.Rest, Rest, exits: [Phase.Search, Phase.Complete])
@@ -151,6 +158,11 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         if (!roster.PlatesShown)
         {
             reason = "enemy nameplates are not always shown; turn on enemy nameplates and Always Show Nameplates in the client";
+            return false;
+        }
+        if (bars.Attack is null)
+        {
+            reason = "the attack state is unreadable; reload the ForeverProbe add-on that ships with this build";
             return false;
         }
         return combat.TryPreflight(bars, out reason) &&
@@ -272,7 +284,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
 
         if (!LookedAround(bars))
         {
-            if (navigator.TurnInPlace(LookAroundRate, out string turnReason) == ForeverNavigationResult.Failed)
+            if (navigator.TurnInPlace(bars, LookAroundRate, out string turnReason) == ForeverNavigationResult.Failed)
                 machine.Fail(turnReason);
             return;
         }
@@ -420,10 +432,15 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         }
         ForeverCombatResult result = combat.Update(bars, selected,
             out string reason);
+        if (result != ForeverCombatResult.NeedRange)
+            reachLostAt = 0;
         switch (result)
         {
             case ForeverCombatResult.NeedRange:
-                machine.Go(Phase.Approach);
+                if (reachLostAt == 0)
+                    reachLostAt = GetTimestamp();
+                if (GetElapsedTime(reachLostAt).TotalMilliseconds >= ReachLostMs)
+                    machine.Go(Phase.Approach);
                 return;
             case ForeverCombatResult.TargetDead:
                 TargetDied(bars, selected);

@@ -474,6 +474,242 @@ plateWatcher:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
+-- Range trace: through a fight, what the client tells about how far the
+-- target is and which of the player's attacks run. It runs while the player
+-- has a hostile target, living or a corpse, or is in combat, and keeps a row
+-- only when an answer changed, so the rows show the moments the signals
+-- flip: whether the target is dead and lootable, interact distances, each
+-- main-bar slot's range to the target, the queued (current) and auto-repeat
+-- actions, melee and Auto Shot, and the player's attack and spell events with
+-- the client's error messages. Units appear as a per-fight index, never a
+-- GUID or name. Like the rest, it only watches.
+local TRACE_INTERVAL = 0.1
+local TRACE_END_AFTER = 1
+local TRACE_ROWS = 300
+local TRACES_KEPT = 5
+local ATTACK_SPELL, AUTO_SHOT_SPELL = 6603, 75
+
+-- The first of the candidate functions this client has.
+local function api(...)
+    for i = 1, select("#", ...) do
+        local fn = select(i, ...)
+        if type(fn) == "function" then return fn end
+    end
+end
+
+local actionInRange = api(C_ActionBar and C_ActionBar.IsActionInRange, IsActionInRange)
+local currentAction = api(C_ActionBar and C_ActionBar.IsCurrentAction, IsCurrentAction)
+local autoRepeatAction = api(C_ActionBar and C_ActionBar.IsAutoRepeatAction, IsAutoRepeatAction)
+local currentSpell = api(C_Spell and C_Spell.IsCurrentSpell, IsCurrentSpell)
+local autoRepeatSpell = api(C_Spell and C_Spell.IsAutoRepeatSpell, IsAutoRepeatSpell)
+local spellInfo = C_Spell and C_Spell.GetSpellInfo
+
+-- One character per answer: T true, F false, n nil, s secret, e error,
+-- - no such function, ? anything else.
+local function answer(fn, ...)
+    if not fn then return "-" end
+    local ok, value = pcall(fn, ...)
+    if not ok then return "e" end
+    if isSecret(value) then return "s" end
+    if value == true or value == 1 then return "T" end
+    if value == false or value == 0 then return "F" end
+    if value == nil then return "n" end
+    return "?"
+end
+
+local function speed(unit)
+    local ok, value = pcall(GetUnitSpeed, unit)
+    if not ok then return "e" end
+    if type(value) ~= "number" or isSecret(value) then return valueStatus(value) end
+    return string.format("%.1f", value)
+end
+
+-- The last numeric argument of an event, its spell ID on the spellcast
+-- events; the other arguments can name a unit and are not kept.
+local function lastNumber(...)
+    for i = select("#", ...), 1, -1 do
+        local value = select(i, ...)
+        if isSecret(value) then return "secret" end
+        if type(value) == "number" then return tostring(value) end
+    end
+    return "nil"
+end
+
+local trace, traceFrom, lastRow, traceUnits, traceUnitCount
+local traceSlots = {}
+local elapsedSinceTrace, quietSince = 0, nil
+
+-- Which main-bar slots hold an action, with each spell's own range from the
+-- client's spell data, read once per fight.
+local function readTraceSlots()
+    local slots = {}
+    for slot = 1, 12 do
+        local ok, kind, id = pcall(GetActionInfo, slot)
+        if ok and not isSecret(kind) and not isSecret(id) and
+            type(kind) == "string" and type(id) == "number" then
+            local entry = { slot = slot, kind = kind, id = id }
+            if kind == "spell" and spellInfo then
+                local infoOk, info = pcall(spellInfo, id)
+                if infoOk and type(info) == "table" then
+                    entry.minRange = probeValue(function() return info.minRange end)
+                    entry.maxRange = probeValue(function() return info.maxRange end)
+                else
+                    entry.info = infoOk and valueStatus(info) or "error"
+                end
+            end
+            slots[slot] = entry
+        end
+    end
+    return slots
+end
+
+-- A per-fight index for each unit seen, so a target switch shows without
+-- recording who it was.
+local function unitIndex(unit)
+    local ok, guid = pcall(UnitGUID, unit)
+    if not ok then return "e" end
+    if isSecret(guid) then return "s" end
+    if guid == nil then return "0" end
+    if not traceUnits[guid] then
+        traceUnitCount = traceUnitCount + 1
+        traceUnits[guid] = traceUnitCount
+    end
+    return tostring(traceUnits[guid])
+end
+
+local function traceRow()
+    local interact = {}
+    for index = 1, 5 do
+        interact[index] = answer(CheckInteractDistance, "target", index)
+    end
+    local range, current, repeating, usable = {}, {}, {}, {}
+    for slot = 1, 12 do
+        if traceSlots[slot] then
+            range[slot] = answer(actionInRange, slot, "target")
+            current[slot] = answer(currentAction, slot)
+            repeating[slot] = answer(autoRepeatAction, slot)
+            usable[slot] = answer(IsUsableAction, slot)
+        else
+            range[slot], current[slot], repeating[slot], usable[slot] = ".", ".", ".", "."
+        end
+    end
+    -- Per roster slot: the unit's index, within duel distance, targets the player.
+    local plates = {}
+    local tokens = ForeverProbeNameplates and ForeverProbeNameplates.tokens or {}
+    for slot = 1, 8 do
+        local token = tokens[slot]
+        plates[slot] = token and (unitIndex(token) ..
+            answer(CheckInteractDistance, token, 3) ..
+            answer(UnitIsUnit, token .. "target", "player")) or "."
+    end
+    -- Whether the target has loot and the player may loot it (CanLootUnit).
+    local loot = "--"
+    local okGuid, guid = pcall(UnitGUID, "target")
+    if okGuid and not isSecret(guid) and guid then
+        local okLoot, hasLoot, canLoot = pcall(CanLootUnit, guid)
+        loot = okLoot and (answer(function() return hasLoot end) ..
+            answer(function() return canLoot end)) or "ee"
+    end
+    return table.concat({
+        "target=" .. unitIndex("target"),
+        "dead=" .. answer(UnitIsDead, "target"),
+        "loot=" .. loot,
+        "interact=" .. table.concat(interact),
+        "range=" .. table.concat(range),
+        "current=" .. table.concat(current),
+        "repeat=" .. table.concat(repeating),
+        "usable=" .. table.concat(usable),
+        "melee=" .. answer(currentSpell, ATTACK_SPELL),
+        "shot=" .. answer(autoRepeatSpell, AUTO_SHOT_SPELL),
+        "targetsMe=" .. answer(UnitIsUnit, "targettarget", "player"),
+        "combat=" .. answer(UnitAffectingCombat, "player"),
+        "speed=" .. speed("player") .. "/" .. speed("target"),
+        "plates=" .. table.concat(plates, ","),
+    }, " ")
+end
+
+local function traceAdd(text)
+    if #trace.rows >= TRACE_ROWS then
+        trace.truncated = true
+        return
+    end
+    trace.rows[#trace.rows + 1] = string.format("%6.2f %s", GetTime() - traceFrom, text)
+end
+
+local function startTrace()
+    traceUnits, traceUnitCount = {}, 0
+    traceSlots = readTraceSlots()
+    traceFrom, lastRow = GetTime(), nil
+    trace = { slots = traceSlots, rows = {} }
+    ForeverProbeResults = ForeverProbeResults or {}
+    local traces = ForeverProbeResults.rangeTraces or {}
+    traces[#traces + 1] = trace
+    while #traces > TRACES_KEPT do table.remove(traces, 1) end
+    ForeverProbeResults.rangeTraces = traces
+end
+
+-- Combat, or a hostile target, living or a corpse to loot.
+local function fighting()
+    local combat = UnitAffectingCombat("player")
+    if not isSecret(combat) and combat then return true end
+    local exists = UnitExists("target")
+    if isSecret(exists) or not exists then return false end
+    local attackable = UnitCanAttack("player", "target")
+    return not isSecret(attackable) and attackable == true
+end
+
+local tracer = CreateFrame("Frame")
+tracer:SetScript("OnUpdate", function(_, elapsed)
+    elapsedSinceTrace = elapsedSinceTrace + elapsed
+    if elapsedSinceTrace < TRACE_INTERVAL then return end
+    elapsedSinceTrace = 0
+    local okFighting, isFighting = pcall(fighting)
+    isFighting = okFighting and isFighting
+    if not trace then
+        if not isFighting then return end
+        startTrace()
+    end
+    quietSince = not isFighting and (quietSince or GetTime()) or nil
+    local ok, row = pcall(traceRow)
+    if not ok then row = "error: " .. tostring(row) end
+    if row ~= lastRow then
+        lastRow = row
+        traceAdd(row)
+    end
+    if quietSince and GetTime() - quietSince >= TRACE_END_AFTER then
+        trace.seconds = GetTime() - traceFrom
+        trace, quietSince = nil, nil
+    end
+end)
+
+local traceEvents = CreateFrame("Frame")
+for _, event in ipairs({ "PLAYER_ENTER_COMBAT", "PLAYER_LEAVE_COMBAT",
+    "START_AUTOREPEAT_SPELL", "STOP_AUTOREPEAT_SPELL", "UI_ERROR_MESSAGE",
+    "PLAYER_TARGET_CHANGED", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" }) do
+    pcall(traceEvents.RegisterEvent, traceEvents, event)
+end
+for _, event in ipairs({ "UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUCCEEDED",
+    "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_FAILED_QUIET",
+    "UNIT_SPELLCAST_INTERRUPTED" }) do
+    pcall(traceEvents.RegisterUnitEvent, traceEvents, event, "player")
+end
+traceEvents:SetScript("OnEvent", function(_, event, ...)
+    if not trace then return end
+    local ok, text = pcall(function(...)
+        if event == "UI_ERROR_MESSAGE" then
+            local errorType, message = ...
+            return event .. " " .. tostring(probeValue(function() return errorType end)) ..
+                " " .. ((type(message) == "string" and not isSecret(message)) and
+                    message or valueStatus(message))
+        end
+        if event:find("^UNIT_SPELLCAST") then
+            return event .. " " .. lastNumber(...)
+        end
+        return event
+    end, ...)
+    traceAdd("event " .. (ok and text or (event .. " error")))
+end)
+
 -- Static IDs only: no character name, macro body, item name, or game input.
 -- The catalog is saved by WoW on /reload so the port can inspect the modern
 -- spellbook/action-bar layouts without enabling the old pixel runtime.

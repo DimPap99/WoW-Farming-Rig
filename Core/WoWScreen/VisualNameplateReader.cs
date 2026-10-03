@@ -43,6 +43,12 @@ public readonly record struct VisualNameplate(
     public VisualScreenPointSample? Screen { get; init; }
 
     /// <summary>
+    /// The unit is within the client's duel distance, as
+    /// <see cref="VisualAttackState.TargetClose"/> tells for the target; null when unknown.
+    /// </summary>
+    public bool? Close { get; init; }
+
+    /// <summary>
     /// The camera cannot see the unit, read from the plate's fade. Unknown for
     /// the target and in combat, whose plates the client keeps opaque.
     /// </summary>
@@ -146,8 +152,11 @@ public sealed class VisualNameplateRoster
 /// </summary>
 public static class VisualNameplateReader
 {
-    /// <summary>The roster layout this reader accepts; the add-on writes it in the header.</summary>
-    public const int ProtocolVersion = 1;
+    /// <summary>
+    /// The roster layout this reader accepts; the add-on writes it in the
+    /// header. 2 added each plate's duel-distance flag.
+    /// </summary>
+    public const int ProtocolVersion = 2;
 
     // Probe rows below the white row, and the first value cell of each row.
     internal const int HeaderRow = 182;
@@ -218,8 +227,9 @@ public static class VisualNameplateReader
         int reaction = (more >> 2) & 15;
         int threat = (more >> 6) & 7;
         int alpha = (more >> 9) & 255;
-        if (v[0] > 65535 || reaction > 8 || threat > 5 || (more >> 17) != 0 ||
-            !ValidTris(flags >> 8, 8) || !ValidTris(more, 1) || !ValidTris(v[5], 12))
+        if (v[0] > 65535 || reaction > 8 || threat > 5 || (more >> 19) != 0 ||
+            !ValidTris(flags >> 8, 8) || !ValidTris(more, 1) || !ValidTris(more >> 17, 1) ||
+            !ValidTris(v[5], 12))
             return null;
 
         return new(slot, v[0], v[1], v[2], flags & 255,
@@ -231,7 +241,10 @@ public static class VisualNameplateReader
             OnThreatTable: threat == 0 ? null : threat > 1,
             ThreatStatus: threat > 1 ? threat - 2 : null,
             Alpha: alpha == 0 ? null : (alpha - 1) / 254.0,
-            Ranges: new(v[5]));
+            Ranges: new(v[5]))
+        {
+            Close = Tri(more >> 17)
+        };
     }
 
     private static VisualNameplate Empty(int slot) => new(slot, 0, 0, 0, 0,
