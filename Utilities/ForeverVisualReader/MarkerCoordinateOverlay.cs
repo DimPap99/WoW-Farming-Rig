@@ -2,6 +2,7 @@ using GameOverlay.Drawing;
 using GameOverlay.Windows;
 
 using System;
+using System.Collections.Generic;
 
 namespace ForeverVisualReader;
 
@@ -11,7 +12,8 @@ internal sealed class MarkerCoordinateOverlay : IDisposable
     private readonly GraphicsWindow window;
     private Font? font;
     private SolidBrush? textBrush;
-    private volatile string label = "Target marker not visible";
+    private volatile string status = "No nameplate markers";
+    private volatile IReadOnlyList<(float X, float Y, string Text)> labels = [];
 
     public MarkerCoordinateOverlay(IntPtr gameWindow)
     {
@@ -42,21 +44,20 @@ internal sealed class MarkerCoordinateOverlay : IDisposable
         window.DrawGraphics += (_, e) =>
         {
             e.Graphics.ClearScene();
-            if (font is not null && textBrush is not null)
-                e.Graphics.DrawText(font, 20, textBrush, 680, 35,
-                    label);
+            if (font is null || textBrush is null)
+                return;
+            e.Graphics.DrawText(font, 20, textBrush, 680, 35, status);
+            foreach ((float x, float y, string text) in labels)
+                e.Graphics.DrawText(font, 20, textBrush, x + 18, y + 18, text);
         };
         window.Create();
     }
 
-    public void Update(int? screenX, int? screenY, bool stale = false)
+    /// <summary>A status line, and one label beside each marker, in client pixels.</summary>
+    public void Update(string line, IReadOnlyList<(float X, float Y, string Text)> markers)
     {
-        if (screenX is { } nextX && screenY is { } nextY)
-            label = stale
-                ? $"Last marker  X={nextX}  Y={nextY} px (stale)"
-                : $"Target marker  X={nextX}  Y={nextY} px";
-        else
-            label = "Target marker not visible";
+        status = line;
+        labels = markers;
     }
 
     public void Dispose() => window.Dispose();

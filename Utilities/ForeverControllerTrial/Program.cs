@@ -200,6 +200,7 @@ try
                     Console.WriteLine($"  health={current.PlayerHealth:P0}, mana={current.PlayerPower:P0}, " +
                         $"target={current.TargetHealth:P0}, flags={current.TargetFlags}, " +
                         $"auras={current.SlotAuras?.ToString() ?? "unreadable"}, marker={current.TargetScreenPosition}, " +
+                        $"plates={current.Nameplates?.PlateCount.ToString() ?? "unreadable"}, " +
                         $"range1/2/3={current.ActionStates?.GetSlot(1)?.InRange}/{current.ActionStates?.GetSlot(2)?.InRange}/{current.ActionStates?.GetSlot(3)?.InRange}, " +
                         $"cast={current.LastCastEvent}, death={current.LastDeathEvent}, loot={current.Loot}, " +
                         $"frameReady={ForeverFrame.HasTrialInputs(current)}");

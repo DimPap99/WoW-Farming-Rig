@@ -92,18 +92,7 @@ local function probeValue(fn, ...)
     return kind
 end
 
--- The unit token a nameplate frame shows, or nil when it is unreadable.
-local function plateUnit(plate)
-    local ok, unit = pcall(function()
-        if type(plate.GetUnit) == "function" then
-            return plate:GetUnit()
-        end
-        return plate.namePlateUnitToken
-    end)
-    if ok and not isSecret(unit) and type(unit) == "string" then
-        return unit
-    end
-end
+local plateUnit = events.PlateUnit
 
 -- Main-bar slots holding a spell: their range per nameplate is what the
 -- planned roster would carry.

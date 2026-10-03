@@ -56,9 +56,9 @@ public sealed class ForeverVisualBarTracker
     }
 
     // The telemetry sits in the top-left corner, so copy only that region each
-    // frame. The selected nameplate marker can be anywhere and its normalized
+    // frame. The nameplate markers can be anywhere and their normalized
     // coordinates use the full viewport, so the whole frame is copied only on
-    // the frames that have to search for it.
+    // the frames where a roster slot may show one.
     private bool TryReadFrame(Image<Bgra32> image, out VisualBarSample bars)
     {
         bars = default;
@@ -70,17 +70,13 @@ public sealed class ForeverVisualBarTracker
             return false;
 
         Copy(image, ref pixels, width, height);
-        if (!VisualBarReader.TryRead(pixels, width, height, out bars, locateTarget: false))
+        if (!VisualBarReader.TryRead(pixels, width, height, out bars, locateMarkers: false))
             return false;
 
-        if (VisualBarReader.NeedsTargetLocator(bars))
+        if (VisualBarReader.NeedsMarkerScan(bars))
         {
             Copy(image, ref framePixels, image.Width, image.Height);
-            bars = bars with
-            {
-                TargetScreenPosition = VisualBarReader.TryLocateTarget(
-                    framePixels, image.Width, image.Height, bars)
-            };
+            bars = VisualBarReader.LocateMarkers(framePixels, image.Width, image.Height, bars);
         }
         return true;
     }

@@ -54,7 +54,7 @@ if (args.Length == 1 && args[0] == "--logic-test")
 bool readerSmoke = args.Length == 1 && args[0] == "--reader-smoke";
 bool targetAudit = args.Length == 1 && args[0] == "--target-audit";
 bool targetPositionAudit = args.Length == 1 && args[0] == "--target-position-audit";
-bool watchTargetMarker = args.Length == 1 && args[0] == "--watch-target-marker";
+bool watchNameplates = args.Length == 1 && args[0] == "--watch-nameplates";
 bool trialInteractApproach = args.Length == 1 && args[0] == "--trial-interact-approach";
 bool routeProbe = args.Length == 1 && args[0] == "--route-probe";
 bool trialCheck = args.Length == 1 && args[0] == "--trial-check";
@@ -108,8 +108,8 @@ try
     if (targetPositionAudit)
         return await RunTargetAudit(screen, tracker, requirePosition: true);
 
-    if (watchTargetMarker)
-        return await WatchTargetMarker(screen, tracker, process.MainWindowHandle);
+    if (watchNameplates)
+        return await NameplateWatch.Run(screen, tracker, process.MainWindowHandle);
 
     if (trialInteractApproach)
         return await RunTrialInteractApproach(screen, tracker, process, cts);
@@ -222,81 +222,6 @@ finally
     await Task.Delay(200);
 }
 
-static async Task<int> WatchTargetMarker(WowScreenWGC screen,
-    ForeverVisualBarTracker tracker, IntPtr gameWindow)
-{
-    Console.WriteLine("Watching selected nameplate marker for 30 seconds; no game input is sent.");
-    using MarkerCoordinateOverlay overlay = new(gameWindow);
-    string last = string.Empty;
-    bool observed = false;
-    bool savedMiss = false;
-    int? lastX = null, lastY = null;
-    VisualTargetIdentity? lastIdentity = null;
-    for (int i = 0; i < 150; i++)
-    {
-        screen.Update();
-        tracker.Update();
-        string line;
-        if (tracker.TryGetLatest(out VisualBarSample bars) &&
-            bars.TargetScreenPosition is { } point &&
-            bars.TargetIdentity is { Present: true })
-        {
-            int x = (int)Math.Round(point.X * screen.ScreenImage.Width);
-            int y = (int)Math.Round((1 - point.Y) * screen.ScreenImage.Height);
-            line = $"X={x} Y={y} pixels ({point.X:P1} across, {point.Y:P1} up)";
-            overlay.Update(x, y);
-            lastX = x;
-            lastY = y;
-            lastIdentity = bars.TargetIdentity;
-            observed = true;
-        }
-        else
-        {
-            bool sameTarget = tracker.TryGetLatest(out VisualBarSample stale) &&
-                stale.TargetIdentity is { Present: true } identity &&
-                identity == lastIdentity;
-            if (sameTarget && lastX is { } x && lastY is { } y)
-            {
-                line = $"last X={x} Y={y} pixels (stale; marker not visible)";
-                overlay.Update(x, y, stale: true);
-            }
-            else
-            {
-                line = "Selected nameplate marker is not visible in this frame";
-                overlay.Update(null, null);
-                lastX = lastY = null;
-            }
-            if (observed && !savedMiss &&
-                tracker.TryGetLatest(out VisualBarSample missing) &&
-                missing.NameplateProbe is { Matched: true })
-            {
-                using Image<Bgra32> missed = new(screen.ScreenImage.Width,
-                    screen.ScreenImage.Height);
-                Bgra32[] capture = new Bgra32[missed.Width * missed.Height];
-                screen.ScreenImage.CopyPixelDataTo(capture);
-                missed.ProcessPixelRows(destination =>
-                {
-                    for (int row = 0; row < missed.Height; row++)
-                        capture.AsSpan(row * missed.Width, missed.Width)
-                            .CopyTo(destination.GetRowSpan(row));
-                });
-                string missPath = Path.Combine(Path.GetTempPath(),
-                    $"forever-marker-miss-{DateTime.Now:yyyyMMdd-HHmmss}.png");
-                missed.SaveAsPng(missPath);
-                Console.WriteLine($"Marker miss capture: {missPath}");
-                savedMiss = true;
-            }
-        }
-        if (line != last)
-        {
-            Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff} {line}");
-            last = line;
-        }
-        await Task.Delay(200);
-    }
-    return observed ? 0 : 2;
-}
-
 static void PrintBars(Bgra32[] pixels, int width, int height)
 {
     if (!VisualBarReader.TryRead(pixels, width, height, out VisualBarSample bars))
@@ -313,9 +238,9 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
     Console.WriteLine(TargetText(bars.TargetPresent));
     Console.WriteLine(PositionText(bars.Position));
     Console.WriteLine(WorldPositionText(bars.WorldPosition));
-    Console.WriteLine($"selected nameplate={bars.NameplateProbe?.ToString() ?? "unavailable"}, " +
-        $"screen={bars.TargetScreenPosition?.ToString() ?? "unavailable"}, " +
+    Console.WriteLine($"target screen={bars.TargetScreenPosition?.ToString() ?? "unavailable"}, " +
         $"slot auras={bars.SlotAuras?.ToString() ?? "unavailable"}");
+    Console.WriteLine(NameplateWatch.Describe(bars.Nameplates));
     Console.WriteLine(ActionBarText(bars.ActionBar));
     Console.WriteLine(SpellBookText(bars.SpellBook));
     Console.WriteLine(BindingsText(bars.Bindings));
@@ -899,7 +824,7 @@ static async Task<int> RunTargetAudit(WowScreenWGC screen,
             $"targetWorld={bars.TargetWorldPosition?.ToString() ?? "missing"}, " +
             $"targetMap={bars.TargetMapPosition?.ToString() ?? "missing"}, " +
             $"targetScreen={bars.TargetScreenPosition?.ToString() ?? "missing"}, " +
-            $"nameplates={bars.NameplateProbe?.ToString() ?? "missing"}, " +
+            $"targetPlate={bars.Nameplates?.Target?.Slot.ToString() ?? "missing"}, " +
             $"map={bars.Position?.UIMapId.ToString() ?? "missing"}; no input sent.");
         if (stable && eligible)
             onEligible?.Invoke(identity);
@@ -1612,10 +1537,13 @@ static int RunSelfTest()
         DrawCastPixel(14, targetMapY);
         DrawCastPixel(15, (0xA5AA88 - targetMapId - targetMapX - targetMapY -
             targetHash1 - targetHash2) & 0xFFFFFF);
-        const int plateStatus = 257;
-        DrawCastPixel(26, plateStatus);
-        DrawCastPixel(27, (0xA5B488 - plateStatus - targetHash1 -
-            targetHash2) & 0xFFFFFF);
+        // The target holds roster slot 1, whose marker is drawn below.
+        // DrawLifecycle writes the right-hand column the roster shares.
+        DrawLifecycle(245, RosterCodec.Header(plates: 1, attackable: 1, friendly: 0));
+        DrawLifecycle(260, RosterCodec.Row(1, new PlateSpec(1, targetHash1, targetHash2,
+            Level: targetLevel, IsTarget: 2), new VisualTargetIdentity(targetHash1, targetHash2, targetLevel, false)));
+        for (int slot = 2; slot <= VisualNameplateRoster.SlotCount; slot++)
+            DrawLifecycle(260 + (slot - 1) * 15, RosterCodec.Row(slot, null));
         // Slot 5 (Seal) has a matching aura, slot 4 a reference without one,
         // and every other slot is empty.
         int auraTop = top + rowStep * 4 + (int)Math.Round(632 * scale);
@@ -1641,7 +1569,7 @@ static int RunSelfTest()
         for (int y = 600 - markerCore / 2; y < 600 + markerCore / 2; y++)
             for (int x = 780 - markerCore / 2; x < 780 + markerCore / 2; x++)
                 pixels[y * width + x] = new Bgra32
-                    { G = 255, B = 255, A = 255 };
+                    { R = 16, G = 255, B = 255, A = 255 };
         DrawSpellGridSlot(1, VisualSpellIdSource.SpellId, 6603);
         DrawSpellGridSlot(2, VisualSpellIdSource.ActionId, 270);
         DrawSpellGridSlot(3, VisualSpellIdSource.SpellId, 7744);
@@ -1706,7 +1634,8 @@ static int RunSelfTest()
             || result.TargetMapPosition is not { UIMapId: targetMapId } targetMapPosition
             || Math.Abs(targetMapPosition.MapX - targetMapX / 16777215.0) > 0.00001
             || Math.Abs(targetMapPosition.MapY - targetMapY / 16777215.0) > 0.00001
-            || result.NameplateProbe is not { Count: 1, Matched: true }
+            || result.Nameplates is not { PlateCount: 1, ReadableCount: VisualNameplateRoster.SlotCount }
+            || result.Nameplates.Target is not { Slot: 1, IsEmpty: false }
             || result.SlotAuras?.IsActive(sealSlot) != true
             || result.SlotAuras?.IsActive(4) != false
             || result.SlotAuras?.IsActive(1) is not null
@@ -2673,6 +2602,8 @@ static int RunSelfTest()
     }
 
     KeyReader.RequireGameBindings = false;
+    if (!NameplateSelfTest.Run())
+        return 1;
     Console.WriteLine("Visual reader self-test passed at 75%, 100%, and 125% UI scale.");
     return 0;
 }

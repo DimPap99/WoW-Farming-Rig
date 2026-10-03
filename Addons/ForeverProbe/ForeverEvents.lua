@@ -23,6 +23,22 @@ function E.ReadableNumber(value)
     return type(value) == "number" and value or nil
 end
 
+local function plateToken(plate)
+    if type(plate.GetUnit) == "function" then
+        return plate:GetUnit()
+    end
+    return plate.namePlateUnitToken
+end
+
+-- The unit token a nameplate frame shows, such as "nameplate3", or nil when
+-- it is unreadable.
+function E.PlateUnit(plate)
+    local ok, unit = pcall(plateToken, plate)
+    if ok and not isSecret(unit) and type(unit) == "string" then
+        return unit
+    end
+end
+
 -- The two target identity hashes. The C# reader recomputes nothing; it only
 -- compares these, so every pixel that carries a GUID must use this function.
 local function hashes(guid)
