@@ -18,8 +18,9 @@ namespace Core.Goals;
 public static class ForeverCastGate
 {
     /// <param name="selfCast">The action affects the player, so the target is not checked.</param>
+    /// <param name="maxLevelsAbove">The profile's <see cref="ClassConfiguration.NPCMaxLevels_Above"/>.</param>
     public static bool CanPress(VisualBarSample sample, KeyAction action, SpellDB spells,
-        bool selfCast = false)
+        bool selfCast = false, int maxLevelsAbove = ForeverFrame.DefaultMaxTargetLevelsAbove)
     {
         if (action.BaseAction || action.Item || action.HasForm ||
             action.BeforeCastDelay > 0 || action.AfterCastDelay > 0 ||
@@ -43,7 +44,7 @@ public static class ForeverCastGate
         return ForeverFrame.HasTargetIdentity(sample) &&
             sample.TargetIdentity is { IsPlayer: false } identity &&
             sample.PlayerIdentity is { } player &&
-            identity.Level <= player.Level + ForeverFrame.MaxTargetLevelsAbove &&
+            identity.Level <= player.Level + maxLevelsAbove &&
             sample.TargetHealth > 0 &&
             flags is { Present: true, Attackable: true, Dead: false } &&
             (flags.PlayerCombat || ForeverFrame.CanOpenFight(sample, inCombat: false)) &&

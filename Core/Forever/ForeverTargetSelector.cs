@@ -49,12 +49,13 @@ public sealed class ForeverTargetSelector
         return true;
     }
 
-    public static bool TrySafeTarget(VisualBarSample bars,
+    public static bool TrySafeTarget(VisualBarSample bars, int maxLevelsAbove,
         out VisualTargetIdentity identity) =>
-        TryEligibleTarget(bars, out identity) &&
+        TryEligibleTarget(bars, maxLevelsAbove, out identity) &&
         ForeverFrame.CanOpenFight(bars, bars.TargetFlags!.Value.PlayerCombat);
 
-    public static bool TryEligibleTarget(VisualBarSample bars,
+    /// <param name="maxLevelsAbove">The profile's <see cref="ClassConfiguration.NPCMaxLevels_Above"/>.</param>
+    public static bool TryEligibleTarget(VisualBarSample bars, int maxLevelsAbove,
         out VisualTargetIdentity identity)
     {
         identity = default;
@@ -64,7 +65,7 @@ public sealed class ForeverTargetSelector
                   PlayerDead: false } flags ||
             bars.TargetIdentity is not { Present: true, IsPlayer: false } target ||
             bars.PlayerIdentity is not { } player ||
-            target.Level > player.Level + ForeverFrame.MaxTargetLevelsAbove ||
+            target.Level > player.Level + maxLevelsAbove ||
             bars.TargetHealth <= 0)
             return false;
         identity = target;

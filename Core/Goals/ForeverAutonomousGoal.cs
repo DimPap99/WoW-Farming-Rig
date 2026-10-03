@@ -161,7 +161,8 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             if (flags.PlayerCombat && phase == Phase.Acquire && target is null)
             {
                 navigator.StopPursuit();
-                if (ForeverTargetSelector.TryEligibleTarget(bars, out var nearby) &&
+                if (ForeverTargetSelector.TryEligibleTarget(bars,
+                        config.NPCMaxLevels_Above, out var nearby) &&
                     combat.InRange(bars, nearby))
                 {
                     target = nearby;
@@ -251,7 +252,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             // A target too close for every opener is skipped while another
             // can be pulled; aggro still brings a close one into the fight.
             if (ForeverTargetSelector.TrySafeTarget(bars,
-                    out VisualTargetIdentity selected) &&
+                    config.NPCMaxLevels_Above, out VisualTargetIdentity selected) &&
                 !combat.TooCloseToOpen(bars))
             {
                 target = selected;

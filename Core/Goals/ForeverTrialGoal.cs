@@ -226,7 +226,8 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
 
                     KeyAction? opener = config.Pull.Sequence.SingleOrDefault();
                     if (opener is null ||
-                        !ForeverCastGate.CanPress(bars, opener, spells))
+                        !ForeverCastGate.CanPress(bars, opener, spells,
+                            maxLevelsAbove: config.NPCMaxLevels_Above))
                         return;
 
                     if (caster.TryCast(opener, () => token.IsCancellationRequested) !=
