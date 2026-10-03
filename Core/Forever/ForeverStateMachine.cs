@@ -18,7 +18,7 @@ namespace Core.Forever;
 public sealed class ForeverStateMachine<TState> where TState : struct, Enum
 {
     private sealed record Definition(Action<VisualBarSample>? Update, TState[] Exits,
-        int TimeoutMs, string? TimeoutReason, Action? Enter, Action? Exit);
+        int TimeoutMs, string? TimeoutReason, Action<string>? TimedOut, Action? Enter, Action? Exit);
 
     private sealed record Current(TState State, long EnteredAt);
 
@@ -62,15 +62,19 @@ public sealed class ForeverStateMachine<TState> where TState : struct, Enum
     /// <param name="exits">The states it may move to. Failing is always allowed.</param>
     /// <param name="timeoutMs">Its hard bound, checked before its work on each frame; 0 for none.</param>
     /// <param name="onTimeout">The failure reason once the bound passes.</param>
+    /// <param name="timedOut">
+    /// Gets the reason once the bound passes and may move to a declared exit
+    /// instead of failing; if it does not move, the machine fails.
+    /// </param>
     /// <param name="enter">Runs on every entry.</param>
     /// <param name="exit">Runs on every exit, failing included.</param>
     public ForeverStateMachine<TState> On(TState state, Action<VisualBarSample>? update = null,
         TState[]? exits = null, int timeoutMs = 0, string? onTimeout = null,
-        Action? enter = null, Action? exit = null)
+        Action<string>? timedOut = null, Action? enter = null, Action? exit = null)
     {
         if (timeoutMs > 0 && string.IsNullOrEmpty(onTimeout))
             throw new ArgumentException($"{state} has a time bound without a reason", nameof(onTimeout));
-        states.Add(state, new(update, exits ?? [], timeoutMs, onTimeout, enter, exit));
+        states.Add(state, new(update, exits ?? [], timeoutMs, onTimeout, timedOut, enter, exit));
         return this;
     }
 
@@ -85,7 +89,9 @@ public sealed class ForeverStateMachine<TState> where TState : struct, Enum
         if (definition.TimeoutMs > 0 &&
             GetElapsedTime(now.EnteredAt).TotalMilliseconds > definition.TimeoutMs)
         {
-            Fail(definition.TimeoutReason!);
+            definition.TimedOut?.Invoke(definition.TimeoutReason!);
+            if (ReferenceEquals(current, now))
+                Fail(definition.TimeoutReason!);
             return;
         }
         definition.Update(bars);

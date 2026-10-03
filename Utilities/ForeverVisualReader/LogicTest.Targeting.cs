@@ -22,10 +22,12 @@ internal static partial class LogicTest
         public bool Arrive { get; set; }
         public int Moves { get; private set; }
         public int Clicks { get; private set; }
+        public double LastX { get; private set; }
 
         public bool MoveToward(double x, double y)
         {
             Moves++;
+            LastX = x;
             return Arrive;
         }
 
@@ -126,33 +128,68 @@ internal static partial class LogicTest
         brief.Exclude(new VisualTargetIdentity(10, 11, 12, false), TimeSpan.FromMinutes(1));
         check("exclusions: a unit set aside by its target identity is its plate too", brief.IsExcluded(opener), "");
 
-        // Selection: glide onto the plate, click only while it is hovered,
-        // retry a click the target flag did not follow, then give up.
+        // Selection: glide onto the plate, click the moment the game reports it
+        // under the cursor, retry a click the target flag did not follow, then give up.
         FakePointer pointer = new();
         ForeverTargetSelector selector = new(null!, null!, pointer, config);
         selector.BeginSelect(opener);
         VisualBarSample Step(VisualNameplate plate) => idle with { Nameplates = Roster(plate) };
-        ForeverClickResult result = selector.Select(Step(opener), out string reason);
-        check("select: moves toward the marker, no click before arriving",
+        ForeverClickResult result = selector.Select(Step(opener with { IsMouseover = true }), out string reason);
+        check("select: the first step aims; a hover from before it is not the cursor's",
             result == ForeverClickResult.Pointing && pointer.Moves == 1 && pointer.Clicks == 0, $"{result} {reason}");
-        pointer.Arrive = true;
+        selector.Select(Step(opener with { IsMouseover = true }), out _);
+        check("select: a hover right after the stroke waits for the cursor to rest",
+            pointer.Moves == 1 && pointer.Clicks == 0, $"moves={pointer.Moves} clicks={pointer.Clicks}");
+        Thread.Sleep(140);
         result = selector.Select(Step(opener), out reason);
-        check("select: arrived but the game does not report the plate hovered: no click",
-            result == ForeverClickResult.Pointing && pointer.Clicks == 0, $"{result}");
-        result = selector.Select(Step(opener with { IsMouseover = true }), out reason);
-        check("select: hovered, so it clicks once", result == ForeverClickResult.Pointing && pointer.Clicks == 1, $"{result}");
+        check("select: rested and not hovered: follows the marker, no click",
+            result == ForeverClickResult.Pointing && pointer.Moves == 2 && pointer.Clicks == 0, $"{result}");
+        Thread.Sleep(140);
+        result = selector.Select(Step(opener with { IsMouseover = true, Screen = new(0.62, 0.31) }), out reason);
+        check("select: hovered while the plate moves on: clicks at once",
+            result == ForeverClickResult.Pointing && pointer.Clicks == 1 && pointer.Moves == 2, $"{result} moves={pointer.Moves}");
         selector.Select(Step(opener with { IsMouseover = true }), out _);
         check("select: no second click while the first settles", pointer.Clicks == 1, $"{pointer.Clicks}");
         result = selector.Select(Step(opener with { IsMouseover = true, IsTarget = true }), out reason);
         check("select: the plate reports itself the target", result == ForeverClickResult.Done, $"{result} {reason}");
 
+        // A plate walking right is aimed ahead of its marker.
+        FakePointer leading = new();
+        ForeverTargetSelector ahead = new(null!, null!, leading, config);
+        ahead.BeginSelect(opener);
+        ahead.Select(Step(opener with { Screen = new(0.40, 0.3) }), out _);
+        Thread.Sleep(140);
+        ahead.Select(Step(opener with { Screen = new(0.45, 0.3) }), out _);
+        check("select: a moving plate is aimed where the stroke will find it", leading.LastX > 0.45, $"{leading.LastX:F3}");
+
         selector.BeginSelect(opener);
         result = selector.Select(Step(opener with { Incarnation = 2 }), out reason);
         check("select: a new unit in the slot ends the selection", result == ForeverClickResult.Failed, $"{result} {reason}");
 
+        // Recovery: set aside and search again out of combat, within a budget.
+        ForeverRecovery recovery = new();
+        bool allowed = true;
+        for (int i = 0; i < ForeverRecovery.Budget; i++)
+            allowed &= recovery.TryRecover(ForeverSetback.Stuck, inCombat: false, out _);
+        check("recovery: out of combat, setbacks up to the budget", allowed, "");
+        check("recovery: one more without a kill stops the run",
+            !recovery.TryRecover(ForeverSetback.Blocked, inCombat: false, out string refusal) &&
+            refusal.Contains("without a kill"), refusal);
+        recovery.Killed();
+        check("recovery: a kill restores the budget", recovery.TryRecover(ForeverSetback.TargetLost, false, out _), "");
+        check("recovery: in combat only a selection is retried",
+            recovery.TryRecover(ForeverSetback.SelectFailed, inCombat: true, out _) &&
+            !recovery.TryRecover(ForeverSetback.Stuck, inCombat: true, out _), "");
+        check("recovery: set aside a minute for a lost or unselectable unit, two for a bad way, never in combat",
+            ForeverRecovery.SetAsideFor(ForeverSetback.SelectFailed, false) == TimeSpan.FromMinutes(1) &&
+            ForeverRecovery.SetAsideFor(ForeverSetback.Blocked, false) == TimeSpan.FromMinutes(2) &&
+            ForeverRecovery.SetAsideFor(ForeverSetback.SelectFailed, true) == TimeSpan.Zero, "");
+
         FakePointer stubborn = new() { Arrive = true };
         ForeverTargetSelector retrying = new(null!, null!, stubborn, config);
         retrying.BeginSelect(opener);
+        retrying.Select(Step(opener with { IsMouseover = true }), out _);
+        Thread.Sleep(140);
         retrying.Select(Step(opener with { IsMouseover = true }), out _);
         Thread.Sleep(1050);
         retrying.Select(Step(opener with { IsMouseover = true }), out _);

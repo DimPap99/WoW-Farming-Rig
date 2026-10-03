@@ -14,7 +14,25 @@ using static System.Diagnostics.Stopwatch;
 
 namespace Core.Forever;
 
-public enum ForeverNavigationResult { Waiting, StepSent, StepVerified, NoTargetPosition, Blocked, Failed }
+/// <summary>
+/// One navigation step's outcome. <see cref="Blocked"/>, <see cref="Stuck"/>,
+/// <see cref="TargetLost"/> and <see cref="OutOfReach"/> are about the unit or
+/// the way to it, which another unit may not share; <see cref="Failed"/> is
+/// about the run itself, such as lost focus or a changed binding.
+/// </summary>
+public enum ForeverNavigationResult
+{
+    Waiting, StepSent, StepVerified, NoTargetPosition,
+    /// <summary>No walkable way toward the target from here.</summary>
+    Blocked,
+    /// <summary>Held movement did not move the character.</summary>
+    Stuck,
+    /// <summary>The target's marker stayed out of sight.</summary>
+    TargetLost,
+    /// <summary>The target stayed out of range for the whole local pursuit.</summary>
+    OutOfReach,
+    Failed
+}
 
 /// <summary>Short, checked local mesh steps from the current live position.</summary>
 public sealed class ForeverNavigator : IForeverFacing, IDisposable
@@ -24,10 +42,22 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     private const double MaxRunningTurn = Math.PI / 2;
     // The steering marker may drift this far from screen center while running.
     private const double MaxRunningMarkerError = 0.35;
-    // A target whose marker is this close to screen centre is in front.
+    // A target whose marker is this close to screen centre is in front; once
+    // in front it may drift to the wider band before the camera turns again,
+    // so the camera does not twitch at the edge of the band.
     private const double FacedMarkerError = 0.10;
+    private const double FacedMarkerRelease = 0.14;
     // Out of view, the target is looked for at full steering speed.
     private const double LookForTargetRate = 1.0;
+    // Turning leads a moving marker by its screen velocity over this many
+    // seconds, so a mob running across the view is kept up with, not chased.
+    private const double MarkerLeadSeconds = 0.15;
+    // Half the camera's horizontal field of view, the client's default 90
+    // degrees; it turns a marker's screen position into a bearing.
+    private const double HalfFieldOfView = Math.PI / 4;
+    // Within this angle of the bearing a target was last seen at, the turn
+    // toward it is done.
+    private const double BearingReached = 0.15;
 
     private readonly ILogger<ForeverNavigator> logger;
     private readonly ConfigurableInput input;
@@ -54,8 +84,15 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     private Vector2? detourWaypoint;
     private VisualTargetIdentity? facedTarget;
     private double? lastTargetMarkerX;
+    private double lastMarkerError;
+    private long lastMarkerAt;
+    private double markerVelocity;
+    private double? lastSeenBearing;
+    private bool bearingReached;
+    private bool inFront;
     private double? lookFacing;
     private double lookTurned;
+    private string facingState = string.Empty;
 
     public ForeverNavigator(ILogger<ForeverNavigator> logger,
         ConfigurableInput input, MouseCameraInput camera,
@@ -130,12 +167,13 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     }
 
     /// <summary>
-    /// Turns standing until the target's marker is near screen centre. A target
-    /// out of view, whose plate the client removed, is turned toward the side
-    /// its marker was last seen on, for at most one full circle; then it counts
-    /// as in front, since nothing more can be learned by turning. When the
-    /// game will not take the turn (it lost focus) the fight goes on unturned
-    /// rather than stand still under attack.
+    /// Turns standing until the target's marker is near screen centre, leading
+    /// a moving marker so a mob that runs across the view is kept in front. A
+    /// target out of view is turned to the bearing it was last seen at, then
+    /// looked for further round, for at most one full circle; after that it
+    /// counts as in front, since nothing more can be learned by turning. When
+    /// the game will not take the turn (it lost focus) the fight goes on
+    /// unturned rather than stand still under attack.
     /// </summary>
     public bool FaceTarget(VisualBarSample bars)
     {
@@ -150,58 +188,114 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         if (bars.TargetScreenPosition is { } marker)
         {
             double error = marker.X - 0.5;
-            if (Math.Abs(error) <= FacedMarkerError)
+            double rate = MarkerRate(error);
+            double band = inFront ? FacedMarkerRelease : FacedMarkerError;
+            if (Math.Abs(error) <= band && Math.Abs(rate) <= band)
             {
+                inFront = true;
+                SetFacingState("target in front");
                 camera.StopTurning();
                 return true;
             }
+            inFront = false;
+            SetFacingState("turning to the target's marker");
             StopTranslation();
-            turned = TurnTowardMarker(error, out _);
+            turned = TurnTowardMarker(rate, out _);
         }
-        else if (!LookForTarget(bars, out turned))
-            return true;
+        else
+        {
+            inFront = false;
+            if (!LookForTarget(bars, out turned))
+                return true;
+        }
         return turned == ForeverNavigationResult.Failed;
     }
 
-    // Remembers, per target, where its marker was last seen, so a target that
-    // leaves the view is looked for on that side.
+    // Remembers, per target, where its marker was seen and how fast it moved
+    // across the screen, and the bearing that puts it in front.
     private void TrackTarget(VisualBarSample bars)
     {
         if (bars.TargetIdentity != facedTarget)
         {
             facedTarget = bars.TargetIdentity;
             lastTargetMarkerX = null;
+            lastSeenBearing = null;
+            lastMarkerAt = 0;
+            markerVelocity = 0;
+            bearingReached = false;
+            inFront = false;
             lookFacing = null;
             lookTurned = 0;
         }
-        if (bars.TargetScreenPosition is { } marker)
-        {
-            lastTargetMarkerX = marker.X;
-            lookFacing = null;
-            lookTurned = 0;
-        }
+        if (bars.TargetScreenPosition is not { } marker)
+            return;
+
+        double error = marker.X - 0.5;
+        double seconds = lastMarkerAt == 0 ? 0 : GetElapsedTime(lastMarkerAt).TotalSeconds;
+        // A gap in sight or a repeated frame gives no velocity.
+        markerVelocity = seconds is > 0.01 and < 0.3
+            ? 0.5 * markerVelocity + 0.5 * (error - lastMarkerError) / seconds
+            : 0;
+        lastMarkerError = error;
+        lastMarkerAt = GetTimestamp();
+        lastTargetMarkerX = marker.X;
+        // Facing grows to the left; a marker right of centre lies at a smaller bearing.
+        if (bars.Position is { } map)
+            lastSeenBearing = map.Direction - Math.Atan(error * 2 * Math.Tan(HalfFieldOfView));
+        bearingReached = false;
+        lookFacing = null;
+        lookTurned = 0;
     }
 
-    // Turns standing at full speed toward the side the target was last seen
-    // on, as a person whips round after a mob that ran off. False, without
-    // turning, once a whole circle has passed without seeing it.
+    // How hard to turn for a marker this far from centre: the error plus a
+    // lead for where the marker is heading, as a hand follows a moving mob.
+    private double MarkerRate(double error) => error + MarkerLeadSeconds * markerVelocity;
+
+    // Turns standing, as a person whips round after a mob that ran out of
+    // view: first straight to the bearing it was last seen at, then on round
+    // in the same direction. False, without turning, once a whole circle has
+    // passed without seeing it.
     private bool LookForTarget(VisualBarSample bars, out ForeverNavigationResult turned)
     {
         if (bars.Position is { } map)
         {
+            if (!bearingReached && lastSeenBearing is { } bearing)
+            {
+                double delta = SignedAngle(bearing - map.Direction);
+                if (Math.Abs(delta) > BearingReached)
+                {
+                    SetFacingState("target out of view: turning to where it was last seen");
+                    StopTranslation();
+                    turned = TurnTowardMarker(Math.Clamp(-delta / (Math.PI / 2), -1, 1), out _);
+                    return true;
+                }
+                bearingReached = true;
+            }
             if (lookFacing is { } previous)
                 lookTurned += Math.Abs(SignedAngle(map.Direction - previous));
             lookFacing = map.Direction;
         }
         if (lookTurned >= 2 * Math.PI)
         {
+            SetFacingState("target not found in a full circle");
             camera.StopTurning();
             turned = ForeverNavigationResult.Waiting;
             return false;
         }
+        SetFacingState("target out of view: looking further round");
         StopTranslation();
         turned = TurnTowardMarker(lastTargetMarkerX is < 0.5 ? -LookForTargetRate : LookForTargetRate, out _);
         return true;
+    }
+
+    private void SetFacingState(string state)
+    {
+        if (state == facingState)
+            return;
+        facingState = state;
+        if (logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("Forever facing: {State}; last marker X {X:F2}, velocity {Velocity:F2}/s",
+                state, lastTargetMarkerX, markerVelocity);
     }
 
     public ForeverNavigationResult Approach(VisualBarSample bars,
@@ -223,13 +317,13 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         {
             StopPursuit();
             reason = "target is too far for local pursuit";
-            return ForeverNavigationResult.Failed;
+            return ForeverNavigationResult.OutOfReach;
         }
         if (!TryPathWaypoint(here, destination, out Vector2 waypoint,
                 out reason))
         {
             StopPursuit();
-            return ForeverNavigationResult.Failed;
+            return ForeverNavigationResult.Blocked;
         }
         return Steer(bars, here, (float)world.Z, Bearing(here, waypoint), 3, out reason);
     }
@@ -260,7 +354,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         {
             StopPursuit();
             reason = "target stayed out of range after 35 yards of local search";
-            return ForeverNavigationResult.Failed;
+            return ForeverNavigationResult.OutOfReach;
         }
         if (detourWaypoint is { } waypoint)
             return FollowDetour(bars, here, waypoint, out reason);
@@ -274,7 +368,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
             if (missingSeconds > 5)
             {
                 reason = "selected nameplate marker stayed unavailable";
-                return ForeverNavigationResult.Failed;
+                return ForeverNavigationResult.TargetLost;
             }
             if (missingSeconds < 0.3)
                 return ForeverNavigationResult.Waiting;
@@ -291,14 +385,14 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         if (Math.Abs(horizontalError) > MaxRunningMarkerError)
         {
             StopTranslation();
-            return TurnTowardMarker(horizontalError, out reason);
+            return TurnTowardMarker(MarkerRate(horizontalError), out reason);
         }
 
         if ((pursuitForwardHeld || pursuitStrafeKey is not null) &&
             !MovementProgressed(here, out reason))
         {
             StopPursuit();
-            return ForeverNavigationResult.Failed;
+            return ForeverNavigationResult.Stuck;
         }
 
         if (!ForeverBindings.MoveForward.IsBoundTo(bars, input.ForwardKey))
@@ -350,7 +444,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
 
         // Acquire foreground before key-down: WoW releases movement keys on
         // focus changes, so sending forward first can leave only our held flag.
-        if (TurnTowardMarker(horizontalError, out reason) == ForeverNavigationResult.Failed)
+        if (TurnTowardMarker(MarkerRate(horizontalError), out reason) == ForeverNavigationResult.Failed)
             return ForeverNavigationResult.Failed;
         bool starting = !pursuitForwardHeld && pursuitStrafeKey is null;
         SetPursuitMovement(here, forward, strafe);
@@ -443,7 +537,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         if (pursuitForwardHeld && !MovementProgressed(here, out reason))
         {
             StopPursuit();
-            return ForeverNavigationResult.Failed;
+            return ForeverNavigationResult.Stuck;
         }
         // Acquire foreground before key-down: WoW releases movement keys on
         // focus changes, so sending forward first can leave only our held flag.
