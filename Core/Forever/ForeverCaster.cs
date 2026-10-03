@@ -65,7 +65,7 @@ public sealed class ForeverCaster
             return ForeverCastResult.NotReady;
         if (!ForeverVerifiedSetup.IsProfile(config.FileName) ||
             !tracker.TryGetLatest(out VisualBarSample before) ||
-            !ForeverCastGate.CanPress(before, item, spells, selfCast) ||
+            !ForeverCastGate.CanPress(before, item, spells, selfCast, config.NPCMaxLevels_Above) ||
             before.LastCastEvent is not { } previousEvent)
             return ForeverCastResult.NotReady;
 

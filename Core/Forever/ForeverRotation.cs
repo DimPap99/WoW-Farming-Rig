@@ -203,7 +203,8 @@ public sealed class ForeverRotation : IForeverCombatRoutine
             }
             if (!InReach(bars, action, melee))
                 continue;
-            if (RequirementsMet(action) && ForeverCastGate.CanPress(bars, action, spells))
+            if (RequirementsMet(action) && ForeverCastGate.CanPress(bars, action, spells,
+                    maxLevelsAbove: config.NPCMaxLevels_Above))
                 return new(ForeverFightStep.Combat, action);
         }
         return new(ForeverFightStep.Wait);
@@ -325,7 +326,8 @@ public sealed class ForeverRotation : IForeverCombatRoutine
             }
 
             if (RequirementsMet(action) &&
-                ForeverCastGate.CanPress(bars, action, spells, selfCast: true))
+                ForeverCastGate.CanPress(bars, action, spells, selfCast: true,
+                    maxLevelsAbove: config.NPCMaxLevels_Above))
                 return new(ForeverAdhocStep.Cast, action);
 
             if (buff && !inCombat)
@@ -373,7 +375,8 @@ public sealed class ForeverRotation : IForeverCombatRoutine
             if ((sameTarget && usedPulls.Contains(action)) ||
                 !InReach(bars, action, melee) ||
                 !RequirementsMet(action) ||
-                !ForeverCastGate.CanPress(bars, action, spells))
+                !ForeverCastGate.CanPress(bars, action, spells,
+                    maxLevelsAbove: config.NPCMaxLevels_Above))
                 continue;
             return action;
         }

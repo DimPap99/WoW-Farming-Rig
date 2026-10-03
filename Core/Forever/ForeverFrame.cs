@@ -18,8 +18,11 @@ public static class ForeverFrame
     public const double CombatMana = 0.25;
     /// <summary>Health recovery waits for between fights.</summary>
     public const double RestedHealth = 0.90;
-    /// <summary>Highest target level accepted, relative to the player's.</summary>
-    public const int MaxTargetLevelsAbove = 1;
+    /// <summary>
+    /// Highest target level accepted, relative to the player's, when no profile
+    /// says otherwise; the same default as <see cref="ClassConfiguration.NPCMaxLevels_Above"/>.
+    /// </summary>
+    public const int DefaultMaxTargetLevelsAbove = 1;
 
     /// <summary>
     /// The general Attack ability every class has. Its action button's range
