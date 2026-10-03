@@ -118,6 +118,28 @@ internal static partial class LogicTest
         reach = combat.Reach(idle, ForeverSlotRanges.Of(Plate(1, judgement: true)));
         check("reach: Judgement in range is opener range", reach is { Opener: true, TooCloseToOpen: false }, $"{reach}");
 
+        // A camera drag starts on empty ground: a right-button press on a plate
+        // or the body under it targets that unit when the button comes up.
+        string Press(params (double X, double Y)[] markers)
+        {
+            VisualNameplate[] plates = new VisualNameplate[markers.Length];
+            for (int i = 0; i < markers.Length; i++)
+                plates[i] = Plate(i + 1, hash: 10 * (i + 1), screenX: markers[i].X, screenY: markers[i].Y);
+            return ForeverDragPoint.Choose(idle with { Nameplates = Roster(plates) }) is { } p
+                ? FormattableString.Invariant($"({p.X:F2},{p.Y:F2})") : "none";
+        }
+        string press = Press();
+        check("drag point: with nothing in view, above the character", press == "(0.50,0.67)", press);
+        press = Press((0.52, 0.75));
+        check("drag point: a plate over that spot moves the press aside", press == "(0.30,0.67)", press);
+        press = Press((0.5, 0.75), (0.3, 0.75), (0.7, 0.75));
+        check("drag point: bodies below three plates leave the spot above the middle one", press == "(0.50,0.82)", press);
+        press = Press((0.5, 0.75), (0.3, 0.75), (0.7, 0.75), (0.5, 0.9), (0.3, 0.9), (0.7, 0.9));
+        check("drag point: nowhere clear, no press", press == "none", press);
+        press = ForeverDragPoint.Choose(idle with { TargetScreenPosition = new(0.5, 0.7) }) is { } t
+            ? FormattableString.Invariant($"({t.X:F2},{t.Y:F2})") : "none";
+        check("drag point: the target's own plate is avoided too", press == "(0.30,0.67)", press);
+
         // Set-aside units come back once their time is up.
         ForeverExclusions brief = new();
         VisualNameplate noGuid = Plate(4, incarnation: 7);

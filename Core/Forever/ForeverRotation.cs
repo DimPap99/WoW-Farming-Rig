@@ -26,16 +26,25 @@ public readonly struct ForeverSlotRanges
     private readonly VisualSlotRanges plateRanges;
     private readonly bool isPlate;
 
-    private ForeverSlotRanges(VisualActionStateSnapshot? targetStates, VisualSlotRanges plateRanges, bool isPlate)
+    private ForeverSlotRanges(VisualActionStateSnapshot? targetStates, VisualSlotRanges plateRanges,
+        bool isPlate, bool? close)
     {
         this.targetStates = targetStates;
         this.plateRanges = plateRanges;
         this.isPlate = isPlate;
+        Close = close;
     }
 
-    public static ForeverSlotRanges Target(VisualBarSample bars) => new(bars.ActionStates, default, false);
+    public static ForeverSlotRanges Target(VisualBarSample bars) =>
+        new(bars.ActionStates, default, false, bars.Attack?.TargetClose);
 
-    public static ForeverSlotRanges Of(VisualNameplate plate) => new(null, plate.Ranges, true);
+    public static ForeverSlotRanges Of(VisualNameplate plate) => new(null, plate.Ranges, true, plate.Close);
+
+    /// <summary>
+    /// The unit is within the client's duel distance, which on this client
+    /// begins at a ranged weapon's 8-yard minimum range; null when unknown.
+    /// </summary>
+    public bool? Close { get; }
 
     /// <summary>In or out of range; null when unknown.</summary>
     public bool? InRange(int slot) => isPlate
@@ -107,6 +116,8 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     private const int UnreadableAuraMs = 2000;
     // Out of combat a missing buff holds the session until it can be cast.
     private const int MissingBuffMs = 60000;
+    // Start attack waits this long between presses, for the attack state to follow.
+    private const int StartAttackRetryMs = 1000;
 
     private readonly ILogger<ForeverRotation> logger;
     private readonly ForeverCaster caster;
@@ -119,7 +130,7 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     private readonly CancellationToken token;
     private readonly HashSet<KeyAction> usedPulls = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<string> unreadableRequirements = [];
-    private bool attackStarted;
+    private long lastStartAttack;
     private long auraUnreadableSince;
     private long buffMissingSince;
     private VisualTargetIdentity? target;
@@ -190,7 +201,6 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         if (target != identity)
         {
             target = identity;
-            attackStarted = false;
             usedPulls.Clear();
         }
 
@@ -218,7 +228,7 @@ public sealed class ForeverRotation : IForeverCombatRoutine
                     return ForeverCombatResult.Failed;
                 }
                 input.PressRandom(startAttack, token);
-                attackStarted = true;
+                lastStartAttack = GetTimestamp();
                 return ForeverCombatResult.ActionSent;
             case ForeverFightStep.Combat:
                 return Cast(plan.Action!, out reason);
@@ -229,33 +239,50 @@ public sealed class ForeverRotation : IForeverCombatRoutine
 
     /// <summary>
     /// The fight's next step against <paramref name="identity"/>: an opener
-    /// first, each once per target and only with every buff up; then melee
-    /// start and the Combat list in priority order.
+    /// first, each once per target and only with every buff up; then the
+    /// Combat list in priority order, where <c>AutoAttack</c> starts the
+    /// attack that fits the distance whenever the attack state asks for it.
     /// </summary>
     public ForeverFightPlan Plan(VisualBarSample bars, VisualTargetIdentity identity)
     {
-        bool combatRange = AnyInRange(bars, config.Combat.Sequence);
+        ForeverSlotRanges ranges = ForeverSlotRanges.Target(bars);
+        bool combatRange = AnyInRange(bars, config.Combat.Sequence, ranges);
         if (NextPull(bars, identity) is { } pull)
             return new(ForeverFightStep.Pull, pull);
         if (!combatRange)
             return new(ForeverFightStep.NeedRange);
 
-        bool sameTarget = target == identity;
         foreach (KeyAction action in config.Combat.Sequence)
         {
             if (IsAutoAttack(action))
             {
-                if (!(sameTarget && attackStarted))
+                if (NeedsStartAttack(bars))
                     return new(ForeverFightStep.StartAttack, action);
                 continue;
             }
-            if (RangeCounts(bars, action) && RequirementsMet(action) &&
+            if (RangeCounts(action, ranges) && !Queued(bars, action) && RequirementsMet(action) &&
                 ForeverCastGate.CanPress(bars, action, spells,
                     maxLevelsAbove: config.NPCMaxLevels_Above))
                 return new(ForeverFightStep.Combat, action);
         }
         return new(ForeverFightStep.Wait);
     }
+
+    // Start attack begins the attack that fits the distance: Auto Shot at
+    // range, melee up close. It is pressed when no auto attack runs, or when
+    // the target is close and melee is off. The client mostly switches by
+    // itself (live, it stopped Auto Shot and started melee as the mob crossed
+    // the minimum range), and a press then changes nothing. An unreadable
+    // attack state presses nothing.
+    private bool NeedsStartAttack(VisualBarSample bars) =>
+        bars.Attack is { Melee: false } attack &&
+        (!attack.AutoRepeat || attack.TargetClose == true) &&
+        GetElapsedTime(lastStartAttack).TotalMilliseconds >= StartAttackRetryMs;
+
+    // A next-swing ability pressed and waiting for its swing shows as current
+    // on its slot; pressing it again would only repeat the request.
+    private static bool Queued(VisualBarSample bars, KeyAction action) =>
+        action.AfterCastWaitSwing && bars.Attack?.IsCurrent(action.Slot) == true;
 
     // An opener counts only while it can actually be pressed. Otherwise
     // pursuit hands the target to the fight, the fight hands it back for
@@ -372,7 +399,7 @@ public sealed class ForeverRotation : IForeverCombatRoutine
                 bars.ActionBar?.GetSlot(action.Slot) is
                     { Kind: VisualActionKind.Spell, Id: var placed } &&
                 (action.SpellId == 0 || placed == action.SpellId) &&
-                RangeCounts(bars, action) &&
+                RangeCounts(action, ranges) &&
                 ranges.InRange(action.Slot) == true)
                 return true;
         }
@@ -380,11 +407,13 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     }
 
     // The beta reports a next-swing ability's slot (AfterCastWaitSwing, e.g.
-    // Raptor Strike) in range at any distance, so its range counts only once
-    // the character is in combat, when the mob is coming into contact. Out of
-    // combat the real ranged and melee spells decide, and pursuit closes in.
-    private static bool RangeCounts(VisualBarSample bars, KeyAction action) =>
-        !action.AfterCastWaitSwing || bars.TargetFlags is { PlayerCombat: true };
+    // Raptor Strike) in range out to about 100 yards, and a press out of
+    // melee reach never resolves. Its range counts only while the unit is
+    // close, inside a ranged weapon's minimum range, where an attacking mob
+    // is in contact or a step away. Otherwise the ranged and melee spells
+    // decide, and pursuit closes in.
+    private static bool RangeCounts(KeyAction action, ForeverSlotRanges ranges) =>
+        !action.AfterCastWaitSwing || ranges.Close == true;
 
     private KeyAction? NextPull(VisualBarSample bars, VisualTargetIdentity identity)
     {
@@ -392,10 +421,11 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         if (!BuffsUp(bars, inCombat))
             return null;
         bool sameTarget = target == identity;
+        ForeverSlotRanges ranges = ForeverSlotRanges.Target(bars);
         foreach (KeyAction action in config.Pull.Sequence)
         {
             if ((sameTarget && usedPulls.Contains(action)) ||
-                !RangeCounts(bars, action) ||
+                !RangeCounts(action, ranges) || Queued(bars, action) ||
                 !RequirementsMet(action) ||
                 !ForeverCastGate.CanPress(bars, action, spells,
                     maxLevelsAbove: config.NPCMaxLevels_Above))
@@ -462,13 +492,12 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     private ForeverCombatResult Cast(KeyAction action, out string reason)
     {
         ForeverCastResult result = caster.TryCast(action, Cancelled, whileWaiting: faceWhileWaiting);
-        if (result != ForeverCastResult.Failed)
+        reason = result == ForeverCastResult.Failed ? $"{action.Name} success was not confirmed" : string.Empty;
+        return result switch
         {
-            reason = string.Empty;
-            return result == ForeverCastResult.Succeeded
-                ? ForeverCombatResult.ActionSent : ForeverCombatResult.Waiting;
-        }
-        reason = $"{action.Name} success was not confirmed";
-        return ForeverCombatResult.Failed;
+            ForeverCastResult.Succeeded or ForeverCastResult.Queued => ForeverCombatResult.ActionSent,
+            ForeverCastResult.Failed => ForeverCombatResult.Failed,
+            _ => ForeverCombatResult.Waiting,
+        };
     }
 }

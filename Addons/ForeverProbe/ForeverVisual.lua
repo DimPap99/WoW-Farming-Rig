@@ -14,7 +14,19 @@ local actionKindCodes = { spell = 1, item = 2, macro = 3, flyout = 4 }
 local visual
 
 -- Version of the nameplate roster rows; the reader refuses any other.
-local ROSTER_VERSION = 1
+-- 2 added each plate's duel-distance flag.
+local ROSTER_VERSION = 2
+-- Version of the attack-state block; the reader refuses any other.
+local ATTACK_VERSION = 1
+-- The melee auto attack, as the client's spell.
+local ATTACK_SPELL = 6603
+-- CheckInteractDistance's duel distance. On this client it turns true as a
+-- unit crosses a ranged weapon's 8-yard minimum range.
+local DUEL_DISTANCE = 3
+
+local isCurrentAction = (C_ActionBar and C_ActionBar.IsCurrentAction) or IsCurrentAction
+local isAutoRepeatAction = (C_ActionBar and C_ActionBar.IsAutoRepeatAction) or IsAutoRepeatAction
+local isCurrentSpell = (C_Spell and C_Spell.IsCurrentSpell) or IsCurrentSpell
 
 local function createVisual()
     local frame = CreateFrame("Frame", nil, UIParent)
@@ -101,6 +113,9 @@ local function createVisual()
     frame.targetMapXPixel = addPixel(13, 190)
     frame.targetMapYPixel = addPixel(14, 190)
     frame.targetMapValidPixel = addPixel(15, 190)
+    frame.attackSlotsPixel = addPixel(17, 190)
+    frame.attackStatePixel = addPixel(18, 190)
+    frame.attackValidPixel = addPixel(19, 190)
     frame.auraStatePixel = addPixel(28, 190)
     frame.auraStateValidPixel = addPixel(29, 190)
 
@@ -461,6 +476,13 @@ local function createVisual()
         return value and 2 or 1
     end
 
+    -- Within duel distance as a tri-state. An error leaves only this flag
+    -- unknown rather than the row or block it belongs to.
+    local function closeTri(unit)
+        local ok, value = pcall(CheckInteractDistance, unit, DUEL_DISTANCE)
+        return ok and tri(value) or 0
+    end
+
     -- "nameplate3" -> "nameplate3target", built once per token.
     local targetOfToken = setmetatable({}, { __index = function(cache, token)
         local unit = token .. "target"
@@ -479,8 +501,9 @@ local function createVisual()
 
     -- One roster slot: incarnation, GUID hashes (0 while identity is
     -- protected), level and eight tri-state flags, then targets-player,
-    -- reaction, threat and the plate's alpha, then the main-bar ranges with
-    -- the action-state codes (0 unknown, 1 in range, 2 out of range). The
+    -- reaction, threat, the plate's alpha and whether the unit is within duel
+    -- distance, then the main-bar ranges with the action-state codes
+    -- (0 unknown, 1 in range, 2 out of range). The
     -- checksum names the slot and, for the target, the checked target hashes,
     -- so a row cannot describe another slot or another target.
     local function renderPlate(slot)
@@ -540,7 +563,7 @@ local function createVisual()
                 end
             end
             v[5] = tri(UnitIsUnit(targetOfToken[token], "player")) +
-                reaction * 4 + threat * 64 + alpha * 512
+                reaction * 4 + threat * 64 + alpha * 512 + closeTri(token) * 131072
 
             local ranges = 0
             for action = 1, 12 do
@@ -600,6 +623,45 @@ local function createVisual()
             nameplates.ShowMarker(slot, false)
             pcall(renderPlate, slot)
         end
+    end
+
+    local slotBits = {}
+    for bit = 1, 24 do slotBits[bit] = 2 ^ (bit - 1) end
+
+    -- A boolean the client may also answer as 1 or nil; nil when protected.
+    local function plainFlag(value)
+        if isSecret(value) then return nil end
+        return value == true or value == 1
+    end
+
+    -- What the player's attacks are doing: each main-bar slot's current state
+    -- (a cast, a toggle, or a next-swing ability pressed and waiting for the
+    -- swing) and auto-repeat state (Auto Shot), and melee auto attack. Then
+    -- whether the target is within duel distance. The checksum folds in the
+    -- checked target hashes once that distance is known, so it can only
+    -- describe this update's target.
+    local function renderAttackState()
+        local slots = 0
+        for slot = 1, 12 do
+            local current = plainFlag(isCurrentAction(slot))
+            local repeating = plainFlag(isAutoRepeatAction(slot))
+            if current == nil or repeating == nil then return end
+            if current then slots = slots + slotBits[slot] end
+            if repeating then slots = slots + slotBits[slot + 12] end
+        end
+        local close = 0
+        if checkedTargetGuid and isCheckedTarget() then
+            close = closeTri("target")
+        end
+        local state = tri(isCurrentSpell(ATTACK_SPELL)) + close * 4 +
+            ATTACK_VERSION * 16
+        local checksum = 0xA5E111 - slots - state
+        if close ~= 0 then
+            checksum = checksum - checkedTargetHash1 - checkedTargetHash2
+        end
+        setIntPixel(frame.attackSlotsPixel, slots)
+        setIntPixel(frame.attackStatePixel, state)
+        setIntPixel(frame.attackValidPixel, checksum % 16777216)
     end
 
     -- Type code and ID of an action slot, or nothing when unreadable.
@@ -913,8 +975,13 @@ local function createVisual()
             pcall(renderTargetWorld)
             pcall(renderTargetMap)
         end
-        -- After the target: the target's roster row is checked against it.
+        -- After the target: the target's roster row and the attack state's
+        -- distance are checked against it.
         renderRoster()
+        setBlack(frame.attackSlotsPixel)
+        setBlack(frame.attackStatePixel)
+        setBlack(frame.attackValidPixel)
+        pcall(renderAttackState)
 
         setBlack(frame.castValidPixel)
         renderEvents()

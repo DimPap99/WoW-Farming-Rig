@@ -10,7 +10,12 @@ using static System.Diagnostics.Stopwatch;
 
 namespace Core.Forever;
 
-public enum ForeverCastResult { NotReady, Succeeded, Failed }
+/// <summary>
+/// How a press ended. <see cref="Queued"/>: a next-swing ability waits for
+/// the swing. <see cref="NotTaken"/>: the game did not take a next-swing
+/// press, as when the target is out of melee reach; nothing happened.
+/// </summary>
+public enum ForeverCastResult { NotReady, Succeeded, Failed, Queued, NotTaken }
 
 /// <summary>
 /// Presses one guarded Forever action and waits for the visual cast-success
@@ -23,11 +28,16 @@ public sealed class ForeverCaster
     // before that row reflects its GCD; wait for the producer to refresh.
     private const int RowRefreshMs = 650;
     private const int PollMs = 50;
-    // A cast bar, a next-swing ability (AfterCastWaitSwing: its success
-    // event arrives with the swing), or a self cast that may follow a cast
-    // bar gets the longer wait.
+    // A cast bar, or a self cast that may follow a cast bar, gets the longer wait.
     private const int LongCastTimeoutMs = 5000;
     private const int InstantCastTimeoutMs = 3000;
+    // A next-swing ability (AfterCastWaitSwing) resolves with the swing, which
+    // may be seconds away. Its press is proved once the slot shows it current,
+    // and the success event then arrives with the swing on its own. A press
+    // that leaves the slot as it was for this long was not taken; it is tried
+    // again no sooner than the retry, as a person presses again.
+    private const int SwingQueueMs = 1000;
+    private const int NotTakenRetryMs = 1500;
 
     private readonly ILogger<ForeverCaster> logger;
     private readonly ConfigurableInput input;
@@ -41,6 +51,8 @@ public sealed class ForeverCaster
     // from the visual event is never retried.
     private bool needsReset;
     private long lastSucceeded;
+    private KeyAction? notTaken;
+    private long notTakenAt;
 
     public ForeverCaster(ILogger<ForeverCaster> logger, ConfigurableInput input,
         ExecGameCommand command, ForeverVisualBarTracker tracker,
@@ -63,12 +75,15 @@ public sealed class ForeverCaster
         if (needsReset || interrupt())
             return ForeverCastResult.Failed;
         if (lastSucceeded != 0 &&
-            GetElapsedTime(lastSucceeded).TotalMilliseconds < RowRefreshMs)
+            GetElapsedTime(lastSucceeded).TotalMilliseconds < RowRefreshMs ||
+            item == notTaken && GetElapsedTime(notTakenAt).TotalMilliseconds < NotTakenRetryMs)
             return ForeverCastResult.NotReady;
         if (!ForeverVerifiedSetup.IsProfile(config.FileName) ||
             !tracker.TryGetLatest(out VisualBarSample before) ||
             !ForeverCastGate.CanPress(before, item, spells, selfCast, config.NPCMaxLevels_Above) ||
-            before.LastCastEvent is not { } previousEvent)
+            before.LastCastEvent is not { } previousEvent ||
+            // Already pressed and waiting for its swing.
+            item.AfterCastWaitSwing && before.Attack?.IsCurrent(item.Slot) == true)
             return ForeverCastResult.NotReady;
 
         needsReset = true;
@@ -79,7 +94,10 @@ public sealed class ForeverCaster
 
         long start = GetTimestamp();
         long lastFrame = before.FrameId;
-        int timeoutMs = selfCast || item.HasCastBar || item.AfterCastWaitSwing
+        bool nextSwing = item.AfterCastWaitSwing;
+        // A next-swing press without a readable attack state keeps the long
+        // wait for the swing's own event, and fails closed after it.
+        int timeoutMs = selfCast || item.HasCastBar || nextSwing
             ? LongCastTimeoutMs : InstantCastTimeoutMs;
         while (GetElapsedTime(start).TotalMilliseconds < timeoutMs)
         {
@@ -120,6 +138,22 @@ public sealed class ForeverCaster
                 return ForeverCastResult.Failed;
             }
 
+            if (nextSwing && current.Attack is { } attack)
+            {
+                if (attack.IsCurrent(item.Slot))
+                    return Succeeded(item, ForeverCastResult.Queued);
+                if (GetElapsedTime(start).TotalMilliseconds >= SwingQueueMs)
+                {
+                    if (logger.IsEnabled(LogLevel.Information))
+                        logger.LogInformation("Forever press of {Spell} did not queue for the next swing; " +
+                            "trying again after {Retry} ms", item.Name, NotTakenRetryMs);
+                    needsReset = false;
+                    notTaken = item;
+                    notTakenAt = GetTimestamp();
+                    return ForeverCastResult.NotTaken;
+                }
+            }
+
             // A buff that newly shows on its slot's aura reference is direct
             // proof even when the successful spellcast event arrives after the frame.
             if (item.AfterCastAuraExpected && !auraWasActive &&
@@ -153,11 +187,12 @@ public sealed class ForeverCaster
         finally { input.SetKeyState(item.ConsoleKey, false, true); }
     }
 
-    private ForeverCastResult Succeeded(KeyAction item)
+    private ForeverCastResult Succeeded(KeyAction item,
+        ForeverCastResult result = ForeverCastResult.Succeeded)
     {
         item.ConsumeCharge();
         needsReset = false;
         lastSucceeded = GetTimestamp();
-        return ForeverCastResult.Succeeded;
+        return result;
     }
 }

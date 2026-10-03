@@ -183,7 +183,8 @@ Forever-owned code:
   bounds and release hooks both Forever goals run on), `ForeverCaster` (one
   checked keypress per cast),
   `ForeverRotation` (the class profile's Pull, Combat and Adhoc lists),
-  `ForeverLoot`, `ForeverNavigator` (also `IForeverFacing`),
+  `ForeverLoot`, `ForeverNavigator` (also `IForeverFacing`), `ForeverDragPoint`
+  (where a camera drag may begin),
   `ForeverTargetPolicy` (which units to fight, which plate next),
   `ForeverTargetSelector`, `ForeverPointAndClick` (aim, confirm, click,
   confirm), `ForeverExclusions` (units set aside for a while),
@@ -236,8 +237,9 @@ everything class-specific and the behaviour is shared:
   `AfterCastAuraExpected`, and its aura is matched against its slot icon
   (`VisualBarSample.SlotAuras`). **Pull** holds openers, each used once per
   target and only while every buff is up. **Combat** is the priority list, and
-  `AutoAttack` presses `STARTATTACK` once per target. Pursuit stops when any
-  opener can be pressed or any Combat spell's slot reports the target in range.
+  `AutoAttack` presses `STARTATTACK` whenever the attack state asks for it (see
+  "Melee reach and attack state" below). Pursuit stops when any opener can be
+  pressed or any Combat spell's slot reports the target in range.
 - Each action's own requirements say when to use it. They are evaluated by
   `ForeverRotation` itself, because `KeyAction.CanRun` caches on the Classic
   `GlobalTime` cell, which never advances on Forever. Only `Health%`, `Mana%`,
@@ -252,11 +254,12 @@ everything class-specific and the behaviour is shared:
   `[@player]` self casts are expressed.
 - **Next-swing abilities.** An ability that resolves on the next melee swing
   (upstream `AfterCastWaitSwing`, e.g. Raptor Strike) gets its success event
-  with the swing, so the caster waits the longer window for it. The beta gives
-  such an ability no usable melee-reach signal: Raptor Strike's slot reports in
-  range at any distance, and the Attack ability's slot (6603) reports no range.
-  A swing that never comes, because the mob is passive or out of reach, ends
-  the run fail-closed.
+  with the swing. The beta gives such an ability no usable range of its own:
+  Raptor Strike's slot reads in range out to about 100 yards, and the Attack
+  ability's slot (6603) reads no range. Its range therefore counts only while
+  the unit is close (below). A press is proved once the slot shows it pending;
+  a press the game did not take is tried again after 1.5 seconds, and neither
+  ends the run.
 - **Too close to open.** Out of combat, a candidate that is inside a Combat
   spell's range but outside every opener's range is passed over, judged from
   its nameplate's ranges before it is clicked; aggro still brings a close mob
@@ -287,8 +290,8 @@ exercised on this character. Three other attempts stopped fail-closed on
 character never came into swing reach, and once the target was a Makrura in
 the water below a shipwreck deck the character stood on. In that last run Start
 Attack had turned melee auto attack on; there was simply nothing to swing at. A
-reliable Hunter melee phase needs an ability with a real melee range check,
-such as Wing Clip at level 8.
+reliable Hunter melee phase needed a real melee-distance signal; "Melee reach
+and attack state" below found one without Wing Clip.
 
 ## Live findings from the beta client
 
@@ -1204,8 +1207,9 @@ The movement pieces are reusable for anything else the runtime will click or
 turn toward: `IMousePointer`/`MousePointerInput` (the eased, slightly arced
 stroke and the click), `MouseCameraInput` (right-button turning at a steady
 speed proportional to the error, pumped in small steps several dozen times a
-second, up to 1,200 pixels a second), `IForeverFacing`, and
-`ForeverPointAndClick` with an `IForeverClickTarget`.
+second, up to 1,200 pixels a second, pressed where `ForeverDragPoint` finds
+empty ground), `IForeverFacing`, and `ForeverPointAndClick` with an
+`IForeverClickTarget`.
 
 Preflight now requires the roster and enemy nameplates that are always shown,
 and no longer the Tab binding. Live on the Hunter in Durotar: the first click
@@ -1219,3 +1223,91 @@ until the lead and the bearing turn; then the camera kept up with them. A
 click on a walking mob waited for it to stop until the click moved from
 "cursor within 3 pixels of the marker" to "the game reports it under the
 cursor"; the last cycle selected, faced, killed and rested cleanly.
+
+### Melee reach and attack state (2026-10-03)
+
+The Hunter pressed Raptor Strike from range: its slot reads in range out to
+about 100 yards, so its range used to count from the start of combat. A
+next-swing press out of melee reach is never queued, and the run stopped on
+"Raptor Strike success was not confirmed". `/foreverprobe` now records a
+**range trace** whenever the player has a hostile target, living or a
+corpse, or is in combat: whether the target is dead and lootable
+(`CanLootUnit`), interact distances, each main-bar slot's range to the
+target, its current and auto-repeat state, melee, Auto Shot and the player's
+spell and attack events, one row per change, the last five fights kept in
+`ForeverProbeResults.rangeTraces` (written on `/reload`). On build
+1.60.1.70205, a level 8 Hunter fighting by hand in Durotar:
+
+- `C_Spell.GetSpellInfo` gives each spell's own range: 0 to 0 for Raptor
+  Strike and Attack (melee), 8 to 35 for Auto Shot, Serpent Sting, Arcane
+  Shot and Concussive Shot, 0 to 100 for Hunter's Mark.
+- `CheckInteractDistance` answers in and out of combat, for the target and
+  for nameplate units. Duel distance (3), like 2 and 5, turned true in the
+  same 0.1-second sample in which the ranged slots went out of range as the
+  mob crossed the 8-yard minimum. Indexes 1 and 4 (28 yards) turned true
+  earlier.
+- Serpent Sting started Auto Shot by itself. As the mob crossed the
+  minimum range, the client stopped Auto Shot (`STOP_AUTOREPEAT_SPELL`) and
+  turned melee on (`IsCurrentSpell(6603)`) in the same sample, without a
+  key, followed by `PLAYER_ENTER_COMBAT`.
+- Raptor Strike pressed in melee showed as current on its slot
+  (`IsCurrentAction`) and succeeded with the swing 0.2 seconds later.
+- The current, auto-repeat and melee states read in combat; unit speeds
+  are secret in combat.
+
+The panel carries this as an **attack state** (`VisualAttackState`, cells 17
+to 19 of the target probe row): each main-bar slot's current and auto-repeat
+bit, melee, and whether the target is within duel distance, checksummed with
+the checked target hashes once that distance is known. Each nameplate row
+carries the same distance flag (`VisualNameplate.Close`; roster version 2).
+`ForeverSlotRanges.Close` gives it for the target or a plate alike, and the
+runtime uses it in three places:
+
+- **Next-swing reach.** A next-swing ability's range counts only while the
+  unit is close: inside a ranged weapon's minimum range, where an attacking
+  mob is in contact or a step away. At range the shots and Auto Shot run on.
+- **Start attack.** `AutoAttack` presses `STARTATTACK` when no auto attack
+  runs, or when the target is close and melee is off, at most once a second;
+  at range that starts Auto Shot, up close melee. The client mostly switches
+  by itself, and a press then changes nothing. An unreadable attack state
+  presses nothing.
+- **A press that is pending or not taken.** A next-swing press counts as
+  sent once its slot shows current; it is not pressed again while pending,
+  and its success event arrives with the swing. A press that leaves the slot
+  unchanged for a second was not taken; it is tried again after 1.5 seconds.
+  Neither latches casting closed. Without a readable attack state the caster
+  waits for the success event and fails closed, as before.
+
+The autonomous preflight refuses a panel without the attack state; reload the
+add-on together with the bot. A mob that stops inside the minimum range
+without coming into contact (it cannot reach the player) is not handled yet:
+the Hunter can neither shoot nor swing at it.
+
+Live (level 9 Hunter, Durotar): an `--auto-run` cycle opened with Serpent
+Sting, kept Auto Shot running with Arcane Shot at range and did not press
+Raptor Strike there. As the mob closed in, the attack state showed it close,
+melee on and Auto Shot stopped; Raptor Strike landed twice, the kill was
+verified and the corpse looted, and the run completed with exit code 0.
+
+**Camera drags start on empty ground.** The first sweep after that stopped
+when the target switched mid-fight to a far mob that was not fighting. The
+range trace showed `PLAYER_TARGET_CHANGED` together with melee starting on
+the new unit, as a right-click does. The ranged slots had gone out of range
+0.1 seconds before the target turned close, the fight handed over to
+pursuit for that moment, and pursuit pressed the right button at its fixed
+point a third down the screen, over that mob's nameplate, and let go again.
+A controlled test confirmed it: a right-button press on a nameplate targets
+the unit and starts melee on it when the button comes up, even after moving
+the mouse 8 pixels and back during the hold. So where a hold begins matters,
+not what the mouse does during it:
+
+- `ForeverDragPoint` picks the press point for every new hold: the first of
+  eight points in the world view clear of every roster plate, the body below
+  it and the character. With none clear, the turn waits a frame.
+  `MouseCameraInput.Turn` presses where it is told.
+- The fight leaves for pursuit only once reach stayed lost for a second
+  (`ReachLostMs`): the action rows refresh every 0.5 seconds and the target
+  distance every 0.1, and a closing mob crosses the minimum range between
+  them.
+
+`--logic-test` has 119 checks.

@@ -241,7 +241,8 @@ public readonly record struct VisualBarSample(
     VisualSlotAuraSnapshot? SlotAuras = null,
     VisualDeathEvent? LastDeathEvent = null,
     VisualLootState? Loot = null,
-    VisualNameplateRoster? Nameplates = null)
+    VisualNameplateRoster? Nameplates = null,
+    VisualAttackState? Attack = null)
 {
     /// <summary>
     /// The screen frame this sample was decoded from, set by
@@ -389,7 +390,8 @@ public static class VisualBarReader
             targetMapPosition, TargetScreenPosition: null, slotAuras,
             VisualLifecycleReader.ReadDeath(pixels, width, height, whiteLeft, whiteY, scale),
             VisualLifecycleReader.ReadLoot(pixels, width, height, whiteLeft, whiteY, scale),
-            VisualNameplateReader.Read(probe, targetIdentity));
+            VisualNameplateReader.Read(probe, targetIdentity),
+            VisualAttackReader.Read(probe, targetIdentity));
         if (locateMarkers)
             sample = LocateMarkers(pixels, width, height, sample);
         return true;
@@ -439,7 +441,7 @@ public static class VisualBarReader
     private const int WorldRow = 42;           // world position, counts, identity, flags
     private const int CooldownMarkerRow = 67;
     private const int ActionGridTop = 76;
-    private const int TargetRow = 127;         // cast event and the checked target probes
+    internal const int TargetRow = 127;        // cast event, the checked target probes, attack state
     private const int SpellGridTop = 141;
     private const int BindingGridTop = 236;
     private const int ActionStateGridTop = 276;

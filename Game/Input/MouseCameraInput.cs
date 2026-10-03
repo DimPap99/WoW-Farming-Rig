@@ -60,12 +60,26 @@ public sealed class MouseCameraInput : IDisposable
         return WinAPI.NativeMethods.GetForegroundWindow() == window;
     }
 
+    /// <summary>The right button is held for turning.</summary>
+    public bool IsHeld
+    {
+        get
+        {
+            lock (sync)
+                return held;
+        }
+    }
+
     /// <summary>
     /// Holds the right button and turns at a speed proportional to
     /// <paramref name="horizontalError"/>, positive to the right, easing as the
     /// error shrinks. Call it on every frame the turn should go on.
     /// </summary>
-    public bool Turn(double horizontalError)
+    /// <param name="pressX">Where a new hold presses the button, across the
+    /// window from the left. A press on a nameplate or a unit targets it when
+    /// the button comes up, so the caller picks empty ground.</param>
+    /// <param name="pressY">The same, up from the bottom.</param>
+    public bool Turn(double horizontalError, double pressX = 0.5, double pressY = 2.0 / 3)
     {
         nint window = process.MainWindowHandle;
         bool starting;
@@ -76,8 +90,8 @@ public sealed class MouseCameraInput : IDisposable
             if (!Focus())
                 return false;
             WinAPI.NativeMethods.GetWindowRect(window, out var rect);
-            WinAPI.NativeMethods.SetCursorPos(rect.X + rect.Width / 2,
-                rect.Y + rect.Height / 3);
+            WinAPI.NativeMethods.SetCursorPos(rect.X + (int)Math.Round(pressX * rect.Width),
+                rect.Y + (int)Math.Round((1 - pressY) * rect.Height));
             lock (sync)
             {
                 MouseEvent(0x0008, 0, 0, 0, 0); // right down

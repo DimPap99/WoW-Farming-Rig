@@ -12,7 +12,7 @@ internal readonly record struct PlateSpec(
     int Incarnation, int Hash1 = 0, int Hash2 = 0, int Level = 7,
     int Attackable = 2, int Dead = 1, int IsPlayer = 1, int TapDenied = 1, int InCombat = 1,
     int IsTarget = 1, int IsMouseover = 1, int BehindCamera = 1, int TargetsPlayer = 1,
-    int Reaction = 2, int Threat = 1, int Alpha = 255, int Ranges = 0);
+    int Reaction = 2, int Threat = 1, int Alpha = 255, int Ranges = 0, int Close = 1);
 
 /// <summary>The roster's pixel values, written the way the add-on writes them.</summary>
 internal static class RosterCodec
@@ -38,7 +38,7 @@ internal static class RosterCodec
             v[3] = p.Level + p.Attackable * 256 + p.Dead * 1024 + p.IsPlayer * 4096 +
                 p.TapDenied * 16384 + p.InCombat * 65536 + p.IsTarget * 262144 +
                 p.IsMouseover * 1048576 + p.BehindCamera * 4194304;
-            v[4] = p.TargetsPlayer + p.Reaction * 4 + p.Threat * 64 + p.Alpha * 512;
+            v[4] = p.TargetsPlayer + p.Reaction * 4 + p.Threat * 64 + p.Alpha * 512 + p.Close * 131072;
             v[5] = p.Ranges;
         }
         int checksum = 0xA5C311 - slot;
@@ -114,6 +114,22 @@ internal sealed class SyntheticPanel(int width, int height, double scale, int le
             (0xA58866 - identity.GuidHash1 - identity.GuidHash2 - packedLevel) & 0xFFFFFF]);
     }
 
+    /// <summary>
+    /// The attack-state cells: current and auto-repeat slot bits, then melee and
+    /// target distance as tri-states (0 unknown, 1 false, 2 true); a known
+    /// distance folds in <paramref name="target"/>'s hashes.
+    /// </summary>
+    public void Attack(int current, int autoRepeat, int melee, int close,
+        VisualTargetIdentity target, int version = VisualAttackReader.ProtocolVersion)
+    {
+        int slots = current | (autoRepeat << 12);
+        int state = melee + close * 4 + version * 16;
+        int checksum = 0xA5E111 - slots - state;
+        if (close != 0)
+            checksum -= target.GuidHash1 + target.GuidHash2;
+        Cells(17, 190, [slots, state, checksum & 0xFFFFFF]);
+    }
+
     /// <summary>The slot-coded marker centred at <paramref name="x"/>, <paramref name="y"/> pixels.</summary>
     public void Marker(int x, int y, int slot)
     {
@@ -159,11 +175,11 @@ internal static class NameplateSelfTest
             // the camera, no marker. Slot 4: an attacker with a protected GUID.
             // Slot 5 is empty; slot 6 is corrupt; slots 7 and 8 are empty.
             PlateSpec targetPlate = new(11, target.GuidHash1, target.GuidHash2, IsTarget: 2,
-                Ranges: RosterCodec.Ranges((1, true), (3, true)));
+                Ranges: RosterCodec.Ranges((1, true), (3, true)), Close: 2);
             PlateSpec farPlate = new(12, 777, 888, Level: 6, Alpha: 1 + (int)Math.Round(0.24 * 254),
                 Ranges: RosterCodec.Ranges((1, true), (3, false)));
             PlateSpec behindPlate = new(13, 999, 1111, BehindCamera: 2);
-            PlateSpec attacker = new(14, InCombat: 2, TargetsPlayer: 2, Threat: 5, Reaction: 1);
+            PlateSpec attacker = new(14, InCombat: 2, TargetsPlayer: 2, Threat: 5, Reaction: 1, Close: 0);
 
             SyntheticPanel panel = new SyntheticPanel(width, height, scale).WithCalibration();
             panel.Header(RosterCodec.Header(plates: 6, attackable: 5, friendly: 1));
@@ -191,13 +207,14 @@ internal static class NameplateSelfTest
                 ShowEnemies: true, ShowAll: true, MaxDistance: 45, PlatesShown: true }, "header" + at);
             Check(roster?.ReadableCount == 7, $"seven readable rows{at}: {roster?.ReadableCount}");
             Check(roster?.Target is { Slot: 1, Incarnation: 11 } t1 && t1.Is(target), "target slot" + at);
-            Check(roster?.GetSlot(1) is { } s1 && s1.Ranges.InRange(1) == true &&
+            Check(roster?.GetSlot(1) is { Close: true } s1 && s1.Ranges.InRange(1) == true &&
                 s1.Ranges.InRange(3) == true && s1.Ranges.InRange(2) is null &&
-                s1.Occluded is null && !s1.Attacks, "target ranges" + at);
-            Check(roster?.GetSlot(2) is { Occluded: true, Level: 6, Reaction: 2, OnThreatTable: false } s2 &&
+                s1.Occluded is null && !s1.Attacks, "target ranges, within duel distance" + at);
+            Check(roster?.GetSlot(2) is { Occluded: true, Level: 6, Reaction: 2, OnThreatTable: false, Close: false } s2 &&
                 s2.Ranges.InRange(3) == false && s2.Alpha is > 0.23 and < 0.25, "occluded far plate" + at);
             Check(roster?.GetSlot(3) is { BehindCamera: true, Screen: null }, "behind camera" + at);
-            Check(roster?.GetSlot(4) is { HasIdentity: false, Attacks: true, ThreatStatus: 3, InCombat: true }, "attacker" + at);
+            Check(roster?.GetSlot(4) is { HasIdentity: false, Attacks: true, ThreatStatus: 3, InCombat: true, Close: null },
+                "attacker, distance unknown" + at);
             Check(roster?.GetSlot(5) is { IsEmpty: true }, "empty slot" + at);
             Check(roster?.GetSlot(6) is null, "corrupt row refused" + at);
 
@@ -224,8 +241,26 @@ internal static class NameplateSelfTest
             panel.Marker(300, 200, 2);
             Check(Read(panel).Nameplates?.GetSlot(2)?.Screen is null, "duplicate slot marker refused" + at);
 
+            // The attack state: slot 1 pending its swing, slot 2 repeating,
+            // melee off, the target within duel distance.
+            panel.Attack(current: 1, autoRepeat: 1 << 1, melee: 1, close: 2, target);
+            Check(Read(panel).Attack is { Melee: false, TargetClose: true, AutoRepeat: true } a1 &&
+                a1.IsCurrent(1) && !a1.IsCurrent(2) && a1.IsAutoRepeating(2) && !a1.IsAutoRepeating(1) &&
+                !a1.IsCurrent(13), $"attack state{at}: {Read(panel).Attack}");
+            panel.Target(target with { GuidHash1 = 1 });
+            Check(Read(panel).Attack is null, "attack state's distance of another target refused" + at);
+            panel.Target(new(0, 0, 0, false));
+            Check(Read(panel).Attack is null, "attack state's distance needs the frame's target identity" + at);
+            panel.Attack(current: 0, autoRepeat: 0, melee: 2, close: 0, new(0, 0, 0, false));
+            Check(Read(panel).Attack is { Melee: true, TargetClose: null, AutoRepeat: false },
+                "attack state without a target: melee on, distance unknown" + at);
+            panel.Attack(current: 0, autoRepeat: 0, melee: 2, close: 0, new(0, 0, 0, false), version: 2);
+            Check(Read(panel).Attack is null, "other attack-state version refused" + at);
+            panel.Target(target);
+            panel.Attack(current: 1, autoRepeat: 1 << 1, melee: 1, close: 2, target);
+
             // An old layout is refused rather than misread.
-            panel.Header(RosterCodec.Header(6, 5, 1, version: 2));
+            panel.Header(RosterCodec.Header(6, 5, 1, version: 1));
             Check(Read(panel).Nameplates is null, "other roster version refused" + at);
         }
 
