@@ -107,6 +107,8 @@ The following [KeyActions](#keyactions) are `BaseActions`: `Jump`, `Interact`, `
 }
 ```
 
+**WoW: Forever**: the guarded Forever runtime presses the key the client binds to each command (forward, strafe, `TargetNearestTarget`, `AutoAttack`, `Interact` and the main-bar buttons), so those need no entry here. `ClearTarget.Key` names the key of a `/cleartarget` macro on the main bar, e.g. `"ClearTarget": { "Key": "7" }`; it is used only while the client binds that key to a macro slot, otherwise Escape, and only while a target is selected. See [WoW: Forever port](forever-port.md).
+
 Which are shared and unified among [Pull Goal](goals.md#pull-goal) and [Combat Goal](goals.md#combat-goal).
 
 e.g override default [KeyActions](#keyactions) properties in the [Class Configuration](#class-configuration) file

@@ -919,8 +919,18 @@ cropped to the left 650 pixels; mouse focus changes could cancel a forward key
 pressed beforehand; combat entry could trigger another Tab; and a target could
 clear before its dead flag reached the next screenshot. Capturing the entire
 viewport, taking focus before key-down, retaining the acquired identity, and
-latching kill events address those cases. Target clearing now uses `/cleartarget`
-instead of Escape, which could open the game menu on a repeated call.
+latching kill events address those cases.
+
+Every key the runtime presses comes from the client's own bindings, read from
+the binding grid on the frame it presses on: move forward, strafe, Tab, start
+attack, interact and the main-bar buttons. Rebinding one in the game needs no
+change here. Clearing the target is a macro rather than a bindable command, so
+the profile names its key with upstream's syntax, for example
+`"ClearTarget": { "Key": "7" }` for a `/cleartarget` macro on main-bar slot 7.
+That key is pressed only while the client binds it to a macro on the main bar;
+otherwise upstream's clear-target binding when the client has one, then Escape.
+Any of them is pressed only while the frame shows a target and at most once a
+second: with nothing selected Escape opens the game menu.
 
 Local movement uses a Detour raycast through connected polygons, returning the
 height at the endpoint. It no longer rejects ordinary slopes solely for a

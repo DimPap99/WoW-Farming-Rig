@@ -102,8 +102,8 @@ public sealed class ForeverRotation : IForeverCombatRoutine
             if (bars.ActionBar?.GetSlot(action.Slot) is not
                     { Kind: VisualActionKind.Spell, Id: var placed } ||
                 (action.SpellId > 0 && placed != action.SpellId) ||
-                !ForeverBindings.ActionButton(action.Slot, action.ConsoleKey, action.Modifier)
-                    .IsBoundIn(bars))
+                !ForeverBindings.ActionButton(action.Slot)
+                    .IsBoundTo(bars, action.ConsoleKey, action.Modifier))
             {
                 reason = $"{action.Name} is not on slot {action.Slot} bound to its key";
                 return false;
@@ -153,12 +153,13 @@ public sealed class ForeverRotation : IForeverCombatRoutine
                     usedPulls.Add(plan.Action!);
                 return pulled;
             case ForeverFightStep.StartAttack:
-                if (!ForeverBindings.StartAttack.IsBoundIn(bars))
+                if (!ForeverBindings.StartAttack.TryGetKeyAction(bars, "Forever Start Attack",
+                        out KeyAction startAttack))
                 {
                     reason = "start attack binding changed";
                     return ForeverCombatResult.Failed;
                 }
-                input.PressRandom(ForeverBindings.StartAttack.ToKeyAction("Forever Start Attack"), token);
+                input.PressRandom(startAttack, token);
                 attackStarted = true;
                 return ForeverCombatResult.ActionSent;
             case ForeverFightStep.Combat:

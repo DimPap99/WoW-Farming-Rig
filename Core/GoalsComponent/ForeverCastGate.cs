@@ -34,8 +34,8 @@ public static class ForeverCastGate
             !ForeverFrame.IsVerifiedSetup(sample) || sample.PlayerHealth <= 0 ||
             sample.TargetFlags is not { PlayerDead: false } flags ||
             !IsActionReady(sample, action, spells) ||
-            !ForeverBindings.ActionButton(action.Slot, action.ConsoleKey, action.Modifier)
-                .IsBoundIn(sample))
+            !ForeverBindings.ActionButton(action.Slot)
+                .IsBoundTo(sample, action.ConsoleKey, action.Modifier))
             return false;
 
         if (selfCast)

@@ -146,7 +146,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                     if (TimedOut(5000) || !IdleForMove(bars, flags) ||
                         Vector2.Distance(origin, new((float)world.X, (float)world.Y)) > 0.3f ||
                         AngularDifference(direction, map.Direction) > 0.1 ||
-                        input.ForwardKey != ForeverBindings.MoveForward.Key ||
+                        !ForeverBindings.MoveForward.IsBoundTo(bars, input.ForwardKey) ||
                         !RouteReady(bars, out reason))
                     {
                         Fail($"Route preflight failed: {reason}");
@@ -157,7 +157,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                     // PressFixed releases the key; the finally is a belt-and-braces
                     // release if the process or cancellation interrupts the press.
                     pressFrameId = bars.FrameId;
-                    ConsoleKey forwardKey = ForeverBindings.MoveForward.Key;
+                    ConsoleKey forwardKey = input.ForwardKey;
                     try
                     {
                         input.PressFixed(forwardKey, 200, token);
@@ -282,7 +282,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
         Vector3 mapWorld = map.ToWorld(area);
         Vector2 forward = new(MathF.Cos((float)map.Direction), MathF.Sin((float)map.Direction));
         Vector2 ahead = here + forward * 3f;
-        if (!ForeverBindings.MoveForward.IsBoundIn(bars) ||
+        if (!ForeverBindings.MoveForward.IsBoundTo(bars, input.ForwardKey) ||
             Vector2.Distance(here, new(mapWorld.X, mapWorld.Y)) > 1f)
         {
             reason = "position or forward binding is inconsistent";
