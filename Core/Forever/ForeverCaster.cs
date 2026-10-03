@@ -24,7 +24,9 @@ public sealed class ForeverCaster
     private const int RowRefreshMs = 650;
     private const int PressMs = 75;
     private const int PollMs = 50;
-    // A cast bar, or a self cast that may follow one, gets the longer wait.
+    // A cast bar, a next-swing ability (AfterCastWaitSwing: its success
+    // event arrives with the swing), or a self cast that may follow a cast
+    // bar gets the longer wait.
     private const int LongCastTimeoutMs = 5000;
     private const int InstantCastTimeoutMs = 3000;
 
@@ -74,7 +76,8 @@ public sealed class ForeverCaster
         item.SetClicked();
 
         long start = GetTimestamp();
-        int timeoutMs = selfCast || item.HasCastBar ? LongCastTimeoutMs : InstantCastTimeoutMs;
+        int timeoutMs = selfCast || item.HasCastBar || item.AfterCastWaitSwing
+            ? LongCastTimeoutMs : InstantCastTimeoutMs;
         while (GetElapsedTime(start).TotalMilliseconds < timeoutMs)
         {
             if (interrupt())
@@ -87,7 +90,10 @@ public sealed class ForeverCaster
                 continue;
             }
             if (flags.PlayerDead)
+            {
+                logger.LogWarning("Forever cast of {Spell} ended: the player died", item.Name);
                 return ForeverCastResult.Failed;
+            }
 
             if (current.LastCastEvent is { } castEvent &&
                 castEvent.ConfirmsNewSuccess(previousEvent, item.SpellId) &&
@@ -100,7 +106,11 @@ public sealed class ForeverCaster
             if (!selfCast &&
                 flags.Present && current.TargetIdentity is { Present: true } currentTarget &&
                 currentTarget != targetIdentity)
+            {
+                logger.LogWarning("Forever cast of {Spell} ended: target changed from {Before} to {Current}",
+                    item.Name, targetIdentity, currentTarget);
                 return ForeverCastResult.Failed;
+            }
 
             // A buff that newly shows on its slot's aura reference is direct
             // proof even when the successful spellcast event arrives after the frame.
@@ -111,8 +121,11 @@ public sealed class ForeverCaster
             Thread.Sleep(PollMs);
         }
 
-        logger.LogWarning("Forever cast success event was not observed for {Spell} ({SpellId})",
-            item.Name, item.SpellId);
+        tracker.TryGetLatest(out VisualBarSample last);
+        logger.LogWarning("Forever cast success event was not observed for {Spell} ({SpellId}) within {Timeout}ms; " +
+            "event before {Before}, last {Last}; target before {TargetBefore}, last {TargetLast}",
+            item.Name, item.SpellId, timeoutMs, previousEvent, last.LastCastEvent,
+            targetIdentity, last.TargetIdentity);
         return ForeverCastResult.Failed;
     }
 

@@ -25,7 +25,7 @@ public static class ForeverCastGate
             action.BeforeCastDelay > 0 || action.AfterCastDelay > 0 ||
             action.BeforeCastFaceTarget || action.BeforeCastStop ||
             action.AfterCastWaitBuff || action.AfterCastWaitBag ||
-            action.AfterCastWaitSwing || action.AfterCastWaitCastbar ||
+            action.AfterCastWaitCastbar ||
             action.AfterCastWaitCombat || action.AfterCastWaitGCD ||
             action.AfterCastWaitMeleeRange ||
             action.ConsoleKey == ConsoleKey.NoName ||

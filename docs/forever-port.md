@@ -239,13 +239,35 @@ everything class-specific and the behaviour is shared:
   70% health and, for mana users only, 60% mana; rage and energy are not gated.
 - A profile `MacroText` is typed as a command, as upstream does. This is how
   `[@player]` self casts are expressed.
+- **Melee reach.** A next-swing ability (upstream `AfterCastWaitSwing`, e.g.
+  Raptor Strike) resolves on a melee swing, so its success event can take a
+  swing to arrive and the caster waits the longer window. Its own slot is not a
+  melee signal: the beta reports Raptor Strike in range at ranged distance. When
+  the Attack ability (`ForeverFrame.AttackSpellId`, 6603) is on a main-bar slot,
+  its button's range is melee reach: next-swing actions are pressed only inside
+  it, and `AutoAttack` presses `STARTATTACK` once at range and once more on
+  reaching melee. At range that starts a hunter's Auto Shot; in melee it starts
+  swings. The ranged minimum distance, where neither reaches, sends the fight
+  back to pursuit. A profile with a next-swing action refuses to start without
+  an Attack button. Without one, nothing changes.
+- **Too close to open.** Out of combat, a candidate that is inside melee reach
+  but outside every opener's range is skipped for another Tab target; aggro
+  still brings a close mob into the fight.
 
 `Paladin_Forever_Auto.json` encodes the thresholds the Paladin code used to
 hard-wire: Holy Light below 70% in combat and below 90% out of combat, Seal at
-70% health and 25% mana, Judgement as the opener, then melee and Holy Strike. A
-new class needs a profile, a live bounded sweep, and its class ID in
-`ForeverVerifiedSetup.IsVerifiedClass`. Rogue finishers, DoTs, forms and pets
-still need channel work first; the profile rules refuse them.
+70% health and 25% mana, Judgement as the opener, then melee and Holy Strike.
+`Hunter_Forever_Auto.json` (level 6, no pet) uses the same shared behaviour:
+Serpent Sting (refreshed at most every 15 seconds through the upstream
+`Cooldown` field) and Auto Shot at range, then melee and Raptor Strike.
+
+`ForeverVerifiedSetup` lists what has been verified live: Tirisfal Glades on
+Azeroth and Durotar on Kalimdor (`IsVerifiedMap` pairs each UI map with the
+instance map its world positions report), and the Paladin and Hunter auto
+profiles (`AutoProfileFor`). The controller trial loads the profile verified for
+the logged-in class. A new class or map needs a profile, a live bounded sweep,
+and an entry here. Rogue finishers, DoTs, forms and pets still need channel work
+first; the profile rules refuse them.
 
 ## Live findings from the beta client
 

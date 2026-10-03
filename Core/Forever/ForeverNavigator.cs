@@ -70,8 +70,8 @@ public sealed class ForeverNavigator : IDisposable
     public bool TryReadOnlyPreflight(VisualBarSample bars, out string reason)
     {
         reason = string.Empty;
-        if (bars.Position is not { UIMapId: ForeverVerifiedSetup.UIMapId } map ||
-            bars.WorldPosition is not { InstanceMapId: 0 } world ||
+        if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
+            !ForeverVerifiedSetup.IsVerifiedMap(map.UIMapId, world.InstanceMapId) ||
             !ForeverBindings.MoveForward.IsBoundIn(bars) ||
             !ForeverBindings.TurnLeft(input.TurnLeftKey).IsBoundIn(bars) ||
             !ForeverBindings.TurnRight(input.TurnRightKey).IsBoundIn(bars) ||
@@ -80,7 +80,7 @@ public sealed class ForeverNavigator : IDisposable
             reason = "position or movement bindings are incomplete";
             return false;
         }
-        if (!TryNav(out reason))
+        if (!TryNav(map.UIMapId, out reason))
             return false;
         Vector2 here = new((float)world.X, (float)world.Y);
         if (!PlayerMapAgrees(map, here))
@@ -96,7 +96,7 @@ public sealed class ForeverNavigator : IDisposable
     {
         reason = string.Empty;
         if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
-            !TryNav(out reason))
+            !TryNav(map.UIMapId, out reason))
             return ForeverNavigationResult.Failed;
         Vector2 here = new((float)world.X, (float)world.Y);
         roamOrigin ??= here;
@@ -117,7 +117,7 @@ public sealed class ForeverNavigator : IDisposable
     {
         reason = string.Empty;
         if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
-            bars.TargetIdentity != target || !TryNav(out reason))
+            bars.TargetIdentity != target || !TryNav(map.UIMapId, out reason))
             return ForeverNavigationResult.Failed;
         Vector2 here = new((float)world.X, (float)world.Y);
         if (pending != PendingAction.None)
@@ -142,7 +142,7 @@ public sealed class ForeverNavigator : IDisposable
         reason = string.Empty;
         if (bars.Position is not { } map ||
             bars.WorldPosition is not { } world ||
-            bars.TargetIdentity != target || !TryNav(out reason))
+            bars.TargetIdentity != target || !TryNav(map.UIMapId, out reason))
         {
             StopPursuit();
             return ForeverNavigationResult.Failed;
@@ -592,12 +592,12 @@ public sealed class ForeverNavigator : IDisposable
         return false;
     }
 
-    private bool TryNav(out string reason)
+    private bool TryNav(int uiMapId, out string reason)
     {
         reason = string.Empty;
-        if (!ForeverNavmesh.TryGetVerifiedArea(maps, out WorldMapArea area))
+        if (!ForeverNavmesh.TryGetVerifiedArea(maps, uiMapId, out WorldMapArea area))
         {
-            reason = $"Forever map {ForeverVerifiedSetup.UIMapId} is unavailable";
+            reason = $"Forever map {uiMapId} is not verified";
             return false;
         }
         string cache = ForeverNavmesh.CacheDirectory(data, area.Continent);

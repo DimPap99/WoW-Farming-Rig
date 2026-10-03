@@ -22,6 +22,12 @@ public static class ForeverFrame
     public const int MaxTargetLevelsAbove = 1;
 
     /// <summary>
+    /// The general Attack ability every class has. Its action button's range
+    /// is melee reach, which the rotation reads when one is on the main bar.
+    /// </summary>
+    public const int AttackSpellId = 6603;
+
+    /// <summary>
     /// Everything the route, target and cast decisions read. The bag rows are
     /// left out: the bounded trial does not read inventory, and the bottom of
     /// the overlay can be clipped.
@@ -56,11 +62,11 @@ public static class ForeverFrame
         bars.TargetIdentity is { } identity &&
         flags.Present == identity.Present;
 
-    /// <summary>The trial inputs, from a verified class in the open world on the verified map.</summary>
+    /// <summary>The trial inputs, from a verified class in the open world on a verified map.</summary>
     public static bool IsVerifiedSetup(VisualBarSample bars) =>
         HasTrialInputs(bars) &&
-        bars.Position is { UIMapId: ForeverVerifiedSetup.UIMapId } &&
-        bars.WorldPosition is { InstanceMapId: 0 } &&
+        bars.Position is { } map && bars.WorldPosition is { } world &&
+        ForeverVerifiedSetup.IsVerifiedMap(map.UIMapId, world.InstanceMapId) &&
         bars.PlayerIdentity is { } player &&
         ForeverVerifiedSetup.IsVerifiedClass(player.ClassId);
 

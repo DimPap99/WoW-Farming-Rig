@@ -1121,8 +1121,14 @@ bound to its key, usable with enough mana, and off cooldown. Forever runs only t
   action with `"AfterCastAuraExpected": true` is a buff: it is cast only while no player
   aura shows its slot's icon.
 * `Pull` holds openers. Each runs once per target, and only while every buff is up.
-* `Combat` is the priority list. `"AutoAttack"` starts melee once per target.
+* `Combat` is the priority list. `"AutoAttack"` presses Start Attack once per target.
 
 `"MacroText"` is typed as a command instead of pressing the key, for example
-`"/cast [@player] Holy Light(Rank 1)"`. See `Json/class/Paladin_Forever_Auto.json` and
-the [Forever port status](forever-port.md).
+`"/cast [@player] Holy Light(Rank 1)"`. `"Cooldown"` (milliseconds) limits how often
+an action is pressed, e.g. a 15-second sting. An action with `"AfterCastWaitSwing": true`
+resolves on the next melee swing, like Raptor Strike. It needs the Attack ability on a
+main-bar slot, whose range tells melee reach. With that button, `"AutoAttack"` is pressed
+again on reaching melee after starting at range.
+
+See `Json/class/Paladin_Forever_Auto.json`, `Json/class/Hunter_Forever_Auto.json` and the
+[Forever port status](forever-port.md).

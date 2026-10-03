@@ -111,6 +111,7 @@ try
     IWowScreen screen = provider.GetRequiredService<IWowScreen>();
     ForeverVisualBarTracker tracker = provider.GetRequiredService<ForeverVisualBarTracker>();
     bool ready = false;
+    int classId = 0;
     // Only this thread captures until BotController starts its addon thread.
     for (int i = 0; i < 100 && !cts.IsCancellationRequested; i++)
     {
@@ -120,6 +121,7 @@ try
             ForeverFrame.HasTrialInputs(bars))
         {
             ready = true;
+            classId = bars.PlayerIdentity?.ClassId ?? 0;
             break;
         }
         Thread.Sleep(100);
@@ -130,10 +132,20 @@ try
         return 2;
     }
 
+    // The autonomous run uses the profile verified for the logged-in class;
+    // the bounded route trial exists for the Paladin only.
+    string? profile = auto
+        ? ForeverVerifiedSetup.AutoProfileFor(classId)
+        : ForeverVerifiedSetup.PaladinTrialProfile;
+    if (profile is null)
+    {
+        Console.Error.WriteLine($"No verified Forever profile for class {(UnitClass)classId}; no input sent.");
+        return 2;
+    }
+    Console.WriteLine($"Loading {profile}.");
+
     using BotController controller = ActivatorUtilities.CreateInstance<BotController>(provider);
-    if (!controller.LoadClassProfile(auto
-            ? ForeverVerifiedSetup.AutoProfile
-            : ForeverVerifiedSetup.TrialProfile))
+    if (!controller.LoadClassProfile(profile))
     {
         Console.Error.WriteLine("Normal controller did not load the Forever profile.");
         return 2;
@@ -188,7 +200,7 @@ try
                     Console.WriteLine($"  health={current.PlayerHealth:P0}, mana={current.PlayerPower:P0}, " +
                         $"target={current.TargetHealth:P0}, flags={current.TargetFlags}, " +
                         $"auras={current.SlotAuras?.ToString() ?? "unreadable"}, marker={current.TargetScreenPosition}, " +
-                        $"range2/3={current.ActionStates?.GetSlot(2)?.InRange}/{current.ActionStates?.GetSlot(3)?.InRange}, " +
+                        $"range1/2/3={current.ActionStates?.GetSlot(1)?.InRange}/{current.ActionStates?.GetSlot(2)?.InRange}/{current.ActionStates?.GetSlot(3)?.InRange}, " +
                         $"cast={current.LastCastEvent}, death={current.LastDeathEvent}, loot={current.Loot}, " +
                         $"frameReady={ForeverFrame.HasTrialInputs(current)}");
                 else
