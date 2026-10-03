@@ -96,5 +96,14 @@ public sealed class ForeverDiagnosticController : IBotController, IDisposable
     public void LoadPathProfile(Dictionary<int, string> pathFilenames) { }
     public void OverrideClassConfig(ClassConfiguration classConfig) { }
     public void SaveClassConfig() { }
-    public void Dispose() => cts.Cancel();
+
+    public void Dispose()
+    {
+        cts.Cancel();
+
+        // Screen capture is owned by the outer service provider. Let the
+        // capture loop leave Update before that provider disposes the device.
+        if (Thread.CurrentThread != captureThread && captureThread.IsAlive)
+            captureThread.Join();
+    }
 }

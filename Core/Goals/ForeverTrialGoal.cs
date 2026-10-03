@@ -1,6 +1,6 @@
+using Core.Database;
+using Core.Forever;
 using Core.GOAP;
-
-using Game;
 
 using Microsoft.Extensions.Logging;
 
@@ -9,6 +9,7 @@ using PPather.Navmesh;
 using SharedLib;
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -34,12 +35,8 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
 
     public bool TryReadOnlyRoutePreflight(out string reason)
     {
-        if (!player.TryGetForeverVisualVitals(out VisualBarSample bars) ||
-            !AddonReader.HasForeverTrialFrame(bars) ||
-            bars.Position is not { UIMapId: 1420 } ||
-            bars.WorldPosition is not { InstanceMapId: 0 } ||
-            bars.PlayerIdentity is not { ClassId: (int)UnitClass.Paladin } ||
-            bars.PlayerPowerType != 0 ||
+        if (!tracker.TryGetLatest(out VisualBarSample bars) ||
+            !ForeverFrame.IsVerifiedSetup(bars) ||
             bars.TargetFlags is not { } flags ||
             !IdleForMove(bars, flags))
         {
@@ -58,11 +55,10 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
     }
 
     private readonly ILogger<ForeverTrialGoal> logger;
-    private readonly PlayerReader player;
     private readonly ForeverVisualBarTracker tracker;
     private readonly ConfigurableInput input;
-    private readonly CastingHandler caster;
-    private readonly SpellBookReader spellBook;
+    private readonly ForeverCaster caster;
+    private readonly SpellDB spells;
     private readonly ClassConfiguration config;
     private readonly DataConfig data;
     private readonly WorldMapAreaDB maps;
@@ -80,18 +76,17 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
     private bool sawDeadTarget;
 
     public ForeverTrialGoal(ILogger<ForeverTrialGoal> logger,
-        PlayerReader player, ForeverVisualBarTracker tracker,
-        ConfigurableInput input, CastingHandler caster,
-        SpellBookReader spellBook, ClassConfiguration config, DataConfig data,
+        ForeverVisualBarTracker tracker,
+        ConfigurableInput input, ForeverCaster caster,
+        SpellDB spells, ClassConfiguration config, DataConfig data,
         WorldMapAreaDB maps, CancellationTokenSource<GoapAgent> cts)
         : base(nameof(ForeverTrialGoal))
     {
         this.logger = logger;
-        this.player = player;
         this.tracker = tracker;
         this.input = input;
         this.caster = caster;
-        this.spellBook = spellBook;
+        this.spells = spells;
         this.config = config;
         this.data = data;
         this.maps = maps;
@@ -112,8 +107,8 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
 
         try
         {
-            if (!player.TryGetForeverVisualVitals(out VisualBarSample bars) ||
-                !AddonReader.HasForeverTrialFrame(bars))
+            if (!tracker.TryGetLatest(out VisualBarSample bars) ||
+                !ForeverFrame.HasTrialInputs(bars))
             {
                 if (phase == Phase.Initial && !TimedOut(10000))
                     return;
@@ -121,12 +116,10 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                 return;
             }
 
-            if (bars.Position is not { UIMapId: 1420 } map ||
-                bars.WorldPosition is not { InstanceMapId: 0 } world ||
-                bars.TargetFlags is not { PlayerDead: false } flags ||
-                bars.PlayerIdentity is not { ClassId: (int)UnitClass.Paladin } ||
-                bars.PlayerPowerType != 0 ||
-                flags.Present != bars.TargetPresent)
+            if (!ForeverFrame.IsVerifiedSetup(bars) ||
+                bars.Position is not { } map ||
+                bars.WorldPosition is not { } world ||
+                bars.TargetFlags is not { PlayerDead: false } flags)
             {
                 Fail("Trial map, class, or combat flags changed");
                 return;
@@ -142,18 +135,18 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                     }
                     origin = new((float)world.X, (float)world.Y);
                     direction = map.Direction;
-                    firstFrameId = tracker.LatestFrameId;
+                    firstFrameId = bars.FrameId;
                     Enter(Phase.Stable);
                     break;
 
                 case Phase.Stable:
-                    if (tracker.LatestFrameId == firstFrameId && !TimedOut(5000))
+                    if (bars.FrameId == firstFrameId && !TimedOut(5000))
                         return;
                     string reason = "player moved or resources changed";
                     if (TimedOut(5000) || !IdleForMove(bars, flags) ||
                         Vector2.Distance(origin, new((float)world.X, (float)world.Y)) > 0.3f ||
                         AngularDifference(direction, map.Direction) > 0.1 ||
-                        input.ForwardKey != ConsoleKey.UpArrow ||
+                        input.ForwardKey != ForeverBindings.MoveForward.Key ||
                         !RouteReady(bars, out reason))
                     {
                         Fail($"Route preflight failed: {reason}");
@@ -163,20 +156,21 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                     // A second full capture immediately preceded this one input.
                     // PressFixed releases the key; the finally is a belt-and-braces
                     // release if the process or cancellation interrupts the press.
-                    pressFrameId = tracker.LatestFrameId;
+                    pressFrameId = bars.FrameId;
+                    ConsoleKey forwardKey = ForeverBindings.MoveForward.Key;
                     try
                     {
-                        input.PressFixed(ConsoleKey.UpArrow, 200, token);
+                        input.PressFixed(forwardKey, 200, token);
                     }
                     finally
                     {
-                        input.SetKeyState(ConsoleKey.UpArrow, false, true);
+                        input.SetKeyState(forwardKey, false, true);
                     }
                     Enter(Phase.VerifyStep);
                     break;
 
                 case Phase.VerifyStep:
-                    if (tracker.LatestFrameId == pressFrameId && !TimedOut(5000))
+                    if (bars.FrameId == pressFrameId && !TimedOut(5000))
                         return;
                     if (!IdleForMove(bars, flags))
                     {
@@ -219,7 +213,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                     if (candidateIdentity is null)
                     {
                         candidateIdentity = selected;
-                        candidateFrameId = tracker.LatestFrameId;
+                        candidateFrameId = bars.FrameId;
                         return;
                     }
                     if (candidateIdentity != selected)
@@ -227,15 +221,16 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                         Fail("Selected target changed before the trial cast");
                         return;
                     }
-                    if (tracker.LatestFrameId == candidateFrameId)
+                    if (bars.FrameId == candidateFrameId)
                         return;
 
                     KeyAction? judgement = config.Pull.Sequence.SingleOrDefault();
                     if (judgement is null ||
-                        !ForeverCastGate.CanPress(bars, judgement, spellBook))
+                        !ForeverCastGate.CanPress(bars, judgement, spells))
                         return;
 
-                    if (!caster.Cast(judgement, () => token.IsCancellationRequested))
+                    if (caster.TryCast(judgement, () => token.IsCancellationRequested) !=
+                        ForeverCastResult.Succeeded)
                     {
                         Fail("Judgement success event was not confirmed");
                         return;
@@ -276,44 +271,31 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
         if (config.Paths is not { Length: 0 } ||
             config.Loot || config.UseMount ||
             bars.Position is not { } map || bars.WorldPosition is not { } world ||
-            !maps.TryGet(1420, out WorldMapArea area) || area.MapID != 0 ||
-            area.Continent != "Azeroth")
+            !ForeverNavmesh.TryGetVerifiedArea(maps, out WorldMapArea area))
         {
             reason = "profile or map does not match the local trial";
             return false;
         }
 
         Vector2 here = new((float)world.X, (float)world.Y);
-        int? moveCode = bars.Bindings?.GetCode(2);
-        var moveBinding = moveCode is > 0
-            ? KeyReader.DecodeBinding(moveCode.Value) : null;
-        Vector3 mapWorld = WorldMapAreaDB.ToWorld_FlipXY(
-            new Vector3((float)(map.MapX * 100), (float)(map.MapY * 100), 0), area);
+        Vector3 mapWorld = map.ToWorld(area);
         Vector2 forward = new(MathF.Cos((float)map.Direction), MathF.Sin((float)map.Direction));
         Vector2 ahead = here + forward * 3f;
-        if (moveBinding is not { bindingId: BindingID.MOVEFORWARD } ||
-            !((moveBinding.Value.key1 == ConsoleKey.UpArrow &&
-               moveBinding.Value.mod1 == ModifierKey.None) ||
-              (moveBinding.Value.key2 == ConsoleKey.UpArrow &&
-               moveBinding.Value.mod2 == ModifierKey.None)) ||
+        if (!ForeverBindings.MoveForward.IsBoundIn(bars) ||
             Vector2.Distance(here, new(mapWorld.X, mapWorld.Y)) > 1f)
         {
             reason = "position or forward binding is inconsistent";
             return false;
         }
 
-        NavmeshBakeOptions bake = new();
-        string version = typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0";
-        string hash = NavmeshSettings.ComputeSettingsHash("forever", version,
-            bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope);
-        string cache = Path.Combine(data.Navmesh, area.Continent, hash);
+        string cache = ForeverNavmesh.CacheDirectory(data, area.Continent);
         if (!Directory.Exists(cache))
         {
             reason = "baked Forever navmesh is missing";
             return false;
         }
 
-        using NavmeshPathfinder nav = new(logger, null, cache, bake, new NavmeshQueryOptions());
+        using NavmeshPathfinder nav = ForeverNavmesh.OpenDiskOnly(logger, cache);
         if (!nav.TryGetHeight(here.X, here.Y, out float z))
         {
             reason = "current position is outside the baked mesh";
@@ -341,7 +323,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
         return true;
     }
 
-    private static float PathLength(System.Collections.Generic.List<Vector3> points)
+    private static float PathLength(List<Vector3> points)
     {
         float length = 0;
         for (int i = 1; i < points.Count; i++)

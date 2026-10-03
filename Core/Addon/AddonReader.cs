@@ -1,4 +1,5 @@
 using Core.Database;
+using Core.Forever;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -17,7 +18,7 @@ public sealed partial class AddonReader : IAddonReader
 {
     private readonly ILogger<AddonReader> logger;
     private readonly IAddonDataProvider reader;
-    private readonly ForeverVisualBarTracker? foreverVisualBars;
+    private readonly ForeverReaderFeed? forever;
 
     private readonly PlayerReader playerReader;
     private readonly CreatureDB creatureDb;
@@ -29,7 +30,6 @@ public sealed partial class AddonReader : IAddonReader
 
     private readonly SpellBookReader spellBookReader;
     private readonly KeyBindingsReader keyBindingsReader;
-    private readonly BagReader bagReader;
     private readonly ActionBarTextureReader textureReader;
 
     private bool awaitingReinitialization;
@@ -42,7 +42,6 @@ public sealed partial class AddonReader : IAddonReader
     public RecordInt GlobalTime { get; }
 
     private int previousGlobalTime;
-    private long lastForeverFrameId;
 
     private int lastTargetGuid = -1;
     public string TargetName { get; private set; } = string.Empty;
@@ -63,45 +62,19 @@ public sealed partial class AddonReader : IAddonReader
         ActionBarTextureReader textureReader,
         DataFrame[] frames,
         IServiceProvider sp,
-        ForeverVisualBarTracker? foreverVisualBars = null)
+        ForeverReaderFeed? forever = null)
     {
         this.logger = logger;
         this.reader = reader;
-        this.foreverVisualBars = foreverVisualBars;
+        this.forever = forever;
         this.creatureDb = creatureDb;
         this.combatLog = combatLog;
         this.textReader = textReader;
         this.playerReader = playerReader;
         this.spellBookReader = spellBookReader;
         this.keyBindingsReader = keyBindingsReader;
-        bagReader = sp.GetRequiredService<BagReader>();
         this.textureReader = textureReader;
         DataReady = resetEvent;
-
-        KeyReader.ForeverActionBarProvider = foreverVisualBars?.IsEnabled == true
-            ? () => playerReader.TryGetForeverActionBar(out var bar) ? bar : null
-            : null;
-        ActionBarBits<IUsableAction>.ForeverStatesProvider =
-            foreverVisualBars?.IsEnabled == true
-                ? () => playerReader.TryGetForeverActionStates(out var states)
-                    ? states : null
-                : null;
-        sp.GetRequiredService<ActionBarCooldownReader>().ForeverSampleProvider =
-            foreverVisualBars?.IsEnabled == true
-                ? () => playerReader.TryGetForeverVisualVitals(out var bars)
-                    ? bars : null
-                : null;
-        sp.GetRequiredService<ActionBarCostReader>().RejectForeverCosts =
-            foreverVisualBars?.IsEnabled == true;
-        bagReader.ForeverBagsProvider = foreverVisualBars?.IsEnabled == true
-            ? () => playerReader.TryGetForeverBags(out var bags) ? bags : null
-            : null;
-        sp.GetRequiredService<AddonBits>().ForeverTargetFlagsProvider =
-            foreverVisualBars?.IsEnabled == true
-                ? () => playerReader.TryGetForeverVisualVitals(out var bars) &&
-                    bars.TargetFlags is { } flags &&
-                    bars.TargetPresent == flags.Present ? flags : null
-                : null;
 
         GlobalTime = new(frames.Length - 2);
 
@@ -110,33 +83,11 @@ public sealed partial class AddonReader : IAddonReader
 
     public void Update()
     {
-        // Run even when the classic pixel strip is absent: Forever's guarded
-        // addon does not currently emit GlobalTime, but its visual probe can be
-        // validated independently from the same captured frame.
-        foreverVisualBars?.Update();
-
-        KeyReader.RequireGameBindings = foreverVisualBars?.IsEnabled == true;
-
-        if (foreverVisualBars?.IsEnabled == true)
+        // Forever has no Classic pixel strip; its visual channel feeds the
+        // shared readers instead.
+        if (forever is { IsEnabled: true })
         {
-            // The guarded Forever add-on has no GlobalTime frame. Refresh
-            // only visual-backed readers; legacy readers stay off.
-            playerReader.Update(this.reader);
-            bool visualAvailable =
-                playerReader.TryGetForeverVisualVitals(out VisualBarSample bars);
-            spellBookReader.UpdateForever(visualAvailable ? bars.SpellBook : null);
-            keyBindingsReader.UpdateForever(visualAvailable ? bars.Bindings : null);
-            bagReader.UpdateForever(visualAvailable ? bars.Bags : null);
-            // The bounded trial waits on DataReady. Signal it only once
-            // per new frame with all trial inputs; the guarded addon has no
-            // Classic GlobalTime cell to drive that signal.
-            long frameId = foreverVisualBars.LatestFrameId;
-            if (visualAvailable && frameId != lastForeverFrameId &&
-                HasForeverTrialFrame(bars))
-            {
-                lastForeverFrameId = frameId;
-                DataReady.Set();
-            }
+            forever.Update();
             return;
         }
 
@@ -205,37 +156,6 @@ public sealed partial class AddonReader : IAddonReader
 
         DataReady.Set();
     }
-
-    // The bounded route and one-cast trial does not read inventory. Keep its
-    // capture gate independent of the bag row, which can be incomplete when
-    // the bottom of the overlay is clipped.
-    public static bool HasForeverTrialFrame(VisualBarSample bars) =>
-        bars.Position is { UIMapId: > 0 } &&
-        bars.WorldPosition is not null &&
-        bars.PlayerIdentity is { Level: > 0 } &&
-        bars.PlayerPowerType is not null &&
-        bars.PlayerHealthMax is > 0 && bars.PlayerPowerMax is > 0 &&
-        bars.TargetFlags is { } flags &&
-        bars.TargetPresent == flags.Present &&
-        bars.LastCastEvent is not null &&
-        bars.ActionBar is
-            { ReadableCount: VisualActionBarSnapshot.SlotCount } &&
-        bars.ActionStates is
-            { ReadableCount: VisualActionBarSnapshot.SlotCount } &&
-        bars.Cooldowns is
-            { ReadableCount: VisualCooldownGridSnapshot.SlotCount } &&
-        bars.SpellBook is { Count: > 0 } book &&
-        book.ReadableCount == book.Count &&
-        bars.Bindings is not null;
-
-    public static bool HasForeverControllerFrame(VisualBarSample bars) =>
-        HasForeverTrialFrame(bars) && bars.Bags is { IsComplete: true };
-
-    public static bool HasForeverTargetIdentity(VisualBarSample bars) =>
-        HasForeverTrialFrame(bars) &&
-        bars.TargetFlags is { } flags &&
-        bars.TargetIdentity is { } identity &&
-        flags.Present == identity.Present;
 
     public void SessionReset()
     {

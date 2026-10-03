@@ -29,4 +29,11 @@ public sealed class NavmeshQueryOptions
 
     /// <summary>Road-attractor core half-width, yards.</summary>
     public float RoadCore { get; set; } = 8f;
+
+    /// <summary>
+    /// For a position with no height, keep only the surfaces directly under its
+    /// X/Y before choosing a floor, so a taller neighbour inside the search box
+    /// cannot win. Off by default; the Forever runtime turns it on.
+    /// </summary>
+    public bool PreferGroundUnderPoint { get; set; }
 }

@@ -1,7 +1,6 @@
 using Core.Database;
 using Core.Goals;
 using Core.GoalsComponent;
-using Core.Forever;
 using Core.GOAP;
 using Core.Session;
 
@@ -38,18 +37,18 @@ public static class GoalFactory
         services.AddScoped<GoapAgentState>();
 
         services.AddScoped<CancellationTokenSource<GoapAgent>>();
-        var playerReader = sp.GetRequiredService<PlayerReader>();
-        bool forever = playerReader.IsForeverVisual;
-        if (forever)
-            services.AddScoped<IGrindSessionHandler, NoGrindSessionHandler>();
-        else
-            services.AddScoped<IGrindSessionHandler, GrindSessionHandler>();
+
+        // WoW: Forever composes its own guarded goal set.
+        if (sp.GetRequiredService<PlayerReader>().IsForeverVisual)
+            return Forever.ForeverGoalFactory.Create(services, sp, classConfig);
+
+        services.AddScoped<IGrindSessionHandler, GrindSessionHandler>();
 
         // Always on, unlike the bag and coin trackers below: a level-up is one line every
         // few hours, not the per-item chatter LogBagChanges exists to silence.
         services.AddScoped<LevelChangeTracker>();
 
-        if (!forever && classConfig.LogBagChanges)
+        if (classConfig.LogBagChanges)
         {
             services.AddScoped<IBagChangeTracker, BagChangeTracker>();
             services.AddScoped<IMoneyChangeTracker, MoneyChangeTracker>();
@@ -61,7 +60,7 @@ public static class GoalFactory
         }
 
 
-        if (forever || classConfig.Mode != Mode.Grind)
+        if (classConfig.Mode != Mode.Grind)
         {
             services.AddScoped<IBlacklist, NoBlacklist>();
 
@@ -84,46 +83,6 @@ public static class GoalFactory
             services.AddScoped<GoapGoal, BlacklistTargetGoal>();
         }
 
-        if (forever)
-        {
-            bool trial = string.Equals(classConfig.FileName,
-                "Paladin_Forever_Trial.json", StringComparison.OrdinalIgnoreCase);
-            bool automatic = string.Equals(classConfig.FileName,
-                "Paladin_Forever_Auto.json", StringComparison.OrdinalIgnoreCase);
-            if (!trial && !automatic)
-                throw new NotSupportedException("Unsupported Forever Paladin profile.");
-
-            // CastingHandler's Classic collaborators are constructed but never
-            // called by its Forever branch. Do not construct the Classic goal
-            // set, combat tracker, route navigator, or trainer planner.
-            services.AddScoped<PlayerDirection>();
-            services.AddScoped<StopMoving>();
-            services.AddScoped<ReactCastError>();
-            services.AddScoped<CastingHandlerInterruptWatchdog>();
-            services.AddScoped<CastingHandler>();
-            services.AddScoped<ApproachThrottle>();
-            services.AddScoped<IMountHandler, MountHandler>();
-            if (automatic)
-            {
-                services.AddSingleton(sp.GetService<ForeverRunOptions>() ?? new ForeverRunOptions());
-                services.AddScoped<ForeverTargetSelector>();
-                services.AddScoped<ForeverNavigator>();
-                services.AddScoped(_ => new Game.MouseCameraInput(
-                    sp.GetRequiredService<Game.WowProcess>()));
-                services.AddScoped<IForeverCombatRoutine, ForeverCombat>();
-                services.AddScoped<IForeverLootRoutine, ForeverLoot>();
-                services.AddScoped<GoapGoal, ForeverAutonomousGoal>();
-            }
-            else
-                services.AddScoped<GoapGoal, ForeverTrialGoal>();
-            return services.BuildServiceProvider(
-                new ServiceProviderOptions
-                {
-                    ValidateOnBuild = true,
-                    ValidateScopes = true
-                });
-        }
-
         services.AddScoped<NpcNameTargeting>();
         services.AddScoped<CursorScan>();
 
@@ -140,6 +99,8 @@ public static class GoalFactory
         services.AddScoped<ThreatFinder>();
         services.AddScoped<TrainerPlanner>();
         services.AddScoped<ActionBarPopulator>();
+
+        var playerReader = sp.GetRequiredService<PlayerReader>();
 
         if (playerReader.Class is UnitClass.Druid)
         {

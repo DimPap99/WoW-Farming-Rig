@@ -1,6 +1,9 @@
+using SharedLib;
+
 using SixLabors.ImageSharp.PixelFormats;
 
 using System;
+using System.Numerics;
 
 namespace Core;
 
@@ -8,7 +11,12 @@ public readonly record struct VisualPositionSample(
     int UIMapId,
     double MapX,
     double MapY,
-    double Direction);
+    double Direction)
+{
+    /// <inheritdoc cref="VisualMapPointSample.ToWorld(WorldMapArea)"/>
+    public Vector3 ToWorld(WorldMapArea area) =>
+        new VisualMapPointSample(UIMapId, MapX, MapY).ToWorld(area);
+}
 
 public readonly record struct VisualWorldPositionSample(
     double X,
@@ -17,7 +25,13 @@ public readonly record struct VisualWorldPositionSample(
     int InstanceMapId);
 
 public readonly record struct VisualMapPointSample(
-    int UIMapId, double MapX, double MapY);
+    int UIMapId, double MapX, double MapY)
+{
+    /// <summary>World X/Y of this normalized map point. Z is 0: the map has no height.</summary>
+    public Vector3 ToWorld(WorldMapArea area) =>
+        WorldMapAreaDB.ToWorld_FlipXY(
+            new Vector3((float)(MapX * 100), (float)(MapY * 100), 0), area);
+}
 
 public readonly record struct VisualScreenPointSample(double X, double Y);
 
@@ -236,7 +250,15 @@ public readonly record struct VisualBarSample(
     VisualNameplateProbeSample? NameplateProbe = null,
     bool? SealOfRighteousnessActive = null,
     VisualDeathEvent? LastDeathEvent = null,
-    VisualLootState? Loot = null);
+    VisualLootState? Loot = null)
+{
+    /// <summary>
+    /// The screen frame this sample was decoded from, set by
+    /// <see cref="ForeverVisualBarTracker"/>. It travels with the data so a
+    /// reader can never pair a newer frame ID with an older frame's values.
+    /// </summary>
+    public long FrameId { get; init; }
+}
 
 /// <summary>
 /// Reads the fixed-color rows drawn by /forevervisual. The full and
@@ -329,81 +351,56 @@ public static class VisualBarReader
         double health = RowFill(pixels, width, height, whiteLeft,
             whiteY - rowStep * 4, whiteWidth, tolerance, BarColor.Green);
 
-        VisualPositionSample? position = TryReadPosition(
-            pixels, width, height, whiteLeft, whiteY, scale, out VisualPositionSample decoded)
-            ? decoded : null;
-        double? actionCooldownFill = TryReadCooldown(
-            pixels, width, height, whiteLeft, whiteY, scale, rowStep, tolerance);
-        bool? targetPresent = TryReadTargetPresence(
-            pixels, width, height, whiteLeft, whiteY, scale);
-        VisualActionSample? watchedAction = TryReadWatchedAction(
-            pixels, width, height, whiteLeft, whiteY, scale);
-        VisualActionBarSnapshot? actionBar = TryReadActionBar(
-            pixels, width, height, whiteLeft, whiteY, scale);
-        VisualActionStateSnapshot? actionStates = TryReadActionStates(
-            pixels, width, height, whiteLeft, whiteY, scale, actionBar);
-        VisualCooldownGridSnapshot? cooldowns = TryReadCooldownGrid(
-            pixels, width, height, whiteLeft, whiteY, scale, actionBar);
-        int? playerHealthMax = TryReadMaximum(pixels, width, height,
-            whiteLeft, whiteY, scale, 11, 12, 0xA55A11);
-        int? playerPowerMax = TryReadMaximum(pixels, width, height,
-            whiteLeft, whiteY, scale, 13, 14, 0xA55A22);
-        VisualWorldPositionSample? worldPosition = TryReadWorldPosition(
-            pixels, width, height, whiteLeft, whiteY, scale);
-        VisualSpellBookSnapshot? spellBook = TryReadSpellBook(
-            pixels, width, height, whiteLeft, whiteY, scale);
-        VisualBindingSnapshot? bindings = TryReadBindings(
-            pixels, width, height, whiteLeft, whiteY, scale);
-        int? playerPowerType = TryReadPowerType(
-            pixels, width, height, whiteLeft, whiteY, scale);
-        VisualBagSnapshot? bags = TryReadBags(
-            pixels, width, height, whiteLeft, whiteY, scale);
-        VisualPlayerIdentity? playerIdentity = TryReadPlayerIdentity(
-            pixels, width, height, whiteLeft, whiteY, scale);
-        VisualTargetFlags? targetFlags = TryReadTargetFlags(
-            pixels, width, height, whiteLeft, whiteY, scale);
-        VisualCastEvent? castEvent = TryReadCastEvent(
-            pixels, width, height, whiteLeft, whiteY, scale);
-        VisualTargetIdentity? targetIdentity = TryReadTargetIdentity(
-            pixels, width, height, whiteLeft, whiteY, scale);
+        Probe probe = new(pixels, width, height, whiteLeft, whiteY, scale);
+        VisualPositionSample? position = TryReadPosition(probe);
+        double? actionCooldownFill = TryReadCooldown(probe, rowStep, tolerance);
+        bool? targetPresent = TryReadTargetPresence(probe);
+        VisualActionSample? watchedAction = TryReadWatchedAction(probe);
+        VisualActionBarSnapshot? actionBar = TryReadActionBar(probe);
+        VisualActionStateSnapshot? actionStates = TryReadActionStates(probe, actionBar);
+        VisualCooldownGridSnapshot? cooldowns = TryReadCooldownGrid(probe, actionBar);
+        int? playerHealthMax = TryReadMaximum(probe, 11, 12, 0xA55A11);
+        int? playerPowerMax = TryReadMaximum(probe, 13, 14, 0xA55A22);
+        VisualWorldPositionSample? worldPosition = TryReadWorldPosition(probe);
+        VisualSpellBookSnapshot? spellBook = TryReadSpellBook(probe);
+        VisualBindingSnapshot? bindings = TryReadBindings(probe);
+        int? playerPowerType = TryReadPowerType(probe);
+        VisualBagSnapshot? bags = TryReadBags(probe);
+        VisualPlayerIdentity? playerIdentity = TryReadPlayerIdentity(probe);
+        VisualTargetFlags? targetFlags = TryReadTargetFlags(probe);
+        VisualCastEvent? castEvent = TryReadCastEvent(probe);
+        VisualTargetIdentity? targetIdentity = TryReadTargetIdentity(probe);
         if (targetFlags is { } checkedFlags &&
             targetIdentity is { } checkedIdentity &&
             checkedFlags.Present != checkedIdentity.Present)
             targetIdentity = null;
         VisualWorldPositionSample? targetWorldPosition =
             targetIdentity is { Present: true } targetId
-                ? TryReadTargetWorldPosition(pixels, width, height,
-                    whiteLeft, whiteY, scale, targetId)
+                ? TryReadTargetWorldPosition(probe, targetId)
                 : null;
         VisualMapPointSample? targetMapPosition =
             targetIdentity is { Present: true } mapTargetId
-                ? TryReadTargetMapPosition(pixels, width, height,
-                    whiteLeft, whiteY, scale, mapTargetId)
+                ? TryReadTargetMapPosition(probe, mapTargetId)
                 : null;
         VisualNearestCreatureSample? nearestCreature =
             targetIdentity is { Present: true } closestId
-                ? TryReadNearestCreature(pixels, width, height,
-                    whiteLeft, whiteY, scale, closestId)
+                ? TryReadNearestCreature(probe, closestId)
                 : null;
         VisualScreenPointSample? targetScreen =
             targetIdentity is { Present: true } screenId
-                ? TryReadTargetScreen(pixels, width, height,
-                    whiteLeft, whiteY, scale, screenId)
+                ? TryReadTargetScreen(probe, screenId)
                 : null;
         double? targetDistanceSquared =
             targetIdentity is { Present: true } distanceId
-                ? TryReadTargetDistance(pixels, width, height,
-                    whiteLeft, whiteY, scale, distanceId)
+                ? TryReadTargetDistance(probe, distanceId)
                 : null;
         VisualNameplateProbeSample? nameplateProbe =
             targetIdentity is { Present: true } plateId
-                ? TryReadNameplateProbe(pixels, width, height,
-                    whiteLeft, whiteY, scale, plateId)
+                ? TryReadNameplateProbe(probe, plateId)
                 : null;
         if (locateTarget && NeedsTargetLocator(targetScreen, nameplateProbe))
             targetScreen = TryReadTargetLocator(pixels, width, height, scale);
-        bool? sealActive = TryReadSealAura(pixels, width, height,
-            whiteLeft, whiteY, scale);
+        bool? sealActive = TryReadSealAura(probe);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, actionCooldownFill, targetPresent, watchedAction, actionBar,
             playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
@@ -453,28 +450,83 @@ public static class VisualBarReader
         return whiteWidth >= 100 && whiteLeft >= 0;
     }
 
-    private static int? TryReadCheckedWorldPixel(Bgra32[] pixels,
-        int width, int height, int left, int whiteY, double scale,
-        int index, int markerSeed)
+    // Probe layout below the white row, in reference units. Value cells on a
+    // probe row sit 20 units apart from x 5; grids have 20 columns of 16 units
+    // and 8-unit rows. Each block carries its own checksum or marker pixel.
+    private const int VitalsRow = 27;          // map position, maxima, grid markers
+    private const int WorldRow = 42;           // world position, counts, identity, flags
+    private const int CooldownMarkerRow = 67;
+    private const int ActionGridTop = 76;
+    private const int TargetRow = 127;         // cast event and the checked target probes
+    private const int SpellGridTop = 141;
+    private const int BindingGridTop = 236;
+    private const int ActionStateGridTop = 276;
+    private const int CooldownBarTop = 335;
+    private const int BagHeaderRow = 437;
+    private const int BagGridTop = 456;
+    private const int AuraStripTop = 632;
+
+    /// <summary>The calibrated telemetry area of one frame.</summary>
+    private readonly struct Probe(Bgra32[] pixels, int width, int height,
+        int left, int whiteY, double scale)
     {
-        int y = whiteY + (int)Math.Round(42 * scale);
-        int valueX = left + (int)Math.Round((5 + index * 20) * scale);
-        int markerX = left + (int)Math.Round((25 + index * 20) * scale);
-        if (y < 0 || y >= height || valueX < 0 || valueX >= width ||
-            markerX < 0 || markerX >= width)
-            return null;
-        Bgra32 valuePixel = pixels[y * width + valueX];
-        int value = (valuePixel.R << 16) | (valuePixel.G << 8) | valuePixel.B;
-        Bgra32 markerPixel = pixels[y * width + markerX];
-        int marker = (markerPixel.R << 16) | (markerPixel.G << 8) | markerPixel.B;
-        return marker == ((markerSeed - value) & 0xFFFFFF) ? value : null;
+        public Bgra32[] Pixels => pixels;
+        public int Width => width;
+        public int Height => height;
+        public int Left => left;
+        public int WhiteY => whiteY;
+        public double Scale => scale;
+
+        public int Units(double units) => (int)Math.Round(units * scale);
+        public int X(double units) => left + Units(units);
+        public int Y(double units) => whiteY + Units(units);
+
+        public bool Contains(int x, int y) =>
+            x >= 0 && x < width && y >= 0 && y < height;
+
+        public Bgra32 Pixel(int x, int y) => pixels[y * width + x];
+
+        /// <summary>
+        /// The pixel's 24-bit RGB value, or -1 outside the frame. A checksum is
+        /// masked to 24 bits, so a read that left the frame never validates.
+        /// </summary>
+        public int Value(int x, int y)
+        {
+            if (!Contains(x, y))
+                return -1;
+            Bgra32 pixel = Pixel(x, y);
+            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
+        }
+
+        /// <summary>Value cell <paramref name="index"/> of a probe row.</summary>
+        public int Cell(double row, int index) => Value(X(5 + index * 20), Y(row));
+
+        /// <summary>One part of grid entry <paramref name="ordinal"/>, counted from 1.</summary>
+        public (int X, int Y) GridPoint(double top, int ordinal, double partX)
+        {
+            int column = (ordinal - 1) % 20;
+            int row = (ordinal - 1) / 20;
+            return (X(partX + column * 16), Y(top + row * 8));
+        }
+
+        public int Grid(double top, int ordinal, double partX)
+        {
+            (int x, int y) = GridPoint(top, ordinal, partX);
+            return Value(x, y);
+        }
     }
 
-    private static VisualPlayerIdentity? TryReadPlayerIdentity(Bgra32[] pixels,
-        int width, int height, int left, int whiteY, double scale)
+    // A world-row value followed by its marker, which holds (seed - value).
+    private static int? TryReadCheckedWorldPixel(in Probe probe, int index, int markerSeed)
     {
-        int? packed = TryReadCheckedWorldPixel(pixels, width, height,
-            left, whiteY, scale, 11, 0xA57744);
+        int value = probe.Cell(WorldRow, index);
+        int marker = probe.Cell(WorldRow, index + 1);
+        return value >= 0 && marker == ((markerSeed - value) & 0xFFFFFF) ? value : null;
+    }
+
+    private static VisualPlayerIdentity? TryReadPlayerIdentity(in Probe probe)
+    {
+        int? packed = TryReadCheckedWorldPixel(probe, 11, 0xA57744);
         if (packed is not { } value)
             return null;
         int classId = value % 64;
@@ -485,11 +537,9 @@ public static class VisualBarReader
             ? new(classId, raceId, level) : null;
     }
 
-    private static VisualTargetFlags? TryReadTargetFlags(Bgra32[] pixels,
-        int width, int height, int left, int whiteY, double scale)
+    private static VisualTargetFlags? TryReadTargetFlags(in Probe probe)
     {
-        int? flags = TryReadCheckedWorldPixel(pixels, width, height,
-            left, whiteY, scale, 13, 0xA57755);
+        int? flags = TryReadCheckedWorldPixel(probe, 13, 0xA57755);
         if (flags is not int value || value is < 32 or > 63)
             return null;
         value -= 32;
@@ -503,22 +553,11 @@ public static class VisualBarReader
                 playerCombat, playerDead);
     }
 
-    private static VisualCastEvent? TryReadCastEvent(Bgra32[] pixels,
-        int width, int height, int left, int whiteY, double scale)
+    private static VisualCastEvent? TryReadCastEvent(in Probe probe)
     {
-        int y = whiteY + (int)Math.Round(127 * scale);
-        int Read(int index)
-        {
-            int x = left + (int)Math.Round((5 + index * 20) * scale);
-            if (x < 0 || x >= width || y < 0 || y >= height)
-                return -1;
-            Bgra32 pixel = pixels[y * width + x];
-            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
-        }
-
-        int sequence = Read(0);
-        int spellId = Read(1);
-        int marker = Read(2);
+        int sequence = probe.Cell(TargetRow, 0);
+        int spellId = probe.Cell(TargetRow, 1);
+        int marker = probe.Cell(TargetRow, 2);
         if (sequence is < 0 or > 65535 || spellId < 0 || marker < 0 ||
             (sequence == 0) != (spellId == 0) ||
             marker != ((0xA5CC11 - sequence - spellId) & 0xFFFFFF))
@@ -526,23 +565,12 @@ public static class VisualBarReader
         return new(sequence, spellId);
     }
 
-    private static VisualTargetIdentity? TryReadTargetIdentity(Bgra32[] pixels,
-        int width, int height, int left, int whiteY, double scale)
+    private static VisualTargetIdentity? TryReadTargetIdentity(in Probe probe)
     {
-        int y = whiteY + (int)Math.Round(127 * scale);
-        int Read(int index)
-        {
-            int x = left + (int)Math.Round((5 + index * 20) * scale);
-            if (x < 0 || x >= width || y < 0 || y >= height)
-                return -1;
-            Bgra32 pixel = pixels[y * width + x];
-            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
-        }
-
-        int hash1 = Read(3);
-        int hash2 = Read(4);
-        int packedLevel = Read(5);
-        int marker = Read(6);
+        int hash1 = probe.Cell(TargetRow, 3);
+        int hash2 = probe.Cell(TargetRow, 4);
+        int packedLevel = probe.Cell(TargetRow, 5);
+        int marker = probe.Cell(TargetRow, 6);
         if (hash1 < 0 || hash2 < 0 || packedLevel < 0 || marker < 0 ||
             marker != ((0xA58866 - hash1 - hash2 - packedLevel) & 0xFFFFFF))
             return null;
@@ -556,24 +584,15 @@ public static class VisualBarReader
             : null;
     }
 
+    // The target probes below are checksummed together with the identity
+    // hashes, so they can only describe the identity read from the same frame.
     private static VisualWorldPositionSample? TryReadTargetWorldPosition(
-        Bgra32[] pixels, int width, int height, int left, int whiteY,
-        double scale, VisualTargetIdentity identity)
+        in Probe probe, VisualTargetIdentity identity)
     {
-        int centerY = whiteY + (int)Math.Round(127 * scale);
-        int ReadPixel(int index)
-        {
-            int x = left + (int)Math.Round((5 + index * 20) * scale);
-            if (centerY < 0 || centerY >= height || x < 0 || x >= width)
-                return -1;
-            Bgra32 pixel = pixels[centerY * width + x];
-            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
-        }
-
-        int x = ReadPixel(7), y = ReadPixel(8), z = ReadPixel(9);
-        int instanceMapId = ReadPixel(10);
+        int x = probe.Cell(TargetRow, 7), y = probe.Cell(TargetRow, 8), z = probe.Cell(TargetRow, 9);
+        int instanceMapId = probe.Cell(TargetRow, 10);
         if (x < 0 || y < 0 || z < 0 || instanceMapId < 0 ||
-            ReadPixel(11) != ((0xA59977 - x - y - z - instanceMapId -
+            probe.Cell(TargetRow, 11) != ((0xA59977 - x - y - z - instanceMapId -
                 identity.GuidHash1 - identity.GuidHash2) & 0xFFFFFF))
             return null;
 
@@ -582,48 +601,23 @@ public static class VisualBarReader
     }
 
     private static VisualMapPointSample? TryReadTargetMapPosition(
-        Bgra32[] pixels, int width, int height, int left, int whiteY,
-        double scale, VisualTargetIdentity identity)
+        in Probe probe, VisualTargetIdentity identity)
     {
-        int centerY = whiteY + (int)Math.Round(127 * scale);
-        int ReadPixel(int index)
-        {
-            int x = left + (int)Math.Round((5 + index * 20) * scale);
-            if (centerY < 0 || centerY >= height || x < 0 || x >= width)
-                return -1;
-            Bgra32 pixel = pixels[centerY * width + x];
-            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
-        }
-
-        int mapId = ReadPixel(12), x = ReadPixel(13), y = ReadPixel(14);
+        int mapId = probe.Cell(TargetRow, 12), x = probe.Cell(TargetRow, 13), y = probe.Cell(TargetRow, 14);
         if (mapId <= 0 || x < 0 || y < 0 ||
-            ReadPixel(15) != ((0xA5AA88 - mapId - x - y -
+            probe.Cell(TargetRow, 15) != ((0xA5AA88 - mapId - x - y -
                 identity.GuidHash1 - identity.GuidHash2) & 0xFFFFFF))
             return null;
         return new(mapId, x / 16777215.0, y / 16777215.0);
     }
 
-    private static int ReadTargetProbePixel(Bgra32[] pixels,
-        int width, int height, int left, int whiteY,
-        double scale, int index)
-    {
-        int y = whiteY + (int)Math.Round(127 * scale);
-        int x = left + (int)Math.Round((5 + index * 20) * scale);
-        if (x < 0 || x >= width || y < 0 || y >= height)
-            return -1;
-        Bgra32 pixel = pixels[y * width + x];
-        return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
-    }
-
     private static VisualNearestCreatureSample? TryReadNearestCreature(
-        Bgra32[] pixels, int width, int height, int left,
-        int whiteY, double scale, VisualTargetIdentity identity)
+        in Probe probe, VisualTargetIdentity identity)
     {
-        int Read(int i) => ReadTargetProbePixel(pixels, width, height,
-            left, whiteY, scale, i);
-        int id = Read(16), x = Read(17), y = Read(18), distance = Read(19);
+        int id = probe.Cell(TargetRow, 16), x = probe.Cell(TargetRow, 17);
+        int y = probe.Cell(TargetRow, 18), distance = probe.Cell(TargetRow, 19);
         if (id <= 0 || x < 0 || y < 0 || distance < 0 ||
-            Read(20) != ((0xA5B155 - id - x - y - distance -
+            probe.Cell(TargetRow, 20) != ((0xA5B155 - id - x - y - distance -
                 identity.GuidHash1 - identity.GuidHash2) & 0xFFFFFF))
             return null;
         return new(id, (x - 8388608) / 100.0,
@@ -631,40 +625,31 @@ public static class VisualBarReader
     }
 
     private static VisualScreenPointSample? TryReadTargetScreen(
-        Bgra32[] pixels, int width, int height, int left,
-        int whiteY, double scale, VisualTargetIdentity identity)
+        in Probe probe, VisualTargetIdentity identity)
     {
-        int Read(int i) => ReadTargetProbePixel(pixels, width, height,
-            left, whiteY, scale, i);
-        int x = Read(21), y = Read(22);
+        int x = probe.Cell(TargetRow, 21), y = probe.Cell(TargetRow, 22);
         if (x < 0 || y < 0 ||
-            Read(23) != ((0xA5B266 - x - y - identity.GuidHash1 -
+            probe.Cell(TargetRow, 23) != ((0xA5B266 - x - y - identity.GuidHash1 -
                 identity.GuidHash2) & 0xFFFFFF))
             return null;
         return new(x / 16777215.0, y / 16777215.0);
     }
 
     private static double? TryReadTargetDistance(
-        Bgra32[] pixels, int width, int height, int left,
-        int whiteY, double scale, VisualTargetIdentity identity)
+        in Probe probe, VisualTargetIdentity identity)
     {
-        int Read(int i) => ReadTargetProbePixel(pixels, width, height,
-            left, whiteY, scale, i);
-        int squared = Read(24);
+        int squared = probe.Cell(TargetRow, 24);
         return squared > 0 &&
-            Read(25) == ((0xA5B377 - squared - identity.GuidHash1 -
+            probe.Cell(TargetRow, 25) == ((0xA5B377 - squared - identity.GuidHash1 -
                 identity.GuidHash2) & 0xFFFFFF)
                 ? squared / 100.0 : null;
     }
 
     private static VisualNameplateProbeSample? TryReadNameplateProbe(
-        Bgra32[] pixels, int width, int height, int left,
-        int whiteY, double scale, VisualTargetIdentity identity)
+        in Probe probe, VisualTargetIdentity identity)
     {
-        int status = ReadTargetProbePixel(pixels, width, height,
-            left, whiteY, scale, 26);
-        int marker = ReadTargetProbePixel(pixels, width, height,
-            left, whiteY, scale, 27);
+        int status = probe.Cell(TargetRow, 26);
+        int marker = probe.Cell(TargetRow, 27);
         if (status is < 0 or > 511 ||
             marker != ((0xA5B488 - status - identity.GuidHash1 -
                 identity.GuidHash2) & 0xFFFFFF))
@@ -672,20 +657,17 @@ public static class VisualBarReader
         return new(status & 255, (status & 256) != 0);
     }
 
-    private static bool? TryReadSealAura(Bgra32[] pixels,
-        int width, int height, int left, int whiteY, double scale)
+    private static bool? TryReadSealAura(in Probe probe)
     {
-        int state = ReadTargetProbePixel(pixels, width, height,
-            left, whiteY, scale, 28);
-        int marker = ReadTargetProbePixel(pixels, width, height,
-            left, whiteY, scale, 29);
+        int state = probe.Cell(TargetRow, 28);
+        int marker = probe.Cell(TargetRow, 29);
         if (marker != ((0xA5B5A9 - state) & 0xFFFFFF))
             return null;
         if (state is 0 or 1)
             return state == 1;
         return state == 2
-            ? VisualAuraReader.ContainsReference(pixels, width, height,
-                left, whiteY + (int)Math.Round(632 * scale), scale)
+            ? VisualAuraReader.ContainsReference(probe.Pixels, probe.Width, probe.Height,
+                probe.Left, probe.Y(AuraStripTop), probe.Scale)
             : null;
     }
 
@@ -733,21 +715,20 @@ public static class VisualBarReader
     }
 
     private static VisualCooldownGridSnapshot? TryReadCooldownGrid(
-        Bgra32[] pixels, int width, int height, int left, int whiteY,
-        double scale, VisualActionBarSnapshot? actionBar)
+        in Probe probe, VisualActionBarSnapshot? actionBar)
     {
         if (actionBar is not { ReadableCount: VisualActionBarSnapshot.SlotCount })
             return null;
 
         double?[] fills = new double?[VisualCooldownGridSnapshot.SlotCount];
+        int barWidth = probe.Units(ReferenceWidth);
         for (int slot = 1; slot <= fills.Length; slot++)
         {
-            int x = left + (int)Math.Round((5 + (slot - 1) * 20) * scale);
-            int y = whiteY + (int)Math.Round(67 * scale);
-            if (x < 0 || x >= width || y < 0 || y >= height)
+            int x = probe.X(5 + (slot - 1) * 20);
+            int y = probe.Y(CooldownMarkerRow);
+            if (!probe.Contains(x, y))
                 return null;
-            Bgra32 marker = pixels[y * width + x];
-            int code = (marker.R << 16) | (marker.G << 8) | marker.B;
+            int code = probe.Value(x, y);
             VisualActionSample action = actionBar.GetSlot(slot)!.Value;
             if (code != ((0xA59911 - slot - (int)action.Kind - action.Id) &
                 0xFFFFFF))
@@ -758,51 +739,31 @@ public static class VisualBarReader
                 continue;
             }
 
-            int centerY = whiteY + (int)Math.Round(
-                (335 + (slot - 1) * 8) * scale);
-            int barWidth = (int)Math.Round(320 * scale);
-            if (centerY < 0 || centerY >= height ||
-                left + barWidth > width)
+            int centerY = probe.Y(CooldownBarTop + (slot - 1) * 8);
+            if (centerY < 0 || centerY >= probe.Height ||
+                probe.Left + barWidth > probe.Width)
                 return null;
-            fills[slot - 1] = RowFill(pixels, width, height,
-                left, centerY, barWidth,
-                Math.Max(1, (int)Math.Round(2 * scale)), BarColor.Cyan);
+            fills[slot - 1] = RowFill(probe.Pixels, probe.Width, probe.Height,
+                probe.Left, centerY, barWidth,
+                Math.Max(1, probe.Units(2)), BarColor.Cyan);
         }
 
         return new(fills);
     }
 
     private static VisualActionStateSnapshot? TryReadActionStates(
-        Bgra32[] pixels, int width, int height, int left, int whiteY,
-        double scale, VisualActionBarSnapshot? actionBar)
+        in Probe probe, VisualActionBarSnapshot? actionBar)
     {
-        if (actionBar is not { ReadableCount: VisualActionBarSnapshot.SlotCount })
-            return null;
-
-        int ReadAt(int x, int y)
-        {
-            if (x < 0 || x >= width || y < 0 || y >= height)
-                return -1;
-            Bgra32 pixel = pixels[y * width + x];
-            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
-        }
-
-        int markerY = whiteY + (int)Math.Round(27 * scale);
-        int markerX = left + (int)Math.Round(305 * scale);
-        if (ReadAt(markerX, markerY) != 0x5A88A5)
+        if (actionBar is not { ReadableCount: VisualActionBarSnapshot.SlotCount } ||
+            probe.Cell(VitalsRow, 15) != 0x5A88A5)
             return null;
 
         VisualActionState?[] states =
             new VisualActionState?[VisualActionBarSnapshot.SlotCount];
         for (int slot = 1; slot <= states.Length; slot++)
         {
-            int column = (slot - 1) % 20;
-            int row = (slot - 1) / 20;
-            int y = whiteY + (int)Math.Round((276 + row * 8) * scale);
-            int codeX = left + (int)Math.Round((4 + column * 16) * scale);
-            int validX = left + (int)Math.Round((12 + column * 16) * scale);
-            int code = ReadAt(codeX, y);
-            int marker = ReadAt(validX, y);
+            int code = probe.Grid(ActionStateGridTop, slot, 4);
+            int marker = probe.Grid(ActionStateGridTop, slot, 12);
             VisualActionSample action = actionBar.GetSlot(slot)!.Value;
             if (code is < 1 or > 12 ||
                 marker != ((0xA58811 - action.Id - slot -
@@ -827,31 +788,17 @@ public static class VisualBarReader
         return new(states);
     }
 
-    private static VisualBindingSnapshot? TryReadBindings(
-        Bgra32[] pixels, int width, int height, int left, int whiteY, double scale)
+    private static VisualBindingSnapshot? TryReadBindings(in Probe probe)
     {
-        int ReadAt(int x, int y)
-        {
-            if (x < 0 || x >= width || y < 0 || y >= height)
-                return -1;
-            Bgra32 pixel = pixels[y * width + x];
-            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
-        }
-        int countY = whiteY + (int)Math.Round(42 * scale);
-        int ReadCount(int index) => ReadAt(
-            left + (int)Math.Round((5 + index * 20) * scale), countY);
-        if (ReadCount(7) != VisualBindingSnapshot.Count ||
-            ReadCount(8) != ((0xA57722 - VisualBindingSnapshot.Count) & 0xFFFFFF))
+        if (probe.Cell(WorldRow, 7) != VisualBindingSnapshot.Count ||
+            probe.Cell(WorldRow, 8) != ((0xA57722 - VisualBindingSnapshot.Count) & 0xFFFFFF))
             return null;
 
         int?[] codes = new int?[VisualBindingSnapshot.Count];
         for (int index = 1; index <= VisualBindingSnapshot.Count; index++)
         {
-            int column = (index - 1) % 20;
-            int row = (index - 1) / 20;
-            int y = whiteY + (int)Math.Round((236 + row * 8) * scale);
-            int code = ReadAt(left + (int)Math.Round((4 + column * 16) * scale), y);
-            int valid = ReadAt(left + (int)Math.Round((12 + column * 16) * scale), y);
+            int code = probe.Grid(BindingGridTop, index, 4);
+            int valid = probe.Grid(BindingGridTop, index, 12);
             if (code < 0 || valid != ((0xA57711 - code - index) & 0xFFFFFF))
                 continue;
             if (code > 0 && ((code >> 14) & 63) != index)
@@ -861,33 +808,18 @@ public static class VisualBarReader
         return new(codes);
     }
 
-    private static VisualSpellBookSnapshot? TryReadSpellBook(
-        Bgra32[] pixels, int width, int height, int left, int whiteY, double scale)
+    private static VisualSpellBookSnapshot? TryReadSpellBook(in Probe probe)
     {
-        int countY = whiteY + (int)Math.Round(42 * scale);
-        int ReadAt(int x, int y)
-        {
-            if (x < 0 || x >= width || y < 0 || y >= height)
-                return -1;
-            Bgra32 pixel = pixels[y * width + x];
-            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
-        }
-        int CountPixel(int index) => ReadAt(
-            left + (int)Math.Round((5 + index * 20) * scale), countY);
-
-        int count = CountPixel(5);
+        int count = probe.Cell(WorldRow, 5);
         if (count < 0 || count > VisualSpellBookSnapshot.MaxSlots ||
-            CountPixel(6) != ((0xA56622 - count) & 0xFFFFFF))
+            probe.Cell(WorldRow, 6) != ((0xA56622 - count) & 0xFFFFFF))
             return null;
 
         VisualSpellBookEntry?[] entries = new VisualSpellBookEntry?[count];
         for (int slot = 1; slot <= count; slot++)
         {
-            int column = (slot - 1) % 20;
-            int row = (slot - 1) / 20;
-            int y = whiteY + (int)Math.Round((141 + row * 8) * scale);
-            int id = ReadAt(left + (int)Math.Round((4 + column * 16) * scale), y);
-            int meta = ReadAt(left + (int)Math.Round((12 + column * 16) * scale), y);
+            int id = probe.Grid(SpellGridTop, slot, 4);
+            int meta = probe.Grid(SpellGridTop, slot, 12);
             if (id <= 0 || meta < 0)
                 continue;
 
@@ -903,73 +835,39 @@ public static class VisualBarReader
         return new(entries);
     }
 
-    private static VisualWorldPositionSample? TryReadWorldPosition(
-        Bgra32[] pixels, int width, int height, int left, int whiteY, double scale)
+    private static VisualWorldPositionSample? TryReadWorldPosition(in Probe probe)
     {
-        int centerY = whiteY + (int)Math.Round(42 * scale);
-        int ReadPixel(int index)
-        {
-            int x = left + (int)Math.Round((5 + index * 20) * scale);
-            if (centerY < 0 || centerY >= height || x < 0 || x >= width)
-                return -1;
-            Bgra32 pixel = pixels[centerY * width + x];
-            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
-        }
-
-        int x = ReadPixel(0), y = ReadPixel(1), z = ReadPixel(2);
-        int instanceMapId = ReadPixel(3);
-        if (x < 0 || y < 0 || z < 0 || instanceMapId < 0)
-            return null;
-
-        if (ReadPixel(4) != ((0xA55A33 - x - y - z - instanceMapId) & 0xFFFFFF))
+        int x = probe.Cell(WorldRow, 0), y = probe.Cell(WorldRow, 1), z = probe.Cell(WorldRow, 2);
+        int instanceMapId = probe.Cell(WorldRow, 3);
+        if (x < 0 || y < 0 || z < 0 || instanceMapId < 0 ||
+            probe.Cell(WorldRow, 4) != ((0xA55A33 - x - y - z - instanceMapId) & 0xFFFFFF))
             return null;
 
         return new((x - 8388608) / 100.0, (y - 8388608) / 100.0,
             (z - 8388608) / 100.0, instanceMapId);
     }
 
-    private static int? TryReadPowerType(Bgra32[] pixels, int width, int height,
-        int left, int whiteY, double scale)
+    private static int? TryReadPowerType(in Probe probe)
     {
-        int y = whiteY + (int)Math.Round(42 * scale);
-        int valueX = left + (int)Math.Round(185 * scale);
-        int markerX = left + (int)Math.Round(205 * scale);
-        if (y < 0 || y >= height || valueX < 0 || valueX >= width ||
-            markerX < 0 || markerX >= width)
-            return null;
-
-        Bgra32 valuePixel = pixels[y * width + valueX];
-        int value = (valuePixel.R << 16) | (valuePixel.G << 8) |
-            valuePixel.B;
-        Bgra32 markerPixel = pixels[y * width + markerX];
-        int marker = (markerPixel.R << 16) | (markerPixel.G << 8) |
-            markerPixel.B;
-        return value <= 255 &&
+        int value = probe.Cell(WorldRow, 9);
+        int marker = probe.Cell(WorldRow, 10);
+        return value is >= 0 and <= 255 &&
             marker == ((0xA56644 - value) & 0xFFFFFF)
             ? value : null;
     }
 
-    private static VisualBagSnapshot? TryReadBags(Bgra32[] pixels,
-        int width, int height, int left, int whiteY, double scale)
+    private static VisualBagSnapshot? TryReadBags(in Probe probe)
     {
-        int ReadAt(int x, int y)
-        {
-            if (x < 0 || x >= width || y < 0 || y >= height)
-                return -1;
-            Bgra32 p = pixels[y * width + x];
-            return (p.R << 16) | (p.G << 8) | p.B;
-        }
-
         VisualBagHeader?[] headers = new VisualBagHeader?[VisualBagSnapshot.BagCount];
         VisualBagSlot?[] slots = new VisualBagSlot?[
             VisualBagSnapshot.BagCount * VisualBagSnapshot.SlotsPerBag];
-        int headerY = whiteY + (int)Math.Round(437 * scale);
+        int headerY = probe.Y(BagHeaderRow);
         for (int bag = 0; bag < headers.Length; bag++)
         {
-            int x = left + (int)Math.Round((5 + bag * 60) * scale);
-            int packed = ReadAt(x, headerY);
-            int family = ReadAt(x + (int)Math.Round(20 * scale), headerY);
-            int marker = ReadAt(x + (int)Math.Round(40 * scale), headerY);
+            int x = probe.X(5 + bag * 60);
+            int packed = probe.Value(x, headerY);
+            int family = probe.Value(x + probe.Units(20), headerY);
+            int marker = probe.Value(x + probe.Units(40), headerY);
             if (packed < 0 || family < 0 || marker < 0 || packed >= 4096 ||
                 family > 0xFFFFFF ||
                 marker != ((0xA5BA11 - bag - packed - family) & 0xFFFFFF))
@@ -987,11 +885,11 @@ public static class VisualBarReader
             int slot = index % VisualBagSnapshot.SlotsPerBag + 1;
             int col = index % 10;
             int row = index / 10;
-            int y = whiteY + (int)Math.Round((456 + row * 8) * scale);
-            int x = left + (int)Math.Round((4 + col * 30) * scale);
-            int id = ReadAt(x, y);
-            int count = ReadAt(x + (int)Math.Round(10 * scale), y);
-            int marker = ReadAt(x + (int)Math.Round(20 * scale), y);
+            int y = probe.Y(BagGridTop + row * 8);
+            int x = probe.X(4 + col * 30);
+            int id = probe.Value(x, y);
+            int count = probe.Value(x + probe.Units(10), y);
+            int marker = probe.Value(x + probe.Units(20), y);
             if (id < 0 || count < 0 || marker < 0 ||
                 marker != ((0xA5BB11 - index - id - count) & 0xFFFFFF) ||
                 (id == 0) != (count == 0) || count > 65535 ||
@@ -1003,35 +901,24 @@ public static class VisualBarReader
         return new(headers, slots);
     }
 
-    private static int? TryReadMaximum(Bgra32[] pixels, int width, int height,
-        int left, int whiteY, double scale, int valueIndex, int markerIndex,
+    private static int? TryReadMaximum(in Probe probe, int valueIndex, int markerIndex,
         int expectedMarker)
     {
-        int centerY = whiteY + (int)Math.Round(27 * scale);
-        int valueX = left + (int)Math.Round((5 + valueIndex * 20) * scale);
-        int markerX = left + (int)Math.Round((5 + markerIndex * 20) * scale);
-        if (centerY < 0 || centerY >= height || valueX < 0 || valueX >= width ||
-            markerX < 0 || markerX >= width)
-            return null;
-
-        Bgra32 value = pixels[centerY * width + valueX];
-        int maximum = (value.R << 16) | (value.G << 8) | value.B;
-        Bgra32 marker = pixels[centerY * width + markerX];
-        int checksum = (marker.R << 16) | (marker.G << 8) | marker.B;
+        int maximum = probe.Cell(VitalsRow, valueIndex);
+        int checksum = probe.Cell(VitalsRow, markerIndex);
         return maximum > 0 &&
             checksum == ((expectedMarker - maximum) & 0xFFFFFF)
             ? maximum : null;
     }
 
-    private static VisualActionBarSnapshot? TryReadActionBar(Bgra32[] pixels,
-        int width, int height, int left, int whiteY, double scale)
+    private static VisualActionBarSnapshot? TryReadActionBar(in Probe probe)
     {
-        int markerY = whiteY + (int)Math.Round(27 * scale);
-        int markerX = left + (int)Math.Round(205 * scale);
-        if (markerY < 0 || markerY >= height || markerX < 0 || markerX >= width)
+        int markerY = probe.Y(VitalsRow);
+        int markerX = probe.X(205);
+        if (!probe.Contains(markerX, markerY))
             return null;
 
-        Bgra32 gridMarker = pixels[markerY * width + markerX];
+        Bgra32 gridMarker = probe.Pixel(markerX, markerY);
         if (Math.Abs(gridMarker.R - 90) > 3 ||
             Math.Abs(gridMarker.G - 165) > 3 ||
             Math.Abs(gridMarker.B - 90) > 3)
@@ -1040,21 +927,16 @@ public static class VisualBarReader
         VisualActionSample?[] slots = new VisualActionSample?[VisualActionBarSnapshot.SlotCount];
         for (int slot = 1; slot <= slots.Length; slot++)
         {
-            int column = (slot - 1) % 20;
-            int row = (slot - 1) / 20;
-            int y = whiteY + (int)Math.Round((76 + row * 8) * scale);
-            int idX = left + (int)Math.Round((4 + column * 16) * scale);
-            int metaX = left + (int)Math.Round((12 + column * 16) * scale);
-            if (y < 0 || y >= height || idX < 0 || idX >= width ||
-                metaX < 0 || metaX >= width)
+            (int idX, int y) = probe.GridPoint(ActionGridTop, slot, 4);
+            int metaX = probe.GridPoint(ActionGridTop, slot, 12).X;
+            if (!probe.Contains(idX, y) || !probe.Contains(metaX, y))
                 return null;
 
-            Bgra32 meta = pixels[y * width + metaX];
+            Bgra32 meta = probe.Pixel(metaX, y);
             if (Math.Abs(meta.R - 165) > 3 || meta.G > 3 || meta.B > 4)
                 continue;
 
-            Bgra32 idPixel = pixels[y * width + idX];
-            int id = (idPixel.R << 16) | (idPixel.G << 8) | idPixel.B;
+            int id = probe.Value(idX, y);
             VisualActionKind kind = (VisualActionKind)meta.B;
             if ((kind == VisualActionKind.Empty) != (id == 0))
                 continue;
@@ -1065,22 +947,19 @@ public static class VisualBarReader
         return new(slots);
     }
 
-    private static VisualActionSample? TryReadWatchedAction(Bgra32[] pixels,
-        int width, int height, int left, int whiteY, double scale)
+    private static VisualActionSample? TryReadWatchedAction(in Probe probe)
     {
-        int centerY = whiteY + (int)Math.Round(27 * scale);
-        int idX = left + (int)Math.Round(165 * scale);
-        int markerX = left + (int)Math.Round(185 * scale);
-        if (centerY < 0 || centerY >= height || idX < 0 || idX >= width ||
-            markerX < 0 || markerX >= width)
+        int centerY = probe.Y(VitalsRow);
+        int idX = probe.X(165);
+        int markerX = probe.X(185);
+        if (!probe.Contains(idX, centerY) || !probe.Contains(markerX, centerY))
             return null;
 
-        Bgra32 marker = pixels[centerY * width + markerX];
+        Bgra32 marker = probe.Pixel(markerX, centerY);
         if (Math.Abs(marker.R - 165) > 3 || marker.G is < 1 or > 12 || marker.B > 4)
             return null;
 
-        Bgra32 idPixel = pixels[centerY * width + idX];
-        int id = (idPixel.R << 16) | (idPixel.G << 8) | idPixel.B;
+        int id = probe.Value(idX, centerY);
         VisualActionKind kind = (VisualActionKind)marker.B;
         if ((kind == VisualActionKind.Empty) != (id == 0))
             return null;
@@ -1088,15 +967,14 @@ public static class VisualBarReader
         return new VisualActionSample(marker.G, kind, id);
     }
 
-    private static bool? TryReadTargetPresence(Bgra32[] pixels, int width, int height,
-        int left, int whiteY, double scale)
+    private static bool? TryReadTargetPresence(in Probe probe)
     {
-        int markerX = left + (int)Math.Round(145 * scale);
-        int markerY = whiteY + (int)Math.Round(27 * scale);
-        if (markerX < 0 || markerX >= width || markerY < 0 || markerY >= height)
+        int markerX = probe.X(145);
+        int markerY = probe.Y(VitalsRow);
+        if (!probe.Contains(markerX, markerY))
             return null;
 
-        Bgra32 marker = pixels[markerY * width + markerX];
+        Bgra32 marker = probe.Pixel(markerX, markerY);
         if (Matches(marker, BarColor.Green))
             return true;
         if (Matches(marker, BarColor.Red))
@@ -1104,53 +982,33 @@ public static class VisualBarReader
         return null;
     }
 
-    private static double? TryReadCooldown(Bgra32[] pixels, int width, int height,
-        int left, int whiteY, double scale, int rowStep, int tolerance)
+    private static double? TryReadCooldown(in Probe probe, int rowStep, int tolerance)
     {
-        int markerX = left + (int)Math.Round(125 * scale);
-        int markerY = whiteY + (int)Math.Round(27 * scale);
-        if (markerX < 0 || markerX >= width || markerY < 0 || markerY >= height)
+        int markerX = probe.X(125);
+        int markerY = probe.Y(VitalsRow);
+        if (!probe.Contains(markerX, markerY) ||
+            !Matches(probe.Pixel(markerX, markerY), BarColor.Cyan))
             return null;
 
-        Bgra32 marker = pixels[markerY * width + markerX];
-        if (!Matches(marker, BarColor.Cyan))
-            return null;
-
-        return RowFill(pixels, width, height, left, whiteY + 3 * rowStep,
-            (int)Math.Round(320 * scale), tolerance, BarColor.Cyan);
+        return RowFill(probe.Pixels, probe.Width, probe.Height, probe.Left,
+            probe.WhiteY + 3 * rowStep,
+            probe.Units(ReferenceWidth), tolerance, BarColor.Cyan);
     }
 
-    private static bool TryReadPosition(Bgra32[] pixels, int width, int height,
-        int left, int whiteY, double scale, out VisualPositionSample position)
+    private static VisualPositionSample? TryReadPosition(in Probe probe)
     {
-        position = default;
-        int centerY = whiteY + (int)Math.Round(27 * scale);
-        int markerX = left + (int)Math.Round(85 * scale);
-        if (centerY < 0 || centerY >= height || markerX < 0 || markerX >= width)
-            return false;
-
-        int ReadPixel(int index)
-        {
-            int x = left + (int)Math.Round((5 + index * 20) * scale);
-            if (x < 0 || x >= width)
-                return -1;
-            Bgra32 pixel = pixels[centerY * width + x];
-            return (pixel.R << 16) | (pixel.G << 8) | pixel.B;
-        }
-
-        int mapId = ReadPixel(0);
-        int encodedX = ReadPixel(1);
-        int encodedY = ReadPixel(2);
-        int encodedDirection = ReadPixel(3);
+        int mapId = probe.Cell(VitalsRow, 0);
+        int encodedX = probe.Cell(VitalsRow, 1);
+        int encodedY = probe.Cell(VitalsRow, 2);
+        int encodedDirection = probe.Cell(VitalsRow, 3);
         if (mapId <= 0 || encodedX < 0 || encodedY < 0 ||
             encodedDirection < 0 || encodedDirection > 628400 ||
-            ReadPixel(4) != ((0xA55AA5 - mapId - encodedX - encodedY -
+            probe.Cell(VitalsRow, 4) != ((0xA55AA5 - mapId - encodedX - encodedY -
                 encodedDirection) & 0xFFFFFF))
-            return false;
+            return null;
 
-        position = new(mapId, encodedX / 16777215.0,
+        return new(mapId, encodedX / 16777215.0,
             encodedY / 16777215.0, encodedDirection / 100000.0);
-        return true;
     }
 
     private static double RowFill(Bgra32[] pixels, int width, int height,

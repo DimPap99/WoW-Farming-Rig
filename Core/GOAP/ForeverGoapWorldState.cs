@@ -1,3 +1,5 @@
+using Core.Forever;
+
 using System.Collections.Specialized;
 
 namespace Core.GOAP;
@@ -12,7 +14,7 @@ public static class ForeverGoapWorldState
     public static bool TryBuild(VisualBarSample sample, out BitVector32 state)
     {
         state = default;
-        if (!AddonReader.HasForeverTrialFrame(sample) ||
+        if (!ForeverFrame.HasTrialInputs(sample) ||
             sample.TargetFlags is not { } flags)
             return false;
 
@@ -27,17 +29,12 @@ public static class ForeverGoapWorldState
             Bit(GoapKey.isdead, flags.PlayerDead) |
             Bit(GoapKey.pulled, flags.PlayerCombat && alive);
 
-        if (alive && sample.ActionBar is { } bar &&
-            sample.ActionStates is { } actions)
+        if (alive)
         {
             data |= Bit(GoapKey.withinpullrange,
-                bar.GetSlot(2) is
-                    { Kind: VisualActionKind.Spell, Id: 20271 } &&
-                actions.GetSlot(2) is { InRange: true });
+                ForeverTargetSelector.InJudgementRange(sample));
             data |= Bit(GoapKey.incombatrange,
-                bar.GetSlot(3) is
-                    { Kind: VisualActionKind.Spell, Id: 678 or 679 } &&
-                actions.GetSlot(3) is { InRange: true });
+                ForeverTargetSelector.InStrikeRange(sample));
         }
 
         state = new(data);

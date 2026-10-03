@@ -15,6 +15,7 @@ namespace Core;
 /// Tracks the /forevervisual bars and validity pixels from normal screen capture.
 /// It is read-only and only active for Forever. A missing calibration or a
 /// stopped capture invalidates the sample instead of reusing old percentages.
+/// <see cref="Update"/> must be called from one thread; reads are thread-safe.
 /// </summary>
 public sealed class ForeverVisualBarTracker
 {
@@ -26,8 +27,8 @@ public sealed class ForeverVisualBarTracker
     private Bgra32[] searchPixels = [];
     private Bgra32[] pixels = [];
     private Bgra32[] framePixels = [];
-    private long lastFrameId;
-    public long LatestFrameId => lastFrameId;
+    // The last screen frame decoded, so one capture is never decoded twice.
+    private long decodedFrameId;
     private Snapshot? current;
 
     private sealed record Snapshot(VisualBarSample Bars, long CapturedAt);
@@ -44,13 +45,13 @@ public sealed class ForeverVisualBarTracker
             return;
 
         long frameId = screen.ScreenFrameId;
-        if (frameId == 0 || frameId == lastFrameId)
+        if (frameId == 0 || frameId == decodedFrameId)
             return;
-        lastFrameId = frameId;
+        decodedFrameId = frameId;
 
         Image<Bgra32> image = screen.ScreenImage;
         Volatile.Write(ref current, TryReadFrame(image, out VisualBarSample bars)
-            ? new Snapshot(bars, Stopwatch.GetTimestamp())
+            ? new Snapshot(bars with { FrameId = frameId }, Stopwatch.GetTimestamp())
             : null);
     }
 
@@ -97,6 +98,7 @@ public sealed class ForeverVisualBarTracker
         });
     }
 
+    /// <summary>The latest decoded sample; its <see cref="VisualBarSample.FrameId"/> names the capture.</summary>
     public bool TryGetLatest(out VisualBarSample bars)
     {
         Snapshot? snapshot = Volatile.Read(ref current);

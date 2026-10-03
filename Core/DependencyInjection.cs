@@ -1,6 +1,7 @@
 ﻿using Core.Addon;
 using Core.Database;
 using Core.Extensions;
+using Core.Forever;
 using Core.Goals;
 using Core.Session;
 
@@ -314,6 +315,8 @@ public static class DependencyInjection
         s.AddSingleton<RouteGenerator>();
 
         s.AddAddonComponents();
+        // AddonReader hands its ticks to this on Forever; idle on Classic.
+        s.AddSingleton<ForeverReaderFeed>();
 
         s.AddSingleton<ActionBarSlotValidator>();
 

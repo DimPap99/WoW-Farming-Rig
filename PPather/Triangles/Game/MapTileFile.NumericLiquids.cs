@@ -52,6 +52,8 @@ internal static partial class MapTileFile
                 LiquidDescriptor descriptor = metadata.ResolveLiquid(liquidType, formatOrObject);
                 if (descriptor.IsVisualOnly)
                     continue;
+                // The flat surface height used when the layer has no height map.
+                float minHeightLevel = BinaryPrimitives.ReadSingleLittleEndian(instance.Slice(4));
                 byte offsetX = instance[12];
                 byte offsetY = instance[13];
                 byte width = instance[14];
@@ -67,10 +69,11 @@ internal static partial class MapTileFile
                     throw new InvalidDataException($"Numeric MH2O cell {cell} layer {layer} has invalid dimensions.");
 
                 uint maskOffset = BinaryPrimitives.ReadUInt32LittleEndian(instance.Slice(16));
-                ulong mask = maskOffset == 0 ? ulong.MaxValue : ReadMask(bytes, maskOffset, cell, layer);
+                ulong mask = maskOffset == 0 ? ulong.MaxValue
+                    : ReadMask(bytes, maskOffset, width * height, cell, layer);
                 uint vertexOffset = BinaryPrimitives.ReadUInt32LittleEndian(instance.Slice(20));
                 float[] heights = ReadHeights(bytes, vertexOffset, descriptor.VertexFormat,
-                    width, height, cell, layer);
+                    width, height, minHeightLevel, cell, layer);
                 layers.Add(new(offsetX, offsetY, width, height, mask, heights,
                     descriptor.IsMagmaOrSlime));
             }
@@ -78,20 +81,35 @@ internal static partial class MapTileFile
         }
     }
 
-    private static ulong ReadMask(ReadOnlySpan<byte> payload, uint offset, int cell, int layer)
+    // The exists bitmap holds one bit per square of the layer, so it is only
+    // (width * height + 7) / 8 bytes long and can end the payload.
+    private static ulong ReadMask(ReadOnlySpan<byte> payload, uint offset, int squares,
+        int cell, int layer)
     {
-        if ((ulong)offset + sizeof(ulong) > (uint)payload.Length)
+        int length = (squares + 7) / 8;
+        if ((ulong)offset + (ulong)length > (uint)payload.Length)
             throw new InvalidDataException($"Numeric MH2O cell {cell} layer {layer} has an invalid mask offset.");
-        return BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice((int)offset, sizeof(ulong)));
+
+        ulong mask = 0;
+        ReadOnlySpan<byte> bits = payload.Slice((int)offset, length);
+        for (int i = 0; i < bits.Length; i++)
+            mask |= (ulong)bits[i] << (i * 8);
+        return mask;
     }
 
     private static float[] ReadHeights(ReadOnlySpan<byte> payload, uint offset, byte format,
-        byte width, byte height, int cell, int layer)
+        byte width, byte height, float minHeightLevel, int cell, int layer)
     {
         int count = (width + 1) * (height + 1);
         float[] heights = new float[count];
         if (offset == 0 || format == 2)
+        {
+            // No height map: the layer is flat at its minimum height level.
+            if (!float.IsFinite(minHeightLevel))
+                throw new InvalidDataException($"Numeric MH2O cell {cell} layer {layer} has a non-finite height level.");
+            Array.Fill(heights, minHeightLevel);
             return heights;
+        }
 
         int stride = format is 4 or 5 ? 8 : 4;
         int first = format is 4 or 5 ? 4 : 0;

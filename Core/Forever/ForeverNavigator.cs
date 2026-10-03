@@ -1,4 +1,3 @@
-using Core.Database;
 using Core.GOAP;
 
 using Game;
@@ -28,10 +27,16 @@ public sealed class ForeverNavigator : IDisposable
     private readonly ILogger<ForeverNavigator> logger;
     private readonly ConfigurableInput input;
     private readonly MouseCameraInput camera;
-    private readonly ForeverVisualBarTracker tracker;
     private readonly WorldMapAreaDB maps;
     private readonly DataConfig data;
     private readonly CancellationToken token;
+
+    // Movement is pressed on the controller thread, but a stop arrives on
+    // another one. The lock orders the two, and once halted, an update that
+    // was already running cannot press forward, strafe or mouse-look again.
+    private readonly object inputLock = new();
+    private bool halted;
+
     private NavmeshPathfinder? nav;
     private Vector2? roamOrigin;
     private Vector2? pursuitOrigin;
@@ -50,14 +55,13 @@ public sealed class ForeverNavigator : IDisposable
     private Vector2? detourWaypoint;
 
     public ForeverNavigator(ILogger<ForeverNavigator> logger,
-        ConfigurableInput input, MouseCameraInput camera, ForeverVisualBarTracker tracker,
+        ConfigurableInput input, MouseCameraInput camera,
         WorldMapAreaDB maps, DataConfig data,
         CancellationTokenSource<GoapAgent> cts)
     {
         this.logger = logger;
         this.input = input;
         this.camera = camera;
-        this.tracker = tracker;
         this.maps = maps;
         this.data = data;
         token = cts.Token;
@@ -66,15 +70,12 @@ public sealed class ForeverNavigator : IDisposable
     public bool TryReadOnlyPreflight(VisualBarSample bars, out string reason)
     {
         reason = string.Empty;
-        if (bars.Position is not { UIMapId: 1420 } map ||
+        if (bars.Position is not { UIMapId: ForeverPaladin.UIMapId } map ||
             bars.WorldPosition is not { InstanceMapId: 0 } world ||
-            !ForeverTargetSelector.HasBinding(bars, 2,
-                BindingID.MOVEFORWARD, ConsoleKey.UpArrow, ModifierKey.None) ||
-            !ForeverTargetSelector.HasBinding(bars, 6,
-                BindingID.TURNLEFT, input.TurnLeftKey, ModifierKey.None) ||
-            !ForeverTargetSelector.HasBinding(bars, 7,
-                BindingID.TURNRIGHT, input.TurnRightKey, ModifierKey.None) ||
-            input.ForwardKey != ConsoleKey.UpArrow)
+            !ForeverBindings.MoveForward.IsBoundIn(bars) ||
+            !ForeverBindings.TurnLeft(input.TurnLeftKey).IsBoundIn(bars) ||
+            !ForeverBindings.TurnRight(input.TurnRightKey).IsBoundIn(bars) ||
+            input.ForwardKey != ForeverBindings.MoveForward.Key)
         {
             reason = "position or movement bindings are incomplete";
             return false;
@@ -100,7 +101,7 @@ public sealed class ForeverNavigator : IDisposable
         Vector2 here = new((float)world.X, (float)world.Y);
         roamOrigin ??= here;
         if (pending != PendingAction.None)
-            return CheckPending(here, map.Direction, out reason);
+            return CheckPending(bars.FrameId, here, map.Direction, out reason);
 
         double desired = map.Direction;
         if (Vector2.Distance(here, roamOrigin.Value) >= 25)
@@ -120,7 +121,7 @@ public sealed class ForeverNavigator : IDisposable
             return ForeverNavigationResult.Failed;
         Vector2 here = new((float)world.X, (float)world.Y);
         if (pending != PendingAction.None)
-            return CheckPending(here, map.Direction, out reason);
+            return CheckPending(bars.FrameId, here, map.Direction, out reason);
 
         if (!TryTargetPoint(bars, out Vector2 destination))
             return ForeverNavigationResult.NoTargetPosition;
@@ -157,7 +158,7 @@ public sealed class ForeverNavigator : IDisposable
             detourWaypoint = null;
         }
         if (pending != PendingAction.None)
-            return CheckPending(here, map.Direction, out reason);
+            return CheckPending(bars.FrameId, here, map.Direction, out reason);
         if (Vector2.Distance(here, pursuitOrigin!.Value) >= 35)
         {
             StopPursuit();
@@ -180,7 +181,7 @@ public sealed class ForeverNavigator : IDisposable
             }
             if (missingSeconds < 0.3)
                 return ForeverNavigationResult.Waiting;
-            return TurnTowardMarker(bars, 0.25, out reason);
+            return TurnTowardMarker(0.25, out reason);
         }
         markerMissingAt = 0;
 
@@ -190,7 +191,7 @@ public sealed class ForeverNavigator : IDisposable
         if (Math.Abs(horizontalError) > 0.15)
         {
             StopTranslation();
-            return TurnTowardMarker(bars, horizontalError, out reason);
+            return TurnTowardMarker(horizontalError, out reason);
         }
 
         if (pursuitForwardHeld || pursuitStrafeKey is not null)
@@ -209,8 +210,7 @@ public sealed class ForeverNavigator : IDisposable
             }
         }
 
-        if (!ForeverTargetSelector.HasBinding(bars, 2,
-                BindingID.MOVEFORWARD, ConsoleKey.UpArrow, ModifierKey.None))
+        if (!ForeverBindings.MoveForward.IsBoundIn(bars))
         {
             StopPursuit();
             reason = "forward binding changed";
@@ -223,45 +223,11 @@ public sealed class ForeverNavigator : IDisposable
                 here + Heading(map.Direction) * 3,
                 out string forwardReason))
         {
+            // Prefer a diagonal step toward the marker, then a pure sidestep.
             int towardMarker = screen.X < 0.5 ? -1 : 1;
-            foreach (int side in new[] { towardMarker, -towardMarker })
-            {
-                ConsoleKey candidateKey = side < 0
-                    ? ConsoleKey.A : ConsoleKey.D;
-                if (!ForeverTargetSelector.HasBinding(bars,
-                        side < 0 ? 4 : 5,
-                        side < 0 ? BindingID.STRAFELEFT : BindingID.STRAFERIGHT,
-                        candidateKey, ModifierKey.None))
-                    continue;
-                if (HasShortPath(here, (float)world.Z, here +
-                        Heading(map.Direction - side * Math.PI / 4) * 3,
-                        out _))
-                {
-                    strafe = candidateKey;
-                    break;
-                }
-            }
-            if (strafe is null)
-            {
-                foreach (int side in new[] { towardMarker, -towardMarker })
-                {
-                    ConsoleKey candidateKey = side < 0
-                        ? ConsoleKey.A : ConsoleKey.D;
-                    if (!ForeverTargetSelector.HasBinding(bars,
-                            side < 0 ? 4 : 5,
-                            side < 0 ? BindingID.STRAFELEFT : BindingID.STRAFERIGHT,
-                            candidateKey, ModifierKey.None))
-                        continue;
-                    if (HasShortPath(here, (float)world.Z, here +
-                            Heading(map.Direction - side * Math.PI / 2) * 3,
-                            out _))
-                    {
-                        forward = false;
-                        strafe = candidateKey;
-                        break;
-                    }
-                }
-            }
+            strafe = FindStrafe(Math.PI / 4);
+            if (strafe is null && (strafe = FindStrafe(Math.PI / 2)) is not null)
+                forward = false;
             if (strafe is null)
             {
                 StopPursuit();
@@ -273,11 +239,25 @@ public sealed class ForeverNavigator : IDisposable
                 reason = $"no checked forward or sidestep path toward target; forward: {forwardReason}";
                 return ForeverNavigationResult.Blocked;
             }
+
+            ConsoleKey? FindStrafe(double angle)
+            {
+                foreach (int side in new[] { towardMarker, -towardMarker })
+                {
+                    ForeverBinding binding = side < 0
+                        ? ForeverBindings.StrafeLeft : ForeverBindings.StrafeRight;
+                    if (binding.IsBoundIn(bars) &&
+                        HasShortPath(here, (float)world.Z,
+                            here + Heading(map.Direction - side * angle) * 3, out _))
+                        return binding.Key;
+                }
+                return null;
+            }
         }
 
         // Acquire foreground before key-down: WoW releases movement keys on
         // focus changes, so sending forward first can leave only our held flag.
-        if (TurnTowardMarker(bars, horizontalError, out reason) == ForeverNavigationResult.Failed)
+        if (TurnTowardMarker(horizontalError, out reason) == ForeverNavigationResult.Failed)
             return ForeverNavigationResult.Failed;
         bool starting = !pursuitForwardHeld && pursuitStrafeKey is null;
         SetPursuitMovement(here, forward, strafe);
@@ -290,9 +270,8 @@ public sealed class ForeverNavigator : IDisposable
         foreach (float distance in new[] { 3f, 6f, 9f, 12f })
         {
             Vector2 end = here + Heading(direction) * distance;
-            // Seed the end with the player's height. A zero Z makes the shared
-            // resolver scan the whole column and prefer the highest surface,
-            // so a neighbouring hillside could win over the ground ahead.
+            // The client reports no player height, so z is 0 and both ends
+            // resolve to the ground under their own X/Y (PreferGroundUnderPoint).
             var path = nav!.FindPath(new(here.X, here.Y, z), new(end.X, end.Y, z), null);
             if (path is not { locations.Count: >= 2 } ||
                 Vector2.Distance(here, new(path.locations[0].X, path.locations[0].Y)) > 0.5f ||
@@ -328,10 +307,9 @@ public sealed class ForeverNavigator : IDisposable
         if (Math.Abs(delta) > 0.20)
         {
             StopTranslation();
-            return TurnTowardMarker(bars, -delta / Math.PI, out reason);
+            return TurnTowardMarker(-delta / Math.PI, out reason);
         }
-        if (!ForeverTargetSelector.HasBinding(bars, 2, BindingID.MOVEFORWARD,
-                ConsoleKey.UpArrow, ModifierKey.None) ||
+        if (!ForeverBindings.MoveForward.IsBoundIn(bars) ||
             !HasShortPath(here, (float)bars.WorldPosition!.Value.Z,
                 here + Heading(bars.Position.Value.Direction) * Math.Min(3, distance), out reason))
         {
@@ -339,21 +317,28 @@ public sealed class ForeverNavigator : IDisposable
             detourWaypoint = null;
             return ForeverNavigationResult.Blocked;
         }
-        ForeverNavigationResult turn = TurnTowardMarker(bars, -delta / Math.PI, out reason);
+        ForeverNavigationResult turn = TurnTowardMarker(-delta / Math.PI, out reason);
         if (turn != ForeverNavigationResult.Failed)
             SetPursuitMovement(here, true, null);
         return turn;
     }
 
-    private ForeverNavigationResult TurnTowardMarker(VisualBarSample bars,
-        double horizontalError, out string reason)
+    private ForeverNavigationResult TurnTowardMarker(double horizontalError, out string reason)
     {
         reason = string.Empty;
-        if (!camera.Turn(horizontalError))
+        lock (inputLock)
         {
-            StopPursuit();
-            reason = "game lost focus during mouse steering";
-            return ForeverNavigationResult.Failed;
+            if (halted)
+            {
+                reason = "controller stopped";
+                return ForeverNavigationResult.Failed;
+            }
+            if (!camera.Turn(horizontalError))
+            {
+                StopPursuit();
+                reason = "game lost focus during mouse steering";
+                return ForeverNavigationResult.Failed;
+            }
         }
         return ForeverNavigationResult.StepSent;
     }
@@ -361,36 +346,59 @@ public sealed class ForeverNavigator : IDisposable
     private void SetPursuitMovement(Vector2 here, bool forward,
         ConsoleKey? strafe)
     {
-        if (pursuitForwardHeld == forward && pursuitStrafeKey == strafe)
-            return;
-        if (pursuitStrafeKey is { } oldStrafe)
-            input.SetKeyState(oldStrafe, false, true);
-        if (pursuitForwardHeld && !forward)
-            input.StopForward(true);
-        if (forward && !pursuitForwardHeld)
-            input.StartForward(false);
-        if (strafe is { } newStrafe)
-            input.SetKeyState(newStrafe, true, false);
-        pursuitForwardHeld = forward;
-        pursuitStrafeKey = strafe;
-        pursuitProgressPoint = here;
-        pursuitProgressAt = GetTimestamp();
+        lock (inputLock)
+        {
+            if (halted ||
+                (pursuitForwardHeld == forward && pursuitStrafeKey == strafe))
+                return;
+            if (pursuitStrafeKey is { } oldStrafe)
+                input.SetKeyState(oldStrafe, false, true);
+            if (pursuitForwardHeld && !forward)
+                input.StopForward(true);
+            if (forward && !pursuitForwardHeld)
+                input.StartForward(false);
+            if (strafe is { } newStrafe)
+                input.SetKeyState(newStrafe, true, false);
+            pursuitForwardHeld = forward;
+            pursuitStrafeKey = strafe;
+            pursuitProgressPoint = here;
+            pursuitProgressAt = GetTimestamp();
+        }
     }
 
     public void StopPursuit()
     {
-        StopTranslation();
-        camera.Stop();
+        lock (inputLock)
+        {
+            StopTranslation();
+            camera.Stop();
+        }
+    }
+
+    /// <summary>
+    /// Releases held movement and refuses any further movement input from this
+    /// navigator. Call it when the controller stops; it is safe from any thread.
+    /// </summary>
+    public void Halt()
+    {
+        lock (inputLock)
+        {
+            halted = true;
+            StopPursuit();
+        }
     }
 
     private void StopTranslation()
     {
-        if (pursuitForwardHeld)
-            input.StopForward(true);
-        if (pursuitStrafeKey is { } strafe)
-            input.SetKeyState(strafe, false, true);
-        pursuitForwardHeld = false;
-        pursuitStrafeKey = null;
+        lock (inputLock)
+        {
+            if (pursuitForwardHeld)
+                input.StopForward(true);
+            if (pursuitStrafeKey is { } strafe)
+                input.SetKeyState(strafe, false, true);
+            pursuitForwardHeld = false;
+            pursuitStrafeKey = null;
+        }
     }
 
     private ForeverNavigationResult SendStep(VisualBarSample bars,
@@ -409,10 +417,9 @@ public sealed class ForeverNavigator : IDisposable
         if (Math.Abs(delta) > 0.20)
         {
             key = delta > 0 ? input.TurnLeftKey : input.TurnRightKey;
-            int index = delta > 0 ? 6 : 7;
-            BindingID command = delta > 0 ? BindingID.TURNLEFT : BindingID.TURNRIGHT;
-            if (!ForeverTargetSelector.HasBinding(bars, index, command,
-                    key, ModifierKey.None))
+            ForeverBinding turn = delta > 0
+                ? ForeverBindings.TurnLeft(key) : ForeverBindings.TurnRight(key);
+            if (!turn.IsBoundIn(bars))
             {
                 reason = "turn binding changed";
                 return ForeverNavigationResult.Failed;
@@ -423,9 +430,7 @@ public sealed class ForeverNavigator : IDisposable
         }
         else
         {
-            if (!ForeverTargetSelector.HasBinding(bars, 2,
-                    BindingID.MOVEFORWARD, ConsoleKey.UpArrow,
-                    ModifierKey.None) ||
+            if (!ForeverBindings.MoveForward.IsBoundIn(bars) ||
                 !HasShortPath(here, (float)bars.WorldPosition!.Value.Z,
                     here + Heading(map.Direction) * 3,
                     out reason))
@@ -434,32 +439,41 @@ public sealed class ForeverNavigator : IDisposable
                     ? "forward path or binding changed" : reason;
                 return ForeverNavigationResult.Failed;
             }
-            key = ConsoleKey.UpArrow;
+            key = ForeverBindings.MoveForward.Key;
             duration = 200;
             pending = PendingAction.Forward;
         }
         actionOrigin = here;
         actionDirection = map.Direction;
-        actionFrame = tracker.LatestFrameId;
+        actionFrame = bars.FrameId;
         actionStarted = GetTimestamp();
-        try
+        lock (inputLock)
         {
-            input.PressFixed(key, duration, token);
-        }
-        finally
-        {
-            input.SetKeyState(key, false, true);
+            if (halted)
+            {
+                pending = PendingAction.None;
+                reason = "controller stopped";
+                return ForeverNavigationResult.Failed;
+            }
+            try
+            {
+                input.PressFixed(key, duration, token);
+            }
+            finally
+            {
+                input.SetKeyState(key, false, true);
+            }
         }
         return ForeverNavigationResult.StepSent;
     }
 
-    private ForeverNavigationResult CheckPending(Vector2 here,
+    private ForeverNavigationResult CheckPending(long frameId, Vector2 here,
         double direction, out string reason)
     {
         reason = string.Empty;
         if (pending == PendingAction.None)
             return ForeverNavigationResult.Waiting;
-        if (tracker.LatestFrameId == actionFrame)
+        if (frameId == actionFrame)
             return ForeverNavigationResult.Waiting;
         if (pending == PendingAction.Forward)
         {
@@ -500,9 +514,7 @@ public sealed class ForeverNavigator : IDisposable
             targetMap.UIMapId == playerMap.UIMapId &&
             maps.TryGet(targetMap.UIMapId, out WorldMapArea area))
         {
-            Vector3 world = WorldMapAreaDB.ToWorld_FlipXY(new(
-                (float)(targetMap.MapX * 100),
-                (float)(targetMap.MapY * 100), 0), area);
+            Vector3 world = targetMap.ToWorld(area);
             point = new(world.X, world.Y);
             return true;
         }
@@ -583,17 +595,12 @@ public sealed class ForeverNavigator : IDisposable
     private bool TryNav(out string reason)
     {
         reason = string.Empty;
-        if (!maps.TryGet(1420, out WorldMapArea area) ||
-            area.MapID != 0 || area.Continent != "Azeroth")
+        if (!ForeverNavmesh.TryGetVerifiedArea(maps, out WorldMapArea area))
         {
-            reason = "Forever map 1420 is unavailable";
+            reason = $"Forever map {ForeverPaladin.UIMapId} is unavailable";
             return false;
         }
-        NavmeshBakeOptions bake = new();
-        string version = typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0";
-        string hash = NavmeshSettings.ComputeSettingsHash("forever", version,
-            bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope);
-        string cache = Path.Combine(data.Navmesh, area.Continent, hash);
+        string cache = ForeverNavmesh.CacheDirectory(data, area.Continent);
         if (!Directory.Exists(cache))
         {
             reason = "baked Forever navmesh is unavailable";
@@ -602,7 +609,7 @@ public sealed class ForeverNavigator : IDisposable
         if (nav is null || navCache != cache)
         {
             nav?.Dispose();
-            nav = new(logger, null, cache, bake, new NavmeshQueryOptions());
+            nav = ForeverNavmesh.OpenDiskOnly(logger, cache);
             navCache = cache;
         }
         return true;
@@ -612,8 +619,7 @@ public sealed class ForeverNavigator : IDisposable
     {
         if (!maps.TryGet(map.UIMapId, out WorldMapArea area))
             return false;
-        Vector3 mapped = WorldMapAreaDB.ToWorld_FlipXY(new(
-            (float)(map.MapX * 100), (float)(map.MapY * 100), 0), area);
+        Vector3 mapped = map.ToWorld(area);
         return Vector2.Distance(here, new(mapped.X, mapped.Y)) <= 1;
     }
 
@@ -628,7 +634,7 @@ public sealed class ForeverNavigator : IDisposable
 
     public void Dispose()
     {
-        StopPursuit();
+        Halt();
         nav?.Dispose();
     }
 }

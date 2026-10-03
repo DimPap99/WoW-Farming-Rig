@@ -223,7 +223,7 @@ public sealed class NavmeshPathfinder : IDisposable
         tiles = new NavmeshTileCache(logger, world, cacheDir, bake, corridorTileRadius, minWorldZ);
         query = new DtNavMeshQuery(tiles.NavMesh);
         filter = new WowQueryFilter();
-        resolver = new NavmeshEndpointResolver(query, filter);
+        resolver = new NavmeshEndpointResolver(query, filter, queryOptions.PreferGroundUnderPoint);
     }
 
     public void Dispose()

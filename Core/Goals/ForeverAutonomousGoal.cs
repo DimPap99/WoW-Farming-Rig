@@ -1,8 +1,6 @@
 using Core.Forever;
 using Core.GOAP;
 
-using Game;
-
 using Microsoft.Extensions.Logging;
 
 using SharedLib;
@@ -21,8 +19,10 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
 {
     private enum Phase { Initial, Acquire, Pursue, Fight, Loot, Recover, Complete, Failed }
 
+    // /cleartarget is typed through chat; give the flags a moment to follow.
+    private const int ClearTargetRetryMs = 1000;
+
     private readonly ILogger<ForeverAutonomousGoal> logger;
-    private readonly PlayerReader player;
     private readonly ForeverVisualBarTracker tracker;
     private readonly ForeverTargetSelector selector;
     private readonly ForeverNavigator navigator;
@@ -31,15 +31,16 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private readonly ForeverRunOptions runOptions;
     private readonly HashSet<VisualTargetIdentity> rejectedTargets = [];
     private int emptyTargetPresses;
-    private readonly CastingHandler caster;
-    private readonly SpellBookReader spells;
+    private readonly ForeverCaster caster;
     private readonly ClassConfiguration config;
     private readonly CancellationToken token;
     private volatile Phase phase = Phase.Initial;
+    private volatile bool stopped;
     private volatile int completedKills;
     private volatile string lastFailure = string.Empty;
     private long phaseStarted = GetTimestamp();
     private long lastTargetPress;
+    private long lastClearTarget;
     private long lastActionFrame;
     private long invalidFrameSince;
     private VisualTargetIdentity? target;
@@ -52,7 +53,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private volatile int completedLoots;
 
     public override float Cost => 1;
-    public override bool CanRun() => phase != Phase.Failed;
+    public override bool CanRun() => phase != Phase.Failed && !stopped;
     public string Status => phase.ToString();
     public string LastFailure => lastFailure;
     public int CompletedKills => completedKills;
@@ -60,16 +61,14 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     public int CompletedLoots => completedLoots;
 
     public ForeverAutonomousGoal(ILogger<ForeverAutonomousGoal> logger,
-        PlayerReader player, ForeverVisualBarTracker tracker,
+        ForeverVisualBarTracker tracker,
         ForeverTargetSelector selector, ForeverNavigator navigator,
         IForeverCombatRoutine combat, IForeverLootRoutine loot, ForeverRunOptions runOptions,
-        CastingHandler caster,
-        SpellBookReader spells, ClassConfiguration config,
+        ForeverCaster caster, ClassConfiguration config,
         CancellationTokenSource<GoapAgent> cts)
         : base(nameof(ForeverAutonomousGoal))
     {
         this.logger = logger;
-        this.player = player;
         this.tracker = tracker;
         this.selector = selector;
         this.navigator = navigator;
@@ -77,32 +76,24 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         this.loot = loot;
         this.runOptions = runOptions;
         this.caster = caster;
-        this.spells = spells;
         this.config = config;
         token = cts.Token;
     }
 
     public bool TryReadOnlyPreflight(out string reason)
     {
-        if (!player.TryGetForeverVisualVitals(out VisualBarSample bars) ||
-            !FrameSafe(bars) || bars.TargetFlags is not { } flags ||
+        if (!tracker.TryGetLatest(out VisualBarSample bars) ||
+            !ForeverFrame.IsVerifiedSetup(bars) || bars.TargetFlags is not { } flags ||
             flags.PlayerCombat || bars.PlayerHealth < 0.70 ||
             bars.PlayerPower < 0.60 ||
-            !ForeverTargetSelector.HasBinding(bars, 9,
-                BindingID.TARGETNEARESTENEMY, ConsoleKey.Tab,
-                ModifierKey.None) ||
-            !ForeverTargetSelector.HasBinding(bars, 15,
-                BindingID.STARTATTACK, ConsoleKey.D2,
-                ModifierKey.Shift) ||
-            !ForeverTargetSelector.HasBinding(bars, 25,
-                BindingID.ACTIONBUTTON5, ConsoleKey.D5,
-                ModifierKey.None) ||
-            bars.ActionBar?.GetSlot(5) is not
-                { Kind: VisualActionKind.Spell, Id: 20287 } ||
+            !ForeverBindings.TargetNearestEnemy.IsBoundIn(bars) ||
+            !ForeverBindings.StartAttack.IsBoundIn(bars) ||
+            !ForeverBindings.ActionButton(ForeverPaladin.SealSlot, ConsoleKey.D5).IsBoundIn(bars) ||
+            bars.ActionBar?.GetSlot(ForeverPaladin.SealSlot) is not
+                { Kind: VisualActionKind.Spell, Id: ForeverPaladin.SealOfRighteousness } ||
             bars.SealOfRighteousnessActive is null || bars.LastDeathEvent is null ||
             config.Loot && (bars.Loot is null ||
-                !ForeverTargetSelector.HasBinding(bars, 18, BindingID.INTERACTTARGET,
-                    ConsoleKey.D3, ModifierKey.Shift)))
+                !ForeverBindings.InteractTarget.IsBoundIn(bars)))
         {
             reason = "current frame, resources, or target and attack bindings are incomplete";
             return false;
@@ -114,7 +105,12 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     {
         if (e is AbortEvent)
         {
-            navigator.StopPursuit();
+            // This runs on the thread that stopped the controller, possibly
+            // while Update is still running. Halting the navigator stops that
+            // update from pressing movement again, so a stopped controller
+            // never resumes; load the profile again for a new run.
+            stopped = true;
+            navigator.Halt();
             if (phase != Phase.Complete && CompletedKills == 0)
                 Fail("Controller stopped");
         }
@@ -126,8 +122,8 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             return;
         try
         {
-            if (!player.TryGetForeverVisualVitals(out VisualBarSample bars) ||
-                !FrameSafe(bars))
+            if (!tracker.TryGetLatest(out VisualBarSample bars) ||
+                !ForeverFrame.IsVerifiedSetup(bars))
             {
                 navigator.StopPursuit();
                 if (invalidFrameSince == 0)
@@ -137,9 +133,9 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 return;
             }
             invalidFrameSince = 0;
-            if (tracker.LatestFrameId == lastActionFrame)
+            if (bars.FrameId == lastActionFrame)
                 return;
-            lastActionFrame = tracker.LatestFrameId;
+            lastActionFrame = bars.FrameId;
             VisualTargetFlags flags = bars.TargetFlags!.Value;
             if (flags.PlayerDead)
             {
@@ -156,10 +152,20 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             if (flags.PlayerCombat && bars.PlayerHealth < 0.70)
             {
                 navigator.StopPursuit();
-                KeyAction? heal = config.Combat.Sequence.SingleOrDefault(a => a.SpellId == 635);
-                if (heal is not null && caster.TryCastForever(heal,
-                    () => token.IsCancellationRequested) == ForeverCastResult.Succeeded)
-                    return;
+                if (HolyLight() is { } heal)
+                {
+                    ForeverCastResult healed = caster.TryCast(heal,
+                        () => token.IsCancellationRequested);
+                    if (healed == ForeverCastResult.Succeeded)
+                        return;
+                    // A failed heal latches the caster closed; say so here
+                    // rather than at the next attack it refuses.
+                    if (healed == ForeverCastResult.Failed)
+                    {
+                        Fail("in-combat heal success was not confirmed");
+                        return;
+                    }
+                }
             }
             // Once acquired, keep the same opponent through pursuit and combat.
             // Aggro can begin before our first cast; that is not a reason to Tab.
@@ -413,10 +419,20 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     {
         if (flags.Present)
         {
-            if (flags.Dead && bars.TargetIdentity == target)
-                selector.ClearTarget();
-            else if (!flags.Dead)
+            if (!flags.Dead)
+            {
                 Fail("new live target appeared during recovery");
+                return;
+            }
+            // Any corpse is safe to deselect, including one whose identity did
+            // not read back; repeat the command only after the flags had time.
+            if (GetElapsedTime(lastClearTarget).TotalMilliseconds >= ClearTargetRetryMs)
+            {
+                selector.ClearTarget();
+                lastClearTarget = GetTimestamp();
+            }
+            if (Elapsed() > 30000)
+                Fail("dead target stayed selected during recovery");
             return;
         }
         if (flags.PlayerCombat)
@@ -427,14 +443,12 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         }
         if (bars.PlayerHealth < 0.90)
         {
-            KeyAction? heal = config.Combat.Sequence.SingleOrDefault(
-                action => action.SpellId == 635);
-            if (heal is null)
+            if (HolyLight() is not { } heal)
             {
                 Fail("Holy Light recovery action missing");
                 return;
             }
-            if (caster.TryCastForever(heal, () => token.IsCancellationRequested) ==
+            if (caster.TryCast(heal, () => token.IsCancellationRequested) ==
                 ForeverCastResult.Failed)
                 Fail("recovery heal success was not confirmed");
             if (Elapsed() > 45000)
@@ -480,12 +494,8 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             Enter(Phase.Recover);
     }
 
-    private static bool FrameSafe(VisualBarSample bars) =>
-        AddonReader.HasForeverTrialFrame(bars) &&
-        bars.Position is { UIMapId: 1420 } &&
-        bars.WorldPosition is { InstanceMapId: 0 } &&
-        bars.PlayerIdentity is { ClassId: (int)UnitClass.Paladin } &&
-        bars.PlayerPowerType == 0;
+    private KeyAction? HolyLight() => config.Combat.Sequence.SingleOrDefault(
+        action => action.SpellId == ForeverPaladin.HolyLight);
 
     private double Elapsed() => GetElapsedTime(phaseStarted).TotalMilliseconds;
 
