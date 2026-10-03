@@ -153,8 +153,6 @@ try
                             $"calibration={current.Calibration:P0}, " +
                             PositionText(current.Position) + ", " +
                             WorldPositionText(current.WorldPosition) + ", " +
-                            CooldownText(current.ActionCooldownFill) + ", " +
-                            ActionText(current.WatchedAction) + ", " +
                             ActionBarText(current.ActionBar) + ", " +
                             SpellBookText(current.SpellBook) + ", " +
                             BindingsText(current.Bindings) + ", " +
@@ -316,8 +314,6 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
     Console.WriteLine($"selected nameplate={bars.NameplateProbe?.ToString() ?? "unavailable"}, " +
         $"screen={bars.TargetScreenPosition?.ToString() ?? "unavailable"}, " +
         $"slot auras={bars.SlotAuras?.ToString() ?? "unavailable"}");
-    Console.WriteLine(CooldownText(bars.ActionCooldownFill));
-    Console.WriteLine(ActionText(bars.WatchedAction));
     Console.WriteLine(ActionBarText(bars.ActionBar));
     Console.WriteLine(SpellBookText(bars.SpellBook));
     Console.WriteLine(BindingsText(bars.Bindings));
@@ -332,14 +328,6 @@ static string PositionText(VisualPositionSample? position) => position is { } va
 static string WorldPositionText(VisualWorldPositionSample? position) => position is { } value
     ? $"world=({value.X:F2}, {value.Y:F2}, {value.Z:F2}) instance={value.InstanceMapId}"
     : "world position=unavailable";
-
-static string CooldownText(double? fill) => fill is { } value
-    ? $"action cooldown fill={value:P0}"
-    : "action cooldown=unavailable";
-
-static string ActionText(VisualActionSample? action) => action is { } value
-    ? $"watched slot {value.Slot}: {value.Kind} ID {value.Id}"
-    : "watched action=unavailable";
 
 static string ActionBarText(VisualActionBarSnapshot? bar)
 {
@@ -645,7 +633,6 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"manaMatches={manaMatches}, " +
                 $"staleManaRejected={staleManaRejected}, " +
                 $"target={(target is { } value ? value + "%" : "unavailable")}, " +
-                $"watchedAction={ActionText(bars.WatchedAction)}, " +
                 $"actionBar={ActionBarText(bars.ActionBar)}, " +
                 $"actionStates={liveStates?.ReadableCount.ToString() ?? "missing"}/120, " +
                 $"actionStatesMatch={actionStatesMatch}, usableActionCount={usableActionCount}, " +
@@ -887,9 +874,7 @@ static async Task<int> RunTargetAudit(WowScreenWGC screen,
                      new((float)playerWorld.X, (float)playerWorld.Y)) <= 50) ||
                 bars.TargetMapPosition is { } targetMap &&
                 targetMap.UIMapId == bars.Position?.UIMapId ||
-                bars.NearestCreaturePosition is not null ||
-                bars.TargetScreenPosition is not null ||
-                bars.TargetDistanceSquared is not null);
+                bars.TargetScreenPosition is not null);
         if (firstIdentity is null)
         {
             firstIdentity = identity;
@@ -911,9 +896,7 @@ static async Task<int> RunTargetAudit(WowScreenWGC screen,
             $"stable={stable}, eligible={eligible}, " +
             $"targetWorld={bars.TargetWorldPosition?.ToString() ?? "missing"}, " +
             $"targetMap={bars.TargetMapPosition?.ToString() ?? "missing"}, " +
-            $"nearestCreature={bars.NearestCreaturePosition?.ToString() ?? "missing"}, " +
             $"targetScreen={bars.TargetScreenPosition?.ToString() ?? "missing"}, " +
-            $"targetDistanceSquared={bars.TargetDistanceSquared?.ToString() ?? "missing"}, " +
             $"nameplates={bars.NameplateProbe?.ToString() ?? "missing"}, " +
             $"map={bars.Position?.UIMapId.ToString() ?? "missing"}; no input sent.");
         if (stable && eligible)
@@ -1478,7 +1461,6 @@ static bool HasChanged(VisualBarSample previous, VisualBarSample current)
     || previous.PlayerHealthMax != current.PlayerHealthMax
     || previous.PlayerPowerMax != current.PlayerPowerMax
     || previous.WorldPosition != current.WorldPosition
-    || previous.WatchedAction != current.WatchedAction
     || previous.LastCastEvent != current.LastCastEvent
     || previous.TargetIdentity != current.TargetIdentity
     || previous.TargetWorldPosition != current.TargetWorldPosition
@@ -1486,12 +1468,6 @@ static bool HasChanged(VisualBarSample previous, VisualBarSample current)
     || ActionBarChanged(previous.ActionBar, current.ActionBar)
     || SpellBookChanged(previous.SpellBook, current.SpellBook)
     || BindingsChanged(previous.Bindings, current.Bindings)
-    || ((previous.ActionCooldownFill, current.ActionCooldownFill) switch
-    {
-        (null, null) => false,
-        (null, _) or (_, null) => true,
-        ({ } a, { } b) => Math.Abs(a - b) >= 0.02
-    })
     || ((previous.Position, current.Position) switch
     {
         (null, null) => false,
@@ -1575,7 +1551,6 @@ static int RunSelfTest()
         Draw(2, 0.60, new Bgra32 { R = 255, A = 255 });
         Draw(3, 0.50, new Bgra32 { R = 255, G = 255, A = 255 });
         Draw(4, 1.00, new Bgra32 { R = 255, G = 255, B = 255, A = 255 });
-        Draw(7, 0.40, new Bgra32 { G = 255, B = 255, A = 255 });
         DrawPositionPixel(0, 42);
         DrawPositionPixel(1, (int)Math.Floor(0.345678 * 16777215));
         DrawPositionPixel(2, (int)Math.Floor(0.789012 * 16777215));
@@ -1584,10 +1559,7 @@ static int RunSelfTest()
             (int)Math.Floor(0.345678 * 16777215) -
             (int)Math.Floor(0.789012 * 16777215) -
             (int)Math.Floor(1.23456 * 100000)) & 0xFFFFFF);
-        DrawPositionPixel(6, 0x00FFFF);
         DrawPositionPixel(7, 0x00FF00);
-        DrawPositionPixel(8, 7744);
-        DrawPositionPixel(9, 0xA50401);
         DrawPositionPixel(10, 0x5AA55A);
         DrawPositionPixel(11, 742);
         DrawPositionPixel(12, (0xA55A11 - 742) & 0xFFFFFF);
@@ -1740,7 +1712,6 @@ static int RunSelfTest()
             || Math.Abs(targetScreen.X - 780.0 / width) > 0.01
             || Math.Abs(targetScreen.Y - 0.4) > 0.01
             || result.LastCastEvent is not { Sequence: 0, SpellId: 0 }
-            || result.WatchedAction is not { Slot: 4, Kind: VisualActionKind.Spell, Id: 7744 }
             || result.ActionBar is not { ReadableCount: 120, OccupiedCount: 2 } actionBar
             || actionBar.GetSlot(4) is not { Kind: VisualActionKind.Spell, Id: 7744 }
             || actionBar.GetSlot(26) is not { Kind: VisualActionKind.Flyout, Id: 270 }
@@ -2328,30 +2299,6 @@ static int RunSelfTest()
             return 1;
         }
 
-        DrawPositionPixel(9, 0);
-        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
-            result.WatchedAction is not null)
-        {
-            Console.Error.WriteLine($"Visual reader accepted missing action marker at UI scale {scale}.");
-            return 1;
-        }
-        DrawPositionPixel(8, 0);
-        DrawPositionPixel(9, 0xA50400);
-        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
-            result.WatchedAction is not { Slot: 4, Kind: VisualActionKind.Empty, Id: 0 })
-        {
-            Console.Error.WriteLine($"Visual reader empty-action test failed at UI scale {scale}.");
-            return 1;
-        }
-
-        DrawPositionPixel(8, 7744);
-        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
-            result.WatchedAction is not null)
-        {
-            Console.Error.WriteLine($"Visual reader accepted mismatched action pixels at UI scale {scale}.");
-            return 1;
-        }
-
         DrawPositionPixel(10, 0);
         if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
             result.ActionBar is not null)
@@ -2373,21 +2320,6 @@ static int RunSelfTest()
             result.ActionBar?.GetSlot(4) is not null)
         {
             Console.Error.WriteLine($"Visual reader accepted mismatched action slot at UI scale {scale}.");
-            return 1;
-        }
-
-        if (result.ActionCooldownFill is not { } cooldown ||
-            Math.Abs(cooldown - 0.40) > 0.02)
-        {
-            Console.Error.WriteLine($"Visual reader cooldown test failed at UI scale {scale}.");
-            return 1;
-        }
-
-        DrawPositionPixel(6, 0);
-        if (!VisualBarReader.TryRead(pixels, width, height, out result) ||
-            result.ActionCooldownFill is not null)
-        {
-            Console.Error.WriteLine($"Visual reader accepted missing cooldown marker at UI scale {scale}.");
             return 1;
         }
 

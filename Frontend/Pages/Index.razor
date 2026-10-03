@@ -55,30 +55,15 @@
                                Target bar fill: @bars.TargetHealth.ToString("P0")<br />
                                Target presence: @TargetPresenceText(bars.TargetPresent)</p>
                             <p class="text-muted">Target health is usable only when target presence is confirmed.</p>
-                            @if (bars.WatchedAction is { } watchedAction)
-                            {
-                                <p>Watched slot @watchedAction.Slot: @watchedAction.Kind (ID @watchedAction.Id)</p>
-                            }
-                            else
-                            {
-                                <p class="text-muted">No valid watched-action ID marker yet.</p>
-                            }
                             @if (bars.ActionBar is { } actionBar)
                             {
                                 <p>Action bar: @actionBar.OccupiedCount occupied, @actionBar.ReadableCount / @VisualActionBarSnapshot.SlotCount readable slots</p>
+                                <p>Main bar: @MainBarText(bars)</p>
+                                <p class="text-muted">Cooldown is the remaining fraction of the spell's cooldown, not seconds.</p>
                             }
                             else
                             {
                                 <p class="text-muted">No valid full action-bar snapshot yet.</p>
-                            }
-                            @if (bars.ActionCooldownFill is { } cooldownFill)
-                            {
-                                <p>Watched action cooldown: @cooldownFill.ToString("P0") remaining</p>
-                                <p class="text-muted">This is a fraction of the spell's cooldown, not seconds. A 0% fill can also mean the watched slot has no active cooldown.</p>
-                            }
-                            else
-                            {
-                                <p class="text-muted">No valid action-cooldown marker yet.</p>
                             }
                             @if (bars.Position is { } position)
                             {
@@ -196,6 +181,28 @@
         false => "absent",
         null => "unknown"
     };
+
+    // The main-bar slots the Forever runtime can press: what each holds and
+    // how much of its cooldown remains, from the add-on's checked grids.
+    private static string MainBarText(VisualBarSample bars)
+    {
+        if (bars.ActionBar is not { } bar)
+            return "unavailable";
+        System.Collections.Generic.List<string> parts = [];
+        for (int slot = 1; slot <= VisualCooldownGridSnapshot.SlotCount; slot++)
+        {
+            if (bar.GetSlot(slot) is not { } action || action.Kind == VisualActionKind.Empty)
+                continue;
+            string cooldown = bars.Cooldowns?.GetSlot(slot) switch
+            {
+                null => "cooldown unknown",
+                0 => "ready",
+                double fill => $"{fill:P0} cooldown"
+            };
+            parts.Add($"{slot}: {action.Kind} {action.Id}, {cooldown}");
+        }
+        return parts.Count == 0 ? "empty" : string.Join("; ", parts);
+    }
 
     protected override void OnInitialized()
     {

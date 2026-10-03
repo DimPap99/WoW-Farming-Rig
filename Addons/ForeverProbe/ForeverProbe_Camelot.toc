@@ -4,4 +4,5 @@
 ## SavedVariables: ForeverProbeResults, ForeverProbeCatalog
 
 ForeverEvents.lua
-ForeverProbe.lua
+ForeverDiagnostics.lua
+ForeverVisual.lua

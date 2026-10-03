@@ -17,6 +17,12 @@ local function readable(value)
     return not isSecret(value)
 end
 
+-- A plain number, or nil for a protected or non-numeric value.
+function E.ReadableNumber(value)
+    if isSecret(value) then return nil end
+    return type(value) == "number" and value or nil
+end
+
 -- The two target identity hashes. The C# reader recomputes nothing; it only
 -- compares these, so every pixel that carries a GUID must use this function.
 local function hashes(guid)

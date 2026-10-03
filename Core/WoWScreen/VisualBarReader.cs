@@ -35,9 +35,6 @@ public readonly record struct VisualMapPointSample(
 
 public readonly record struct VisualScreenPointSample(double X, double Y);
 
-public readonly record struct VisualNearestCreatureSample(
-    int CreatureId, double X, double Y, double Distance);
-
 public readonly record struct VisualNameplateProbeSample(int Count, bool Matched);
 
 public readonly record struct VisualPlayerIdentity(
@@ -225,9 +222,7 @@ public readonly record struct VisualBarSample(
     int Bottom,
     int Width,
     VisualPositionSample? Position = null,
-    double? ActionCooldownFill = null,
     bool? TargetPresent = null,
-    VisualActionSample? WatchedAction = null,
     VisualActionBarSnapshot? ActionBar = null,
     int? PlayerHealthMax = null,
     int? PlayerPowerMax = null,
@@ -244,9 +239,7 @@ public readonly record struct VisualBarSample(
     VisualTargetIdentity? TargetIdentity = null,
     VisualWorldPositionSample? TargetWorldPosition = null,
     VisualMapPointSample? TargetMapPosition = null,
-    VisualNearestCreatureSample? NearestCreaturePosition = null,
     VisualScreenPointSample? TargetScreenPosition = null,
-    double? TargetDistanceSquared = null,
     VisualNameplateProbeSample? NameplateProbe = null,
     VisualSlotAuraSnapshot? SlotAuras = null,
     VisualDeathEvent? LastDeathEvent = null,
@@ -356,9 +349,7 @@ public static class VisualBarReader
 
         Probe probe = new(pixels, width, height, whiteLeft, whiteY, scale);
         VisualPositionSample? position = TryReadPosition(probe);
-        double? actionCooldownFill = TryReadCooldown(probe, rowStep, tolerance);
         bool? targetPresent = TryReadTargetPresence(probe);
-        VisualActionSample? watchedAction = TryReadWatchedAction(probe);
         VisualActionBarSnapshot? actionBar = TryReadActionBar(probe);
         VisualActionStateSnapshot? actionStates = TryReadActionStates(probe, actionBar);
         VisualCooldownGridSnapshot? cooldowns = TryReadCooldownGrid(probe, actionBar);
@@ -385,17 +376,9 @@ public static class VisualBarReader
             targetIdentity is { Present: true } mapTargetId
                 ? TryReadTargetMapPosition(probe, mapTargetId)
                 : null;
-        VisualNearestCreatureSample? nearestCreature =
-            targetIdentity is { Present: true } closestId
-                ? TryReadNearestCreature(probe, closestId)
-                : null;
         VisualScreenPointSample? targetScreen =
             targetIdentity is { Present: true } screenId
                 ? TryReadTargetScreen(probe, screenId)
-                : null;
-        double? targetDistanceSquared =
-            targetIdentity is { Present: true } distanceId
-                ? TryReadTargetDistance(probe, distanceId)
                 : null;
         VisualNameplateProbeSample? nameplateProbe =
             targetIdentity is { Present: true } plateId
@@ -405,12 +388,11 @@ public static class VisualBarReader
             targetScreen = TryReadTargetLocator(pixels, width, height, scale);
         VisualSlotAuraSnapshot? slotAuras = TryReadSlotAuras(probe);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
-            position, actionCooldownFill, targetPresent, watchedAction, actionBar,
+            position, targetPresent, actionBar,
             playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
             actionStates, cooldowns, playerPowerType, bags, playerIdentity,
             targetFlags, castEvent, targetIdentity, targetWorldPosition,
-            targetMapPosition, nearestCreature, targetScreen,
-            targetDistanceSquared, nameplateProbe, slotAuras,
+            targetMapPosition, targetScreen, nameplateProbe, slotAuras,
             VisualLifecycleReader.ReadDeath(pixels, width, height, whiteLeft, whiteY, scale),
             VisualLifecycleReader.ReadLoot(pixels, width, height, whiteLeft, whiteY, scale));
         return true;
@@ -614,19 +596,6 @@ public static class VisualBarReader
         return new(mapId, x / 16777215.0, y / 16777215.0);
     }
 
-    private static VisualNearestCreatureSample? TryReadNearestCreature(
-        in Probe probe, VisualTargetIdentity identity)
-    {
-        int id = probe.Cell(TargetRow, 16), x = probe.Cell(TargetRow, 17);
-        int y = probe.Cell(TargetRow, 18), distance = probe.Cell(TargetRow, 19);
-        if (id <= 0 || x < 0 || y < 0 || distance < 0 ||
-            probe.Cell(TargetRow, 20) != ((0xA5B155 - id - x - y - distance -
-                identity.GuidHash1 - identity.GuidHash2) & 0xFFFFFF))
-            return null;
-        return new(id, (x - 8388608) / 100.0,
-            (y - 8388608) / 100.0, distance / 100.0);
-    }
-
     private static VisualScreenPointSample? TryReadTargetScreen(
         in Probe probe, VisualTargetIdentity identity)
     {
@@ -636,16 +605,6 @@ public static class VisualBarReader
                 identity.GuidHash2) & 0xFFFFFF))
             return null;
         return new(x / 16777215.0, y / 16777215.0);
-    }
-
-    private static double? TryReadTargetDistance(
-        in Probe probe, VisualTargetIdentity identity)
-    {
-        int squared = probe.Cell(TargetRow, 24);
-        return squared > 0 &&
-            probe.Cell(TargetRow, 25) == ((0xA5B377 - squared - identity.GuidHash1 -
-                identity.GuidHash2) & 0xFFFFFF)
-                ? squared / 100.0 : null;
     }
 
     private static VisualNameplateProbeSample? TryReadNameplateProbe(
@@ -950,26 +909,6 @@ public static class VisualBarReader
         return new(slots);
     }
 
-    private static VisualActionSample? TryReadWatchedAction(in Probe probe)
-    {
-        int centerY = probe.Y(VitalsRow);
-        int idX = probe.X(165);
-        int markerX = probe.X(185);
-        if (!probe.Contains(idX, centerY) || !probe.Contains(markerX, centerY))
-            return null;
-
-        Bgra32 marker = probe.Pixel(markerX, centerY);
-        if (Math.Abs(marker.R - 165) > 3 || marker.G is < 1 or > 12 || marker.B > 4)
-            return null;
-
-        int id = probe.Value(idX, centerY);
-        VisualActionKind kind = (VisualActionKind)marker.B;
-        if ((kind == VisualActionKind.Empty) != (id == 0))
-            return null;
-
-        return new VisualActionSample(marker.G, kind, id);
-    }
-
     private static bool? TryReadTargetPresence(in Probe probe)
     {
         int markerX = probe.X(145);
@@ -983,19 +922,6 @@ public static class VisualBarReader
         if (Matches(marker, BarColor.Red))
             return false;
         return null;
-    }
-
-    private static double? TryReadCooldown(in Probe probe, int rowStep, int tolerance)
-    {
-        int markerX = probe.X(125);
-        int markerY = probe.Y(VitalsRow);
-        if (!probe.Contains(markerX, markerY) ||
-            !Matches(probe.Pixel(markerX, markerY), BarColor.Cyan))
-            return null;
-
-        return RowFill(probe.Pixels, probe.Width, probe.Height, probe.Left,
-            probe.WhiteY + 3 * rowStep,
-            probe.Units(ReferenceWidth), tolerance, BarColor.Cyan);
     }
 
     private static VisualPositionSample? TryReadPosition(in Probe probe)
