@@ -111,12 +111,13 @@ try
     IWowScreen screen = provider.GetRequiredService<IWowScreen>();
     ForeverVisualBarTracker tracker = provider.GetRequiredService<ForeverVisualBarTracker>();
     bool ready = false;
+    // Only this thread captures until BotController starts its addon thread.
     for (int i = 0; i < 100 && !cts.IsCancellationRequested; i++)
     {
         screen.Update();
         tracker.Update();
         if (tracker.TryGetLatest(out VisualBarSample bars) &&
-            AddonReader.HasForeverTrialFrame(bars))
+            ForeverFrame.HasTrialInputs(bars))
         {
             ready = true;
             break;
@@ -147,11 +148,11 @@ try
         }
         string autoReason = string.Empty;
         bool autoReady = false;
+        // BotController's addon thread now owns capture. Calling Update here
+        // too would race it on the shared screen image and tracker buffers.
         for (int attempt = 0; attempt < 50 && !cts.IsCancellationRequested;
              attempt++)
         {
-            screen.Update();
-            tracker.Update();
             if (automatic.TryReadOnlyPreflight(out autoReason))
             {
                 autoReady = true;
@@ -189,7 +190,7 @@ try
                         $"seal={current.SealOfRighteousnessActive}, marker={current.TargetScreenPosition}, " +
                         $"range2/3={current.ActionStates?.GetSlot(2)?.InRange}/{current.ActionStates?.GetSlot(3)?.InRange}, " +
                         $"cast={current.LastCastEvent}, death={current.LastDeathEvent}, loot={current.Loot}, " +
-                        $"frameReady={AddonReader.HasForeverTrialFrame(current)}");
+                        $"frameReady={ForeverFrame.HasTrialInputs(current)}");
                 else
                     Console.WriteLine("  visual frame unavailable");
                 nextSnapshot = DateTime.UtcNow.AddSeconds(2);

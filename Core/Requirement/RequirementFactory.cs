@@ -1,4 +1,5 @@
 using Core.Database;
+using Core.Forever;
 using Core.Goals;
 
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +15,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 
 using static Core.Requirement;
 using static System.Math;
@@ -387,13 +387,8 @@ public sealed partial class RequirementFactory
     public void Init(KeyAction item)
     {
         if (playerReader.IsForeverVisual &&
-            (item.AfterCastWaitBuff || item.AfterCastAuraExpected))
-            throw new NotSupportedException(
-                $"Forever action '{item.Name}' requires an unverified aura signal.");
-        if (playerReader.IsForeverVisual &&
-            (item.HasForm || item.MinComboPoints > 0))
-            throw new NotSupportedException(
-                $"Forever action '{item.Name}' requires unported form or combo-point cost data.");
+            ForeverProfileRules.FindUnsupportedAction(item) is { } unsupported)
+            throw new NotSupportedException(unsupported);
 
         if (item.Name is Drink or Food)
             AddConsumable(item);
@@ -405,8 +400,7 @@ public sealed partial class RequirementFactory
             InitPerKeyAction(item);
 
             AddMinPower(list, item, costReader, buffs);
-            AddGameCooldown(list, item, playerReader, intVariables,
-                cooldownReader, spellBookReader);
+            AddGameCooldown(list, item, playerReader, intVariables);
 
             if (item.WhenUsable)
             {
@@ -462,25 +456,9 @@ public sealed partial class RequirementFactory
         foreach (string requirement in CollectionsMarshal.AsSpan(requirements))
         {
             if (playerReader.IsForeverVisual &&
-                FindUnsupportedForeverCooldownComparison(requirement,
-                    actionCooldownKeys) is { } key)
-                throw new NotSupportedException(
-                    $"Forever profile expression '{requirement}' uses {key} as milliseconds; replace it with a readiness rule.");
-
-            if (playerReader.IsForeverVisual &&
-                FindUnsupportedForeverActionCost(requirement) is { } cost)
-                throw new NotSupportedException(
-                    $"Forever profile expression '{requirement}' uses unavailable numeric action cost {cost}; use checked usability and no-mana state.");
-
-            if (playerReader.IsForeverVisual &&
-                FindUnsupportedForeverVital(requirement) is { } vital)
-                throw new NotSupportedException(
-                    $"Forever profile expression '{requirement}' uses unavailable exact or secondary vital {vital}; use a checked percentage or action usability rule.");
-
-            if (playerReader.IsForeverVisual &&
-                FindUnsupportedForeverAura(requirement, auraKeys) is { } aura)
-                throw new NotSupportedException(
-                    $"Forever profile expression '{requirement}' uses unverified aura {aura}.");
+                ForeverProfileRules.FindUnsupportedExpression(requirement,
+                    actionCooldownKeys, auraKeys) is { } unsupported)
+                throw new NotSupportedException(unsupported);
 
             if (logger.IsEnabled(LogLevel.Information))
                 LogProcessing(logger, name, requirement);
@@ -488,62 +466,6 @@ public sealed partial class RequirementFactory
             output.Add(expressionParser.Parse(requirement));
         }
     }
-
-    public static string? FindUnsupportedForeverCooldownComparison(
-        string expression, IReadOnlySet<string> actionCooldownKeys)
-    {
-        foreach (Match match in ForeverCooldownVariable().Matches(expression))
-        {
-            string key = match.Value.Trim();
-            if (actionCooldownKeys.Contains(key))
-                return key;
-        }
-        return null;
-    }
-
-    [GeneratedRegex(@"(?<!\w)CD_[^<>=&|),]+", RegexOptions.IgnoreCase)]
-    private static partial Regex ForeverCooldownVariable();
-
-    public static string? FindUnsupportedForeverActionCost(string expression)
-    {
-        Match match = ForeverActionCostVariable().Match(expression);
-        return match.Success ? match.Value.Trim() : null;
-    }
-
-    [GeneratedRegex(@"(?<![A-Za-z0-9_])Cost(?:_[^<>=&|),]+)?(?![A-Za-z0-9_])",
-        RegexOptions.IgnoreCase)]
-    private static partial Regex ForeverActionCostVariable();
-
-    public static string? FindUnsupportedForeverVital(string expression)
-    {
-        Match match = ForeverUnsupportedVital().Match(expression);
-        return match.Success ? match.Value : null;
-    }
-
-    [GeneratedRegex(@"(?<![A-Za-z0-9_])(Mana|Energy|Rage|RunicPower|Focus|PetHealth%|FocusHealth%)(?![A-Za-z0-9_%])",
-        RegexOptions.IgnoreCase)]
-    private static partial Regex ForeverUnsupportedVital();
-
-    public static string? FindUnsupportedForeverAura(
-        string expression, IEnumerable<string> auraKeys)
-    {
-        foreach (string key in auraKeys.OrderByDescending(x => x.Length))
-        {
-            if (Regex.IsMatch(expression,
-                $@"(?<![A-Za-z0-9_]){Regex.Escape(key)}(?![A-Za-z0-9_])",
-                RegexOptions.IgnoreCase))
-                return key;
-        }
-
-        return null;
-    }
-
-    private static bool IsAuraVariable(string key) =>
-        key.StartsWith("Buff_", StringComparison.OrdinalIgnoreCase) ||
-        key.StartsWith("Debuff_", StringComparison.OrdinalIgnoreCase) ||
-        key.StartsWith("TDebuff_", StringComparison.OrdinalIgnoreCase) ||
-        key.StartsWith("TBuff_", StringComparison.OrdinalIgnoreCase) ||
-        key.StartsWith("FBuff_", StringComparison.OrdinalIgnoreCase);
 
     public void InitUserDefinedIntVariables(
         Dictionary<string, int[]> intKeyValues,
@@ -558,7 +480,7 @@ public sealed partial class RequirementFactory
 
         foreach ((string key, int[] values) in intKeyValues)
         {
-            if (playerReader.IsForeverVisual && IsAuraVariable(key))
+            if (playerReader.IsForeverVisual && ForeverProfileRules.IsAuraVariable(key))
                 throw new NotSupportedException(
                     $"Forever profile variable '{key}' requires an unverified aura timer.");
 
@@ -879,8 +801,8 @@ public sealed partial class RequirementFactory
     {
         if (playerReader.IsForeverVisual)
         {
-            // IsForeverReady already requires a fresh usable action with
-            // NoMana=false. Numeric costs and current power are protected.
+            // ForeverCastGate.IsActionReady already requires a fresh usable
+            // action with NoMana=false. Numeric costs and current power are secret.
             return;
         }
 
@@ -1128,12 +1050,12 @@ public sealed partial class RequirementFactory
 
     private void AddGameCooldown(List<Requirement> list,
         KeyAction item, PlayerReader playerReader,
-        Dictionary<string, Func<int>> intVariables,
-        ActionBarCooldownReader cooldownReader, SpellBookReader spellBookReader)
+        Dictionary<string, Func<int>> intVariables)
     {
         string key = $"CD_{item.Name}";
         bool f() => playerReader.IsForeverVisual
-            ? cooldownReader.IsForeverReady(item, spellBookReader)
+            ? playerReader.TryGetForeverVisualVitals(out VisualBarSample bars) &&
+                ForeverCastGate.IsActionReady(bars, item, spellBookReader.SpellDB)
             : UsableGCD(key, playerReader, intVariables);
         string s() => playerReader.IsForeverVisual
             ? "Forever cooldown ready"

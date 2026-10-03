@@ -1,7 +1,5 @@
 using Core.GOAP;
 
-using Game;
-
 using SharedLib;
 
 using System;
@@ -26,46 +24,30 @@ public sealed class ForeverTargetSelector
     }
 
     public static bool CanSelect(VisualBarSample bars) =>
-        AddonReader.HasForeverTrialFrame(bars) &&
+        ForeverFrame.HasTrialInputs(bars) &&
         bars.TargetFlags is { Present: false, PlayerDead: false } flags &&
         bars.PlayerHealth >= 0.70 &&
         bars.PlayerPower >= (flags.PlayerCombat ? 0.25 : 0.60) &&
-        HasBinding(bars, 9, BindingID.TARGETNEARESTENEMY,
-            ConsoleKey.Tab, ModifierKey.None);
+        ForeverBindings.TargetNearestEnemy.IsBoundIn(bars);
 
     public bool SelectNearest(VisualBarSample bars)
     {
         if (!CanSelect(bars))
             return false;
-        try
-        {
-            input.PressFixed(ConsoleKey.Tab, 75, token);
-            return true;
-        }
-        finally
-        {
-            input.SetKeyState(ConsoleKey.Tab, false, true);
-        }
+        PressTargetNearestEnemy();
+        return true;
     }
 
     public bool CycleCandidate(VisualBarSample bars)
     {
-        if (!AddonReader.HasForeverTrialFrame(bars) ||
+        if (!ForeverFrame.HasTrialInputs(bars) ||
             bars.TargetFlags is not
                 { Present: true, PlayerCombat: false, PlayerDead: false } ||
             bars.PlayerHealth < 0.70 || bars.PlayerPower < 0.60 ||
-            !HasBinding(bars, 9, BindingID.TARGETNEARESTENEMY,
-                ConsoleKey.Tab, ModifierKey.None))
+            !ForeverBindings.TargetNearestEnemy.IsBoundIn(bars))
             return false;
-        try
-        {
-            input.PressFixed(ConsoleKey.Tab, 75, token);
-            return true;
-        }
-        finally
-        {
-            input.SetKeyState(ConsoleKey.Tab, false, true);
-        }
+        PressTargetNearestEnemy();
+        return true;
     }
 
     public static bool TrySafeTarget(VisualBarSample bars,
@@ -77,7 +59,7 @@ public sealed class ForeverTargetSelector
         out VisualTargetIdentity identity)
     {
         identity = default;
-        if (!AddonReader.HasForeverTargetIdentity(bars) ||
+        if (!ForeverFrame.HasTargetIdentity(bars) ||
             bars.TargetFlags is not
                 { Present: true, Attackable: true, Dead: false,
                   PlayerDead: false } flags ||
@@ -93,38 +75,32 @@ public sealed class ForeverTargetSelector
     public bool SelectNearbyOpponent(VisualBarSample bars)
     {
         if (bars.TargetFlags is not { PlayerCombat: true, PlayerDead: false } ||
-            !HasBinding(bars, 9, BindingID.TARGETNEARESTENEMY,
-                ConsoleKey.Tab, ModifierKey.None))
+            !ForeverBindings.TargetNearestEnemy.IsBoundIn(bars))
             return false;
         ClearTarget();
-        try { input.PressFixed(ConsoleKey.Tab, 75, token); }
-        finally { input.SetKeyState(ConsoleKey.Tab, false, true); }
+        PressTargetNearestEnemy();
         return true;
     }
 
     public static bool InJudgementRange(VisualBarSample bars) =>
-        bars.ActionBar?.GetSlot(2) is
-            { Kind: VisualActionKind.Spell, Id: 20271 } &&
-        bars.ActionStates?.GetSlot(2) is { InRange: true };
+        bars.ActionBar?.GetSlot(ForeverPaladin.JudgementSlot) is
+            { Kind: VisualActionKind.Spell, Id: ForeverPaladin.Judgement } &&
+        bars.ActionStates?.GetSlot(ForeverPaladin.JudgementSlot) is { InRange: true };
 
     public static bool InStrikeRange(VisualBarSample bars) =>
-        bars.ActionBar?.GetSlot(3) is
-            { Kind: VisualActionKind.Spell, Id: 678 or 679 } &&
-        bars.ActionStates?.GetSlot(3) is { InRange: true };
+        bars.ActionBar?.GetSlot(ForeverPaladin.HolyStrikeSlot) is
+            { Kind: VisualActionKind.Spell,
+              Id: ForeverPaladin.HolyStrikeRank1 or ForeverPaladin.HolyStrikeRank2 } &&
+        bars.ActionStates?.GetSlot(ForeverPaladin.HolyStrikeSlot) is { InRange: true };
 
     public void ClearTarget() => command.Run("/cleartarget");
 
     public void RestoreLastTarget() => command.Run("/targetlasttarget");
 
-    public static bool HasBinding(VisualBarSample bars, int index,
-        BindingID command, ConsoleKey key, ModifierKey modifier)
+    private void PressTargetNearestEnemy()
     {
-        int? code = bars.Bindings?.GetCode(index);
-        if (code is not > 0 ||
-            KeyReader.DecodeBinding(code.Value) is not { } decoded ||
-            decoded.bindingId != command)
-            return false;
-        return (decoded.key1 == key && decoded.mod1 == modifier) ||
-            (decoded.key2 == key && decoded.mod2 == modifier);
+        ConsoleKey key = ForeverBindings.TargetNearestEnemy.Key;
+        try { input.PressFixed(key, ForeverBinding.PressMs, token); }
+        finally { input.SetKeyState(key, false, true); }
     }
 }

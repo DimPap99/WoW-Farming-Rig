@@ -4,11 +4,6 @@ namespace Core;
 
 public sealed class AddonBits : IReader, IGameMenuWindowShown
 {
-    public System.Func<VisualTargetFlags?>? ForeverTargetFlagsProvider { get; set; }
-    private VisualTargetFlags? ForeverTargetFlags => ForeverTargetFlagsProvider?.Invoke();
-    private VisualTargetFlags RequiredForeverFlags() => ForeverTargetFlags ??
-        throw new System.InvalidOperationException(
-            "Forever player combat/death flags are unavailable or stale.");
     private const int cell1 = 8;
     private const int cell2 = 9;
     private const int cell3 = 100;
@@ -28,21 +23,13 @@ public sealed class AddonBits : IReader, IGameMenuWindowShown
 
     // -- value1 based flags
     public bool Target_Combat() => v1[Mask._0];
-    public bool Target_Dead() => ForeverTargetFlagsProvider is not null
-        ? ForeverTargetFlags is { Present: true, Dead: true }
-        : v1[Mask._1];
-    public bool Target_NotDead() => ForeverTargetFlagsProvider is not null
-        ? ForeverTargetFlags is { Present: true, Dead: false }
-        : !v1[Mask._1];
+    public bool Target_Dead() => v1[Mask._1];
+    public bool Target_NotDead() => !v1[Mask._1];
     public bool Target_Alive() => Target() && Target_NotDead();
-    public bool Dead() => ForeverTargetFlagsProvider is not null
-        ? RequiredForeverFlags().PlayerDead
-        : v1[Mask._2];
+    public bool Dead() => v1[Mask._2];
     public bool TalentPoint() => v1[Mask._3];
     public bool MouseOver() => v1[Mask._4];
-    public bool Target_Hostile() => ForeverTargetFlagsProvider is not null
-        ? ForeverTargetFlags is { Present: true, Attackable: true, Dead: false }
-        : v1[Mask._5];
+    public bool Target_Hostile() => v1[Mask._5];
     public bool Pet() => v1[Mask._6];
     public bool MainHandTempEnchant() => v1[Mask._7];
     public bool OffHandTempEnchant() => v1[Mask._8];
@@ -51,17 +38,11 @@ public sealed class AddonBits : IReader, IGameMenuWindowShown
     public bool Swimming() => v1[Mask._11];
     public bool Pet_Happy() => v1[Mask._12];
     public bool Ammo() => v1[Mask._13];
-    public bool Combat() => ForeverTargetFlagsProvider is not null
-        ? RequiredForeverFlags().PlayerCombat
-        : v1[Mask._14];
+    public bool Combat() => v1[Mask._14];
     public bool TargetTarget_PlayerOrPet() => v1[Mask._15];
     public bool AutoShot() => v1[Mask._16];
-    public bool NoTarget() => ForeverTargetFlagsProvider is not null
-        ? ForeverTargetFlags is { Present: false }
-        : !v1[Mask._17];
-    public bool Target() => ForeverTargetFlagsProvider is not null
-        ? ForeverTargetFlags is { Present: true }
-        : v1[Mask._17];
+    public bool NoTarget() => !v1[Mask._17];
+    public bool Target() => v1[Mask._17];
     public bool Mounted() => v1[Mask._18];
     public bool Shoot() => v1[Mask._19];
     public bool Auto_Attack() => v1[Mask._20];

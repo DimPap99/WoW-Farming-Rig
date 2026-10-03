@@ -36,8 +36,7 @@ public enum SlotValidationStatus
     Mismatch,
     EmptySlot,
     UnknownTexture,
-    NotOnActionBar,
-    Unavailable
+    NotOnActionBar
 }
 
 public sealed partial class ActionBarSlotValidator
@@ -94,9 +93,6 @@ public sealed partial class ActionBarSlotValidator
             actualSlot = 0;
             return SlotValidationStatus.NotOnActionBar;
         }
-
-        if (playerReader.IsForeverVisual)
-            return ValidateForever(keyAction, out actualSlot);
 
         // Skip if no spell name to validate
         if (string.IsNullOrEmpty(keyAction.Name))
@@ -155,54 +151,6 @@ public sealed partial class ActionBarSlotValidator
         return SlotValidationStatus.Mismatch;
     }
 
-    private SlotValidationStatus ValidateForever(KeyAction action, out int actualSlot)
-    {
-        actualSlot = action.Slot;
-        if (action.HasForm && action.Slot is >= 1 and <= 12)
-        {
-            (int min, int max) = KeyReader.GetPreferredSlotRange(action);
-            if (min > 0 && max >= min + 11)
-                actualSlot = min + action.Slot - 1;
-        }
-
-        if (!playerReader.TryGetForeverActionBar(out var bar) ||
-            bar.ReadableCount != VisualActionBarSnapshot.SlotCount ||
-            bar.GetSlot(actualSlot) is null)
-            return SlotValidationStatus.Unavailable;
-
-        return ValidateForeverAction(action, actualSlot, bar, spellBookReader);
-    }
-
-    public static SlotValidationStatus ValidateForeverAction(KeyAction action,
-        int actualSlot, VisualActionBarSnapshot bar, SpellBookReader book)
-    {
-        if (bar.ReadableCount != VisualActionBarSnapshot.SlotCount ||
-            bar.GetSlot(actualSlot) is not { } placed)
-            return SlotValidationStatus.Unavailable;
-
-        if (placed.Kind == VisualActionKind.Empty)
-            return SlotValidationStatus.EmptySlot;
-        if (string.IsNullOrEmpty(action.Name) ||
-            KeyReader.IsItemAlias(action.Name))
-            return SlotValidationStatus.Valid;
-        if (char.IsLower(action.Name[0]))
-            return placed.Kind == VisualActionKind.Macro
-                ? SlotValidationStatus.Valid : SlotValidationStatus.Mismatch;
-
-        if (placed.Kind != VisualActionKind.Spell)
-            return SlotValidationStatus.Mismatch;
-        if (!book.IsInitialized ||
-            !book.AllRanksReceived ||
-            !book.TryGetValue(placed.Id, out var spell))
-            return SlotValidationStatus.Unavailable;
-        if (!book.HasExact(placed.Id))
-            return SlotValidationStatus.Mismatch;
-
-        return (action.SpellId == 0 || action.SpellId == placed.Id) &&
-            string.Equals(spell.Name, action.Name, StringComparison.OrdinalIgnoreCase)
-            ? SlotValidationStatus.Valid : SlotValidationStatus.Mismatch;
-    }
-
     /// <summary>
     /// Validates a KeyAction and returns detailed result. Allocates for display.
     /// </summary>
@@ -215,20 +163,11 @@ public sealed partial class ActionBarSlotValidator
 
         if (actualSlot > 0)
         {
-            if (playerReader.IsForeverVisual)
-            {
-                if (playerReader.TryGetForeverActionBar(out var bar) &&
-                    bar.GetSlot(actualSlot) is
-                        { Kind: VisualActionKind.Spell } placed &&
-                    spellBookReader.TryGetValue(placed.Id, out var spell))
-                    possibleSpells = [spell.Name];
-            }
-            else
-            {
-                textureReader.TryGetTexture(actualSlot, out textureId);
+            textureReader.TryGetTexture(actualSlot, out textureId);
 
-                if (textureId > 0 && status != SlotValidationStatus.Valid)
-                    possibleSpells = iconDB.GetSpellNamesForDisplay(textureId);
+            if (textureId > 0 && status != SlotValidationStatus.Valid)
+            {
+                possibleSpells = iconDB.GetSpellNamesForDisplay(textureId);
             }
         }
 
@@ -245,13 +184,13 @@ public sealed partial class ActionBarSlotValidator
     /// </summary>
     public void ValidateAndLog(IEnumerable<KeyAction> keyActions)
     {
-        if (!playerReader.IsForeverVisual && iconDB.IconToSpells.Count == 0)
+        if (iconDB.IconToSpells.Count == 0)
         {
             LogValidationSkipped(logger);
             return;
         }
 
-        if (!playerReader.IsForeverVisual && !textureReader.IsInitialized)
+        if (!textureReader.IsInitialized)
         {
             LogTexturesNotReady(logger);
             return;
@@ -287,11 +226,9 @@ public sealed partial class ActionBarSlotValidator
                     {
                         // Only report mismatch if we know the spell (can verify texture)
                         issueCount++;
-                        string[] found = playerReader.IsForeverVisual
-                            ? ValidateWithDetails(keyAction).PossibleSpells
-                            : iconDB.GetSpellNamesForDisplay(
-                                textureReader.SlotTextures[actualSlot]);
-                        LogMismatch(logger, keyAction.Name, actualSlot, found);
+                        LogMismatch(logger, keyAction.Name, actualSlot,
+                            iconDB.GetSpellNamesForDisplay(
+                                textureReader.SlotTextures[actualSlot]));
                     }
                     else
                     {
@@ -303,11 +240,6 @@ public sealed partial class ActionBarSlotValidator
                 case SlotValidationStatus.UnknownTexture:
                     // Not an error - texture not in our DB (could be item, macro, etc.)
                     validCount++;
-                    break;
-
-                case SlotValidationStatus.Unavailable:
-                    issueCount++;
-                    LogActionBarUnavailable(logger, keyAction.Name, actualSlot);
                     break;
             }
         }
@@ -421,15 +353,7 @@ public sealed partial class ActionBarSlotValidator
 
                 if (action.Slot > 0)
                 {
-                    if (playerReader.IsForeverVisual)
-                    {
-                        SlotValidationStatus status = Validate(action);
-                        if (status is not (SlotValidationStatus.Valid or
-                            SlotValidationStatus.NotOnActionBar))
-                            issues.Add(new ActionBarIssue(action, status,
-                                CanResolve: false));
-                    }
-                    else if (isMacro)
+                    if (isMacro)
                     {
                         // Macro with slot - just check if slot is empty (can't validate texture)
                         if (!textureReader.TryGetTexture(action.Slot, out int textureId) || textureId == 0)
@@ -455,15 +379,6 @@ public sealed partial class ActionBarSlotValidator
                 }
                 else if (!action.BaseAction && !isMacro)
                 {
-                    if (playerReader.IsForeverVisual &&
-                        (!playerReader.TryGetForeverActionBar(out var liveBar) ||
-                         liveBar.ReadableCount != VisualActionBarSnapshot.SlotCount ||
-                         !spellBookReader.IsInitialized))
-                    {
-                        issues.Add(new ActionBarIssue(action,
-                            SlotValidationStatus.Unavailable, CanResolve: false));
-                        continue;
-                    }
                     // No slot in config - check if spell is actually on action bar via texture
                     // (skip this check for macros - they need explicit slots)
                     if (!IsSpellOnActionBar(action.Name))
@@ -558,10 +473,6 @@ public sealed partial class ActionBarSlotValidator
         // Skip item aliases
         if (KeyReader.IsItemAlias(name))
             return false;
-
-        if (playerReader.IsForeverVisual)
-            return playerReader.TryGetForeverActionBar(out var bar) &&
-                KeyReader.FindForeverSpellSlot(bar, spellBookReader, name) > 0;
 
         if (!textureReader.IsInitialized)
             return false;
@@ -664,12 +575,6 @@ public sealed partial class ActionBarSlotValidator
         Level = LogLevel.Information,
         Message = "Action bar validation: {validCount} valid, {issueCount} issues")]
     static partial void LogValidationComplete(ILogger logger, int validCount, int issueCount);
-
-    [LoggerMessage(
-        EventId = 6,
-        Level = LogLevel.Debug,
-        Message = "Forever action bar unavailable while validating '{spellName}' in slot {slot}")]
-    static partial void LogActionBarUnavailable(ILogger logger, string spellName, int slot);
 
     #endregion
 }

@@ -1,5 +1,6 @@
 using Core;
 using Core.Database;
+using Core.Forever;
 using Core.Goals;
 using Core.GOAP;
 
@@ -405,19 +406,14 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
     SpellBookReader spellBook = new(new SpellDB(config));
     KeyBindingsReader bindingReader = new(NullLogger<KeyBindingsReader>.Instance);
     KeyReader.RequireGameBindings = true;
-    AddonBits targetBits = new();
-    PlayerReader player = new(screen, maps, null!, targetBits,
+    PlayerReader player = new(screen, maps, null!, new AddonBits(),
         new SpellInRange(), new Stance(), tracker);
-    targetBits.ForeverTargetFlagsProvider = () =>
-        player.TryGetForeverVisualVitals(out var latest) &&
-        latest.TargetFlags is { } flags &&
-        latest.TargetPresent == flags.Present ? flags : null;
 
     for (int i = 0; i < 50; i++)
     {
         screen.Update();
         tracker.Update();
-        if (player.TryGetForeverVisualVitals(out VisualBarSample bars) &&
+        if (tracker.TryGetLatest(out VisualBarSample bars) &&
             bars.Position is { } mapPosition &&
             bars.WorldPosition is { } worldPosition)
         {
@@ -431,38 +427,19 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                     new((float)worldPosition.X, (float)worldPosition.Y)) < 3;
             int health = player.HealthPercent();
             int power = player.PTPercentage();
-            int? mana = bars.PlayerPowerType == 0
+            int? mana = bars.PlayerPowerType == ForeverFrame.ManaPowerType
                 ? player.ManaPercent() : null;
             int? target = bars.TargetPresent == true
                 ? player.TargetHealthPercent() : null;
-            bool actionMatches = bars.WatchedAction is not { } watched ||
-                (player.TryGetForeverWatchedAction(out VisualActionSample action) &&
-                action == watched);
-            bool actionBarMatches = bars.ActionBar is not { } liveBar ||
-                (player.TryGetForeverActionBar(out VisualActionBarSnapshot actionBar) &&
-                ReferenceEquals(actionBar, liveBar));
             VisualActionStateSnapshot? liveStates = bars.ActionStates;
             bool actionStatesMatch = liveStates is
-                    { ReadableCount: VisualActionBarSnapshot.SlotCount } &&
-                player.TryGetForeverActionStates(out var states) &&
-                ReferenceEquals(states, liveStates);
+                { ReadableCount: VisualActionBarSnapshot.SlotCount };
             bool cooldownGridMatches = bars.Cooldowns is
-                    { ReadableCount: VisualCooldownGridSnapshot.SlotCount } liveCooldowns &&
-                player.TryGetForeverCooldowns(out var cooldowns) &&
-                ReferenceEquals(cooldowns, liveCooldowns);
+                { ReadableCount: VisualCooldownGridSnapshot.SlotCount };
             VisualBagSnapshot? liveBags = bars.Bags;
-            bool bagGridMatches = liveBags is { IsComplete: true } &&
-                player.TryGetForeverBags(out var currentBags) &&
-                ReferenceEquals(currentBags, liveBags);
+            bool bagGridMatches = liveBags is { IsComplete: true };
             int bagItemCount = 0;
             int regularFreeSlots = 0;
-            bool bagReaderMatches = false;
-            ItemDB liveItemDB = new(config, new IconDB(
-                NullLogger<IconDB>.Instance, config, spellBook.SpellDB));
-            using BagReader liveBagReader = new(liveItemDB,
-                new EquipmentReader(liveItemDB));
-            liveBagReader.ForeverBagsProvider = () =>
-                player.TryGetForeverBags(out var latest) ? latest : null;
             if (bagGridMatches)
             {
                 for (int bag = 0; bag < VisualBagSnapshot.BagCount; bag++)
@@ -474,9 +451,6 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                         if (liveBags.GetSlot(bag, slot) is { ItemId: > 0 })
                             bagItemCount++;
                 }
-                liveBagReader.UpdateForever(liveBags);
-                bagReaderMatches = liveBagReader.BagItemCount() == bagItemCount &&
-                    liveBagReader.BagsFull() == (regularFreeSlots == 0);
             }
             int usableActionCount = 0;
             int inRangeActionCount = 0;
@@ -499,13 +473,6 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                         VisualActionKind.Empty && state.Usable)
                         actionStatesMatch = false;
                 }
-            ActionBarBits<IUsableAction>.ForeverStatesProvider =
-                () => player.TryGetForeverActionStates(out var latest)
-                    ? latest : null;
-            ActionBarBits<IUsableAction> usableReader = new(1);
-            bool usableReaderMatches = actionStatesMatch &&
-                usableReader.Count == usableActionCount &&
-                usableReader.Any == (usableActionCount > 0);
             bool maximaMatch =
                 (bars.PlayerHealthMax is not { } healthMax || player.HealthMax() == healthMax) &&
                 (bars.PlayerPowerMax is not { } powerMax || player.PTMax() == powerMax);
@@ -520,31 +487,13 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool trialFactionMatches = bars.PlayerIdentity is not
                 { RaceId: (int)UnitRace.Undead } ||
                 player.Faction == PlayerFaction.Horde;
-            bool controllerFrameReady =
-                AddonReader.HasForeverControllerFrame(bars);
+            bool controllerFrameReady = ForeverFrame.HasControllerInputs(bars);
             bool targetFlagsMatch = bars.TargetFlags is { } flags &&
                 flags.Present == bars.TargetPresent;
-            bool targetIdentityReady =
-                AddonReader.HasForeverTargetIdentity(bars);
-            bool castEventMatches = bars.LastCastEvent is { } castEvent &&
-                player.TryGetForeverCastEvent(out VisualCastEvent readerCast) &&
-                readerCast == castEvent;
-            bool targetBitsMatch = bars.TargetFlags is { } targetFlags &&
-                targetFlagsMatch &&
-                targetBits.Target() == targetFlags.Present &&
-                targetBits.NoTarget() == !targetFlags.Present &&
-                targetBits.Target_Dead() ==
-                    (targetFlags.Present && targetFlags.Dead) &&
-                targetBits.Target_Hostile() ==
-                    (targetFlags.Present && targetFlags.Attackable &&
-                        !targetFlags.Dead) &&
-                targetBits.Combat() == targetFlags.PlayerCombat &&
-                targetBits.Dead() == targetFlags.PlayerDead;
+            bool targetIdentityReady = ForeverFrame.HasTargetIdentity(bars);
+            bool castEventMatches = bars.LastCastEvent is not null;
             bool manaMatches = powerTypeReadable &&
-                (bars.PlayerPowerType != 0 || mana == power);
-            bool worldPositionMatches = bars.WorldPosition is not { } world ||
-                (player.TryGetForeverWorldPosition(out VisualWorldPositionSample current) &&
-                 current == world);
+                (bars.PlayerPowerType != ForeverFrame.ManaPowerType || mana == power);
             bool worldPositionAvailable = bars.WorldPosition is not null;
             VisualSpellBookSnapshot? visualBook = bars.SpellBook;
             spellBook.UpdateForever(visualBook);
@@ -606,12 +555,8 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 bindingMatches &= !KeyReader.ResolveFromSlot(new KeyAction { Slot = 49 });
 
             KeyReader.ForeverActionBarProvider =
-                () => player.TryGetForeverActionBar(out var live) ? live : null;
-            ActionBarSlotValidator slotValidator = new(
-                NullLogger<ActionBarSlotValidator>.Instance, null!, null!,
-                player, spellBook);
+                () => tracker.TryGetLatest(out var live) ? live.ActionBar : null;
             bool spellActionResolved = false;
-            bool spellSlotValidated = false;
             string? resolvedSpellName = null;
             KeyAction? resolvedSpellAction = null;
             if (spellBookMatches && bindingMatches && bars.ActionBar is { } liveActions)
@@ -635,27 +580,16 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                         matchedSpell.Name == spell.Name;
                     if (spellActionResolved)
                     {
-                        spellSlotValidated = slotValidator.Validate(candidate) ==
-                            SlotValidationStatus.Valid &&
-                            slotValidator.Validate(new KeyAction
-                                { Name = "Unlearned Spell", Slot = candidate.Slot }) ==
-                            SlotValidationStatus.Mismatch;
                         resolvedSpellName = spell.Name;
                         resolvedSpellAction = candidate;
                         break;
                     }
                 }
 
-            ActionBarCooldownReader cooldownReader = new()
-            {
-                ForeverSampleProvider = () =>
-                    player.TryGetForeverVisualVitals(out var latest)
-                        ? latest : null
-            };
             bool liveReadinessMatches = resolvedSpellAction is { } known &&
                 bars.Cooldowns?.GetSlot(known.Slot) is { } fill &&
                 bars.ActionStates?.GetSlot(known.Slot) is { } cooldownState &&
-                cooldownReader.IsForeverReady(known, spellBook) ==
+                ForeverCastGate.IsActionReady(bars, known, spellBook.SpellDB) ==
                     (fill == 0 && cooldownState.Usable &&
                         !cooldownState.NoMana);
 
@@ -664,36 +598,14 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             catch (NotSupportedException) { absoluteRejected = true; }
 
             await Task.Delay(900);
+            // Every Forever value comes from this one expiring sample.
+            bool staleSampleRejected = !tracker.TryGetLatest(out _);
             bool staleRejected = false;
             try { _ = player.HealthPercent(); }
             catch (InvalidOperationException) { staleRejected = true; }
-            bool staleActionRejected = !player.TryGetForeverWatchedAction(out _);
-            bool staleActionBarRejected = !player.TryGetForeverActionBar(out _);
-            bool staleActionStatesRejected =
-                !player.TryGetForeverActionStates(out _);
-            bool staleCooldownGridRejected =
-                !player.TryGetForeverCooldowns(out _);
-            bool staleBagGridRejected = !player.TryGetForeverBags(out _);
-            bool staleCastEventRejected = !player.TryGetForeverCastEvent(out _);
-            bool staleBagReaderRejected = false;
-            try { _ = liveBagReader.BagItemCount(); }
-            catch (InvalidOperationException) { staleBagReaderRejected = true; }
-            bool staleCooldownReadinessRejected =
-                resolvedSpellAction is { } staleSpell &&
-                !cooldownReader.IsForeverReady(staleSpell, spellBook);
-            bool staleUsableReaderReset = usableReader.Count == 0 &&
-                !usableReader.Any && !usableReader.IsSlotUsable(1);
-            ActionBarBits<IUsableAction>.ForeverStatesProvider = null;
             bool staleSpellActionRejected = resolvedSpellName is { } name &&
                 !KeyReader.ReadKey(NullLogger.Instance,
                     new KeyAction { Name = name });
-            bool staleSlotValidationUnavailable = resolvedSpellName is { } staleName &&
-                slotValidator.Validate(new KeyAction
-                    { Name = staleName, Slot = 1 }) ==
-                SlotValidationStatus.Unavailable;
-            bool staleWorldPositionRejected = !player.TryGetForeverWorldPosition(out _);
-            bool staleSpellBookRejected = !player.TryGetForeverSpellBook(out _);
-            bool staleBindingsRejected = !player.TryGetForeverBindings(out _);
             spellBook.UpdateForever(null);
             bindingReader.UpdateForever(null);
             bool staleSpellBookReaderReset = !spellBook.IsInitialized &&
@@ -715,11 +627,6 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
             bool staleManaRejected = false;
             try { _ = player.ManaPercent(); }
             catch (InvalidOperationException) { staleManaRejected = true; }
-            bool stalePlayerFlagsRejected = false;
-            try { _ = targetBits.Combat(); }
-            catch (InvalidOperationException) { stalePlayerFlagsRejected = true; }
-            try { _ = targetBits.Dead(); stalePlayerFlagsRejected = false; }
-            catch (InvalidOperationException) { }
 
             Console.WriteLine($"PlayerReader: health={health}%, power={power}%, " +
                 $"powerType={bars.PlayerPowerType?.ToString() ?? "missing"}, " +
@@ -732,16 +639,14 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"targetFlagsMatch={targetFlagsMatch}, " +
                 $"targetIdentity={bars.TargetIdentity?.ToString() ?? "missing"}, " +
                 $"targetIdentityReady={targetIdentityReady}, " +
-                $"targetBitsMatch={targetBitsMatch}, " +
-                $"stalePlayerFlagsRejected={stalePlayerFlagsRejected}, " +
                 $"castEvent={bars.LastCastEvent?.ToString() ?? "missing"}, " +
                 $"castEventMatches={castEventMatches}, " +
-                $"staleCastEventRejected={staleCastEventRejected}, " +
                 $"mana={(mana is { } mp ? mp + "%" : "unavailable")}, " +
                 $"manaMatches={manaMatches}, " +
                 $"staleManaRejected={staleManaRejected}, " +
                 $"target={(target is { } value ? value + "%" : "unavailable")}, " +
-                $"actionMatches={actionMatches}, actionBarMatches={actionBarMatches}, " +
+                $"watchedAction={ActionText(bars.WatchedAction)}, " +
+                $"actionBar={ActionBarText(bars.ActionBar)}, " +
                 $"actionStates={liveStates?.ReadableCount.ToString() ?? "missing"}/120, " +
                 $"actionStatesMatch={actionStatesMatch}, usableActionCount={usableActionCount}, " +
                 $"cooldowns={bars.Cooldowns?.ReadableCount.ToString() ?? "missing"}/12, " +
@@ -751,64 +656,39 @@ static async Task<int> RunReaderSmoke(WowScreenWGC screen, ForeverVisualBarTrack
                 $"bags={bars.Bags?.ReadableHeaders.ToString() ?? "missing"}/5, " +
                 $"bagSlots={bars.Bags?.ReadableSlots.ToString() ?? "missing"}/200, " +
                 $"bagItemCount={bagItemCount}, regularFreeSlots={regularFreeSlots}, " +
-                $"bagGridMatches={bagGridMatches}, bagReaderMatches={bagReaderMatches}, " +
-                $"staleBagGridRejected={staleBagGridRejected}, " +
-                $"staleBagReaderRejected={staleBagReaderRejected}, " +
-                $"staleCooldownGridRejected={staleCooldownGridRejected}, " +
+                $"bagGridMatches={bagGridMatches}, " +
                 $"liveReadinessMatches={liveReadinessMatches}, " +
-                $"staleCooldownReadinessRejected={staleCooldownReadinessRejected}, " +
                 $"inRangeActionCount={inRangeActionCount}, " +
                 $"outOfRangeActionCount={outOfRangeActionCount}, " +
                 $"unknownRangeActionCount={unknownRangeActionCount}, " +
-                $"usableReaderMatches={usableReaderMatches}, " +
-                $"staleUsableReaderReset={staleUsableReaderReset}, " +
                 $"healthMax={bars.PlayerHealthMax?.ToString() ?? "unavailable"}, " +
                 $"powerMax={bars.PlayerPowerMax?.ToString() ?? "unavailable"}, " +
                 $"maximaMatch={maximaMatch}, staleMaximumRejected={staleMaximumRejected}, " +
                 $"worldPositionAvailable={worldPositionAvailable}, " +
-                $"worldPositionMatches={worldPositionMatches}, " +
-                $"staleWorldPositionRejected={staleWorldPositionRejected}, " +
                 $"spellBook={SpellBookText(visualBook)}, " +
                 $"spellBookMatches={spellBookMatches}, " +
-                $"staleSpellBookRejected={staleSpellBookRejected}, " +
                 $"staleSpellBookReaderReset={staleSpellBookReaderReset}, " +
                 $"bindings={BindingsText(visualBindings)}, " +
                 $"bindingMatches={bindingMatches}, " +
                 $"spellActionResolved={spellActionResolved}, " +
-                $"spellSlotValidated={spellSlotValidated}, " +
                 $"staleSpellActionRejected={staleSpellActionRejected}, " +
-                $"staleSlotValidationUnavailable={staleSlotValidationUnavailable}, " +
-                $"staleBindingsRejected={staleBindingsRejected}, " +
                 $"staleBindingReaderReset={staleBindingReaderReset}, " +
                 $"positionMatches={positionMatches}, " +
                 $"stalePositionRejected={stalePositionRejected}, " +
                 $"staleMapIdCleared={staleMapIdCleared}, " +
                 $"absoluteRejected={absoluteRejected}, staleRejected={staleRejected}, " +
-                $"staleActionRejected={staleActionRejected}, " +
-                $"staleActionBarRejected={staleActionBarRejected}");
-            return actionMatches && actionBarMatches && actionStatesMatch &&
-                usableReaderMatches && staleUsableReaderReset &&
-                staleActionStatesRejected && cooldownGridMatches &&
-                bagGridMatches && bagReaderMatches && staleBagGridRejected &&
-                staleBagReaderRejected &&
-                staleCooldownGridRejected && liveReadinessMatches &&
-                staleCooldownReadinessRejected && maximaMatch &&
+                $"staleSampleRejected={staleSampleRejected}");
+            return actionStatesMatch && cooldownGridMatches &&
+                bagGridMatches && liveReadinessMatches && maximaMatch &&
                 powerTypeReadable && manaMatches && identityMatches &&
                 trialFactionMatches && controllerFrameReady &&
-                targetFlagsMatch && targetBitsMatch &&
-                stalePlayerFlagsRejected &&
-                castEventMatches && staleCastEventRejected &&
-                worldPositionMatches && staleWorldPositionRejected &&
-                spellBookMatches && staleSpellBookRejected &&
-                staleSpellBookReaderReset &&
-                bindingMatches && spellActionResolved && spellSlotValidated &&
-                staleSpellActionRejected && staleSlotValidationUnavailable &&
-                staleBindingsRejected &&
-                staleBindingReaderReset &&
+                targetFlagsMatch && castEventMatches &&
+                spellBookMatches && staleSpellBookReaderReset &&
+                bindingMatches && spellActionResolved &&
+                staleSpellActionRejected && staleBindingReaderReset &&
                 positionMatches && stalePositionRejected && staleMapIdCleared &&
                 staleMaximumRejected && staleManaRejected &&
-                absoluteRejected && staleRejected &&
-                staleActionRejected && staleActionBarRejected ? 0 : 2;
+                absoluteRejected && staleRejected && staleSampleRejected ? 0 : 2;
         }
 
         await Task.Delay(100);
@@ -824,10 +704,6 @@ static async Task<int> RunRouteProbe(WowScreenWGC screen, ForeverVisualBarTracke
     // the observed old-world zones, so use the baked walkable height instead.
     DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
     WorldMapAreaDB maps = new(config);
-    NavmeshBakeOptions bake = new();
-    string version = typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0";
-    string hash = NavmeshSettings.ComputeSettingsHash("forever", version,
-        bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope);
 
     float lastMapError = 0;
     for (int i = 0; i < 50; i++)
@@ -848,8 +724,7 @@ static async Task<int> RunRouteProbe(WowScreenWGC screen, ForeverVisualBarTracke
             return 2;
         }
 
-        Vector3 fromMap = WorldMapAreaDB.ToWorld_FlipXY(
-            new Vector3((float)(map.MapX * 100), (float)(map.MapY * 100), 0), area);
+        Vector3 fromMap = map.ToWorld(area);
         Vector2 fromWorld = new((float)world.X, (float)world.Y);
         float mapError = Vector2.Distance(new(fromMap.X, fromMap.Y), fromWorld);
         if (mapError > 3f)
@@ -861,15 +736,14 @@ static async Task<int> RunRouteProbe(WowScreenWGC screen, ForeverVisualBarTracke
             continue;
         }
 
-        string cache = Path.Combine(config.Navmesh, area.Continent, hash);
+        string cache = ForeverNavmesh.CacheDirectory(config, area.Continent);
         if (!Directory.Exists(cache))
         {
             Console.Error.WriteLine($"No baked Forever navmesh at {cache}.");
             return 2;
         }
 
-        using NavmeshPathfinder nav = new(NullLogger.Instance, null, cache,
-            bake, new NavmeshQueryOptions());
+        using NavmeshPathfinder nav = ForeverNavmesh.OpenDiskOnly(NullLogger.Instance, cache);
         if (!nav.TryGetHeight((float)world.X, (float)world.Y, out float startZ))
         {
             Console.Error.WriteLine("No walkable mesh covers the live player X/Y.");
@@ -985,7 +859,7 @@ static async Task<int> RunTargetAudit(WowScreenWGC screen,
         screen.Update();
         tracker.Update();
         if (!tracker.TryGetLatest(out VisualBarSample bars) ||
-            !AddonReader.HasForeverTargetIdentity(bars) ||
+            !ForeverFrame.HasTargetIdentity(bars) ||
             bars.TargetFlags is not { } flags ||
             bars.TargetIdentity is not { } identity ||
             bars.PlayerIdentity is not { } playerIdentity)
@@ -1019,11 +893,11 @@ static async Task<int> RunTargetAudit(WowScreenWGC screen,
         if (firstIdentity is null)
         {
             firstIdentity = identity;
-            firstFrame = tracker.LatestFrameId;
+            firstFrame = bars.FrameId;
             await Task.Delay(200);
             continue;
         }
-        if (tracker.LatestFrameId == firstFrame)
+        if (bars.FrameId == firstFrame)
         {
             await Task.Delay(100);
             continue;
@@ -1217,8 +1091,8 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
             bool expectedReady = states.GetSlot(slot) is
                     { Usable: true, NoMana: false } &&
                 cooldowns.GetSlot(slot) == 0;
-            actionsMatch &= ActionBarCooldownReader.IsForeverReady(
-                bars, trialAction, spellBook) ==
+            actionsMatch &= ForeverCastGate.IsActionReady(
+                bars, trialAction, spellBook.SpellDB) ==
                 expectedReady;
         }
         if (!actionsMatch)
@@ -1232,8 +1106,7 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
             Console.Error.WriteLine("Trial map 1420 is missing from the Forever map table.");
             return 2;
         }
-        Vector3 mappedPlayer = WorldMapAreaDB.ToWorld_FlipXY(
-            new Vector3((float)(map.MapX * 100), (float)(map.MapY * 100), 0), area);
+        Vector3 mappedPlayer = map.ToWorld(area);
         float mapError = Vector2.Distance(new(mappedPlayer.X, mappedPlayer.Y),
             new((float)world.X, (float)world.Y));
         if (mapError > 3f)
@@ -1251,13 +1124,7 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
                 return 2;
             }
 
-            NavmeshBakeOptions bake = new();
-            string version = typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0";
-            string hash = NavmeshSettings.ComputeSettingsHash(
-                NavmeshSettings.MeshEra(config.Exp), version,
-                bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope,
-                bake.ResolveMinWorldZ(area.Continent));
-            string cache = Path.Combine(config.Navmesh, area.Continent, hash);
+            string cache = ForeverNavmesh.CacheDirectory(config, area.Continent);
             if (!Directory.Exists(cache))
             {
                 Console.Error.WriteLine($"Local navmesh cache is missing: {cache}");
@@ -1266,8 +1133,7 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
             Vector2 here = new((float)world.X, (float)world.Y);
             Vector2 ahead = here + new Vector2(
                 MathF.Cos((float)map.Direction), MathF.Sin((float)map.Direction)) * 3f;
-            using NavmeshPathfinder nav = new(NullLogger.Instance, null, cache,
-                bake, new NavmeshQueryOptions());
+            using NavmeshPathfinder nav = ForeverNavmesh.OpenDiskOnly(NullLogger.Instance, cache);
             float startZ = 0;
             float endZ = 0;
             routeConnected = nav.TryGetHeight(here.X, here.Y, out startZ) &&
@@ -1432,7 +1298,7 @@ static async Task<int> RunTrialHeal(WowScreenWGC screen,
     KeyAction heal = new()
         { Name = "Holy Light", SpellId = 635, Slot = 1,
           ConsoleKey = ConsoleKey.D1 };
-    if (!ForeverCastGate.CanPress(before, heal, spellBook))
+    if (!ForeverCastGate.CanPress(before, heal, spellBook.SpellDB))
     {
         Console.Error.WriteLine("Heal trial refused: Holy Light is not verified ready.");
         return 2;
@@ -1528,7 +1394,7 @@ static async Task<int> RunTrialJudgement(WowScreenWGC screen,
         screen.Update();
         tracker.Update();
         if (!tracker.TryGetLatest(out VisualBarSample current) ||
-            !AddonReader.HasForeverTargetIdentity(current))
+            !ForeverFrame.HasTargetIdentity(current))
         {
             await Task.Delay(100);
             continue;
@@ -1544,7 +1410,7 @@ static async Task<int> RunTrialJudgement(WowScreenWGC screen,
             return 2;
         }
         spellBook.UpdateForever(current.SpellBook);
-        if (ForeverCastGate.CanPress(current, judgement, spellBook))
+        if (ForeverCastGate.CanPress(current, judgement, spellBook.SpellDB))
         {
             before = current;
             ready = true;
@@ -1689,10 +1555,8 @@ static int RunSelfTest()
     DataConfig dbc = new()
         { Root = Path.GetFullPath("Json"), Exp = "forever" };
     SpellBookReader spellBookReader = new(new SpellDB(dbc));
+    SpellDB spells = spellBookReader.SpellDB;
     KeyBindingsReader bindingReader = new(NullLogger<KeyBindingsReader>.Instance);
-    ItemDB itemDB = new(dbc, new IconDB(NullLogger<IconDB>.Instance,
-        dbc, spellBookReader.SpellDB));
-    using BagReader bagReader = new(itemDB, new EquipmentReader(itemDB));
     foreach (double scale in new[] { 0.75, 1.0, 1.25 })
     {
         const int width = 900;
@@ -1934,15 +1798,15 @@ static int RunSelfTest()
         if (VisualAuraReader.ContainsReference(auraPixels, width, height, left, auraTop, scale) is not null)
             return 1;
 
-        if (!AddonReader.HasForeverControllerFrame(result) ||
-            !AddonReader.HasForeverTargetIdentity(result) ||
-            AddonReader.HasForeverTargetIdentity(result with { TargetIdentity = null }) ||
-            AddonReader.HasForeverControllerFrame(result with { ActionStates = null }) ||
-            AddonReader.HasForeverControllerFrame(result with { Bags = null }) ||
-            AddonReader.HasForeverControllerFrame(result with { LastCastEvent = null }) ||
-            !AddonReader.HasForeverTrialFrame(result with { Bags = null }) ||
-            AddonReader.HasForeverTrialFrame(result with { ActionStates = null }) ||
-            AddonReader.HasForeverTrialFrame(result with { LastCastEvent = null }))
+        if (!ForeverFrame.HasControllerInputs(result) ||
+            !ForeverFrame.HasTargetIdentity(result) ||
+            ForeverFrame.HasTargetIdentity(result with { TargetIdentity = null }) ||
+            ForeverFrame.HasControllerInputs(result with { ActionStates = null }) ||
+            ForeverFrame.HasControllerInputs(result with { Bags = null }) ||
+            ForeverFrame.HasControllerInputs(result with { LastCastEvent = null }) ||
+            !ForeverFrame.HasTrialInputs(result with { Bags = null }) ||
+            ForeverFrame.HasTrialInputs(result with { ActionStates = null }) ||
+            ForeverFrame.HasTrialInputs(result with { LastCastEvent = null }))
         {
             Console.Error.WriteLine($"Forever controller frame gate failed at UI scale {scale}.");
             return 1;
@@ -1969,27 +1833,6 @@ static int RunSelfTest()
             return 1;
         }
         DrawBagSlot(0, 2, 117, 3);
-        VisualBagSnapshot? bagForProvider = bags;
-        bagReader.ForeverBagsProvider = () => bagForProvider;
-        bagReader.UpdateForever(bags);
-        if (bagReader.BagItemCount() != 2 || bagReader.BagsFull() ||
-            bagReader.ItemCount(117) != 3 ||
-            bagReader.Bags[0].FreeSlot != 14 ||
-            bagReader.BagItems.Any(item => item.IsTradable))
-        {
-            Console.Error.WriteLine($"Forever bag adapter failed at UI scale {scale}.");
-            return 1;
-        }
-        bagForProvider = null;
-        bool staleBagRejected = false;
-        try { _ = bagReader.ItemCount(117); }
-        catch (InvalidOperationException) { staleBagRejected = true; }
-        if (!staleBagRejected)
-        {
-            Console.Error.WriteLine($"Forever stale bag accepted at UI scale {scale}.");
-            return 1;
-        }
-        bagForProvider = bags;
 
         DrawWorldPixel(9, 1);
         DrawWorldPixel(10, 0xA56643);
@@ -2083,7 +1926,7 @@ static int RunSelfTest()
         if (!VisualBarReader.TryRead(pixels, width, height,
                 out var damagedTargetIdentity) ||
             damagedTargetIdentity.TargetIdentity is not null ||
-            AddonReader.HasForeverTargetIdentity(damagedTargetIdentity))
+            ForeverFrame.HasTargetIdentity(damagedTargetIdentity))
             return 1;
         DrawCastPixel(6, (0xA58866 - targetHash1 - targetHash2 - targetLevel * 2) & 0xFFFFFF);
 
@@ -2111,44 +1954,6 @@ static int RunSelfTest()
         DrawCastPixel(5, targetLevel * 2);
         DrawCastPixel(6, (0xA58866 - targetHash1 - targetHash2 - targetLevel * 2) & 0xFFFFFF);
 
-        VisualTargetFlags? targetForBits = result.TargetFlags;
-        AddonBits targetBits = new()
-        {
-            ForeverTargetFlagsProvider = () => targetForBits
-        };
-        if (!targetBits.Target() || !targetBits.Target_Alive() ||
-            !targetBits.Target_Hostile() || targetBits.NoTarget() ||
-            targetBits.Target_Dead() || targetBits.Combat() ||
-            targetBits.Dead())
-            return 1;
-        targetForBits = combatTargetFlags.TargetFlags;
-        if (!targetBits.Combat() || targetBits.Dead())
-            return 1;
-        targetForBits = deadTargetFlags.TargetFlags;
-        if (targetBits.Combat() || !targetBits.Dead())
-            return 1;
-        targetForBits = null;
-        bool stalePlayerFlagsRejected = false;
-        try { _ = targetBits.Combat(); }
-        catch (InvalidOperationException) { stalePlayerFlagsRejected = true; }
-        try { _ = targetBits.Dead(); stalePlayerFlagsRejected = false; }
-        catch (InvalidOperationException) { }
-        if (!stalePlayerFlagsRejected || targetBits.Target() || targetBits.Target_Alive() ||
-            targetBits.Target_Hostile() || targetBits.NoTarget())
-            return 1;
-        targetForBits = new(false, false, false, false, false);
-        if (!targetBits.NoTarget() || targetBits.Target())
-            return 1;
-
-        ActionBarBits<IUsableAction>.ForeverStatesProvider =
-            () => result.ActionStates;
-        ActionBarBits<IUsableAction> usableBits = new(1);
-        if (!usableBits.IsSlotUsable(4) || usableBits.IsSlotUsable(1) ||
-            !usableBits.Any || usableBits.Count != 1)
-        {
-            Console.Error.WriteLine($"Forever usable action adapter failed at UI scale {scale}.");
-            return 1;
-        }
         DrawActionStateSlot(4, 1, 7744, 2, 6);
         if (!VisualBarReader.TryRead(pixels, width, height, out var damagedState) ||
             damagedState.ActionStates is not { ReadableCount: 119 } ||
@@ -2175,13 +1980,6 @@ static int RunSelfTest()
             return 1;
         }
         DrawPositionPixel(15, 0x5A88A5);
-        ActionBarBits<IUsableAction>.ForeverStatesProvider = () => null;
-        if (usableBits.IsSlotUsable(4) || usableBits.Any || usableBits.Count != 0)
-        {
-            Console.Error.WriteLine($"Forever usable actions survived stale data at UI scale {scale}.");
-            return 1;
-        }
-        ActionBarBits<IUsableAction>.ForeverStatesProvider = null;
         DrawCooldownSlot(4, 1, 7744, 0.7);
         if (!VisualBarReader.TryRead(pixels, width, height, out var changingCooldown) ||
             changingCooldown.Cooldowns?.GetSlot(4) is not { } changedFill ||
@@ -2261,56 +2059,40 @@ static int RunSelfTest()
             return 1;
         }
 
-        string spellName = spellBookReader.SpellDB.Spells[7744].Name;
-        ActionBarCooldownReader foreverCooldown = new();
-        VisualBarSample? cooldownSample = result;
-        foreverCooldown.ForeverSampleProvider = () => cooldownSample;
+        string spellName = spells.Spells[7744].Name;
         KeyAction cooldownAction = new() { Name = spellName, Slot = 4,
             SpellId = 7744 };
         var cooldownKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { "CD_Judgement", "CD_Judgement of Wisdom" };
         var auraKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { "Seal of Righteousness", "F_Devotion Aura" };
-        bool millisecondsRejected = false;
-        try { _ = foreverCooldown.Get(cooldownAction); }
-        catch (NotSupportedException) { millisecondsRejected = true; }
-        ActionBarCostReader foreverCosts = new(
-            NullLogger<ActionBarCostReader>.Instance)
-        {
-            RejectForeverCosts = true
-        };
-        bool numericCostRejected = false;
-        try { _ = foreverCosts.Get(cooldownAction); }
-        catch (NotSupportedException) { numericCostRejected = true; }
-        if (foreverCooldown.IsForeverReady(cooldownAction, spellBookReader) ||
-            !millisecondsRejected ||
-            !numericCostRejected ||
-            RequirementFactory.FindUnsupportedForeverActionCost(
+        if (ForeverCastGate.IsActionReady(result, cooldownAction, spells) ||
+            ForeverProfileRules.FindActionCost(
                 "Cost_Judgement >= 10") != "Cost_Judgement" ||
-            RequirementFactory.FindUnsupportedForeverActionCost(
+            ForeverProfileRules.FindActionCost(
                 "Cost < Mana") != "Cost" ||
-            RequirementFactory.FindUnsupportedForeverActionCost(
+            ForeverProfileRules.FindActionCost(
                 "Health% > 50 && Mana% >= 25") is not null ||
-            RequirementFactory.FindUnsupportedForeverActionCost(
+            ForeverProfileRules.FindActionCost(
                 "CostumeCount > 0") is not null ||
-            RequirementFactory.FindUnsupportedForeverCooldownComparison(
+            ForeverProfileRules.FindCooldownComparison(
                 "CD_Judgement <= GCD", cooldownKeys) != "CD_Judgement" ||
-            RequirementFactory.FindUnsupportedForeverCooldownComparison(
+            ForeverProfileRules.FindCooldownComparison(
                 "CD_Judgement of Wisdom == 0", cooldownKeys) !=
                     "CD_Judgement of Wisdom" ||
-            RequirementFactory.FindUnsupportedForeverCooldownComparison(
+            ForeverProfileRules.FindCooldownComparison(
                 "TargetHealth% > CD_MIN_TARGET_HP%", cooldownKeys) is not null ||
-            RequirementFactory.FindUnsupportedForeverVital(
+            ForeverProfileRules.FindUnsupportedVital(
                 "Mana% < 30 && Health% < 50") is not null ||
-            RequirementFactory.FindUnsupportedForeverVital(
+            ForeverProfileRules.FindUnsupportedVital(
                 "Mana < 20") != "Mana" ||
-            RequirementFactory.FindUnsupportedForeverVital(
+            ForeverProfileRules.FindUnsupportedVital(
                 "FocusHealth% < 50") != "FocusHealth%" ||
-            RequirementFactory.FindUnsupportedForeverAura(
+            ForeverProfileRules.FindAura(
                 "!Seal of Righteousness", auraKeys) != "Seal of Righteousness" ||
-            RequirementFactory.FindUnsupportedForeverAura(
+            ForeverProfileRules.FindAura(
                 "F_Devotion Aura && Health% > 50", auraKeys) != "F_Devotion Aura" ||
-            RequirementFactory.FindUnsupportedForeverAura(
+            ForeverProfileRules.FindAura(
                 "Mana% > 30", auraKeys) is not null)
         {
             Console.Error.WriteLine($"Forever cooldown comparison audit failed at UI scale {scale}.");
@@ -2320,46 +2102,20 @@ static int RunSelfTest()
         if (!VisualBarReader.TryRead(pixels, width, height,
                 out var readyCooldown))
             return 1;
-        cooldownSample = readyCooldown;
-        if (!foreverCooldown.IsForeverReady(cooldownAction, spellBookReader) ||
-            !ActionBarCooldownReader.IsForeverReady(
-                readyCooldown, cooldownAction, spellBookReader) ||
-            ActionBarCooldownReader.IsForeverReady(
-                readyCooldown with { SpellBook = null },
-                cooldownAction, spellBookReader) ||
-            foreverCooldown.IsForeverReady(new KeyAction
-                { Name = "Wrong spell", Slot = 4 }, spellBookReader) ||
-            foreverCooldown.IsForeverReady(new KeyAction
-                { Name = spellName, Slot = 4, SpellId = 6603 }, spellBookReader) ||
-            foreverCooldown.IsForeverReady(new KeyAction
-                { Name = spellName, Slot = 13 }, spellBookReader))
+        if (!ForeverCastGate.IsActionReady(readyCooldown, cooldownAction, spells) ||
+            ForeverCastGate.IsActionReady(readyCooldown with { SpellBook = null },
+                cooldownAction, spells) ||
+            ForeverCastGate.IsActionReady(readyCooldown, new KeyAction
+                { Name = "Wrong spell", Slot = 4 }, spells) ||
+            ForeverCastGate.IsActionReady(readyCooldown, new KeyAction
+                { Name = spellName, Slot = 4, SpellId = 6603 }, spells) ||
+            ForeverCastGate.IsActionReady(readyCooldown, new KeyAction
+                { Name = spellName, Slot = 13 }, spells))
         {
             Console.Error.WriteLine($"Forever cooldown readiness failed at UI scale {scale}.");
             return 1;
         }
-        cooldownSample = null;
-        if (foreverCooldown.IsForeverReady(cooldownAction, spellBookReader))
-        {
-            Console.Error.WriteLine($"Forever stale cooldown accepted at UI scale {scale}.");
-            return 1;
-        }
         DrawCooldownSlot(4, 1, 7744, 0.4);
-        if (ActionBarSlotValidator.ValidateForeverAction(
-                new KeyAction { Name = spellName, Slot = 4 }, 4,
-                actionBar, spellBookReader) != SlotValidationStatus.Valid ||
-            ActionBarSlotValidator.ValidateForeverAction(
-                new KeyAction { Name = spellName, Slot = 1 }, 1,
-                actionBar, spellBookReader) != SlotValidationStatus.EmptySlot ||
-            ActionBarSlotValidator.ValidateForeverAction(
-                new KeyAction { Name = spellName, Slot = 26 }, 26,
-                actionBar, spellBookReader) != SlotValidationStatus.Mismatch ||
-            ActionBarSlotValidator.ValidateForeverAction(
-                new KeyAction { Name = "Unlearned Spell", Slot = 4 }, 4,
-                actionBar, spellBookReader) != SlotValidationStatus.Mismatch)
-        {
-            Console.Error.WriteLine($"Forever action slot validation failed at UI scale {scale}.");
-            return 1;
-        }
         KeyReader.ForeverActionBarProvider = () => actionBar;
         if (KeyReader.ReadKey(NullLogger.Instance,
                 new KeyAction { Name = spellName }))
@@ -2655,36 +2411,36 @@ static int RunSelfTest()
             ConsoleKey = ConsoleKey.D2
         };
         if (!ForeverCastGate.CanPress(trialCastSample,
-                trialJudgement, spellBookReader) ||
+                trialJudgement, spells) ||
             !ForeverCastGate.CanPress(trialCastSample with
                 { PlayerHealth = 0.70, PlayerPower = 0.25,
                   TargetHealth = 0.50,
                   TargetFlags = new(true, true, false, true, false) },
-                trialJudgement, spellBookReader) ||
+                trialJudgement, spells) ||
             ForeverCastGate.CanPress(trialCastSample with
                 { PlayerHealth = 0.69, PlayerPower = 1,
                   TargetHealth = 0.50,
                   TargetFlags = new(true, true, false, false, false) },
-                trialJudgement, spellBookReader) ||
+                trialJudgement, spells) ||
             ForeverCastGate.CanPress(trialCastSample with { SealOfRighteousnessActive = false },
-                trialJudgement, spellBookReader) ||
+                trialJudgement, spells) ||
             ForeverCastGate.CanPress(trialCastSample with { SealOfRighteousnessActive = null },
-                trialJudgement, spellBookReader) ||
+                trialJudgement, spells) ||
             ForeverCastGate.CanPress(trialCastSample with { TargetIdentity = null },
-                trialJudgement, spellBookReader) ||
+                trialJudgement, spells) ||
             ForeverCastGate.CanPress(trialCastSample with
                 { TargetIdentity = new(targetHash1, targetHash2, 12, true) },
-                trialJudgement, spellBookReader) ||
+                trialJudgement, spells) ||
             ForeverCastGate.CanPress(trialCastSample with
                 { TargetIdentity = new(targetHash1, targetHash2, 14, false) },
-                trialJudgement, spellBookReader) ||
+                trialJudgement, spells) ||
             ForeverCastGate.CanPress(trialCastSample with { Bindings = null },
-                trialJudgement, spellBookReader) ||
+                trialJudgement, spells) ||
             ForeverCastGate.CanPress(trialCastSample with { LastCastEvent = null },
-                trialJudgement, spellBookReader) ||
+                trialJudgement, spells) ||
             ForeverCastGate.CanPress(trialCastSample with
                 { TargetFlags = new(true, true, true, false, false) },
-                trialJudgement, spellBookReader))
+                trialJudgement, spells))
         {
             Console.Error.WriteLine($"Forever cast preflight failed at UI scale {scale}.");
             return 1;
@@ -2696,7 +2452,7 @@ static int RunSelfTest()
                 { PlayerHealth = 1, PlayerPower = 1, TargetHealth = 1,
                   Position = trialCastSample.Position,
                   WorldPosition = trialCastSample.WorldPosition },
-                trialJudgement, spellBookReader))
+                trialJudgement, spells))
         {
             Console.Error.WriteLine($"Forever cast accepted a changed key at UI scale {scale}.");
             return 1;
@@ -2709,7 +2465,7 @@ static int RunSelfTest()
                 { PlayerHealth = 1, PlayerPower = 1, TargetHealth = 1,
                   Position = trialCastSample.Position,
                   WorldPosition = trialCastSample.WorldPosition },
-                trialJudgement, spellBookReader))
+                trialJudgement, spells))
         {
             Console.Error.WriteLine($"Forever cast accepted a running cooldown at UI scale {scale}.");
             return 1;
@@ -2722,7 +2478,7 @@ static int RunSelfTest()
                 { PlayerHealth = 1, PlayerPower = 1, TargetHealth = 1,
                   Position = trialCastSample.Position,
                   WorldPosition = trialCastSample.WorldPosition },
-                trialJudgement, spellBookReader))
+                trialJudgement, spells))
         {
             Console.Error.WriteLine($"Forever cast accepted an out-of-range action at UI scale {scale}.");
             return 1;

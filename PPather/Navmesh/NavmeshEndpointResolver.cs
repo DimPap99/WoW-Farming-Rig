@@ -35,16 +35,20 @@ public sealed class NavmeshEndpointResolver
 
     private readonly DtNavMeshQuery query;
     private readonly IDtQueryFilter filter;
+    private readonly bool preferGroundUnderPoint;
 
     private readonly ColumnCollector collector = new();
     private readonly List<Candidate> candidates = new(MaxColumnCandidates);
 
     private readonly record struct Candidate(long PolyRef, Vector3 RcPos);
 
-    public NavmeshEndpointResolver(DtNavMeshQuery query, IDtQueryFilter filter)
+    /// <param name="preferGroundUnderPoint">See <see cref="SharedLib.NavmeshQueryOptions.PreferGroundUnderPoint"/>.</param>
+    public NavmeshEndpointResolver(DtNavMeshQuery query, IDtQueryFilter filter,
+        bool preferGroundUnderPoint = false)
     {
         this.query = query;
         this.filter = filter;
+        this.preferGroundUnderPoint = preferGroundUnderPoint;
     }
 
     /// <summary>
@@ -154,6 +158,11 @@ public sealed class NavmeshEndpointResolver
             return false;
         }
 
+        if (preferGroundUnderPoint)
+        {
+            KeepColumnUnderPoint(rcCenter);
+        }
+
         // rc Y = wow Z (up). Highest first.
         candidates.Sort(static (a, b) => b.RcPos.Y.CompareTo(a.RcPos.Y));
 
@@ -196,6 +205,29 @@ public sealed class NavmeshEndpointResolver
         polyRef = pick.PolyRef;
         resolvedWow = NavmeshCoords.ToWow(pick.RcPos);
         return true;
+    }
+
+    // Pick the column under the requested X/Y before choosing its floor.
+    // A taller neighbouring hillside must not win over ground directly
+    // underfoot just because it overlaps the three-yard search box.
+    private void KeepColumnUnderPoint(Vector3 rcCenter)
+    {
+        float nearestHorizontal = float.MaxValue;
+        foreach (Candidate candidate in candidates)
+        {
+            nearestHorizontal = MathF.Min(nearestHorizontal,
+                HorizontalDistanceSquared(candidate, rcCenter));
+        }
+
+        candidates.RemoveAll(candidate =>
+            HorizontalDistanceSquared(candidate, rcCenter) > nearestHorizontal + 0.0001f);
+
+        static float HorizontalDistanceSquared(Candidate candidate, Vector3 rcCenter)
+        {
+            float dx = candidate.RcPos.X - rcCenter.X;
+            float dz = candidate.RcPos.Z - rcCenter.Z;
+            return dx * dx + dz * dz;
+        }
     }
 
     private sealed class ColumnCollector : IDtPolyQuery

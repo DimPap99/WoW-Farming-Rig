@@ -1,7 +1,6 @@
+using Core.Database;
 using Core.Goals;
 using Core.GOAP;
-
-using Game;
 
 using SharedLib;
 
@@ -26,18 +25,18 @@ public interface IForeverCombatRoutine
 /// <summary>One checked Paladin combat decision per fresh visual frame.</summary>
 public sealed class ForeverCombat : IForeverCombatRoutine
 {
-    private readonly CastingHandler caster;
+    private readonly ForeverCaster caster;
     private readonly ConfigurableInput input;
     private readonly ClassConfiguration config;
-    private readonly SpellBookReader spells;
+    private readonly SpellDB spells;
     private readonly CancellationToken token;
     private bool attackStarted;
     private bool judgedTarget;
     private long sealUnreadableAt;
     private VisualTargetIdentity? target;
 
-    public ForeverCombat(CastingHandler caster, ConfigurableInput input,
-        ClassConfiguration config, SpellBookReader spells,
+    public ForeverCombat(ForeverCaster caster, ConfigurableInput input,
+        ClassConfiguration config, SpellDB spells,
         CancellationTokenSource<GoapAgent> cts)
     {
         this.caster = caster;
@@ -75,9 +74,7 @@ public sealed class ForeverCombat : IForeverCombatRoutine
 
         if (!judgedTarget && ForeverTargetSelector.InJudgementRange(bars))
         {
-            KeyAction? judgement = config.Combat.Sequence.SingleOrDefault(
-                action => action.SpellId == 20271);
-            if (judgement is null)
+            if (Action(ForeverPaladin.Judgement) is not { } judgement)
             {
                 reason = "Judgement action missing";
                 return ForeverCombatResult.Failed;
@@ -96,26 +93,18 @@ public sealed class ForeverCombat : IForeverCombatRoutine
 
         if (!attackStarted)
         {
-            if (!ForeverTargetSelector.HasBinding(bars, 15,
-                    BindingID.STARTATTACK, ConsoleKey.D2,
-                    ModifierKey.Shift))
+            if (!ForeverBindings.StartAttack.IsBoundIn(bars))
             {
                 reason = "start attack binding changed";
                 return ForeverCombatResult.Failed;
             }
-            input.PressRandom(new KeyAction
-            {
-                Name = "Forever Start Attack", BaseAction = true,
-                ConsoleKey = ConsoleKey.D2, Modifier = ModifierKey.Shift,
-                PressDuration = 75
-            }, token);
+            input.PressRandom(ForeverBindings.StartAttack.ToKeyAction("Forever Start Attack"), token);
             attackStarted = true;
             return ForeverCombatResult.ActionSent;
         }
 
-        KeyAction? strike = config.Combat.Sequence.SingleOrDefault(
-            action => action.SpellId is 678 or 679);
-        if (strike is null)
+        if (config.Combat.Sequence.SingleOrDefault(
+                action => ForeverPaladin.IsHolyStrike(action.SpellId)) is not { } strike)
         {
             reason = "Holy Strike action missing";
             return ForeverCombatResult.Failed;
@@ -126,20 +115,25 @@ public sealed class ForeverCombat : IForeverCombatRoutine
         return ForeverCombatResult.Waiting;
     }
 
+    // Judgement range counts only while Judgement can actually be pressed.
+    // Otherwise pursuit hands the target to the fight, the fight hands it back
+    // for range, and neither ever moves the character closer.
     public bool InRange(VisualBarSample bars, VisualTargetIdentity identity) =>
         ForeverTargetSelector.InStrikeRange(bars) ||
-        (bars.SealOfRighteousnessActive == true &&
-            (target != identity || !judgedTarget) &&
-            ForeverTargetSelector.InJudgementRange(bars));
+        ((target != identity || !judgedTarget) &&
+            ForeverTargetSelector.InJudgementRange(bars) &&
+            Action(ForeverPaladin.Judgement) is { } judgement &&
+            ForeverCastGate.CanPress(bars, judgement, spells));
 
     public bool EnsureSeal(VisualBarSample bars, Action beforeCast, out string reason)
     {
         reason = string.Empty;
+        bool inCombat = bars.TargetFlags is { PlayerCombat: true };
         if (bars.SealOfRighteousnessActive is null)
         {
             // Missing telemetry is not proof that the buff expired. Keep
             // defending with melee while withholding Seal and Judgement.
-            if (bars.TargetFlags is { PlayerCombat: true })
+            if (inCombat)
                 return true;
             sealUnreadableAt = sealUnreadableAt == 0
                 ? Environment.TickCount64 : sealUnreadableAt;
@@ -150,25 +144,28 @@ public sealed class ForeverCombat : IForeverCombatRoutine
         sealUnreadableAt = 0;
         if (bars.SealOfRighteousnessActive == true)
             return true;
-        if (bars.TargetFlags is { PlayerCombat: true } && bars.PlayerPower < 0.25)
-            return true;
-        KeyAction? seal = config.Combat.Sequence.SingleOrDefault(
-            action => action.SpellId == 20287);
-        if (seal is null)
+        if (Action(ForeverPaladin.SealOfRighteousness) is not { } seal)
         {
             reason = "Seal of Righteousness action missing";
             return false;
         }
+        // In combat the Seal is best effort. Keep fighting while it cannot be
+        // cast, for example below the 70% health or 25% mana the gate needs.
+        if (inCombat && !ForeverCastGate.CanPress(bars, seal, spells))
+            return true;
         beforeCast();
-        if (caster.TryCastForever(seal, () => token.IsCancellationRequested) ==
+        if (caster.TryCast(seal, () => token.IsCancellationRequested) ==
             ForeverCastResult.Failed)
             reason = "Seal cast success was not confirmed";
         return false;
     }
 
+    private KeyAction? Action(int spellId) =>
+        config.Combat.Sequence.SingleOrDefault(action => action.SpellId == spellId);
+
     private ForeverCombatResult Cast(KeyAction action, out string reason)
     {
-        ForeverCastResult result = caster.TryCastForever(action,
+        ForeverCastResult result = caster.TryCast(action,
             () => token.IsCancellationRequested);
         if (result != ForeverCastResult.Failed)
         {

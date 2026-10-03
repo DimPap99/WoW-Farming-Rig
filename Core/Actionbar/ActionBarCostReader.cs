@@ -13,7 +13,6 @@ public readonly record struct ActionBarCost(PowerType PowerType, int Cost);
 
 public sealed class ActionBarCostReader : IReader
 {
-    public bool RejectForeverCosts { get; set; }
 #if DEBUG
     private const bool DEBUG = true;
 #else
@@ -81,10 +80,6 @@ public sealed class ActionBarCostReader : IReader
     [SkipLocalsInit]
     public ActionBarCost Get(KeyAction keyAction, int costIndex = 0)
     {
-        if (RejectForeverCosts)
-            throw new NotSupportedException(
-                "Forever action costs are unavailable; use checked action usability and no-mana state.");
-
         int slotIdx = keyAction.SlotIndex;
         int index = (slotIdx * NUM_OF_COST) + costIndex;
         return Data[index];

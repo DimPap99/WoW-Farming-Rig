@@ -1,4 +1,5 @@
 using Core;
+using Core.Forever;
 
 using Game;
 
@@ -61,10 +62,6 @@ try
     ForeverVisualBarTracker tracker = new(screen, new StartupClientVersion(process.FileVersion));
     DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
     WorldMapAreaDB maps = new(config);
-    NavmeshBakeOptions bake = new();
-    string version = typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0";
-    string hash = NavmeshSettings.ComputeSettingsHash("forever", version,
-        bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope);
 
     int freshSamples = 0;
     int positionPairs = 0;
@@ -94,8 +91,7 @@ try
             return 2;
         }
 
-        Vector3 mapWorld = WorldMapAreaDB.ToWorld_FlipXY(
-            new Vector3((float)(map.MapX * 100), (float)(map.MapY * 100), 0), area);
+        Vector3 mapWorld = map.ToWorld(area);
         Vector2 origin = new((float)world.X, (float)world.Y);
         lastMapError = Vector2.Distance(new(mapWorld.X, mapWorld.Y), origin);
         if (lastMapError > 1f)
@@ -110,15 +106,14 @@ try
             return 2;
         }
 
-        string cache = Path.Combine(config.Navmesh, area.Continent, hash);
+        string cache = ForeverNavmesh.CacheDirectory(config, area.Continent);
         if (!Directory.Exists(cache))
         {
             Console.Error.WriteLine($"No baked Forever navmesh at {cache}.");
             return 2;
         }
 
-        using NavmeshPathfinder nav = new(NullLogger.Instance, null, cache,
-            bake, new NavmeshQueryOptions());
+        using NavmeshPathfinder nav = ForeverNavmesh.OpenDiskOnly(NullLogger.Instance, cache);
         if (!nav.TryGetHeight(origin.X, origin.Y, out float startZ))
         {
             Console.Error.WriteLine("No walkable mesh covers the live player X/Y.");

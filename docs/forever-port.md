@@ -167,6 +167,49 @@ and `ForeverCasc__Cache` are optional. Leave Install and Listfile empty to
 serve only baked tiles. A configured HTTP bake resumed one existing Azeroth
 ADT, and an unconfigured HTTP host returned the disk-only route above.
 
+## Code layout and upstream seams
+
+The port keeps its logic in Forever-owned files so upstream merges stay
+mechanical (see [upstream-sync.md](upstream-sync.md)). When fixing Forever
+behaviour, change these files rather than shared upstream classes.
+
+Forever-owned code:
+
+- `Core/Forever/` - the guarded runtime: `ForeverGoalFactory` (the session's
+  composition root), `ForeverCaster` (one checked keypress per cast),
+  `ForeverCombat`, `ForeverLoot`, `ForeverNavigator`, `ForeverTargetSelector`,
+  `ForeverReaderFeed` (feeds each capture tick to the shared readers),
+  `ForeverFrame` (which inputs a frame must carry), `ForeverBinding(s)` (the
+  bindings checked and pressed), `ForeverNavmesh`, `ForeverPaladin` (the
+  verified spell IDs, slots, map and profile names) and `ForeverProfileRules`.
+- `Core/Goals/ForeverAutonomousGoal.cs`, `ForeverTrialGoal.cs`,
+  `Core/GoalsComponent/ForeverCastGate.cs`, `Core/GOAP/ForeverGoapWorldState.cs`,
+  `Core/ForeverDiagnosticController.cs`, `Core/Session/NoGrindSessionHandler.cs`.
+- `Core/WoWScreen/ForeverVisualBarTracker.cs` and the `Visual*Reader` decoders.
+- `Game/Input/MouseCameraInput.cs`, `Addons/ForeverProbe`, `Utilities/Forever*`.
+
+Where Forever still touches upstream code:
+
+- Client detection: `ClientVersion.Forever`, `StartupClientVersion` (1.60+),
+  the `WowB` process name and the `forever` data era.
+- Capture: `IWowScreen.ScreenFrameId`.
+- Composition: `DependencyInjection` (tracker, feed, the diagnostic dashboard
+  controller, skipped Classic add-on validation), a three-line hook in
+  `GoalFactory` and an optional `ForeverReaderFeed` in `AddonReader`.
+- Controller loop: `IsForeverVisual` guards in `BotController` and `GoapAgent`
+  around Classic-only threads, validation, session handling and world state.
+- Readers on the profile-load path: `PlayerReader` identity, vitals and
+  position from the visual sample (every Classic cell read throws on Forever,
+  because there is no pixel strip), `SpellBookReader`/`KeyBindingsReader`
+  `UpdateForever`, `KeyReader` live-binding resolution, and the
+  `RequirementFactory` checks that refuse unsupported profile expressions.
+- PPather: the `IGameFileSource`/`ILiquidMetadataSource` CASC seam, the numeric
+  WMO and MH2O formats, and the opt-in `NavmeshQueryOptions.PreferGroundUnderPoint`.
+- Frontend: the Forever status page and navigation, and the hidden `BotHeader`.
+
+A Forever-owned controller loop would let `BotController`, `GoapAgent`,
+`PlayerReader`, `KeyReader` and `RequirementFactory` return to upstream as well.
+
 ## Live findings from the beta client
 
 - `WOW_PROJECT_ID` equals `WOW_PROJECT_MAINLINE` (`1`), not Classic. The
@@ -258,7 +301,7 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   baked Azeroth tile `146,142`. The mesh reported walkable heights around
   129.39 and 130.68, while `UnitPosition` reported Z=0 at both. That Z result
   is not suitable for navigation until its meaning is resolved. The visual
-  reader exposes fresh world values through `TryGetForeverWorldPosition` for
+  sample exposes fresh world values (`VisualBarSample.WorldPosition`) for
   diagnostics, without feeding Z into the movement controller.
 - The read-only live route probe in Tirisfal found map/world disagreement of
   only 0.03 yards at `(2286.30, 366.20)`, sampled mesh height 34.42, and
@@ -294,9 +337,9 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   channel. Its decoder rejects missing or inconsistent markers at 75%, 100%,
   and 125% synthetic UI scales. A live WGC capture after a full beta relaunch
   decoded slot 4 as spell ID 7744, matching the catalog's slot and spellbook
-  entries. `PlayerReader.TryGetForeverWatchedAction` exposes that result only
-  while the visual sample is fresh; the live reader smoke check confirmed it
-  stops returning an action after capture expires. This first channel covers
+  entries. The tracker exposes that result only while the visual sample is
+  fresh; the live reader smoke check confirmed it stops returning an action
+  after capture expires. This first channel covers
   only the selected slot; it is not a gameplay-ready spell reader.
 - A 120-slot read-only action-bar grid and decoder are now implemented. Its
   synthetic tests verify the complete inventory, empty slots, flyouts,
@@ -409,7 +452,9 @@ ADT, and an unconfigured HTTP host returned the disk-only route above.
   cells, with 13 occupied item slots and 15 regular free slots; the reader
   agreed with those counts. A short live fight kept all 200 cells readable at
   82% player and 44% target health, with 14 occupied slots and 14 regular free
-  slots; the reader matched the capture and rejected it after expiry.
+  slots; the reader matched the capture and rejected it after expiry. (The
+  `BagReader` adapter was removed on 2026-10-03 because no Forever goal reads
+  inventory; the grid decoder, its checks and the controller frame gate stay.)
 - The Forever dashboard was smoke-tested against the live beta on this machine.
   It returned HTTP 200 and displayed 100% player health, 100% power, and 0%
   target health with no target selected. The log confirmed WGC capture and the
@@ -576,7 +621,9 @@ combat true, player dead false, 44% health, and a living target at 4% health;
 the adapter and stale-sample checks passed. After the fight, a second live
 read found combat false, dead false, and 100% health; a living target was
 still selected. The idle transition and stale-sample checks passed. A true
-death/ghost state has only been checked synthetically.
+death/ghost state has only been checked synthetically. (The `AddonBits`
+adapter was removed on 2026-10-03; the Forever goals read these flags from the
+visual sample directly.)
 
 A separate checksummed pixel row carries the most recent successful player
 spellcast's sequence and exact spell ID. An unreadable event payload clears
@@ -595,8 +642,9 @@ The subsequent read-only recovery check found sequence 7, spell ID 20271,
 100% health and mana, no target, and player combat false. All reader and
 stale-data checks passed.
 
-The normal `CastingHandler` now has a guarded Forever branch for the three
-trial Paladin spells. Before a 75 ms keypress it checks the spell, current
+The guarded Forever cast path, `ForeverCaster` (first written as a branch
+inside `CastingHandler`), handles the three trial Paladin spells. Before a
+75 ms keypress it checks the spell, current
 binding, usability, range, cooldown, player/target flags, mana, map, and cast
 event in one fresh visual capture. It confirms only a new successful event for
 the exact spell ID and latches closed after any unconfirmed press until a new
@@ -607,8 +655,8 @@ health, and 60% mana out of combat or 25% mana in combat. Unsupported
 post-cast features fail closed. The bounded one-key utilities now call the
 same gate. Synthetic checks pass at 75%, 100%, and 125% UI scale for ready,
 missing binding/event, dead target, running cooldown, and out-of-range cases.
-`AddonReader` now signals the normal controller's frame wait only once per
-new, complete visual frame, and the trial player's Horde faction comes from
+`ForeverReaderFeed`, called from `AddonReader`, signals the normal
+controller's frame wait only once per new, complete visual frame, and the trial player's Horde faction comes from
 the checked Undead identity rather than a Classic pixel. Incomplete action,
 bag, or event data does not signal a controller frame; synthetic checks cover
 those cases at all three scales.
@@ -630,8 +678,8 @@ death, loot, and recovery goals. Its GOAP facts come only from a complete fresh
 visual capture; unknown Classic facts remain false and cannot select Classic
 goals. The normal no-plan report, XP session persistence, slot texture checks,
 macro resolution, screenshot NPC scan, and remote path visualization are
-bypassed for this trial. Classic casting collaborators remain constructed, but
-the guarded Forever `CastingHandler` branch never calls them.
+bypassed for this trial. The Forever session (`ForeverGoalFactory`) constructs
+none of the Classic casting collaborators.
 
 The trial goal requires the Tirisfal Paladin profile with no saved route, a
 stable idle capture followed by a distinct fresh frame, a matching map/world
@@ -805,8 +853,9 @@ instead of Escape, which could open the game menu on a repeated call.
 Local movement uses a Detour raycast through connected polygons, returning the
 height at the endpoint. It no longer rejects ordinary slopes solely for a
 1.5-yard height change or independently resolves the endpoint onto another floor.
-The column resolver prefers ground under the requested X/Y over a higher surface
-beside it. Blocked straight movement tries checked sidesteps and pathfinder
+With `NavmeshQueryOptions.PreferGroundUnderPoint`, which only the Forever
+navmesh turns on, the column resolver prefers ground under the requested X/Y
+over a higher surface beside it; Classic clients keep the upstream behaviour. Blocked straight movement tries checked sidesteps and pathfinder
 waypoints while retaining the same target.
 
 Live target-position audit on a selected level-6 mob found both

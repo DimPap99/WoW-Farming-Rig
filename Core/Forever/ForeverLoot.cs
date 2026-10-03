@@ -1,10 +1,7 @@
 using Core.GOAP;
 
-using Game;
-
 using SharedLib;
 
-using System;
 using System.Threading;
 
 using static System.Diagnostics.Stopwatch;
@@ -104,17 +101,12 @@ public sealed class ForeverLoot : IForeverLootRoutine
 
         if (interactions < 2)
         {
-            if (!ForeverTargetSelector.HasBinding(bars, 18, BindingID.INTERACTTARGET,
-                ConsoleKey.D3, ModifierKey.Shift))
+            if (!ForeverBindings.InteractTarget.IsBoundIn(bars))
             {
                 reason = "corpse interaction binding changed";
                 return ForeverLootResult.Failed;
             }
-            input.PressRandom(new KeyAction
-            {
-                Name = "Forever Loot Corpse", BaseAction = true,
-                ConsoleKey = ConsoleKey.D3, Modifier = ModifierKey.Shift, PressDuration = 75
-            }, token);
+            input.PressRandom(ForeverBindings.InteractTarget.ToKeyAction("Forever Loot Corpse"), token);
             interactions++;
             lastInput = GetTimestamp();
         }
