@@ -187,6 +187,7 @@ Forever-owned code:
   `ForeverTargetPolicy` (which units to fight, which plate next),
   `ForeverTargetSelector`, `ForeverPointAndClick` (aim, confirm, click,
   confirm), `ForeverExclusions` (units set aside for a while),
+  `ForeverRecovery` (what a setback with one unit costs),
   `ForeverReaderFeed` (feeds each capture tick to the shared readers),
   `ForeverFrame` (which inputs a frame must carry and the resource levels),
   `ForeverBinding(s)` (the bindings checked and pressed), `ForeverNavmesh`,
@@ -909,10 +910,11 @@ This profile remains available through the explicit bounded utility;
 `ForeverDiagnosticController` still guards dashboard startup.
 
 The run is an explicit state machine (`ForeverStateMachine`, since
-2026-10-03): Start, Search, Select, Approach, Fight, Loot, Rest, then Complete
-or Failed. The goal's constructor declares every state once: its work on a
-frame, the states it may move to, its hard time bound (Search 45 s, Select
-8 s, Approach 20 s, Fight 75 s) and the hooks that release what it holds, such
+2026-10-03): Start, Search, Select, Approach, Fight, Loot, Rest and Recover,
+then Complete or Failed. The goal's constructor declares every state once: its
+work on a frame, the states it may move to, its hard time bound (Search 45 s,
+Select 8 s, Approach 20 s, Fight 75 s; Select's and Approach's hand over to
+recovery instead of failing) and the hooks that release what it holds, such
 as held movement when pursuit ends. A move the declaration does not allow ends the run
 instead of acting on a bug; a bound is checked before the state's work on each
 frame. The bounded trial goal runs on the same class. Its checks, together
@@ -1172,18 +1174,31 @@ view and clicks one, as a person does:
   character looks around standing, one full circle, then roams a stretch and
   looks again; a sweep completes after a look-around with nothing to take.
 - **Select.** `ForeverPointAndClick` aims at an `IForeverClickTarget`: the
-  cursor goes onto it in one swift eased stroke, the click comes only while
-  the game reports it under the cursor, and it is done once the game shows
-  the effect. For a nameplate that is the plate reporting itself the target;
-  a click without effect is retried once. A unit that cannot be selected, or
-  whose approach loses its marker, is set aside for a minute
-  (`ForeverExclusions`, by GUID hashes); four failed selections in a row end
-  the run.
+  cursor goes onto it in one swift eased stroke, aimed ahead of a moving
+  thing along its screen velocity, and the click comes the first time the
+  game reports it under the cursor once the cursor has rested 120 ms (the
+  add-on samples the hover ten times a second), moving or not. It is done
+  once the game shows the effect: for a nameplate, the plate reporting itself
+  the target. A click without effect is retried once.
+- **Recover.** A setback with one unit (`ForeverSetback`: it could not be
+  selected, its marker stayed out of sight, held movement toward it went
+  nowhere, the way was blocked, or it stayed out of reach) sets it aside
+  (`ForeverExclusions`, by GUID hashes; a minute, two for a bad way) and
+  searches again, as a person gives up on a mob across a ravine.
+  `ForeverRecovery` allows five setbacks without a kill; in combat only a
+  selection is retried, so other setbacks while fighting still stop the run.
+  The navigator reports these kinds instead of reason strings, and being stuck
+  while roaming just means looking around again.
 - **Facing.** Attacking implies facing. The combat routine asks
   `IForeverFacing.FaceTarget` on every frame of the fight and while a cast is
-  awaited, and holds every targeted action until the target is in front. A
-  target that left the view is turned toward on the side it was last seen,
-  at full speed.
+  awaited, and holds every targeted action until the target is in front. The
+  turn leads a moving marker by its screen velocity (0.15 s), so a mob running
+  across the view is kept up with, and the band in front is wider to leave
+  than to enter, so the camera does not twitch at its edge. A target that left
+  the view is turned straight to the bearing it was last seen at, from the
+  exact character facing and the marker's offset under a 90-degree field of
+  view, then looked for further round, for one circle at most. The chase
+  steers with the same lead.
 
 The movement pieces are reusable for anything else the runtime will click or
 turn toward: `IMousePointer`/`MousePointerInput` (the eased, slightly arced
@@ -1199,4 +1214,8 @@ opened on a mob at the screen edge without turning to it, which led to the
 facing rule. After facing (with a faster turn) and facing during cast waits,
 a sweep killed a mob, set aside one it could not select, looked around and
 completed with exit code 0; the person watching called the aim, click and
-turns indistinguishable from a player's.
+turns indistinguishable from a player's. Fleeing mobs were lost from view
+until the lead and the bearing turn; then the camera kept up with them. A
+click on a walking mob waited for it to stop until the click moved from
+"cursor within 3 pixels of the marker" to "the game reports it under the
+cursor"; the last cycle selected, faced, killed and rested cleanly.

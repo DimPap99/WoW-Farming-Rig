@@ -85,6 +85,8 @@ public sealed class MousePointerInput(MouseCameraInput camera, IMouseInput mouse
 
     public void Click()
     {
+        // Both buttons down together walks the character; never click while steering.
+        camera.Stop();
         if (GetCursorPos(out Point at))
             mouse.LeftClick(at);
     }

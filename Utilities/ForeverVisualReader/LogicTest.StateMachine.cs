@@ -71,6 +71,21 @@ internal static partial class LogicTest
             machine.State == Step.Failed && machine.LastFailure == "walk took too long" &&
             !log.Contains("tick Walk"), $"{machine.State} '{machine.LastFailure}' {string.Join(",", log)}");
 
+        // A bound may hand over instead of failing, and fails if nobody moves.
+        ForeverStateMachine<Step> handing = null!;
+        handing = new ForeverStateMachine<Step>(NullLogger.Instance, "test", Step.Start, Step.Failed, Step.Done)
+            .On(Step.Start, _ => { }, exits: [Step.Walk], timeoutMs: 1, onTimeout: "slow start",
+                timedOut: reason => handing.Go(Step.Walk))
+            .On(Step.Walk, _ => { }, exits: [Step.Fight], timeoutMs: 1, onTimeout: "slow walk",
+                timedOut: _ => { });
+        Thread.Sleep(20);
+        handing.Tick(frame);
+        check("machine: a bound can hand over to a declared exit", handing.State == Step.Walk, $"{handing.State}");
+        Thread.Sleep(20);
+        handing.Tick(frame);
+        check("machine: a handler that does not move still fails the run",
+            handing.State == Step.Failed && handing.LastFailure == "slow walk", $"{handing.State} '{handing.LastFailure}'");
+
         bool threw = false;
         try
         {
