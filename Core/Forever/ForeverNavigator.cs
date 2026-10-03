@@ -65,10 +65,7 @@ public sealed class ForeverNavigator : IDisposable
         reason = string.Empty;
         if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
             !ForeverVerifiedSetup.IsVerifiedMap(map.UIMapId, world.InstanceMapId) ||
-            !ForeverBindings.MoveForward.IsBoundIn(bars) ||
-            !ForeverBindings.TurnLeft(input.TurnLeftKey).IsBoundIn(bars) ||
-            !ForeverBindings.TurnRight(input.TurnRightKey).IsBoundIn(bars) ||
-            input.ForwardKey != ForeverBindings.MoveForward.Key)
+            !ForeverBindings.MoveForward.IsBoundTo(bars, input.ForwardKey))
         {
             reason = "position or movement bindings are incomplete";
             return false;
@@ -209,7 +206,7 @@ public sealed class ForeverNavigator : IDisposable
             return ForeverNavigationResult.Failed;
         }
 
-        if (!ForeverBindings.MoveForward.IsBoundIn(bars))
+        if (!ForeverBindings.MoveForward.IsBoundTo(bars, input.ForwardKey))
         {
             StopPursuit();
             reason = "forward binding changed";
@@ -245,10 +242,12 @@ public sealed class ForeverNavigator : IDisposable
                 {
                     ForeverBinding binding = side < 0
                         ? ForeverBindings.StrafeLeft : ForeverBindings.StrafeRight;
-                    if (binding.IsBoundIn(bars) &&
+                    // A held strafe is a plain key-down: a modified binding cannot be held alone.
+                    if (binding.TryGetKey(bars, out ConsoleKey key, out ModifierKey modifier) &&
+                        modifier == ModifierKey.None &&
                         HasShortPath(here, (float)world.Z,
                             here + Heading(map.Direction - side * angle) * 3, out _))
-                        return binding.Key;
+                        return key;
                 }
                 return null;
             }
@@ -340,7 +339,7 @@ public sealed class ForeverNavigator : IDisposable
             StopTranslation();
             return TurnTowardMarker(steering, out reason);
         }
-        if (!ForeverBindings.MoveForward.IsBoundIn(bars))
+        if (!ForeverBindings.MoveForward.IsBoundTo(bars, input.ForwardKey))
         {
             StopPursuit();
             reason = "forward binding changed";

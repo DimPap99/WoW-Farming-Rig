@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging.Abstractions;
+
 using SharedLib;
 
 using System;
@@ -9,12 +11,14 @@ public sealed class ForeverTargetSelector
 {
     private readonly ConfigurableInput input;
     private readonly ExecGameCommand command;
+    private readonly KeyAction? profileClearTarget;
 
     public ForeverTargetSelector(ConfigurableInput input,
-        ExecGameCommand command)
+        ExecGameCommand command, ClassConfiguration config)
     {
         this.input = input;
         this.command = command;
+        profileClearTarget = ProfileClearTarget(config);
     }
 
     public static bool CanSelect(VisualBarSample bars) =>
@@ -27,8 +31,7 @@ public sealed class ForeverTargetSelector
     {
         if (!CanSelect(bars))
             return false;
-        PressTargetNearestEnemy();
-        return true;
+        return PressTargetNearestEnemy(bars);
     }
 
     public bool CycleCandidate(VisualBarSample bars)
@@ -36,11 +39,9 @@ public sealed class ForeverTargetSelector
         if (!ForeverFrame.HasTrialInputs(bars) ||
             bars.TargetFlags is not
                 { Present: true, PlayerCombat: false, PlayerDead: false } ||
-            !ForeverFrame.CanOpenFight(bars, inCombat: false) ||
-            !ForeverBindings.TargetNearestEnemy.IsBoundIn(bars))
+            !ForeverFrame.CanOpenFight(bars, inCombat: false))
             return false;
-        PressTargetNearestEnemy();
-        return true;
+        return PressTargetNearestEnemy(bars);
     }
 
     public static bool TrySafeTarget(VisualBarSample bars, int maxLevelsAbove,
@@ -71,19 +72,65 @@ public sealed class ForeverTargetSelector
         if (bars.TargetFlags is not { PlayerCombat: true, PlayerDead: false } ||
             !ForeverBindings.TargetNearestEnemy.IsBoundIn(bars))
             return false;
-        ClearTarget();
-        PressTargetNearestEnemy();
+        ClearTarget(bars);
+        return PressTargetNearestEnemy(bars);
+    }
+
+    /// <summary>
+    /// Clears the target the way the player set the client up, and only while
+    /// this frame shows one: with nothing selected Escape opens the game menu.
+    /// Callers wait for the flags to follow before pressing again.
+    /// </summary>
+    public bool ClearTarget(VisualBarSample bars)
+    {
+        if (bars.TargetFlags is not { Present: true })
+            return false;
+        input.PressRandom(ClearTargetKey(bars));
         return true;
     }
 
-    public void ClearTarget() => command.Run("/cleartarget");
-
     public void RestoreLastTarget() => command.Run("/targetlasttarget");
 
-    private void PressTargetNearestEnemy()
+    /// <summary>
+    /// The profile's <c>"ClearTarget": { "Key": ... }</c> when the client binds
+    /// that key to a macro on the main bar, then upstream's clear-target
+    /// binding when the client has one, then Escape.
+    /// </summary>
+    private KeyAction ClearTargetKey(VisualBarSample bars)
     {
-        ConsoleKey key = ForeverBindings.TargetNearestEnemy.Key;
-        try { input.PressRandom(key, ForeverBinding.PressMs); }
-        finally { input.SetKeyState(key, false, true); }
+        if (profileClearTarget is { } profile &&
+            ForeverBindings.MainBarSlotBoundTo(bars, profile.ConsoleKey, profile.Modifier) is int slot &&
+            bars.ActionBar?.GetSlot(slot) is { Kind: VisualActionKind.Macro })
+            return profile;
+        if (ForeverBindings.ClearTarget.TryGetKeyAction(bars, ClearTargetName, out KeyAction bound))
+            return bound;
+        return ForeverBinding.ToKeyAction(ClearTargetName, ConsoleKey.Escape, ModifierKey.None);
+    }
+
+    private const string ClearTargetName = "Forever Clear Target";
+
+    // Upstream resolves ClearTarget from its binding default before its Key,
+    // so the profile's Key string is read here on its own.
+    private static KeyAction? ProfileClearTarget(ClassConfiguration config)
+    {
+        if (string.IsNullOrWhiteSpace(config.ClearTarget.Key))
+            return null;
+        KeyAction key = new()
+        {
+            Name = ClearTargetName,
+            Key = config.ClearTarget.Key,
+            BaseAction = true,
+            PressDuration = ForeverBinding.PressMs
+        };
+        return KeyReader.ResolveFromKeyString(NullLogger.Instance, key) ? key : null;
+    }
+
+    private bool PressTargetNearestEnemy(VisualBarSample bars)
+    {
+        if (!ForeverBindings.TargetNearestEnemy.TryGetKeyAction(bars, "Forever Target Nearest Enemy",
+                out KeyAction tab))
+            return false;
+        input.PressRandom(tab);
+        return true;
     }
 }

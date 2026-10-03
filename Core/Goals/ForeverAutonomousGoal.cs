@@ -18,7 +18,8 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
 {
     private enum Phase { Initial, Acquire, Pursue, Fight, Loot, Recover, Complete, Failed }
 
-    // /cleartarget is typed through chat; give the flags a moment to follow.
+    // Give the flags a moment to follow a clear-target press before another:
+    // the fallback is Escape, which opens the game menu with nothing selected.
     private const int ClearTargetRetryMs = 1000;
 
     private readonly ILogger<ForeverAutonomousGoal> logger;
@@ -275,7 +276,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 if (runOptions.StopWhenNoTargets && bars.TargetIdentity is { } rejected &&
                     !rejectedTargets.Add(rejected))
                 {
-                    selector.ClearTarget();
+                    selector.ClearTarget(bars);
                     Enter(Phase.Complete);
                     return false;
                 }
@@ -420,7 +421,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             // not read back; repeat the command only after the flags had time.
             if (GetElapsedTime(lastClearTarget).TotalMilliseconds >= ClearTargetRetryMs)
             {
-                selector.ClearTarget();
+                selector.ClearTarget(bars);
                 lastClearTarget = GetTimestamp();
             }
             if (Elapsed() > 30000)

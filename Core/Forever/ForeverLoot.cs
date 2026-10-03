@@ -101,12 +101,13 @@ public sealed class ForeverLoot : IForeverLootRoutine
 
         if (interactions < 2)
         {
-            if (!ForeverBindings.InteractTarget.IsBoundIn(bars))
+            if (!ForeverBindings.InteractTarget.TryGetKeyAction(bars, "Forever Loot Corpse",
+                    out KeyAction interact))
             {
                 reason = "corpse interaction binding changed";
                 return ForeverLootResult.Failed;
             }
-            input.PressRandom(ForeverBindings.InteractTarget.ToKeyAction("Forever Loot Corpse"), token);
+            input.PressRandom(interact, token);
             interactions++;
             lastInput = GetTimestamp();
         }
