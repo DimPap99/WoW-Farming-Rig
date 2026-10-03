@@ -1039,3 +1039,43 @@ with the bot. The self-test covers matching, non-matching, empty and
 out-of-frame references. The live Seal check has to be repeated with this
 layout, because the reference now comes from the action button texture rather
 than `C_Spell.GetSpellTexture`.
+
+### Nameplate probe (2026-10-03)
+
+Acquisition will move from Tab to the enemy nameplates: every attackable unit
+the client draws a plate for, seen without selecting it, then targeted with a
+click on its plate. `/foreverprobe` snapshots (world, combat +0.5 s, combat
++3 s, after combat, manual) now record a `nameplates` section with each API's
+status, and event latches count plate additions, behind-camera changes, plate
+hovers and clicks that selected the hovered plate. Names and GUIDs are recorded
+as types only. On build 1.60.1.70205, a level 7 Hunter in Durotar:
+
+- Plates exist for units that are not targeted (`nameplateShowAll` 1, the
+  default; `nameplateShowEnemies` 1, set in this client) out to
+  `nameplateMaxDistance` 45 yards. The world snapshot right after a reload has
+  none yet; they are added a moment later.
+- In and out of combat a plate's unit returns ordinary values for `UnitGUID`,
+  `UnitCreatureID`, level, `UnitCanAttack`, `UnitIsDead`, `UnitIsPlayer`,
+  `UnitReaction` (2 hostile, 4 neutral), `UnitIsTapDenied`, `UnitIsUnit`
+  against the target, and `IsNamePlateUnitBehindCamera`. The behind-camera
+  event carried a readable flag every time (12 of 12).
+- The mob's own combat state lags the player's: 0.5 s into the fight its
+  plate reported no combat, no threat and no target; at 3 s it reported
+  combat, `UnitThreatSituation` 3 and `<plate>target` = player.
+- `C_ActionBar.IsActionInRange(slot, plate)` and `C_Spell.IsSpellInRange`
+  answer per plate and agree: a far mob read out of range for Auto Shot,
+  Serpent Sting and Arcane Shot while Hunter's Mark stayed in range. Raptor
+  Strike again reads in range at any distance; the Attack slot reads nil.
+- `GetCenter` on a plate errors and `UnitPosition` returns nil, as for the
+  target. Anchoring a hidden frame to a non-target plate was accepted, also
+  in combat.
+- A plate's alpha is readable and follows the client's fade settings:
+  0.6 (`nameplateMinAlpha`) to 1.0 with distance, times
+  `nameplateOccludedAlphaMult` 0.4 when the camera cannot see the unit. One
+  plate read 0.24 (0.6 × 0.4, far and occluded); the others read 0.6 to 1.0.
+  In combat and for the target it read 1.
+- Hovering a plate made it the mouseover unit (28 times), and seven times a
+  left click on the hovered plate selected that unit. `deselectOnClick` is 0,
+  so a click that misses keeps the current target; `autoInteract` is 0.
+- `softenemy` existed only in combat; `SoftTargetEnemy` is 1 and soft
+  targeting is not used.
