@@ -1,5 +1,3 @@
-using Core.GOAP;
-
 using Game;
 
 using Microsoft.Extensions.Logging;
@@ -11,7 +9,6 @@ using SharedLib;
 using System;
 using System.IO;
 using System.Numerics;
-using System.Threading;
 
 using static System.Diagnostics.Stopwatch;
 
@@ -22,14 +19,17 @@ public enum ForeverNavigationResult { Waiting, StepSent, StepVerified, NoTargetP
 /// <summary>Short, checked local mesh steps from the current live position.</summary>
 public sealed class ForeverNavigator : IDisposable
 {
-    private enum PendingAction { None, Forward, Turn }
+    // A person keeps running through a turn up to about a right angle; a
+    // larger correction, or a way ahead that is not walkable, is turned standing.
+    private const double MaxRunningTurn = Math.PI / 2;
+    // The steering marker may drift this far from screen center while running.
+    private const double MaxRunningMarkerError = 0.35;
 
     private readonly ILogger<ForeverNavigator> logger;
     private readonly ConfigurableInput input;
     private readonly MouseCameraInput camera;
     private readonly WorldMapAreaDB maps;
     private readonly DataConfig data;
-    private readonly CancellationToken token;
 
     // Movement is pressed on the controller thread, but a stop arrives on
     // another one. The lock orders the two, and once halted, an update that
@@ -41,11 +41,6 @@ public sealed class ForeverNavigator : IDisposable
     private Vector2? roamOrigin;
     private Vector2? pursuitOrigin;
     private VisualTargetIdentity? pursuitTarget;
-    private Vector2 actionOrigin;
-    private double actionDirection;
-    private long actionFrame;
-    private long actionStarted;
-    private PendingAction pending;
     private bool pursuitForwardHeld;
     private ConsoleKey? pursuitStrafeKey;
     private Vector2 pursuitProgressPoint;
@@ -56,15 +51,13 @@ public sealed class ForeverNavigator : IDisposable
 
     public ForeverNavigator(ILogger<ForeverNavigator> logger,
         ConfigurableInput input, MouseCameraInput camera,
-        WorldMapAreaDB maps, DataConfig data,
-        CancellationTokenSource<GoapAgent> cts)
+        WorldMapAreaDB maps, DataConfig data)
     {
         this.logger = logger;
         this.input = input;
         this.camera = camera;
         this.maps = maps;
         this.data = data;
-        token = cts.Token;
     }
 
     public bool TryReadOnlyPreflight(VisualBarSample bars, out string reason)
@@ -92,24 +85,33 @@ public sealed class ForeverNavigator : IDisposable
             out _, out reason);
     }
 
+    /// <summary>
+    /// Walks on within 25 yards of where roaming began, held forward and
+    /// mouse-steered onto a walkable heading. The caller stops it with
+    /// <see cref="StopPursuit"/> on any frame it does not roam.
+    /// </summary>
     public ForeverNavigationResult Roam(VisualBarSample bars, out string reason)
     {
         reason = string.Empty;
         if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
             !TryNav(map.UIMapId, out reason))
+        {
+            StopPursuit();
             return ForeverNavigationResult.Failed;
+        }
         Vector2 here = new((float)world.X, (float)world.Y);
         roamOrigin ??= here;
-        if (pending != PendingAction.None)
-            return CheckPending(bars.FrameId, here, map.Direction, out reason);
 
         double desired = map.Direction;
         if (Vector2.Distance(here, roamOrigin.Value) >= 25)
             desired = Bearing(here, roamOrigin.Value);
         if (!TrySafeHeading(here, (float)world.Z, desired,
                 out desired, out reason))
+        {
+            StopPursuit();
             return ForeverNavigationResult.Failed;
-        return SendStep(bars, here, desired, out reason);
+        }
+        return Steer(bars, here, (float)world.Z, desired, 3, out reason);
     }
 
     public ForeverNavigationResult Approach(VisualBarSample bars,
@@ -118,22 +120,28 @@ public sealed class ForeverNavigator : IDisposable
         reason = string.Empty;
         if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
             bars.TargetIdentity != target || !TryNav(map.UIMapId, out reason))
+        {
+            StopPursuit();
             return ForeverNavigationResult.Failed;
+        }
         Vector2 here = new((float)world.X, (float)world.Y);
-        if (pending != PendingAction.None)
-            return CheckPending(bars.FrameId, here, map.Direction, out reason);
 
+        // Without a target position the marker search takes over this frame.
         if (!TryTargetPoint(bars, out Vector2 destination))
             return ForeverNavigationResult.NoTargetPosition;
         if (Vector2.Distance(here, destination) > 45)
         {
+            StopPursuit();
             reason = "target is too far for local pursuit";
             return ForeverNavigationResult.Failed;
         }
         if (!TryPathWaypoint(here, destination, out Vector2 waypoint,
                 out reason))
+        {
+            StopPursuit();
             return ForeverNavigationResult.Failed;
-        return SendStep(bars, here, Bearing(here, waypoint), out reason);
+        }
+        return Steer(bars, here, (float)world.Z, Bearing(here, waypoint), 3, out reason);
     }
 
     public ForeverNavigationResult SearchForTarget(VisualBarSample bars,
@@ -157,8 +165,6 @@ public sealed class ForeverNavigator : IDisposable
             pursuitOrigin = here;
             detourWaypoint = null;
         }
-        if (pending != PendingAction.None)
-            return CheckPending(bars.FrameId, here, map.Direction, out reason);
         if (Vector2.Distance(here, pursuitOrigin!.Value) >= 35)
         {
             StopPursuit();
@@ -185,29 +191,22 @@ public sealed class ForeverNavigator : IDisposable
         }
         markerMissingAt = 0;
 
-        // Turning in place needs no walkable segment in the old direction.
-        // Align first; otherwise a wall beside us can prevent facing a clear path.
+        // Keep running while the mouse steers the marker toward the center.
+        // Only a marker far to the side is turned toward standing; turning in
+        // place needs no walkable segment in the old direction, so a wall
+        // beside us cannot prevent facing a clear path.
         double horizontalError = screen.X - 0.5;
-        if (Math.Abs(horizontalError) > 0.15)
+        if (Math.Abs(horizontalError) > MaxRunningMarkerError)
         {
             StopTranslation();
             return TurnTowardMarker(horizontalError, out reason);
         }
 
-        if (pursuitForwardHeld || pursuitStrafeKey is not null)
+        if ((pursuitForwardHeld || pursuitStrafeKey is not null) &&
+            !MovementProgressed(here, out reason))
         {
-            float travel = Vector2.Distance(here, pursuitProgressPoint);
-            if (travel >= 0.20f)
-            {
-                pursuitProgressPoint = here;
-                pursuitProgressAt = GetTimestamp();
-            }
-            else if (GetElapsedTime(pursuitProgressAt).TotalSeconds > 3)
-            {
-                StopPursuit();
-                reason = "held forward movement was not verified";
-                return ForeverNavigationResult.Failed;
-            }
+            StopPursuit();
+            return ForeverNavigationResult.Failed;
         }
 
         if (!ForeverBindings.MoveForward.IsBoundIn(bars))
@@ -303,13 +302,11 @@ public sealed class ForeverNavigator : IDisposable
             StopTranslation();
             return ForeverNavigationResult.StepVerified;
         }
-        double delta = SignedAngle(Bearing(here, waypoint) - bars.Position!.Value.Direction);
-        if (Math.Abs(delta) > 0.20)
-        {
-            StopTranslation();
-            return TurnTowardMarker(-delta / Math.PI, out reason);
-        }
-        if (!ForeverBindings.MoveForward.IsBoundIn(bars) ||
+        double desired = Bearing(here, waypoint);
+        double delta = SignedAngle(desired - bars.Position!.Value.Direction);
+        // Once facing the waypoint, a way that is still not walkable means the
+        // detour is blocked; until then keep turning toward it.
+        if (Math.Abs(delta) <= 0.20 &&
             !HasShortPath(here, (float)bars.WorldPosition!.Value.Z,
                 here + Heading(bars.Position.Value.Direction) * Math.Min(3, distance), out reason))
         {
@@ -317,10 +314,67 @@ public sealed class ForeverNavigator : IDisposable
             detourWaypoint = null;
             return ForeverNavigationResult.Blocked;
         }
-        ForeverNavigationResult turn = TurnTowardMarker(-delta / Math.PI, out reason);
-        if (turn != ForeverNavigationResult.Failed)
-            SetPursuitMovement(here, true, null);
-        return turn;
+        return Steer(bars, here, (float)bars.WorldPosition!.Value.Z, desired,
+            Math.Min(3, distance), out reason);
+    }
+
+    /// <summary>
+    /// Walks toward <paramref name="desired"/> the way a person does: forward
+    /// held while the mouse steers, re-checking every frame that the next
+    /// <paramref name="lookAhead"/> yards along the current facing are walkable.
+    /// A correction beyond <see cref="MaxRunningTurn"/>, or a way ahead that is
+    /// not walkable, is turned standing.
+    /// </summary>
+    private ForeverNavigationResult Steer(VisualBarSample bars, Vector2 here,
+        float z, double desired, float lookAhead, out string reason)
+    {
+        reason = string.Empty;
+        double direction = bars.Position!.Value.Direction;
+        double delta = SignedAngle(desired - direction);
+        // The mouse turns right for a positive error; a positive bearing
+        // change is to the left.
+        double steering = -delta / Math.PI;
+        if (Math.Abs(delta) > MaxRunningTurn ||
+            !HasShortPath(here, z, here + Heading(direction) * lookAhead, out _))
+        {
+            StopTranslation();
+            return TurnTowardMarker(steering, out reason);
+        }
+        if (!ForeverBindings.MoveForward.IsBoundIn(bars))
+        {
+            StopPursuit();
+            reason = "forward binding changed";
+            return ForeverNavigationResult.Failed;
+        }
+        if (pursuitForwardHeld && !MovementProgressed(here, out reason))
+        {
+            StopPursuit();
+            return ForeverNavigationResult.Failed;
+        }
+        // Acquire foreground before key-down: WoW releases movement keys on
+        // focus changes, so sending forward first can leave only our held flag.
+        if (TurnTowardMarker(steering, out reason) == ForeverNavigationResult.Failed)
+            return ForeverNavigationResult.Failed;
+        bool starting = !pursuitForwardHeld;
+        SetPursuitMovement(here, true, null);
+        return starting ? ForeverNavigationResult.StepSent : ForeverNavigationResult.StepVerified;
+    }
+
+    // Held movement must cover 0.2 yards every 3 seconds; anything less means
+    // the character is stuck, or the key never reached the game.
+    private bool MovementProgressed(Vector2 here, out string reason)
+    {
+        reason = string.Empty;
+        if (Vector2.Distance(here, pursuitProgressPoint) >= 0.20f)
+        {
+            pursuitProgressPoint = here;
+            pursuitProgressAt = GetTimestamp();
+            return true;
+        }
+        if (GetElapsedTime(pursuitProgressAt).TotalSeconds <= 3)
+            return true;
+        reason = "held forward movement was not verified";
+        return false;
     }
 
     private ForeverNavigationResult TurnTowardMarker(double horizontalError, out string reason)
@@ -399,105 +453,6 @@ public sealed class ForeverNavigator : IDisposable
             pursuitForwardHeld = false;
             pursuitStrafeKey = null;
         }
-    }
-
-    private ForeverNavigationResult SendStep(VisualBarSample bars,
-        Vector2 here, double desired, out string reason)
-    {
-        reason = string.Empty;
-        if (bars.Position is not { } map)
-            return ForeverNavigationResult.Failed;
-        // A fixed step assumes the character is standing still. Release any
-        // forward, strafe or mouse-look held by SearchForTarget first, or the
-        // character keeps running and the step check measures the wrong motion.
-        StopPursuit();
-        double delta = SignedAngle(desired - map.Direction);
-        ConsoleKey key;
-        int duration;
-        if (Math.Abs(delta) > 0.20)
-        {
-            key = delta > 0 ? input.TurnLeftKey : input.TurnRightKey;
-            ForeverBinding turn = delta > 0
-                ? ForeverBindings.TurnLeft(key) : ForeverBindings.TurnRight(key);
-            if (!turn.IsBoundIn(bars))
-            {
-                reason = "turn binding changed";
-                return ForeverNavigationResult.Failed;
-            }
-            duration = Math.Min(120, Math.Max(45,
-                (int)(Math.Abs(delta) * 1000 / Math.PI)));
-            pending = PendingAction.Turn;
-        }
-        else
-        {
-            if (!ForeverBindings.MoveForward.IsBoundIn(bars) ||
-                !HasShortPath(here, (float)bars.WorldPosition!.Value.Z,
-                    here + Heading(map.Direction) * 3,
-                    out reason))
-            {
-                reason = string.IsNullOrEmpty(reason)
-                    ? "forward path or binding changed" : reason;
-                return ForeverNavigationResult.Failed;
-            }
-            key = ForeverBindings.MoveForward.Key;
-            duration = 200;
-            pending = PendingAction.Forward;
-        }
-        actionOrigin = here;
-        actionDirection = map.Direction;
-        actionFrame = bars.FrameId;
-        actionStarted = GetTimestamp();
-        lock (inputLock)
-        {
-            if (halted)
-            {
-                pending = PendingAction.None;
-                reason = "controller stopped";
-                return ForeverNavigationResult.Failed;
-            }
-            try
-            {
-                input.PressFixed(key, duration, token);
-            }
-            finally
-            {
-                input.SetKeyState(key, false, true);
-            }
-        }
-        return ForeverNavigationResult.StepSent;
-    }
-
-    private ForeverNavigationResult CheckPending(long frameId, Vector2 here,
-        double direction, out string reason)
-    {
-        reason = string.Empty;
-        if (pending == PendingAction.None)
-            return ForeverNavigationResult.Waiting;
-        if (frameId == actionFrame)
-            return ForeverNavigationResult.Waiting;
-        if (pending == PendingAction.Forward)
-        {
-            Vector2 delta = here - actionOrigin;
-            Vector2 forward = Heading(actionDirection);
-            float along = Vector2.Dot(delta, forward);
-            float lateral = MathF.Abs(delta.X * forward.Y - delta.Y * forward.X);
-            if (along >= 0.20f && lateral < 2f)
-            {
-                pending = PendingAction.None;
-                return ForeverNavigationResult.StepVerified;
-            }
-        }
-        else if (Math.Abs(SignedAngle(direction - actionDirection)) >= 0.05 &&
-                 Vector2.Distance(here, actionOrigin) < 1)
-        {
-            pending = PendingAction.None;
-            return ForeverNavigationResult.StepVerified;
-        }
-        if (GetElapsedTime(actionStarted).TotalSeconds < 3)
-            return ForeverNavigationResult.Waiting;
-        reason = "movement or turn was not verified";
-        pending = PendingAction.None;
-        return ForeverNavigationResult.Failed;
     }
 
     private bool TryTargetPoint(VisualBarSample bars, out Vector2 point)

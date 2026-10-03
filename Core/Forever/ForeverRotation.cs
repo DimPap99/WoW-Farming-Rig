@@ -190,7 +190,8 @@ public sealed class ForeverRotation : IForeverCombatRoutine
                     return new(ForeverFightStep.StartAttack, action);
                 continue;
             }
-            if (RequirementsMet(action) && ForeverCastGate.CanPress(bars, action, spells,
+            if (RangeCounts(bars, action) && RequirementsMet(action) &&
+                ForeverCastGate.CanPress(bars, action, spells,
                     maxLevelsAbove: config.NPCMaxLevels_Above))
                 return new(ForeverFightStep.Combat, action);
         }
@@ -309,11 +310,19 @@ public sealed class ForeverRotation : IForeverCombatRoutine
                 bars.ActionBar?.GetSlot(action.Slot) is
                     { Kind: VisualActionKind.Spell, Id: var placed } &&
                 (action.SpellId == 0 || placed == action.SpellId) &&
+                RangeCounts(bars, action) &&
                 bars.ActionStates?.GetSlot(action.Slot) is { InRange: true })
                 return true;
         }
         return false;
     }
+
+    // The beta reports a next-swing ability's slot (AfterCastWaitSwing, e.g.
+    // Raptor Strike) in range at any distance, so its range counts only once
+    // the character is in combat, when the mob is coming into contact. Out of
+    // combat the real ranged and melee spells decide, and pursuit closes in.
+    private static bool RangeCounts(VisualBarSample bars, KeyAction action) =>
+        !action.AfterCastWaitSwing || bars.TargetFlags is { PlayerCombat: true };
 
     private KeyAction? NextPull(VisualBarSample bars, VisualTargetIdentity identity)
     {
@@ -324,6 +333,7 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         foreach (KeyAction action in config.Pull.Sequence)
         {
             if ((sameTarget && usedPulls.Contains(action)) ||
+                !RangeCounts(bars, action) ||
                 !RequirementsMet(action) ||
                 !ForeverCastGate.CanPress(bars, action, spells,
                     maxLevelsAbove: config.NPCMaxLevels_Above))

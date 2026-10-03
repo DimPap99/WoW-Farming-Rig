@@ -22,7 +22,6 @@ public sealed class ForeverCaster
     // Action and cooldown rows refresh every 500ms. A cast event can arrive
     // before that row reflects its GCD; wait for the producer to refresh.
     private const int RowRefreshMs = 650;
-    private const int PressMs = 75;
     private const int PollMs = 50;
     // A cast bar, a next-swing ability (AfterCastWaitSwing: its success
     // event arrives with the swing), or a self cast that may follow a cast
@@ -141,7 +140,7 @@ public sealed class ForeverCaster
             return;
         }
 
-        try { input.PressFixed(item.ConsoleKey, PressMs, CancellationToken.None); }
+        try { input.PressRandom(item.ConsoleKey, ForeverBinding.PressMs); }
         finally { input.SetKeyState(item.ConsoleKey, false, true); }
     }
 

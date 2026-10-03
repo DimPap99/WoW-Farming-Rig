@@ -1,5 +1,5 @@
 {
-  // Level 6 Troll Hunter without a pet, for the guarded Forever runtime: the
+  // Level 7 Troll Hunter without a pet, for the guarded Forever runtime: the
   // same shared behaviour as the Paladin profile. Serpent Sting from range
   // aggroes the mob and STARTATTACK starts the auto attack; Raptor Strike
   // resolves on the melee swing once the mob is in contact.
@@ -23,6 +23,14 @@
         // The sting lasts 15 seconds; refresh it no more often than that.
         "Cooldown": 15000,
         "Requirements": ["Spell:1978", "TargetHealth% > 25", "Mana% >= 30"]
+      },
+      {
+        "Name": "Arcane Shot",
+        "SpellId": 3044,
+        "Slot": 5,
+        "Key": "5",
+        "WhenUsable": true,
+        "Requirements": ["Spell:3044", "TargetHealth% > 0", "Mana% >= 20"]
       },
       { "Name": "AutoAttack" },
       {

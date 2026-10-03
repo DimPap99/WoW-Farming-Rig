@@ -233,22 +233,32 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
 
     private void Acquire(VisualBarSample bars, VisualTargetFlags flags)
     {
+        // Roaming holds the movement keys; any frame that does not roam lets
+        // go, as a person stops to look at a candidate.
+        if (!AcquireOrRoam(bars, flags))
+            navigator.StopPursuit();
+    }
+
+    // True when it roamed this frame.
+    private bool AcquireOrRoam(VisualBarSample bars, VisualTargetFlags flags)
+    {
         if (Elapsed() > 30000)
         {
             Fail("no safe target found within acquisition time");
-            return;
+            return false;
         }
         if (flags.PlayerCombat)
         {
             Fail("unexpected combat during target acquisition");
-            return;
+            return false;
         }
         if (!ForeverFrame.HasMana(bars, ForeverFrame.ReadyMana))
-            return;
-        if (GetElapsedTime(lastTargetPress).TotalMilliseconds < 650)
-            return;
+            return false;
         if (flags.Present)
         {
+            // Target flags need a moment to follow a Tab press.
+            if (GetElapsedTime(lastTargetPress).TotalMilliseconds < 650)
+                return false;
             // A target too close for every opener is skipped while another
             // can be pulled; aggro still brings a close one into the fight.
             if (ForeverTargetSelector.TrySafeTarget(bars,
@@ -267,33 +277,35 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 {
                     selector.ClearTarget();
                     Enter(Phase.Complete);
-                    return;
+                    return false;
                 }
                 if (selector.CycleCandidate(bars))
                     lastTargetPress = GetTimestamp();
             }
-            return;
+            return false;
         }
+        // Nothing selected: press Tab now and then, and keep walking in between.
         if (GetElapsedTime(lastTargetPress).TotalMilliseconds >= 1500)
         {
             if (runOptions.StopWhenNoTargets && emptyTargetPresses >= 2)
             {
                 Enter(Phase.Complete);
-                return;
+                return false;
             }
             if (selector.SelectNearest(bars))
             {
                 emptyTargetPresses++;
                 lastTargetPress = GetTimestamp();
-                return;
             }
         }
-        if (!runOptions.StopWhenNoTargets && Elapsed() > 6000)
+        if (runOptions.StopWhenNoTargets || Elapsed() <= 6000)
+            return false;
+        if (navigator.Roam(bars, out string reason) == ForeverNavigationResult.Failed)
         {
-            if (navigator.Roam(bars, out string reason) ==
-                ForeverNavigationResult.Failed)
-                Fail(reason);
+            Fail(reason);
+            return false;
         }
+        return true;
     }
 
     private void Pursue(VisualBarSample bars, VisualTargetFlags flags)

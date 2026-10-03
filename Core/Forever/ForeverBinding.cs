@@ -13,7 +13,8 @@ namespace Core.Forever;
 public readonly record struct ForeverBinding(int Index, BindingID Command,
     ConsoleKey Key, ModifierKey Modifier = ModifierKey.None)
 {
-    public const int PressMs = 75;
+    /// <summary>Shortest key tap; each press adds up to 30 ms at random, like a person's.</summary>
+    public const int PressMs = 60;
 
     /// <summary>True when the live grid binds <see cref="Command"/> to this key, as primary or secondary.</summary>
     public bool IsBoundIn(VisualBarSample bars)
