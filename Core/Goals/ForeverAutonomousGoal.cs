@@ -32,6 +32,9 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     // weapon's minimum range between the two. The fight leaves for pursuit
     // only once reach stayed lost this long.
     private const int ReachLostMs = 1000;
+    // Combat lingers a moment after the last kill; with no attacker in view
+    // the character stands this long before looking for one out of view.
+    private const int CombatLingersMs = 3000;
 
     private readonly ILogger<ForeverAutonomousGoal> logger;
     private readonly ForeverVisualBarTracker tracker;
@@ -39,6 +42,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private readonly ForeverNavigator navigator;
     private readonly IForeverCombatRoutine combat;
     private readonly IForeverLootRoutine loot;
+    private readonly ForeverCorpses corpses;
     private readonly ForeverRunOptions runOptions;
     private readonly ClassConfiguration config;
     private readonly CancellationToken token;
@@ -58,11 +62,11 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private double? lookAroundFacing;
     private long roamSince;
     private VisualTargetIdentity? target;
-    private bool observedDeadTarget;
     private long targetSelectedAt;
     private long targetUnreadableAt;
     private long targetRestoreAt;
     private long reachLostAt;
+    private long lastKillAt;
     private int deathSequenceBefore;
     private volatile int observedDeaths;
     private volatile int completedLoots;
@@ -78,8 +82,8 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     public ForeverAutonomousGoal(ILogger<ForeverAutonomousGoal> logger,
         ForeverVisualBarTracker tracker,
         ForeverTargetSelector selector, ForeverNavigator navigator,
-        IForeverCombatRoutine combat, IForeverLootRoutine loot, ForeverRunOptions runOptions,
-        ClassConfiguration config,
+        IForeverCombatRoutine combat, IForeverLootRoutine loot, ForeverCorpses corpses,
+        ForeverRunOptions runOptions, ClassConfiguration config,
         CancellationTokenSource<GoapAgent> cts)
         : base(nameof(ForeverAutonomousGoal))
     {
@@ -89,6 +93,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         this.navigator = navigator;
         this.combat = combat;
         this.loot = loot;
+        this.corpses = corpses;
         this.runOptions = runOptions;
         this.config = config;
         token = cts.Token;
@@ -99,7 +104,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         machine = new ForeverStateMachine<Phase>(logger, "Forever controller",
                 Phase.Start, Phase.Failed, Phase.Complete)
             .On(Phase.Start, Start, exits: [Phase.Search])
-            .On(Phase.Search, Search, exits: [Phase.Select, Phase.Fight, Phase.Complete],
+            .On(Phase.Search, Search, exits: [Phase.Select, Phase.Fight, Phase.Loot, Phase.Complete],
                 timeoutMs: 45000, onTimeout: "no safe target found within acquisition time",
                 enter: ResetLookAround, exit: navigator.StopPursuit)
             .On(Phase.Select, Select, exits: [Phase.Approach, Phase.Recover],
@@ -110,7 +115,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 timeoutMs: 20000, onTimeout: "target did not enter spell range within local pursuit bound",
                 timedOut: reason => SetBack(ForeverSetback.OutOfReach, reason),
                 exit: navigator.StopPursuit)
-            .On(Phase.Fight, Fight, exits: [Phase.Approach, Phase.Loot, Phase.Rest],
+            .On(Phase.Fight, Fight, exits: [Phase.Approach, Phase.Search, Phase.Loot, Phase.Rest],
                 timeoutMs: 75000, onTimeout: "fight did not end within the combat bound",
                 // Both entries, from pursuit and from aggro, start with no
                 // pending restore, unreadable-identity or lost-reach window from earlier.
@@ -120,7 +125,9 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                     targetUnreadableAt = 0;
                     reachLostAt = 0;
                 })
-            .On(Phase.Loot, Loot, exits: [Phase.Rest])
+            .On(Phase.Loot, Loot, exits: [Phase.Rest, Phase.Search],
+                timeoutMs: 120000, onTimeout: "the loot round did not finish",
+                timedOut: LootTimedOut, exit: navigator.StopPursuit)
             .On(Phase.Rest, Rest, exits: [Phase.Search, Phase.Complete])
             .On(Phase.Recover, Recover, exits: [Phase.Search], enter: navigator.StopPursuit)
             .On(Phase.Failed, enter: navigator.StopPursuit);
@@ -164,6 +171,25 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         {
             reason = "the attack state is unreadable; reload the ForeverProbe add-on that ships with this build";
             return false;
+        }
+        // Bodies are found with the client's Interact Key and emptied by its Auto Loot.
+        if (config.Loot)
+        {
+            if (bars.SoftInteract is not { } soft)
+            {
+                reason = "the soft-interact state is unreadable; reload the ForeverProbe add-on that ships with this build";
+                return false;
+            }
+            if (!soft.InteractKeyEnabled)
+            {
+                reason = "the Interact Key is off; turn on Enable Interact Key in the client's settings";
+                return false;
+            }
+            if (soft.AutoLoot != true)
+            {
+                reason = "Auto Loot is off; turn on Auto Loot in the client's settings";
+                return false;
+            }
         }
         return combat.TryPreflight(bars, out reason) &&
             navigator.TryReadOnlyPreflight(bars, out reason);
@@ -211,12 +237,14 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 return;
             }
             frameInCombat = flags.PlayerCombat;
+            // Where every unit in view is, so a body can be found once the fight is over.
+            corpses.Observe(bars);
             Phase phase = machine.State;
             if (phase is Phase.Approach or Phase.Fight && target is { } killed &&
                 (bars.LastDeathEvent is { } death && death.Confirms(killed, deathSequenceBefore) ||
                  bars.TargetIdentity == killed && flags.Present && flags.Dead))
             {
-                TargetDied(bars, killed);
+                TargetDied(bars);
                 return;
             }
             // The profile's Adhoc self heals and buffs, in every phase that acts
@@ -260,6 +288,12 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private void Search(VisualBarSample bars)
     {
         bool inCombat = bars.TargetFlags!.Value.PlayerCombat;
+        // The fight is over: its bodies are looted before the next one.
+        if (!inCombat && config.Loot && corpses.Any)
+        {
+            BeginLoot(bars);
+            return;
+        }
         // Aggro can begin before our first cast: a selected unit in reach is
         // fought as it is, without a click.
         if (inCombat && ForeverTargetPolicy.TryEligibleTarget(bars, config, out VisualTargetIdentity selected) &&
@@ -279,6 +313,11 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             candidate = chosen;
             selector.BeginSelect(chosen);
             machine.Go(Phase.Select);
+            return;
+        }
+        if (inCombat && lastKillAt != 0 && GetElapsedTime(lastKillAt).TotalMilliseconds < CombatLingersMs)
+        {
+            navigator.StopPursuit();
             return;
         }
 
@@ -443,7 +482,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                     machine.Go(Phase.Approach);
                 return;
             case ForeverCombatResult.TargetDead:
-                TargetDied(bars, selected);
+                TargetDied(bars);
                 return;
             case ForeverCombatResult.Failed:
                 machine.Fail(reason);
@@ -451,21 +490,54 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         }
     }
 
+    // The round goes from body to body until none is left; an attack sends
+    // the run back to fighting, and the bodies wait for the next round.
     private void Loot(VisualBarSample bars)
     {
         switch (loot.Update(bars, out string reason))
         {
             case ForeverLootResult.Collected:
                 completedLoots++;
+                if (logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation("Forever looted a body; {Count} left", corpses.Pending.Count);
+                break;
+            case ForeverLootResult.Done:
                 machine.Go(Phase.Rest);
                 break;
-            case ForeverLootResult.Empty:
-                machine.Go(Phase.Rest);
+            case ForeverLootResult.InCombat:
+                machine.Go(Phase.Search);
                 break;
             case ForeverLootResult.Failed:
                 machine.Fail(reason);
                 break;
         }
+    }
+
+    private void LootTimedOut(string reason)
+    {
+        if (logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("Forever {Reason}; leaving {Count} bodies", reason, corpses.Pending.Count);
+        corpses.Clear();
+        machine.Go(Phase.Rest);
+    }
+
+    // Looting waits until the fight is over; without it the run rests.
+    private void BeginLoot(VisualBarSample bars)
+    {
+        if (!config.Loot)
+        {
+            machine.Go(Phase.Rest);
+            return;
+        }
+        if (bars.Loot is null)
+        {
+            machine.Fail("a kill to loot, but loot event telemetry is unavailable");
+            return;
+        }
+        if (logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("Forever loot round: {Count} bodies where they fell", corpses.Pending.Count);
+        loot.Begin();
+        machine.Go(Phase.Loot);
     }
 
     private void Rest(VisualBarSample bars)
@@ -505,38 +577,29 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                     : "mana did not recover in time");
             return;
         }
-        if (!observedDeadTarget)
-        {
-            machine.Fail("target death was not verified");
-            return;
-        }
-        completedKills++;
-        recovery.Killed();
-        if (logger.IsEnabled(LogLevel.Information))
-            logger.LogInformation("Forever autonomous kill {Count} verified", CompletedKills);
-        target = null;
-        observedDeadTarget = false;
         machine.Go(runOptions.MaxCompletedCycles is { } maximum && completedKills >= maximum
             ? Phase.Complete : Phase.Search);
     }
 
-    private void TargetDied(VisualBarSample bars, VisualTargetIdentity killed)
+    // A verified kill. While something else still fights the player, the run
+    // goes back to fighting and the body waits; once combat is over the
+    // round loots every body of the fight.
+    private void TargetDied(VisualBarSample bars)
     {
         navigator.StopPursuit();
-        observedDeadTarget = true;
         observedDeaths++;
-        if (config.Loot)
+        completedKills++;
+        lastKillAt = GetTimestamp();
+        recovery.Killed();
+        if (logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("Forever autonomous kill {Count} verified", CompletedKills);
+        target = null;
+        if (bars.TargetFlags!.Value.PlayerCombat)
         {
-            if (bars.Loot is not { } state)
-            {
-                machine.Fail("target death confirmed, but loot event telemetry is unavailable");
-                return;
-            }
-            loot.Begin(killed, state);
-            machine.Go(Phase.Loot);
+            machine.Go(Phase.Search);
+            return;
         }
-        else
-            machine.Go(Phase.Rest);
+        BeginLoot(bars);
     }
 
     // Keeps the same opponent through pursuit and combat.

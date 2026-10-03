@@ -183,8 +183,9 @@ Forever-owned code:
   bounds and release hooks both Forever goals run on), `ForeverCaster` (one
   checked keypress per cast),
   `ForeverRotation` (the class profile's Pull, Combat and Adhoc lists),
-  `ForeverLoot`, `ForeverNavigator` (also `IForeverFacing`), `ForeverDragPoint`
-  (where a camera drag may begin),
+  `ForeverCorpses` (the bodies of a fight and where they fell), `ForeverLoot`
+  (the loot round after it), `ForeverNavigator` (also `IForeverFacing`),
+  `ForeverDragPoint` (where a camera drag may begin),
   `ForeverTargetPolicy` (which units to fight, which plate next),
   `ForeverTargetSelector`, `ForeverPointAndClick` (aim, confirm, click,
   confirm), `ForeverExclusions` (units set aside for a while),
@@ -1015,11 +1016,12 @@ matching new event proves death even if the current target is already empty.
 The live record identified `PARTY_KILL` as the source. `LOOT_OPENED`,
 `LOOT_SLOT_CLEARED`, and `LOOT_CLOSED` similarly persist across captures.
 
-`IForeverLootRoutine` restores the corpse when necessary, checks its identity,
-presses the bound `INTERACTTARGET`, and uses `C_LootFrame.TryAutoLoot()` if the
-window remains open. It requires all tracked slots to clear and the window to
-close; a timeout or partial collection is reported. It changes no auto-loot CVar.
-An explicitly non-lootable corpse completes without claiming items were collected.
+Until 2026-10-04 `IForeverLootRoutine` restored the corpse with
+`/targetlasttarget`, pressed the bound `INTERACTTARGET` from where the fight
+ended and typed `C_LootFrame.TryAutoLoot()` if the window stayed open. It now
+runs a loot round after the fight; see "Looting after the fight" below. A
+round still requires every tracked slot to clear and the window to close.
+It changes no client setting.
 
 Definitions: [target death](https://github.com/Gethe/wow-ui-source/blob/forever/Interface/AddOns/Blizzard_APIDocumentationGenerated/PlayerScriptDocumentation.lua),
 [party kill](https://github.com/Gethe/wow-ui-source/blob/forever/Interface/AddOns/Blizzard_APIDocumentationGenerated/UnitDocumentation.lua),
@@ -1311,3 +1313,54 @@ not what the mouse does during it:
   them.
 
 `--logic-test` has 119 checks.
+
+### Looting after the fight (2026-10-04)
+
+Looting stopped working once kills happened at range: of six corpses after
+click targeting, none was looted. The body lay 8 to 35 yards away, the
+routine pressed interact from where the fight ended, `CanLootUnit` read false
+and after a second the round was called empty. The ranged corpses were
+lootable, only out of reach; a sweep on 2026-10-04 looted the body killed in
+melee and not the one killed at range. The client also clears the target
+when it dies, and a dead unit's nameplate fades out within about 0.3 seconds,
+so a body has no marker to steer by or click.
+
+Looting is now its own phase after the fight, as a person plays:
+
+- **Kills are remembered, not looted.** `ForeverCorpses` notes on every frame
+  where the target and every plate with an identity and a marker are: the
+  player's position, the bearing to the unit (`ForeverNavigator.BearingOf`,
+  the facing turned by the marker's offset under the 90-degree field of view)
+  and how far it can be (0 to 8 yards when it reads close, else 8 yards to the
+  plate distance, 45). A new death event of a unit seen in the last 10
+  seconds becomes a body on that line. A kill while something else still
+  fights the player sends the run back to Search, which takes attackers only.
+- **Once combat is over, a loot round** (`ForeverLoot`) visits the bodies
+  nearest first: it walks the body's line on the navmesh
+  (`ForeverNavigator.WalkToward`), to its near end and on to its far end,
+  until the client's **Interact Key** finds the body. The soft-interact unit
+  being dead and lootable is the signal (`VisualSoftInteract`, a checksummed
+  block beside the death latch). Then the round presses the bound
+  `INTERACTTARGET`, and the client's **Auto Loot** empties the window and closes
+  it. Any lootable body the key finds on the way is taken too. A selected
+  unit is cleared first, since the key acts on it before the soft target. A
+  body not found by the far end, or within 30 seconds, is given up; the round
+  as a whole has two minutes. An attack during the round sends the run back
+  to fighting, and the bodies wait for the next round.
+- No chat command is typed: `/targetlasttarget` and
+  `C_LootFrame.TryAutoLoot()` are gone from looting.
+
+A looting profile needs two client settings, which the preflight checks: Enable
+Interact Key (`SoftTargetInteract` 3; the client's default 1 is gamepad only)
+and Auto Loot (`autoLootDefault`). The `/foreverprobe` range trace logs the
+soft-interact unit, so a live run shows when the key finds a body.
+
+Offline, `--logic-test` (137 checks) covers the ledger (a melee kill within 8
+yards ahead, a ranged kill beyond, a marker at the screen edge 45 degrees
+aside, a plate's unit, a death never seen, nearest first, bodies given up
+after three minutes) and the round (combat, clearing a selected unit, the key
+on a lootable body, the walk to the near and far ends, a window emptied and
+closed, a window closed with items left). `--self-test` covers the new block
+at three UI scales, and a scratch run of the committed and working add-on on
+one mocked API kept all 1,838 existing telemetry entries identical. Not yet
+verified live.

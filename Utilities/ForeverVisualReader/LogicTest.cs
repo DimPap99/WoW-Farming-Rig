@@ -522,6 +522,7 @@ internal static partial class LogicTest
         }
 
         TargetingChecks(Check, config, (target, inCombat) => Frame(target: target, combat: inCombat), NewRotation());
+        LootChecks(Check);
 
         Console.WriteLine(failures == 0 ? "All logic checks passed." : $"{failures} logic checks failed.");
         return failures == 0 ? 0 : 1;

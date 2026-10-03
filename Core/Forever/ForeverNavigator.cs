@@ -239,13 +239,23 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         lastMarkerError = error;
         lastMarkerAt = GetTimestamp();
         lastTargetMarkerX = marker.X;
-        // Facing grows to the left; a marker right of centre lies at a smaller bearing.
         if (bars.Position is { } map)
-            lastSeenBearing = map.Direction - Math.Atan(error * 2 * Math.Tan(HalfFieldOfView));
+            lastSeenBearing = BearingOf(map, marker);
         bearingReached = false;
         lookFacing = null;
         lookTurned = 0;
     }
+
+    /// <summary>
+    /// The world bearing to what a screen marker shows: the facing, turned by
+    /// the marker's offset from the centre under the camera's field of view.
+    /// Facing grows to the left, so a marker right of centre lies at a smaller bearing.
+    /// </summary>
+    public static double BearingOf(VisualPositionSample position, VisualScreenPointSample marker) =>
+        position.Direction - Math.Atan((marker.X - 0.5) * 2 * Math.Tan(HalfFieldOfView));
+
+    /// <summary>The world point <paramref name="yards"/> from <paramref name="from"/> along <paramref name="bearing"/>.</summary>
+    public static Vector2 Along(Vector2 from, double bearing, float yards) => from + Heading(bearing) * yards;
 
     // How hard to turn for a marker this far from centre: the error plus a
     // lead for where the marker is heading, as a hand follows a moving mob.
@@ -319,8 +329,26 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
             reason = "target is too far for local pursuit";
             return ForeverNavigationResult.OutOfReach;
         }
-        if (!TryPathWaypoint(here, destination, out Vector2 waypoint,
-                out reason))
+        return WalkToward(bars, destination, out reason);
+    }
+
+    /// <summary>
+    /// Walks toward a world point along the baked mesh: forward held while
+    /// the mouse steers onto the path, as pursuit walks to a target's position.
+    /// The caller decides when the point is reached and stops with
+    /// <see cref="StopPursuit"/>.
+    /// </summary>
+    public ForeverNavigationResult WalkToward(VisualBarSample bars, Vector2 destination, out string reason)
+    {
+        reason = string.Empty;
+        if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
+            !TryNav(map.UIMapId, out reason))
+        {
+            StopPursuit();
+            return ForeverNavigationResult.Failed;
+        }
+        Vector2 here = new((float)world.X, (float)world.Y);
+        if (!TryPathWaypoint(here, destination, out Vector2 waypoint, out reason))
         {
             StopPursuit();
             return ForeverNavigationResult.Blocked;

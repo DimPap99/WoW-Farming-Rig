@@ -242,7 +242,8 @@ public readonly record struct VisualBarSample(
     VisualDeathEvent? LastDeathEvent = null,
     VisualLootState? Loot = null,
     VisualNameplateRoster? Nameplates = null,
-    VisualAttackState? Attack = null)
+    VisualAttackState? Attack = null,
+    VisualSoftInteract? SoftInteract = null)
 {
     /// <summary>
     /// The screen frame this sample was decoded from, set by
@@ -391,7 +392,8 @@ public static class VisualBarReader
             VisualLifecycleReader.ReadDeath(pixels, width, height, whiteLeft, whiteY, scale),
             VisualLifecycleReader.ReadLoot(pixels, width, height, whiteLeft, whiteY, scale),
             VisualNameplateReader.Read(probe, targetIdentity),
-            VisualAttackReader.Read(probe, targetIdentity));
+            VisualAttackReader.Read(probe, targetIdentity),
+            VisualInteractReader.Read(probe));
         if (locateMarkers)
             sample = LocateMarkers(pixels, width, height, sample);
         return true;

@@ -18,6 +18,8 @@ local visual
 local ROSTER_VERSION = 2
 -- Version of the attack-state block; the reader refuses any other.
 local ATTACK_VERSION = 1
+-- Version of the soft-interact block; the reader refuses any other.
+local INTERACT_VERSION = 1
 -- The melee auto attack, as the client's spell.
 local ATTACK_SPELL = 6603
 -- CheckInteractDistance's duel distance. On this client it turns true as a
@@ -122,6 +124,8 @@ local function createVisual()
     frame.deathPixels, frame.lootPixels = {}, {}
     for i = 1, 4 do frame.deathPixels[i] = addPixel(16 + i, 205) end
     for i = 1, 9 do frame.lootPixels[i] = addPixel(16 + i, 225) end
+    frame.interactPixels = {}
+    for i = 1, 5 do frame.interactPixels[i] = addPixel(21 + i, 205) end
 
     -- The nameplate roster: a header with the plate counts and settings,
     -- then one checksummed row of seven values per slot.
@@ -664,6 +668,37 @@ local function createVisual()
         setIntPixel(frame.attackValidPixel, checksum % 16777216)
     end
 
+    -- The unit the client's Interact Key would act on (the soft-interact
+    -- target), with whether it is dead and the player may loot it, then the
+    -- two settings looting needs: the Interact Key for keyboard and mouse
+    -- (SoftTargetInteract 3) and Auto Loot.
+    local function renderSoftInteract()
+        local guid = UnitGUID("softinteract")
+        if isSecret(guid) then return end
+        local hash1, hash2, unit = 0, 0, 0
+        if guid then
+            hash1, hash2 = events.Hashes(guid)
+            if not hash1 then return end
+            local lootable = 0
+            local ok, hasLoot, canLoot = pcall(CanLootUnit, guid)
+            if ok and not isSecret(hasLoot) and not isSecret(canLoot) and
+                type(hasLoot) == "boolean" and type(canLoot) == "boolean" then
+                lootable = (hasLoot and canLoot) and 2 or 1
+            end
+            unit = tri(UnitIsDead("softinteract")) + lootable * 4
+        end
+        local level = readableNumber(tonumber(C_CVar.GetCVar("SoftTargetInteract")))
+        level = (level and level >= 0 and level <= 3 and level == floor(level)) and level + 1 or 0
+        local settings = level + tri(C_CVar.GetCVarBool("autoLootDefault")) * 8 +
+            INTERACT_VERSION * 64
+        local pixels = frame.interactPixels
+        setIntPixel(pixels[1], hash1)
+        setIntPixel(pixels[2], hash2)
+        setIntPixel(pixels[3], unit)
+        setIntPixel(pixels[4], settings)
+        setIntPixel(pixels[5], (0xA5E211 - hash1 - hash2 - unit - settings) % 16777216)
+    end
+
     -- Type code and ID of an action slot, or nothing when unreadable.
     local function readAction(slot)
         local actionType, id = GetActionInfo(slot)
@@ -982,6 +1017,8 @@ local function createVisual()
         setBlack(frame.attackStatePixel)
         setBlack(frame.attackValidPixel)
         pcall(renderAttackState)
+        for i = 1, 5 do setBlack(frame.interactPixels[i]) end
+        pcall(renderSoftInteract)
 
         setBlack(frame.castValidPixel)
         renderEvents()

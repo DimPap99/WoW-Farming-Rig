@@ -219,6 +219,7 @@ try
                         $"plates={current.Nameplates?.PlateCount.ToString() ?? "unreadable"}, " +
                         $"range1/2/3={current.ActionStates?.GetSlot(1)?.InRange}/{current.ActionStates?.GetSlot(2)?.InRange}/{current.ActionStates?.GetSlot(3)?.InRange}, " +
                         $"attack={current.Attack?.ToString() ?? "unreadable"}, " +
+                        $"soft={current.SoftInteract?.ToString() ?? "unreadable"}, " +
                         $"cast={current.LastCastEvent}, death={current.LastDeathEvent}, loot={current.Loot}, " +
                         $"frameReady={ForeverFrame.HasTrialInputs(current)}");
                 else
