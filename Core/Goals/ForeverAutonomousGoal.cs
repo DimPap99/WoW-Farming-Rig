@@ -91,7 +91,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             !ForeverBindings.ActionButton(ForeverPaladin.SealSlot, ConsoleKey.D5).IsBoundIn(bars) ||
             bars.ActionBar?.GetSlot(ForeverPaladin.SealSlot) is not
                 { Kind: VisualActionKind.Spell, Id: ForeverPaladin.SealOfRighteousness } ||
-            bars.SealOfRighteousnessActive is null || bars.LastDeathEvent is null ||
+            ForeverPaladin.SealActive(bars) is null || bars.LastDeathEvent is null ||
             config.Loot && (bars.Loot is null ||
                 !ForeverBindings.InteractTarget.IsBoundIn(bars)))
         {

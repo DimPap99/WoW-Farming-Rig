@@ -129,7 +129,7 @@ public sealed class ForeverCombat : IForeverCombatRoutine
     {
         reason = string.Empty;
         bool inCombat = bars.TargetFlags is { PlayerCombat: true };
-        if (bars.SealOfRighteousnessActive is null)
+        if (ForeverPaladin.SealActive(bars) is null)
         {
             // Missing telemetry is not proof that the buff expired. Keep
             // defending with melee while withholding Seal and Judgement.
@@ -142,7 +142,7 @@ public sealed class ForeverCombat : IForeverCombatRoutine
             return false;
         }
         sealUnreadableAt = 0;
-        if (bars.SealOfRighteousnessActive == true)
+        if (ForeverPaladin.SealActive(bars) == true)
             return true;
         if (Action(ForeverPaladin.SealOfRighteousness) is not { } seal)
         {
