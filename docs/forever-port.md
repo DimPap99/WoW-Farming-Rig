@@ -177,7 +177,9 @@ behaviour, change these files rather than shared upstream classes.
 Forever-owned code:
 
 - `Core/Forever/` - the guarded runtime: `ForeverGoalFactory` (the session's
-  composition root), `ForeverCaster` (one checked keypress per cast),
+  composition root), `ForeverStateMachine` (the declared states, exits, time
+  bounds and release hooks both Forever goals run on), `ForeverCaster` (one
+  checked keypress per cast),
   `ForeverRotation` (the class profile's Pull, Combat and Adhoc lists),
   `ForeverLoot`, `ForeverNavigator`, `ForeverTargetSelector`,
   `ForeverReaderFeed` (feeds each capture tick to the shared readers),
@@ -896,6 +898,19 @@ mouse button, and uses checked spell range to stop. Seal (slot 5), Judgement
 (slot 2), melee start and Holy Strike (slot 3) are enabled. `Loot` is now true.
 This profile remains available through the explicit bounded utility;
 `ForeverDiagnosticController` still guards dashboard startup.
+
+The run is an explicit state machine (`ForeverStateMachine`, since
+2026-10-03). The goal's constructor declares every state once: its work on a
+frame, the states it may move to, its hard time bound (Acquire 30 s, Pursue
+20 s, Fight 75 s) and the hooks that release what it holds, such as held
+movement when pursuit ends. A move the declaration does not allow ends the run
+instead of acting on a bug; a bound is checked before the state's work on each
+frame. The bounded trial goal runs on the same class. Its checks, together
+with the rotation, preflight and key checks, run offline:
+
+```powershell
+dotnet run --project Utilities/ForeverVisualReader -- --logic-test
+```
 
 Read-only current-position preflight:
 

@@ -33,11 +33,9 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private int emptyTargetPresses;
     private readonly ClassConfiguration config;
     private readonly CancellationToken token;
-    private volatile Phase phase = Phase.Initial;
+    private readonly ForeverStateMachine<Phase> machine;
     private volatile bool stopped;
     private volatile int completedKills;
-    private volatile string lastFailure = string.Empty;
-    private long phaseStarted = GetTimestamp();
     private long lastTargetPress;
     private long lastClearTarget;
     private long lastActionFrame;
@@ -52,9 +50,9 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private volatile int completedLoots;
 
     public override float Cost => 1;
-    public override bool CanRun() => phase != Phase.Failed && !stopped;
-    public string Status => phase.ToString();
-    public string LastFailure => lastFailure;
+    public override bool CanRun() => machine.State != Phase.Failed && !stopped;
+    public string Status => machine.State.ToString();
+    public string LastFailure => machine.LastFailure;
     public int CompletedKills => completedKills;
     public int ObservedDeaths => observedDeaths;
     public int CompletedLoots => completedLoots;
@@ -76,6 +74,35 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         this.runOptions = runOptions;
         this.config = config;
         token = cts.Token;
+
+        // The whole run: each phase, where it may go next, its hard bound and
+        // what it releases. Bounds that depend on what the phase sees stay in
+        // the phase itself.
+        machine = new ForeverStateMachine<Phase>(logger, "Forever controller",
+                Phase.Initial, Phase.Failed, Phase.Complete)
+            .On(Phase.Initial, Initial, exits: [Phase.Acquire])
+            .On(Phase.Acquire, Acquire, exits: [Phase.Pursue, Phase.Fight, Phase.Complete],
+                timeoutMs: 30000, onTimeout: "no safe target found within acquisition time",
+                enter: () =>
+                {
+                    rejectedTargets.Clear();
+                    emptyTargetPresses = 0;
+                })
+            .On(Phase.Pursue, Pursue, exits: [Phase.Fight, Phase.Acquire, Phase.Loot, Phase.Recover],
+                timeoutMs: 20000, onTimeout: "target did not enter spell range within local pursuit bound",
+                exit: navigator.StopPursuit)
+            .On(Phase.Fight, Fight, exits: [Phase.Pursue, Phase.Loot, Phase.Recover],
+                timeoutMs: 75000, onTimeout: "fight did not end within the combat bound",
+                // Both entries, from pursuit and from aggro, start with no
+                // pending restore or unreadable-identity window from earlier.
+                enter: () =>
+                {
+                    targetRestoreAt = 0;
+                    targetUnreadableAt = 0;
+                })
+            .On(Phase.Loot, Loot, exits: [Phase.Recover])
+            .On(Phase.Recover, Recover, exits: [Phase.Acquire, Phase.Complete])
+            .On(Phase.Failed, enter: navigator.StopPursuit);
     }
 
     public bool TryReadOnlyPreflight(out string reason)
@@ -105,14 +132,14 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             // never resumes; load the profile again for a new run.
             stopped = true;
             navigator.Halt();
-            if (phase != Phase.Complete && CompletedKills == 0)
-                Fail("Controller stopped");
+            if (CompletedKills == 0)
+                machine.Fail("Controller stopped");
         }
     }
 
     public override void Update()
     {
-        if (!CanRun() || phase == Phase.Complete || token.IsCancellationRequested)
+        if (!CanRun() || machine.IsTerminal || token.IsCancellationRequested)
             return;
         try
         {
@@ -123,7 +150,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 if (invalidFrameSince == 0)
                     invalidFrameSince = GetTimestamp();
                 if (GetElapsedTime(invalidFrameSince).TotalMilliseconds > 5000)
-                    Fail("visual controller frame unavailable for five continuous seconds");
+                    machine.Fail("visual controller frame unavailable for five continuous seconds");
                 return;
             }
             invalidFrameSince = 0;
@@ -133,9 +160,10 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             VisualTargetFlags flags = bars.TargetFlags!.Value;
             if (flags.PlayerDead)
             {
-                Fail("player died; corpse recovery has not been verified");
+                machine.Fail("player died; corpse recovery has not been verified");
                 return;
             }
+            Phase phase = machine.State;
             if (phase is Phase.Pursue or Phase.Fight && target is { } killed &&
                 (bars.LastDeathEvent is { } death && death.Confirms(killed, deathSequenceBefore) ||
                  bars.TargetIdentity == killed && flags.Present && flags.Dead))
@@ -154,7 +182,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             {
                 navigator.StopPursuit();
                 if (!string.IsNullOrEmpty(adhocReason))
-                    Fail(adhocReason);
+                    machine.Fail(adhocReason);
                 return;
             }
             // Once acquired, keep the same opponent through pursuit and combat.
@@ -168,7 +196,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 {
                     target = nearby;
                     deathSequenceBefore = bars.LastDeathEvent?.Sequence ?? 0;
-                    Enter(Phase.Fight);
+                    machine.Go(Phase.Fight);
                 }
                 else if (GetElapsedTime(lastTargetPress).TotalMilliseconds >= 1500 &&
                     selector.SelectNearbyOpponent(bars))
@@ -180,77 +208,40 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                     return;
             }
 
-            switch (phase)
-            {
-                case Phase.Initial:
-                    if (!TryReadOnlyPreflight(out string initialReason))
-                    {
-                        if (Elapsed() > 5000)
-                            Fail(initialReason);
-                        return;
-                    }
-                    Enter(Phase.Acquire);
-                    break;
-
-                case Phase.Acquire:
-                    Acquire(bars, flags);
-                    break;
-
-                case Phase.Pursue:
-                    Pursue(bars, flags);
-                    break;
-
-                case Phase.Fight:
-                    Fight(bars, flags);
-                    break;
-
-                case Phase.Recover:
-                    Recover(bars, flags);
-                    break;
-
-                case Phase.Loot:
-                    switch (loot.Update(bars, out string lootReason))
-                    {
-                        case ForeverLootResult.Collected:
-                            completedLoots++;
-                            Enter(Phase.Recover);
-                            break;
-                        case ForeverLootResult.Empty:
-                            Enter(Phase.Recover);
-                            break;
-                        case ForeverLootResult.Failed:
-                            Fail(lootReason);
-                            break;
-                    }
-                    break;
-            }
+            machine.Tick(bars);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Forever autonomous controller stopped");
-            Fail("controller update threw an exception");
+            machine.Fail("controller update threw an exception");
         }
     }
 
-    private void Acquire(VisualBarSample bars, VisualTargetFlags flags)
+    private void Initial(VisualBarSample bars)
+    {
+        if (!TryReadOnlyPreflight(out string reason))
+        {
+            if (machine.ElapsedMs > 5000)
+                machine.Fail(reason);
+            return;
+        }
+        machine.Go(Phase.Acquire);
+    }
+
+    private void Acquire(VisualBarSample bars)
     {
         // Roaming holds the movement keys; any frame that does not roam lets
         // go, as a person stops to look at a candidate.
-        if (!AcquireOrRoam(bars, flags))
+        if (!AcquireOrRoam(bars, bars.TargetFlags!.Value))
             navigator.StopPursuit();
     }
 
     // True when it roamed this frame.
     private bool AcquireOrRoam(VisualBarSample bars, VisualTargetFlags flags)
     {
-        if (Elapsed() > 30000)
-        {
-            Fail("no safe target found within acquisition time");
-            return false;
-        }
         if (flags.PlayerCombat)
         {
-            Fail("unexpected combat during target acquisition");
+            machine.Fail("unexpected combat during target acquisition");
             return false;
         }
         if (!ForeverFrame.HasMana(bars, ForeverFrame.ReadyMana))
@@ -269,7 +260,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 target = selected;
                 targetSelectedAt = GetTimestamp();
                 deathSequenceBefore = bars.LastDeathEvent?.Sequence ?? 0;
-                Enter(Phase.Pursue);
+                machine.Go(Phase.Pursue);
             }
             else if (GetElapsedTime(lastTargetPress).TotalMilliseconds >= 1500)
             {
@@ -277,7 +268,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                     !rejectedTargets.Add(rejected))
                 {
                     selector.ClearTarget(bars);
-                    Enter(Phase.Complete);
+                    machine.Go(Phase.Complete);
                     return false;
                 }
                 if (selector.CycleCandidate(bars))
@@ -290,7 +281,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         {
             if (runOptions.StopWhenNoTargets && emptyTargetPresses >= 2)
             {
-                Enter(Phase.Complete);
+                machine.Go(Phase.Complete);
                 return false;
             }
             if (selector.SelectNearest(bars))
@@ -299,43 +290,39 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 lastTargetPress = GetTimestamp();
             }
         }
-        if (runOptions.StopWhenNoTargets || Elapsed() <= 6000)
+        if (runOptions.StopWhenNoTargets || machine.ElapsedMs <= 6000)
             return false;
         if (navigator.Roam(bars, out string reason) == ForeverNavigationResult.Failed)
         {
-            Fail(reason);
+            machine.Fail(reason);
             return false;
         }
         return true;
     }
 
-    private void Pursue(VisualBarSample bars, VisualTargetFlags flags)
+    private void Pursue(VisualBarSample bars)
     {
         // Range pixels refresh on their own 500ms cadence. Let them catch up
         // to a newly selected identity before interpreting the range bits.
         if (GetElapsedTime(targetSelectedAt).TotalMilliseconds < 650)
             return;
+        VisualTargetFlags flags = bars.TargetFlags!.Value;
         if (target is not { } selected ||
             bars.TargetIdentity != selected || !flags.Present ||
             !flags.Attackable || flags.Dead)
         {
             if (flags.PlayerCombat)
-                Fail("selected target changed during combat pursuit");
+                machine.Fail("selected target changed during combat pursuit");
             else
             {
                 target = null;
-                Enter(Phase.Acquire);
+                machine.Go(Phase.Acquire);
             }
             return;
         }
         if (combat.InRange(bars, selected))
         {
-            Enter(Phase.Fight);
-            return;
-        }
-        if (Elapsed() > 20000)
-        {
-            Fail("target did not enter spell range within local pursuit bound");
+            machine.Go(Phase.Fight);
             return;
         }
         ForeverNavigationResult result = navigator.Approach(bars,
@@ -344,7 +331,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             result = navigator.SearchForTarget(bars, selected, out reason);
         if (result == ForeverNavigationResult.Blocked && !flags.PlayerCombat)
         {
-            Fail($"selected target's local approach is blocked: {reason}");
+            machine.Fail($"selected target's local approach is blocked: {reason}");
             return;
         }
         if (result == ForeverNavigationResult.Failed)
@@ -353,15 +340,16 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 reason == "selected nameplate marker stayed unavailable")
             {
                 target = null;
-                Enter(Phase.Acquire);
+                machine.Go(Phase.Acquire);
             }
             else
-                Fail(reason);
+                machine.Fail(reason);
         }
     }
 
-    private void Fight(VisualBarSample bars, VisualTargetFlags flags)
+    private void Fight(VisualBarSample bars)
     {
+        VisualTargetFlags flags = bars.TargetFlags!.Value;
         if (!flags.Present)
         {
             navigator.StopPursuit();
@@ -371,7 +359,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 selector.RestoreLastTarget();
             }
             else if (GetElapsedTime(targetRestoreAt).TotalMilliseconds > 3000)
-                Fail("selected target disappeared and could not be restored for the death check");
+                machine.Fail("selected target disappeared and could not be restored for the death check");
             return;
         }
         // The target is back; the next disappearance gets a fresh window.
@@ -380,14 +368,14 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         {
             targetUnreadableAt = targetUnreadableAt == 0 ? GetTimestamp() : targetUnreadableAt;
             if (GetElapsedTime(targetUnreadableAt).TotalMilliseconds > 2000)
-                Fail($"combat target identity remained unreadable; flags={flags}, health={bars.TargetHealth:P0}");
+                machine.Fail($"combat target identity remained unreadable; flags={flags}, health={bars.TargetHealth:P0}");
             return;
         }
         targetUnreadableAt = 0;
         if (target is not { } selected ||
             bars.TargetIdentity != selected || !flags.Present)
         {
-            Fail($"target identity was lost during combat; expected={target}, actual={bars.TargetIdentity}, flags={flags}, health={bars.TargetHealth:P0}");
+            machine.Fail($"target identity was lost during combat; expected={target}, actual={bars.TargetIdentity}, flags={flags}, health={bars.TargetHealth:P0}");
             return;
         }
         ForeverCombatResult result = combat.Update(bars, selected,
@@ -395,26 +383,42 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         switch (result)
         {
             case ForeverCombatResult.NeedRange:
-                Enter(Phase.Pursue);
+                machine.Go(Phase.Pursue);
                 return;
             case ForeverCombatResult.TargetDead:
                 TargetDied(bars, selected);
                 return;
             case ForeverCombatResult.Failed:
-                Fail(reason);
+                machine.Fail(reason);
                 return;
         }
-        if (Elapsed() > 75000)
-            Fail("fight did not end within the combat bound");
     }
 
-    private void Recover(VisualBarSample bars, VisualTargetFlags flags)
+    private void Loot(VisualBarSample bars)
     {
+        switch (loot.Update(bars, out string reason))
+        {
+            case ForeverLootResult.Collected:
+                completedLoots++;
+                machine.Go(Phase.Recover);
+                break;
+            case ForeverLootResult.Empty:
+                machine.Go(Phase.Recover);
+                break;
+            case ForeverLootResult.Failed:
+                machine.Fail(reason);
+                break;
+        }
+    }
+
+    private void Recover(VisualBarSample bars)
+    {
+        VisualTargetFlags flags = bars.TargetFlags!.Value;
         if (flags.Present)
         {
             if (!flags.Dead)
             {
-                Fail("new live target appeared during recovery");
+                machine.Fail("new live target appeared during recovery");
                 return;
             }
             // Any corpse is safe to deselect, including one whose identity did
@@ -424,29 +428,29 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 selector.ClearTarget(bars);
                 lastClearTarget = GetTimestamp();
             }
-            if (Elapsed() > 30000)
-                Fail("dead target stayed selected during recovery");
+            if (machine.ElapsedMs > 30000)
+                machine.Fail("dead target stayed selected during recovery");
             return;
         }
         if (flags.PlayerCombat)
         {
-            if (Elapsed() > 30000)
-                Fail("combat did not clear after target death");
+            if (machine.ElapsedMs > 30000)
+                machine.Fail("combat did not clear after target death");
             return;
         }
         // Heals between fights are the profile's out-of-combat Adhoc actions,
         // which run before this phase; here only wait for them and regeneration.
         if (!ForeverFrame.IsRested(bars))
         {
-            if (Elapsed() > 45000)
-                Fail(bars.PlayerHealth < ForeverFrame.RestedHealth
+            if (machine.ElapsedMs > 45000)
+                machine.Fail(bars.PlayerHealth < ForeverFrame.RestedHealth
                     ? "health did not recover in time"
                     : "mana did not recover in time");
             return;
         }
         if (!observedDeadTarget)
         {
-            Fail("target death was not verified");
+            machine.Fail("target death was not verified");
             return;
         }
         completedKills++;
@@ -454,7 +458,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             logger.LogInformation("Forever autonomous kill {Count} verified", CompletedKills);
         target = null;
         observedDeadTarget = false;
-        Enter(runOptions.MaxCompletedCycles is { } maximum && completedKills >= maximum
+        machine.Go(runOptions.MaxCompletedCycles is { } maximum && completedKills >= maximum
             ? Phase.Complete : Phase.Acquire);
     }
 
@@ -467,45 +471,13 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         {
             if (bars.Loot is not { } state)
             {
-                Fail("target death confirmed, but loot event telemetry is unavailable");
+                machine.Fail("target death confirmed, but loot event telemetry is unavailable");
                 return;
             }
             loot.Begin(killed, state);
-            Enter(Phase.Loot);
+            machine.Go(Phase.Loot);
         }
         else
-            Enter(Phase.Recover);
-    }
-
-    private double Elapsed() => GetElapsedTime(phaseStarted).TotalMilliseconds;
-
-    private void Enter(Phase next)
-    {
-        if (phase == Phase.Pursue && next != Phase.Pursue)
-            navigator.StopPursuit();
-        if (next == Phase.Fight)
-        {
-            // Both Fight entry paths (pursuit and in-combat aggro) start with
-            // no pending restore or unreadable-identity window from earlier.
-            targetRestoreAt = 0;
-            targetUnreadableAt = 0;
-        }
-        if (next == Phase.Acquire)
-        {
-            rejectedTargets.Clear();
-            emptyTargetPresses = 0;
-        }
-        phase = next;
-        phaseStarted = GetTimestamp();
-    }
-
-    private void Fail(string reason)
-    {
-        if (phase == Phase.Failed)
-            return;
-        navigator.StopPursuit();
-        lastFailure = reason;
-        phase = Phase.Failed;
-        logger.LogWarning("Forever controller stopped: {Reason}", reason);
+            machine.Go(Phase.Recover);
     }
 }
