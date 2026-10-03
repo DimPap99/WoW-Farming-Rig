@@ -20,7 +20,7 @@ using static System.Diagnostics.Stopwatch;
 namespace Core.Goals;
 
 /// <summary>
-/// One bounded controller run for the guarded Forever Paladin profile. A person
+/// One bounded controller run for a verified Forever trial profile. A person
 /// selects and finishes the target; automatic acquisition and sustained combat
 /// are deliberately outside this trial.
 /// </summary>
@@ -40,7 +40,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
             bars.TargetFlags is not { } flags ||
             !IdleForMove(bars, flags))
         {
-            reason = "requires a complete Paladin Tirisfal frame, high health, mana, and no target or combat";
+            reason = "requires a complete verified-setup frame, high health, mana, and no target or combat";
             return false;
         }
         try
@@ -197,7 +197,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                         Fail("No safe selected target within the trial window");
                         return;
                     }
-                    if (bars.PlayerHealth < 0.70 || bars.PlayerPower < 0.25)
+                    if (!ForeverFrame.CanOpenFight(bars, inCombat: true))
                     {
                         Fail("Low resources before the trial cast");
                         return;
@@ -224,18 +224,19 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                     if (bars.FrameId == candidateFrameId)
                         return;
 
-                    KeyAction? judgement = config.Pull.Sequence.SingleOrDefault();
-                    if (judgement is null ||
-                        !ForeverCastGate.CanPress(bars, judgement, spells))
+                    KeyAction? opener = config.Pull.Sequence.SingleOrDefault();
+                    if (opener is null ||
+                        !ForeverCastGate.CanPress(bars, opener, spells))
                         return;
 
-                    if (caster.TryCast(judgement, () => token.IsCancellationRequested) !=
+                    if (caster.TryCast(opener, () => token.IsCancellationRequested) !=
                         ForeverCastResult.Succeeded)
                     {
-                        Fail("Judgement success event was not confirmed");
+                        Fail($"{opener.Name} success event was not confirmed");
                         return;
                     }
-                    logger.LogInformation("Forever trial Judgement confirmed");
+                    if (logger.IsEnabled(LogLevel.Information))
+                        logger.LogInformation("Forever trial {Action} confirmed", opener.Name);
                     sawCombat |= flags.PlayerCombat;
                     Enter(Phase.AwaitRecovery);
                     break;
@@ -249,8 +250,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
                     sawCombat |= flags.PlayerCombat;
                     sawDeadTarget |= flags.Present && flags.Dead;
                     if ((sawCombat || sawDeadTarget) && !flags.Present &&
-                        !flags.PlayerCombat && bars.PlayerHealth >= 0.70 &&
-                        bars.PlayerPower >= 0.25)
+                        !flags.PlayerCombat && ForeverFrame.CanOpenFight(bars, inCombat: true))
                     {
                         Enter(Phase.Passed);
                         logger.LogInformation("Forever bounded route, action, and recovery trial passed");
@@ -334,7 +334,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
 
     private static bool IdleForMove(VisualBarSample bars, VisualTargetFlags flags) =>
         !flags.Present && !flags.PlayerCombat && !flags.PlayerDead &&
-        bars.PlayerHealth >= 0.70 && bars.PlayerPower >= 0.60;
+        ForeverFrame.CanOpenFight(bars, inCombat: false);
 
     private static double AngularDifference(double a, double b) =>
         Math.Abs(Math.Atan2(Math.Sin(a - b), Math.Cos(a - b)));

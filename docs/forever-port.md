@@ -177,11 +177,13 @@ Forever-owned code:
 
 - `Core/Forever/` - the guarded runtime: `ForeverGoalFactory` (the session's
   composition root), `ForeverCaster` (one checked keypress per cast),
-  `ForeverCombat`, `ForeverLoot`, `ForeverNavigator`, `ForeverTargetSelector`,
+  `ForeverRotation` (the class profile's Pull, Combat and Adhoc lists),
+  `ForeverLoot`, `ForeverNavigator`, `ForeverTargetSelector`,
   `ForeverReaderFeed` (feeds each capture tick to the shared readers),
-  `ForeverFrame` (which inputs a frame must carry), `ForeverBinding(s)` (the
-  bindings checked and pressed), `ForeverNavmesh`, `ForeverPaladin` (the
-  verified spell IDs, slots, map and profile names) and `ForeverProfileRules`.
+  `ForeverFrame` (which inputs a frame must carry and the resource levels),
+  `ForeverBinding(s)` (the bindings checked and pressed), `ForeverNavmesh`,
+  `ForeverVerifiedSetup` (the verified profiles, map and classes) and
+  `ForeverProfileRules` (what a Forever profile may use).
 - `Core/Goals/ForeverAutonomousGoal.cs`, `ForeverTrialGoal.cs`,
   `Core/GoalsComponent/ForeverCastGate.cs`, `Core/GOAP/ForeverGoapWorldState.cs`,
   `Core/ForeverDiagnosticController.cs`, `Core/Session/NoGrindSessionHandler.cs`.
@@ -202,13 +204,48 @@ Where Forever still touches upstream code:
   position from the visual sample (every Classic cell read throws on Forever,
   because there is no pixel strip), `SpellBookReader`/`KeyBindingsReader`
   `UpdateForever`, `KeyReader` live-binding resolution, and the
-  `RequirementFactory` checks that refuse unsupported profile expressions.
+  `RequirementFactory` checks that refuse unsupported profile expressions and
+  skip the Classic usable/current-action requirements.
 - PPather: the `IGameFileSource`/`ILiquidMetadataSource` CASC seam, the numeric
   WMO and MH2O formats, and the opt-in `NavmeshQueryOptions.PreferGroundUnderPoint`.
 - Frontend: the Forever status page and navigation, and the hidden `BotHeader`.
 
 A Forever-owned controller loop would let `BotController`, `GoapAgent`,
 `PlayerReader`, `KeyReader` and `RequirementFactory` return to upstream as well.
+
+### Class-agnostic rotation (2026-10-03)
+
+The runtime names no class or spell. As upstream, the class profile carries
+everything class-specific and the behaviour is shared:
+
+- `ForeverAutonomousGoal` runs Acquire, Pursue, Fight, Loot and Recover for
+  every class.
+- `ForeverRotation` reads the profile. **Adhoc** holds self heals and buffs,
+  gated by the upstream `InCombat` flag. A buff is an action with
+  `AfterCastAuraExpected`, and its aura is matched against its slot icon
+  (`VisualBarSample.SlotAuras`). **Pull** holds openers, each used once per
+  target and only while every buff is up. **Combat** is the priority list, and
+  `AutoAttack` presses `STARTATTACK` once per target. Pursuit stops when any
+  opener can be pressed or any Combat spell's slot reports the target in range.
+- Each action's own requirements say when to use it. They are evaluated by
+  `ForeverRotation` itself, because `KeyAction.CanRun` caches on the Classic
+  `GlobalTime` cell, which never advances on Forever. Only `Health%`, `Mana%`,
+  `TargetHealth%` and `Spell:` have a Forever source;
+  `ForeverProfileRules.FindUnsupportedProfile` refuses anything else at load
+  (see [requirements](requirements.md#wow-forever-requirements)).
+- `ForeverCastGate` decides only whether a press is safe: the spell is ready on
+  its slot and bound, the setup is verified, and a targeted action has a living,
+  attackable, non-player target in range. Opening a fight out of combat needs
+  70% health and, for mana users only, 60% mana; rage and energy are not gated.
+- A profile `MacroText` is typed as a command, as upstream does. This is how
+  `[@player]` self casts are expressed.
+
+`Paladin_Forever_Auto.json` encodes the thresholds the Paladin code used to
+hard-wire: Holy Light below 70% in combat and below 90% out of combat, Seal at
+70% health and 25% mana, Judgement as the opener, then melee and Holy Strike. A
+new class needs a profile, a live bounded sweep, and its class ID in
+`ForeverVerifiedSetup.IsVerifiedClass`. Rogue finishers, DoTs, forms and pets
+still need channel work first; the profile rules refuse them.
 
 ## Live findings from the beta client
 

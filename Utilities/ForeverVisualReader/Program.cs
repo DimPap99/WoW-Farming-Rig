@@ -315,7 +315,7 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
     Console.WriteLine(WorldPositionText(bars.WorldPosition));
     Console.WriteLine($"selected nameplate={bars.NameplateProbe?.ToString() ?? "unavailable"}, " +
         $"screen={bars.TargetScreenPosition?.ToString() ?? "unavailable"}, " +
-        $"Seal of Righteousness={ForeverPaladin.SealActive(bars)?.ToString() ?? "unavailable"}");
+        $"slot auras={bars.SlotAuras?.ToString() ?? "unavailable"}");
     Console.WriteLine(CooldownText(bars.ActionCooldownFill));
     Console.WriteLine(ActionText(bars.WatchedAction));
     Console.WriteLine(ActionBarText(bars.ActionBar));
@@ -830,14 +830,6 @@ static async Task<int> RunRouteProbe(WowScreenWGC screen, ForeverVisualBarTracke
     return 2;
 }
 
-// Slot aura states with only the Seal slot set.
-static bool?[] SealSlotAura(bool? active)
-{
-    bool?[] states = new bool?[VisualSlotAuraSnapshot.SlotCount];
-    states[ForeverPaladin.SealSlot - 1] = active;
-    return states;
-}
-
 static bool HasTrialBinding(VisualBarSample sample, int slot,
     ConsoleKey expected)
 {
@@ -1002,7 +994,7 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
     // Read-only gate for the candidate profile. No controller or input service
     // is constructed here; every value comes from one fresh visual capture.
     DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
-    string profileFile = Path.Combine(config.Class, "Paladin_Forever_Trial.json");
+    string profileFile = Path.Combine(config.Class, ForeverVerifiedSetup.TrialProfile);
     ClassConfiguration profile = JsonConvert.DeserializeObject<ClassConfiguration>(
         File.ReadAllText(profileFile)) ?? throw new InvalidDataException("Trial profile is empty.");
     KeyAction[] actions = [.. profile.Pull.Sequence, .. profile.Combat.Sequence];
@@ -1306,7 +1298,7 @@ static async Task<int> RunTrialHeal(WowScreenWGC screen,
     KeyAction heal = new()
         { Name = "Holy Light", SpellId = 635, Slot = 1,
           ConsoleKey = ConsoleKey.D1 };
-    if (!ForeverCastGate.CanPress(before, heal, spellBook.SpellDB))
+    if (!ForeverCastGate.CanPress(before, heal, spellBook.SpellDB, selfCast: true))
     {
         Console.Error.WriteLine("Heal trial refused: Holy Light is not verified ready.");
         return 2;
@@ -1559,6 +1551,8 @@ static bool BindingsChanged(VisualBindingSnapshot? previous,
 
 static int RunSelfTest()
 {
+    // The Paladin trial setup keeps Seal of Righteousness on this slot.
+    const int sealSlot = 5;
     KeyReader.RequireGameBindings = true;
     DataConfig dbc = new()
         { Root = Path.GetFullPath("Json"), Exp = "forever" };
@@ -1653,7 +1647,7 @@ static int RunSelfTest()
         int auraTop = top + rowStep * 4 + (int)Math.Round(632 * scale);
         DrawCastPixel(28, VisualBarReader.SlotAuraState);
         DrawCastPixel(29, (0xA5B5A9 - VisualBarReader.SlotAuraState) & 0xFFFFFF);
-        DrawAuraIcon(pixels, VisualAuraReader.ReferenceColumn(ForeverPaladin.SealSlot), 0, 80);
+        DrawAuraIcon(pixels, VisualAuraReader.ReferenceColumn(sealSlot), 0, 80);
         DrawAuraIcon(pixels, VisualAuraReader.ReferenceColumn(4), 0, 200);
         DrawAuraIcon(pixels, 7, 1, 80);
         DrawLifecycle(205, [7, targetHash1, targetHash2,
@@ -1739,7 +1733,7 @@ static int RunSelfTest()
             || Math.Abs(targetMapPosition.MapX - targetMapX / 16777215.0) > 0.00001
             || Math.Abs(targetMapPosition.MapY - targetMapY / 16777215.0) > 0.00001
             || result.NameplateProbe is not { Count: 1, Matched: true }
-            || ForeverPaladin.SealActive(result) != true
+            || result.SlotAuras?.IsActive(sealSlot) != true
             || result.SlotAuras?.IsActive(4) != false
             || result.SlotAuras?.IsActive(1) is not null
             || result.TargetScreenPosition is not { } targetScreen
@@ -1773,7 +1767,7 @@ static int RunSelfTest()
             || spellBook.GetSlot(3) is not { Source: VisualSpellIdSource.SpellId, Id: 7744 })
         {
             Console.Error.WriteLine($"Visual reader self-test failed at UI scale {scale}; " +
-                $"Seal={ForeverPaladin.SealActive(result)?.ToString() ?? "missing"}.");
+                $"auras={result.SlotAuras?.ToString() ?? "missing"}.");
             return 1;
         }
         using (SyntheticWowScreen capture = new(Image.LoadPixelData(pixels, width, height)))
@@ -1829,14 +1823,22 @@ static int RunSelfTest()
             Console.Error.WriteLine($"Forever controller frame gate failed at UI scale {scale}.");
             return 1;
         }
-        if (!ForeverGoapWorldState.TryBuild(result, out var worldState) ||
+        // Range facts come from the profile: slot 4 holds spell 7744 in range.
+        ClassConfiguration noActions = new();
+        ClassConfiguration slot4Combat = new();
+        slot4Combat.Combat.Sequence = [new KeyAction { Name = "Slot 4", SpellId = 7744, Slot = 4 }];
+        if (!ForeverGoapWorldState.TryBuild(result, noActions, out var worldState) ||
             !worldState[1 << (int)GoapKey.hastarget] ||
             !worldState[1 << (int)GoapKey.targetisalive] ||
             !worldState[1 << (int)GoapKey.targethostile] ||
             worldState[1 << (int)GoapKey.incombat] ||
             worldState[1 << (int)GoapKey.withinpullrange] ||
-            !ForeverGoapWorldState.TryBuild(result with { Bags = null }, out _) ||
-            ForeverGoapWorldState.TryBuild(result with { ActionStates = null }, out _))
+            worldState[1 << (int)GoapKey.incombatrange] ||
+            !ForeverGoapWorldState.TryBuild(result, slot4Combat, out var slot4State) ||
+            !slot4State[1 << (int)GoapKey.incombatrange] ||
+            slot4State[1 << (int)GoapKey.withinpullrange] ||
+            !ForeverGoapWorldState.TryBuild(result with { Bags = null }, noActions, out _) ||
+            ForeverGoapWorldState.TryBuild(result with { ActionStates = null }, noActions, out _))
         {
             Console.Error.WriteLine($"Forever GOAP state gate failed at UI scale {scale}.");
             return 1;
@@ -2440,10 +2442,24 @@ static int RunSelfTest()
                   TargetHealth = 0.50,
                   TargetFlags = new(true, true, false, false, false) },
                 trialJudgement, spells) ||
-            ForeverCastGate.CanPress(trialCastSample with { SlotAuras = new(SealSlotAura(false)) },
+            // Buffs are the rotation's concern; the gate only checks the press.
+            !ForeverCastGate.CanPress(trialCastSample with { SlotAuras = null },
                 trialJudgement, spells) ||
-            ForeverCastGate.CanPress(trialCastSample with { SlotAuras = null },
+            // Mana gates apply to mana users only; rage starts empty.
+            !ForeverCastGate.CanPress(trialCastSample with
+                { PlayerPower = 0, PlayerPowerType = 1 },
                 trialJudgement, spells) ||
+            ForeverCastGate.CanPress(trialCastSample with { PlayerPower = 0.59 },
+                trialJudgement, spells) ||
+            // Only a verified class presses anything.
+            ForeverCastGate.CanPress(trialCastSample with
+                { PlayerIdentity = new((int)UnitClass.Warrior, 5, 12) },
+                trialJudgement, spells) ||
+            // A self cast needs no target.
+            !ForeverCastGate.CanPress(trialCastSample with
+                { TargetIdentity = null, TargetFlags = new(false, false, false, false, false),
+                  TargetPresent = false },
+                trialJudgement, spells, selfCast: true) ||
             ForeverCastGate.CanPress(trialCastSample with { TargetIdentity = null },
                 trialJudgement, spells) ||
             ForeverCastGate.CanPress(trialCastSample with

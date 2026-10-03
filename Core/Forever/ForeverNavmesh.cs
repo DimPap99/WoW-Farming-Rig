@@ -13,7 +13,7 @@ public static class ForeverNavmesh
 {
     /// <summary>The verified map's area, provided the map table places it on Azeroth.</summary>
     public static bool TryGetVerifiedArea(WorldMapAreaDB maps, out WorldMapArea area) =>
-        maps.TryGet(ForeverPaladin.UIMapId, out area) &&
+        maps.TryGet(ForeverVerifiedSetup.UIMapId, out area) &&
         area.MapID == 0 && area.Continent == "Azeroth";
 
     /// <summary>

@@ -1,6 +1,7 @@
 using SixLabors.ImageSharp.PixelFormats;
 
 using System;
+using System.Collections.Generic;
 
 namespace Core;
 
@@ -15,6 +16,18 @@ public sealed class VisualSlotAuraSnapshot(bool?[] states)
     public bool? IsActive(int slot) =>
         slot is >= 1 and <= SlotCount && slot <= states.Length
             ? states[slot - 1] : null;
+
+    /// <summary>The slots with a readable state, as <c>slot=on|off</c>.</summary>
+    public override string ToString()
+    {
+        List<string> parts = [];
+        for (int slot = 1; slot <= SlotCount; slot++)
+        {
+            if (IsActive(slot) is { } active)
+                parts.Add($"{slot}={(active ? "on" : "off")}");
+        }
+        return parts.Count == 0 ? "no references" : string.Join(' ', parts);
+    }
 }
 
 /// <summary>

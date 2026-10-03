@@ -70,7 +70,7 @@ public sealed class ForeverNavigator : IDisposable
     public bool TryReadOnlyPreflight(VisualBarSample bars, out string reason)
     {
         reason = string.Empty;
-        if (bars.Position is not { UIMapId: ForeverPaladin.UIMapId } map ||
+        if (bars.Position is not { UIMapId: ForeverVerifiedSetup.UIMapId } map ||
             bars.WorldPosition is not { InstanceMapId: 0 } world ||
             !ForeverBindings.MoveForward.IsBoundIn(bars) ||
             !ForeverBindings.TurnLeft(input.TurnLeftKey).IsBoundIn(bars) ||
@@ -597,7 +597,7 @@ public sealed class ForeverNavigator : IDisposable
         reason = string.Empty;
         if (!ForeverNavmesh.TryGetVerifiedArea(maps, out WorldMapArea area))
         {
-            reason = $"Forever map {ForeverPaladin.UIMapId} is unavailable";
+            reason = $"Forever map {ForeverVerifiedSetup.UIMapId} is unavailable";
             return false;
         }
         string cache = ForeverNavmesh.CacheDirectory(data, area.Continent);

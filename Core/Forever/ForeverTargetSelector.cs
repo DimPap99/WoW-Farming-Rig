@@ -26,8 +26,7 @@ public sealed class ForeverTargetSelector
     public static bool CanSelect(VisualBarSample bars) =>
         ForeverFrame.HasTrialInputs(bars) &&
         bars.TargetFlags is { Present: false, PlayerDead: false } flags &&
-        bars.PlayerHealth >= 0.70 &&
-        bars.PlayerPower >= (flags.PlayerCombat ? 0.25 : 0.60) &&
+        ForeverFrame.CanOpenFight(bars, flags.PlayerCombat) &&
         ForeverBindings.TargetNearestEnemy.IsBoundIn(bars);
 
     public bool SelectNearest(VisualBarSample bars)
@@ -43,7 +42,7 @@ public sealed class ForeverTargetSelector
         if (!ForeverFrame.HasTrialInputs(bars) ||
             bars.TargetFlags is not
                 { Present: true, PlayerCombat: false, PlayerDead: false } ||
-            bars.PlayerHealth < 0.70 || bars.PlayerPower < 0.60 ||
+            !ForeverFrame.CanOpenFight(bars, inCombat: false) ||
             !ForeverBindings.TargetNearestEnemy.IsBoundIn(bars))
             return false;
         PressTargetNearestEnemy();
@@ -52,8 +51,8 @@ public sealed class ForeverTargetSelector
 
     public static bool TrySafeTarget(VisualBarSample bars,
         out VisualTargetIdentity identity) =>
-        TryEligibleTarget(bars, out identity) && bars.PlayerHealth >= 0.70 &&
-        bars.PlayerPower >= (bars.TargetFlags!.Value.PlayerCombat ? 0.25 : 0.60);
+        TryEligibleTarget(bars, out identity) &&
+        ForeverFrame.CanOpenFight(bars, bars.TargetFlags!.Value.PlayerCombat);
 
     public static bool TryEligibleTarget(VisualBarSample bars,
         out VisualTargetIdentity identity)
@@ -65,7 +64,7 @@ public sealed class ForeverTargetSelector
                   PlayerDead: false } flags ||
             bars.TargetIdentity is not { Present: true, IsPlayer: false } target ||
             bars.PlayerIdentity is not { } player ||
-            target.Level > player.Level + 1 ||
+            target.Level > player.Level + ForeverFrame.MaxTargetLevelsAbove ||
             bars.TargetHealth <= 0)
             return false;
         identity = target;
@@ -81,17 +80,6 @@ public sealed class ForeverTargetSelector
         PressTargetNearestEnemy();
         return true;
     }
-
-    public static bool InJudgementRange(VisualBarSample bars) =>
-        bars.ActionBar?.GetSlot(ForeverPaladin.JudgementSlot) is
-            { Kind: VisualActionKind.Spell, Id: ForeverPaladin.Judgement } &&
-        bars.ActionStates?.GetSlot(ForeverPaladin.JudgementSlot) is { InRange: true };
-
-    public static bool InStrikeRange(VisualBarSample bars) =>
-        bars.ActionBar?.GetSlot(ForeverPaladin.HolyStrikeSlot) is
-            { Kind: VisualActionKind.Spell,
-              Id: ForeverPaladin.HolyStrikeRank1 or ForeverPaladin.HolyStrikeRank2 } &&
-        bars.ActionStates?.GetSlot(ForeverPaladin.HolyStrikeSlot) is { InRange: true };
 
     public void ClearTarget() => command.Run("/cleartarget");
 

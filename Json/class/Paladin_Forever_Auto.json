@@ -1,9 +1,14 @@
 {
+  // The guarded Forever runtime names no spell: everything it does with this
+  // class comes from the lists below. Adhoc runs self heals and buffs (a buff
+  // is an action with AfterCastAuraExpected, tracked through its slot icon),
+  // Pull holds the openers, used once per target once every buff is up, and
+  // Combat is the priority list. Forever requirements may use Health%,
+  // Mana%, TargetHealth% comparisons and Spell:<id>.
   "Loot": true,
   "UseMount": false,
   "Paths": [],
-  "Pull": { "Sequence": [] },
-  "Combat": {
+  "Adhoc": {
     "Sequence": [
       {
         "Name": "Holy Light",
@@ -12,7 +17,21 @@
         "Key": "1",
         "HasCastBar": true,
         "WhenUsable": true,
-        "Requirements": ["Spell:635", "Health% < 90", "Mana% >= 25"]
+        // Explicit self target, whatever the client's auto self-cast setting.
+        "MacroText": "/cast [@player] Holy Light(Rank 1)",
+        "InCombat": "true",
+        "Requirements": ["Spell:635", "Health% < 70", "Mana% >= 12"]
+      },
+      {
+        "Name": "Holy Light",
+        "SpellId": 635,
+        "Slot": 1,
+        "Key": "1",
+        "HasCastBar": true,
+        "WhenUsable": true,
+        "MacroText": "/cast [@player] Holy Light(Rank 1)",
+        "InCombat": "false",
+        "Requirements": ["Spell:635", "Health% < 90", "Mana% >= 12"]
       },
       {
         "Name": "Seal of Righteousness",
@@ -20,8 +39,14 @@
         "Slot": 5,
         "Key": "5",
         "WhenUsable": true,
-        "Requirements": ["Spell:20287", "Mana% >= 25"]
-      },
+        "AfterCastAuraExpected": true,
+        "InCombat": "any",
+        "Requirements": ["Spell:20287", "Health% >= 70", "Mana% >= 25"]
+      }
+    ]
+  },
+  "Pull": {
+    "Sequence": [
       {
         "Name": "Judgement",
         "SpellId": 20271,
@@ -29,7 +54,12 @@
         "Key": "2",
         "WhenUsable": true,
         "Requirements": ["Spell:20271", "TargetHealth% > 0"]
-      },
+      }
+    ]
+  },
+  "Combat": {
+    "Sequence": [
+      { "Name": "AutoAttack" },
       {
         "Name": "Holy Strike",
         "SpellId": 678,

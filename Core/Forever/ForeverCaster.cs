@@ -24,8 +24,9 @@ public sealed class ForeverCaster
     private const int RowRefreshMs = 650;
     private const int PressMs = 75;
     private const int PollMs = 50;
-    private const int SelfCastTimeoutMs = 5000;
-    private const int TargetCastTimeoutMs = 3000;
+    // A cast bar, or a self cast that may follow one, gets the longer wait.
+    private const int LongCastTimeoutMs = 5000;
+    private const int InstantCastTimeoutMs = 3000;
 
     private readonly ILogger<ForeverCaster> logger;
     private readonly ConfigurableInput input;
@@ -52,27 +53,28 @@ public sealed class ForeverCaster
         this.config = config;
     }
 
-    public ForeverCastResult TryCast(KeyAction item, Func<bool> interrupt)
+    /// <param name="selfCast">The action affects the player, so a target change does not void it.</param>
+    public ForeverCastResult TryCast(KeyAction item, Func<bool> interrupt, bool selfCast = false)
     {
         if (needsReset || interrupt())
             return ForeverCastResult.Failed;
         if (lastSucceeded != 0 &&
             GetElapsedTime(lastSucceeded).TotalMilliseconds < RowRefreshMs)
             return ForeverCastResult.NotReady;
-        if (!ForeverPaladin.IsProfile(config.FileName) ||
+        if (!ForeverVerifiedSetup.IsProfile(config.FileName) ||
             !tracker.TryGetLatest(out VisualBarSample before) ||
-            !ForeverCastGate.CanPress(before, item, spells) ||
+            !ForeverCastGate.CanPress(before, item, spells, selfCast) ||
             before.LastCastEvent is not { } previousEvent)
             return ForeverCastResult.NotReady;
 
         needsReset = true;
         VisualTargetIdentity? targetIdentity = before.TargetIdentity;
-        bool selfCast = ForeverPaladin.IsSelfCast(item.SpellId);
+        bool auraWasActive = before.SlotAuras?.IsActive(item.Slot) == true;
         Press(item);
         item.SetClicked();
 
         long start = GetTimestamp();
-        int timeoutMs = selfCast ? SelfCastTimeoutMs : TargetCastTimeoutMs;
+        int timeoutMs = selfCast || item.HasCastBar ? LongCastTimeoutMs : InstantCastTimeoutMs;
         while (GetElapsedTime(start).TotalMilliseconds < timeoutMs)
         {
             if (interrupt())
@@ -100,10 +102,10 @@ public sealed class ForeverCaster
                 currentTarget != targetIdentity)
                 return ForeverCastResult.Failed;
 
-            // The checked player aura is direct proof of this self buff even
-            // when the successful spellcast event arrives after the frame.
-            if (item.SpellId == ForeverPaladin.SealOfRighteousness &&
-                ForeverPaladin.SealActive(current) == true)
+            // A buff that newly shows on its slot's aura reference is direct
+            // proof even when the successful spellcast event arrives after the frame.
+            if (item.AfterCastAuraExpected && !auraWasActive &&
+                current.SlotAuras?.IsActive(item.Slot) == true)
                 return Succeeded(item);
 
             Thread.Sleep(PollMs);
@@ -116,11 +118,13 @@ public sealed class ForeverCaster
 
     private void Press(KeyAction item)
     {
-        if (item.SpellId == ForeverPaladin.HolyLight)
+        // As upstream, a profile macro is typed as a command instead of a key
+        // press; this is how a profile targets the player explicitly.
+        if (!string.IsNullOrEmpty(item.MacroText))
         {
-            // Explicit self target works even with a hostile target selected,
-            // independently of the client's auto-self-cast preference.
-            command.Run("/cast [@player] Holy Light(Rank 1)");
+            // Macro() substitutes profile variables once RequirementFactory set it up.
+            string text = item.Macro();
+            command.Run(string.IsNullOrEmpty(text) ? item.MacroText : text);
             return;
         }
 

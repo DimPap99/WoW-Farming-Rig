@@ -1100,3 +1100,29 @@ e.g. Rogue_20.json
     "Requirement": "!TargetCastingSpell:11443"
 }
 ```
+
+### **WoW: Forever requirements**
+
+The Forever client exposes much less than the Classic pixel strip, so a Forever
+profile may use only requirements with a checked visual source. The profile is
+refused at load, naming the requirement, if it uses anything else.
+
+| Requirement | Meaning on Forever |
+| --- | --- |
+| `"Health%"`, `"Mana%"`, `"TargetHealth%"` | Percentages read from the native status bars. Compare them with numbers, e.g. `"Health% < 70"`. `Mana%` is only readable on a mana user. |
+| `"Spell:<id>"` | The spell is in the spellbook. |
+| `&&`, `\|\|`, `!`, parentheses | As above. |
+
+Every action is also checked automatically for being on its main-bar slot (1 to 12),
+bound to its key, usable with enough mana, and off cooldown. Forever runs only the
+`Pull`, `Combat` and `Adhoc` lists:
+
+* `Adhoc` holds self heals and buffs. `"InCombat"` decides when each runs, as above. An
+  action with `"AfterCastAuraExpected": true` is a buff: it is cast only while no player
+  aura shows its slot's icon.
+* `Pull` holds openers. Each runs once per target, and only while every buff is up.
+* `Combat` is the priority list. `"AutoAttack"` starts melee once per target.
+
+`"MacroText"` is typed as a command instead of pressing the key, for example
+`"/cast [@player] Holy Light(Rank 1)"`. See `Json/class/Paladin_Forever_Auto.json` and
+the [Forever port status](forever-port.md).
