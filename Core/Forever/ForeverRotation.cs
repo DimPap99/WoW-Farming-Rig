@@ -16,14 +16,61 @@ namespace Core.Forever;
 
 public enum ForeverCombatResult { Waiting, ActionSent, NeedRange, TargetDead, Failed }
 
+/// <summary>
+/// Each main-bar slot's range to one unit: the current target's action states,
+/// or the ranges a nameplate roster slot carries for its unit.
+/// </summary>
+public readonly struct ForeverSlotRanges
+{
+    private readonly VisualActionStateSnapshot? targetStates;
+    private readonly VisualSlotRanges plateRanges;
+    private readonly bool isPlate;
+
+    private ForeverSlotRanges(VisualActionStateSnapshot? targetStates, VisualSlotRanges plateRanges, bool isPlate)
+    {
+        this.targetStates = targetStates;
+        this.plateRanges = plateRanges;
+        this.isPlate = isPlate;
+    }
+
+    public static ForeverSlotRanges Target(VisualBarSample bars) => new(bars.ActionStates, default, false);
+
+    public static ForeverSlotRanges Of(VisualNameplate plate) => new(null, plate.Ranges, true);
+
+    /// <summary>In or out of range; null when unknown.</summary>
+    public bool? InRange(int slot) => isPlate
+        ? plateRanges.InRange(slot)
+        : targetStates?.GetSlot(slot)?.InRange;
+}
+
+/// <summary>How the profile's spells reach a unit.</summary>
+/// <param name="Opener">An opener's slot reports it in range.</param>
+/// <param name="Combat">A Combat spell's slot reports it in range.</param>
+/// <param name="TooCloseToOpen">
+/// Inside combat range but outside every opener's range, as a hunter's ranged
+/// openers are inside their minimum range. A Paladin never is, since
+/// Judgement's range covers melee.
+/// </param>
+public readonly record struct ForeverReach(bool Opener, bool Combat, bool TooCloseToOpen);
+
+/// <summary>
+/// Turns the character and camera toward the current target, as a person
+/// keeps the opponent in front while fighting it.
+/// </summary>
+public interface IForeverFacing
+{
+    /// <summary>Turns toward the target on this frame; true once it is in front.</summary>
+    bool FaceTarget(VisualBarSample bars);
+}
+
 public interface IForeverCombatRoutine
 {
     /// <summary>Every profile action is on its slot and bound, so the routine can run.</summary>
     bool TryPreflight(VisualBarSample bars, out string reason);
     /// <summary>Whether the fight can act on <paramref name="identity"/> from here.</summary>
     bool InRange(VisualBarSample bars, VisualTargetIdentity identity);
-    /// <summary>The target is inside melee reach but outside every opener's range.</summary>
-    bool TooCloseToOpen(VisualBarSample bars);
+    /// <summary>How the profile's spells reach the unit whose slot ranges are <paramref name="ranges"/>.</summary>
+    ForeverReach Reach(VisualBarSample bars, ForeverSlotRanges ranges);
     /// <summary>
     /// Runs the profile's Adhoc actions: self heals and buffs. False while the
     /// caller has to wait, because an action was cast or a buff is still missing.
@@ -64,6 +111,9 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     private readonly ILogger<ForeverRotation> logger;
     private readonly ForeverCaster caster;
     private readonly ConfigurableInput input;
+    private readonly IForeverFacing facing;
+    // Keeps the target in front on every frame a cast is awaited.
+    private readonly Action<VisualBarSample> faceWhileWaiting;
     private readonly ClassConfiguration config;
     private readonly SpellDB spells;
     private readonly CancellationToken token;
@@ -75,12 +125,14 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     private VisualTargetIdentity? target;
 
     public ForeverRotation(ILogger<ForeverRotation> logger, ForeverCaster caster,
-        ConfigurableInput input, ClassConfiguration config, SpellDB spells,
+        ConfigurableInput input, IForeverFacing facing, ClassConfiguration config, SpellDB spells,
         CancellationTokenSource<GoapAgent> cts)
     {
         this.logger = logger;
         this.caster = caster;
         this.input = input;
+        this.facing = facing;
+        faceWhileWaiting = bars => facing.FaceTarget(bars);
         this.config = config;
         this.spells = spells;
         token = cts.Token;
@@ -142,7 +194,13 @@ public sealed class ForeverRotation : IForeverCombatRoutine
             usedPulls.Clear();
         }
 
+        // Attacking and facing go together: the target is turned toward on
+        // every frame of the fight, and an attack waits until it is in front.
+        bool inFront = facing.FaceTarget(bars);
         ForeverFightPlan plan = Plan(bars, identity);
+        if (!inFront && plan.Step is ForeverFightStep.Pull or
+                ForeverFightStep.StartAttack or ForeverFightStep.Combat)
+            return ForeverCombatResult.Waiting;
         switch (plan.Step)
         {
             case ForeverFightStep.NeedRange:
@@ -206,23 +264,21 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         AnyInRange(bars, config.Combat.Sequence) ||
         NextPull(bars, identity) is not null;
 
-    /// <summary>
-    /// The profile has openers, every one of them reports the target out of
-    /// range, and a Combat spell reports it in range: too close to open, as a
-    /// hunter's ranged openers are inside their minimum range. A Paladin never
-    /// is, since Judgement's range covers melee.
-    /// </summary>
-    public bool TooCloseToOpen(VisualBarSample bars)
+    public ForeverReach Reach(VisualBarSample bars, ForeverSlotRanges ranges)
     {
-        if (config.Pull.Sequence.Length == 0)
-            return false;
+        bool combatRange = AnyInRange(bars, config.Combat.Sequence, ranges);
+        bool tooClose = combatRange && config.Pull.Sequence.Length > 0;
         foreach (KeyAction action in config.Pull.Sequence)
         {
-            if (bars.ActionStates?.GetSlot(action.Slot) is not { InRange: false })
-                return false;
+            if (ranges.InRange(action.Slot) != false)
+                tooClose = false;
         }
-        return AnyInRange(bars, config.Combat.Sequence);
+        return new(AnyInRange(bars, config.Pull.Sequence, ranges), combatRange, tooClose);
     }
+
+    /// <summary>The current target is <see cref="ForeverReach.TooCloseToOpen"/>.</summary>
+    public bool TooCloseToOpen(VisualBarSample bars) =>
+        Reach(bars, ForeverSlotRanges.Target(bars)).TooCloseToOpen;
 
     public bool RunAdhoc(VisualBarSample bars, Action beforeCast, out string reason)
     {
@@ -237,7 +293,7 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         {
             case ForeverAdhocStep.Cast:
                 beforeCast();
-                if (caster.TryCast(plan.Action!, Cancelled, selfCast: true) ==
+                if (caster.TryCast(plan.Action!, Cancelled, selfCast: true, faceWhileWaiting) ==
                     ForeverCastResult.Failed)
                     reason = $"{plan.Action!.Name} success was not confirmed";
                 return false;
@@ -303,7 +359,12 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     /// current target reports it in range. Readiness is not required, so a
     /// cooldown never sends the fight back to pursuit.
     /// </summary>
-    public static bool AnyInRange(VisualBarSample bars, ReadOnlySpan<KeyAction> actions)
+    public static bool AnyInRange(VisualBarSample bars, ReadOnlySpan<KeyAction> actions) =>
+        AnyInRange(bars, actions, ForeverSlotRanges.Target(bars));
+
+    /// <summary>The same for the unit whose slot ranges are <paramref name="ranges"/>.</summary>
+    public static bool AnyInRange(VisualBarSample bars, ReadOnlySpan<KeyAction> actions,
+        ForeverSlotRanges ranges)
     {
         foreach (KeyAction action in actions)
         {
@@ -312,7 +373,7 @@ public sealed class ForeverRotation : IForeverCombatRoutine
                     { Kind: VisualActionKind.Spell, Id: var placed } &&
                 (action.SpellId == 0 || placed == action.SpellId) &&
                 RangeCounts(bars, action) &&
-                bars.ActionStates?.GetSlot(action.Slot) is { InRange: true })
+                ranges.InRange(action.Slot) == true)
                 return true;
         }
         return false;
@@ -400,7 +461,7 @@ public sealed class ForeverRotation : IForeverCombatRoutine
 
     private ForeverCombatResult Cast(KeyAction action, out string reason)
     {
-        ForeverCastResult result = caster.TryCast(action, Cancelled);
+        ForeverCastResult result = caster.TryCast(action, Cancelled, whileWaiting: faceWhileWaiting);
         if (result != ForeverCastResult.Failed)
         {
             reason = string.Empty;

@@ -80,7 +80,6 @@ public static class ForeverBindings
     public static readonly ForeverBinding MoveForward = new(2, BindingID.MOVEFORWARD);
     public static readonly ForeverBinding StrafeLeft = new(4, BindingID.STRAFELEFT);
     public static readonly ForeverBinding StrafeRight = new(5, BindingID.STRAFERIGHT);
-    public static readonly ForeverBinding TargetNearestEnemy = new(9, BindingID.TARGETNEARESTENEMY);
     public static readonly ForeverBinding StartAttack = new(15, BindingID.STARTATTACK);
     public static readonly ForeverBinding InteractTarget = new(18, BindingID.INTERACTTARGET);
     /// <summary>Upstream's clear-target button; bound only when its add-on is installed.</summary>

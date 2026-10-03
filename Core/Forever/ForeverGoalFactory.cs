@@ -48,7 +48,12 @@ public static class ForeverGoalFactory
             services.AddSingleton(sp.GetService<ForeverRunOptions>() ?? new ForeverRunOptions());
             services.AddScoped<ForeverTargetSelector>();
             services.AddScoped<ForeverNavigator>();
+            services.AddScoped<IForeverFacing>(scope => scope.GetRequiredService<ForeverNavigator>());
             services.AddScoped(_ => new MouseCameraInput(sp.GetRequiredService<WowProcess>()));
+            services.AddScoped<IMousePointer>(scope => new MousePointerInput(
+                scope.GetRequiredService<MouseCameraInput>(),
+                scope.GetRequiredService<IMouseInput>(),
+                scope.GetRequiredService<IWowScreen>()));
             services.AddScoped<IForeverCombatRoutine, ForeverRotation>();
             services.AddScoped<IForeverLootRoutine, ForeverLoot>();
             services.AddScoped<GoapGoal, ForeverAutonomousGoal>();

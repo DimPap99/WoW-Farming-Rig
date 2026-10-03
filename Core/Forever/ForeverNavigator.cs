@@ -17,13 +17,17 @@ namespace Core.Forever;
 public enum ForeverNavigationResult { Waiting, StepSent, StepVerified, NoTargetPosition, Blocked, Failed }
 
 /// <summary>Short, checked local mesh steps from the current live position.</summary>
-public sealed class ForeverNavigator : IDisposable
+public sealed class ForeverNavigator : IForeverFacing, IDisposable
 {
     // A person keeps running through a turn up to about a right angle; a
     // larger correction, or a way ahead that is not walkable, is turned standing.
     private const double MaxRunningTurn = Math.PI / 2;
     // The steering marker may drift this far from screen center while running.
     private const double MaxRunningMarkerError = 0.35;
+    // A target whose marker is this close to screen centre is in front.
+    private const double FacedMarkerError = 0.10;
+    // Out of view, the target is looked for at full steering speed.
+    private const double LookForTargetRate = 1.0;
 
     private readonly ILogger<ForeverNavigator> logger;
     private readonly ConfigurableInput input;
@@ -48,6 +52,10 @@ public sealed class ForeverNavigator : IDisposable
     private long markerMissingAt;
     private string? navCache;
     private Vector2? detourWaypoint;
+    private VisualTargetIdentity? facedTarget;
+    private double? lastTargetMarkerX;
+    private double? lookFacing;
+    private double lookTurned;
 
     public ForeverNavigator(ILogger<ForeverNavigator> logger,
         ConfigurableInput input, MouseCameraInput camera,
@@ -111,6 +119,91 @@ public sealed class ForeverNavigator : IDisposable
         return Steer(bars, here, (float)world.Z, desired, 3, out reason);
     }
 
+    /// <summary>
+    /// Turns standing, as a person looking around: movement keys up, the mouse
+    /// turning at <paramref name="rate"/> of full steering, positive to the right.
+    /// </summary>
+    public ForeverNavigationResult TurnInPlace(double rate, out string reason)
+    {
+        StopTranslation();
+        return TurnTowardMarker(rate, out reason);
+    }
+
+    /// <summary>
+    /// Turns standing until the target's marker is near screen centre. A target
+    /// out of view, whose plate the client removed, is turned toward the side
+    /// its marker was last seen on, for at most one full circle; then it counts
+    /// as in front, since nothing more can be learned by turning. When the
+    /// game will not take the turn (it lost focus) the fight goes on unturned
+    /// rather than stand still under attack.
+    /// </summary>
+    public bool FaceTarget(VisualBarSample bars)
+    {
+        // Nothing to face: no turning, and nothing waits on it.
+        if (bars.TargetFlags is not { Present: true, Dead: false })
+        {
+            camera.StopTurning();
+            return true;
+        }
+        TrackTarget(bars);
+        ForeverNavigationResult turned;
+        if (bars.TargetScreenPosition is { } marker)
+        {
+            double error = marker.X - 0.5;
+            if (Math.Abs(error) <= FacedMarkerError)
+            {
+                camera.StopTurning();
+                return true;
+            }
+            StopTranslation();
+            turned = TurnTowardMarker(error, out _);
+        }
+        else if (!LookForTarget(bars, out turned))
+            return true;
+        return turned == ForeverNavigationResult.Failed;
+    }
+
+    // Remembers, per target, where its marker was last seen, so a target that
+    // leaves the view is looked for on that side.
+    private void TrackTarget(VisualBarSample bars)
+    {
+        if (bars.TargetIdentity != facedTarget)
+        {
+            facedTarget = bars.TargetIdentity;
+            lastTargetMarkerX = null;
+            lookFacing = null;
+            lookTurned = 0;
+        }
+        if (bars.TargetScreenPosition is { } marker)
+        {
+            lastTargetMarkerX = marker.X;
+            lookFacing = null;
+            lookTurned = 0;
+        }
+    }
+
+    // Turns standing at full speed toward the side the target was last seen
+    // on, as a person whips round after a mob that ran off. False, without
+    // turning, once a whole circle has passed without seeing it.
+    private bool LookForTarget(VisualBarSample bars, out ForeverNavigationResult turned)
+    {
+        if (bars.Position is { } map)
+        {
+            if (lookFacing is { } previous)
+                lookTurned += Math.Abs(SignedAngle(map.Direction - previous));
+            lookFacing = map.Direction;
+        }
+        if (lookTurned >= 2 * Math.PI)
+        {
+            camera.StopTurning();
+            turned = ForeverNavigationResult.Waiting;
+            return false;
+        }
+        StopTranslation();
+        turned = TurnTowardMarker(lastTargetMarkerX is < 0.5 ? -LookForTargetRate : LookForTargetRate, out _);
+        return true;
+    }
+
     public ForeverNavigationResult Approach(VisualBarSample bars,
         VisualTargetIdentity target, out string reason)
     {
@@ -154,6 +247,7 @@ public sealed class ForeverNavigator : IDisposable
         }
 
         Vector2 here = new((float)world.X, (float)world.Y);
+        TrackTarget(bars);
         if (pursuitTarget != target)
         {
             StopPursuit();
@@ -184,7 +278,8 @@ public sealed class ForeverNavigator : IDisposable
             }
             if (missingSeconds < 0.3)
                 return ForeverNavigationResult.Waiting;
-            return TurnTowardMarker(0.25, out reason);
+            LookForTarget(bars, out ForeverNavigationResult turned);
+            return turned;
         }
         markerMissingAt = 0;
 
@@ -586,9 +681,12 @@ public sealed class ForeverNavigator : IDisposable
     private static double SignedAngle(double angle) =>
         Math.Atan2(Math.Sin(angle), Math.Cos(angle));
 
+    // The session container disposes this once per registration (as itself
+    // and as IForeverFacing), so a second call does nothing.
     public void Dispose()
     {
         Halt();
         nav?.Dispose();
+        nav = null;
     }
 }
