@@ -271,7 +271,7 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
         if (config.Paths is not { Length: 0 } ||
             config.Loot || config.UseMount ||
             bars.Position is not { } map || bars.WorldPosition is not { } world ||
-            !ForeverNavmesh.TryGetVerifiedArea(maps, out WorldMapArea area))
+            !ForeverNavmesh.TryGetVerifiedArea(maps, map.UIMapId, out WorldMapArea area))
         {
             reason = "profile or map does not match the local trial";
             return false;

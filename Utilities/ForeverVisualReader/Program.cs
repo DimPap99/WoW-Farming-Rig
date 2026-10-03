@@ -994,7 +994,7 @@ static async Task<int> RunTrialCheck(WowScreenWGC screen,
     // Read-only gate for the candidate profile. No controller or input service
     // is constructed here; every value comes from one fresh visual capture.
     DataConfig config = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
-    string profileFile = Path.Combine(config.Class, ForeverVerifiedSetup.TrialProfile);
+    string profileFile = Path.Combine(config.Class, ForeverVerifiedSetup.PaladinTrialProfile);
     ClassConfiguration profile = JsonConvert.DeserializeObject<ClassConfiguration>(
         File.ReadAllText(profileFile)) ?? throw new InvalidDataException("Trial profile is empty.");
     KeyAction[] actions = [.. profile.Pull.Sequence, .. profile.Combat.Sequence];

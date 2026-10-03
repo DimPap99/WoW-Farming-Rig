@@ -1,0 +1,38 @@
+{
+  // Level 6 Troll Hunter without a pet, for the guarded Forever runtime: the
+  // same shared behaviour as the Paladin profile. Serpent Sting's range
+  // starts the fight and STARTATTACK starts Auto Shot at range. Inside the
+  // ranged minimum distance the fight closes into melee, where STARTATTACK
+  // starts melee swings and Raptor Strike follows. Melee reach comes from the
+  // Attack button, which must be on a main-bar slot (1 to 12): Raptor Strike's
+  // own slot reports in range even when it cannot swing. Aspect of the Monkey
+  // is on slot 64, and Forever reads auras and cooldowns for slots 1 to 12 only.
+  "Loot": true,
+  "UseMount": false,
+  "Paths": [],
+  "Combat": {
+    "Sequence": [
+      {
+        "Name": "Serpent Sting",
+        "SpellId": 1978,
+        "Slot": 3,
+        "Key": "3",
+        "WhenUsable": true,
+        // The sting lasts 15 seconds; refresh it no more often than that.
+        "Cooldown": 15000,
+        "Requirements": ["Spell:1978", "TargetHealth% > 25", "Mana% >= 30"]
+      },
+      { "Name": "AutoAttack" },
+      {
+        "Name": "Raptor Strike",
+        "SpellId": 2973,
+        "Slot": 1,
+        "Key": "1",
+        "WhenUsable": true,
+        // Resolves on the next melee swing, which is when its success event arrives.
+        "AfterCastWaitSwing": true,
+        "Requirements": ["Spell:2973", "TargetHealth% > 0"]
+      }
+    ]
+  }
+}

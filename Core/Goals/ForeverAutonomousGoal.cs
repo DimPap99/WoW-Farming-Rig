@@ -248,8 +248,11 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             return;
         if (flags.Present)
         {
+            // A target too close for every opener is skipped while another
+            // can be pulled; aggro still brings a close one into the fight.
             if (ForeverTargetSelector.TrySafeTarget(bars,
-                    out VisualTargetIdentity selected))
+                    out VisualTargetIdentity selected) &&
+                !combat.TooCloseToOpen(bars))
             {
                 target = selected;
                 targetSelectedAt = GetTimestamp();
