@@ -35,8 +35,6 @@ public readonly record struct VisualMapPointSample(
 
 public readonly record struct VisualScreenPointSample(double X, double Y);
 
-public readonly record struct VisualNameplateProbeSample(int Count, bool Matched);
-
 public readonly record struct VisualPlayerIdentity(
     int ClassId, int RaceId, int Level);
 
@@ -240,10 +238,10 @@ public readonly record struct VisualBarSample(
     VisualWorldPositionSample? TargetWorldPosition = null,
     VisualMapPointSample? TargetMapPosition = null,
     VisualScreenPointSample? TargetScreenPosition = null,
-    VisualNameplateProbeSample? NameplateProbe = null,
     VisualSlotAuraSnapshot? SlotAuras = null,
     VisualDeathEvent? LastDeathEvent = null,
-    VisualLootState? Loot = null)
+    VisualLootState? Loot = null,
+    VisualNameplateRoster? Nameplates = null)
 {
     /// <summary>
     /// The screen frame this sample was decoded from, set by
@@ -282,8 +280,8 @@ public static class VisualBarReader
     /// <summary>
     /// Size of the top-left frame region that holds every telemetry read, so a
     /// caller can copy that instead of the whole frame. <paramref name="pixels"/>
-    /// needs to cover only the search window. The nameplate marker is not
-    /// included; it needs the full viewport (see <see cref="TryLocateTarget"/>).
+    /// needs to cover only the search window. The nameplate markers are not
+    /// included; they need the full viewport (see <see cref="LocateMarkers"/>).
     /// </summary>
     public static bool TryGetReadRegion(Bgra32[] pixels, int width, int height,
         int frameWidth, int frameHeight, out int regionWidth, out int regionHeight)
@@ -302,26 +300,32 @@ public static class VisualBarReader
         return true;
     }
 
-    /// <summary>True when the addon sent no target screen point but a matching
-    /// nameplate is shown, so the marker has to be found in the frame.</summary>
-    public static bool NeedsTargetLocator(VisualBarSample sample) =>
-        NeedsTargetLocator(sample.TargetScreenPosition, sample.NameplateProbe);
+    /// <summary>True when a roster slot may show a marker, so the frame has to be searched.</summary>
+    public static bool NeedsMarkerScan(VisualBarSample sample) =>
+        sample.Nameplates is { MayShowMarkers: true };
 
-    private static bool NeedsTargetLocator(VisualScreenPointSample? screen,
-        VisualNameplateProbeSample? probe) =>
-        screen is null && probe is { Matched: true };
+    /// <summary>
+    /// <paramref name="telemetry"/> with each roster slot's marker and the
+    /// target's screen point, found in the full viewport frame it was read from.
+    /// </summary>
+    public static VisualBarSample LocateMarkers(Bgra32[] pixels, int width, int height,
+        VisualBarSample telemetry)
+    {
+        if (telemetry.Nameplates is not { MayShowMarkers: true } roster)
+            return telemetry;
+        VisualNameplateRoster located = roster.WithScreens(VisualMarkerLocator.Locate(
+            pixels, width, height, telemetry.Width / ReferenceWidth));
+        return telemetry with
+        {
+            Nameplates = located,
+            TargetScreenPosition = located.Target?.Screen
+        };
+    }
 
-    /// <summary>Finds the selected nameplate marker in a full viewport frame.</summary>
-    public static VisualScreenPointSample? TryLocateTarget(Bgra32[] pixels,
-        int width, int height, VisualBarSample telemetry) =>
-        NeedsTargetLocator(telemetry) && pixels.Length == width * height
-            ? TryReadTargetLocator(pixels, width, height, telemetry.Width / ReferenceWidth)
-            : null;
-
-    /// <param name="locateTarget">Search the whole frame for the nameplate
-    /// marker. Pass false when <paramref name="pixels"/> is only the read region.</param>
+    /// <param name="locateMarkers">Search the whole frame for the nameplate
+    /// markers. Pass false when <paramref name="pixels"/> is only the read region.</param>
     public static bool TryRead(Bgra32[] pixels, int width, int height, out VisualBarSample sample,
-        bool locateTarget = true)
+        bool locateMarkers = true)
     {
         sample = default;
         if (pixels.Length != width * height || width < 200 || height < 100)
@@ -376,25 +380,18 @@ public static class VisualBarReader
             targetIdentity is { Present: true } mapTargetId
                 ? TryReadTargetMapPosition(probe, mapTargetId)
                 : null;
-        VisualScreenPointSample? targetScreen =
-            targetIdentity is { Present: true } screenId
-                ? TryReadTargetScreen(probe, screenId)
-                : null;
-        VisualNameplateProbeSample? nameplateProbe =
-            targetIdentity is { Present: true } plateId
-                ? TryReadNameplateProbe(probe, plateId)
-                : null;
-        if (locateTarget && NeedsTargetLocator(targetScreen, nameplateProbe))
-            targetScreen = TryReadTargetLocator(pixels, width, height, scale);
         VisualSlotAuraSnapshot? slotAuras = TryReadSlotAuras(probe);
         sample = new(health, power, target, half, whiteLeft, whiteY, whiteWidth,
             position, targetPresent, actionBar,
             playerHealthMax, playerPowerMax, worldPosition, spellBook, bindings,
             actionStates, cooldowns, playerPowerType, bags, playerIdentity,
             targetFlags, castEvent, targetIdentity, targetWorldPosition,
-            targetMapPosition, targetScreen, nameplateProbe, slotAuras,
+            targetMapPosition, TargetScreenPosition: null, slotAuras,
             VisualLifecycleReader.ReadDeath(pixels, width, height, whiteLeft, whiteY, scale),
-            VisualLifecycleReader.ReadLoot(pixels, width, height, whiteLeft, whiteY, scale));
+            VisualLifecycleReader.ReadLoot(pixels, width, height, whiteLeft, whiteY, scale),
+            VisualNameplateReader.Read(probe, targetIdentity));
+        if (locateMarkers)
+            sample = LocateMarkers(pixels, width, height, sample);
         return true;
     }
 
@@ -452,7 +449,7 @@ public static class VisualBarReader
     private const int AuraStripTop = 632;
 
     /// <summary>The calibrated telemetry area of one frame.</summary>
-    private readonly struct Probe(Bgra32[] pixels, int width, int height,
+    internal readonly struct Probe(Bgra32[] pixels, int width, int height,
         int left, int whiteY, double scale)
     {
         public Bgra32[] Pixels => pixels;
@@ -596,29 +593,6 @@ public static class VisualBarReader
         return new(mapId, x / 16777215.0, y / 16777215.0);
     }
 
-    private static VisualScreenPointSample? TryReadTargetScreen(
-        in Probe probe, VisualTargetIdentity identity)
-    {
-        int x = probe.Cell(TargetRow, 21), y = probe.Cell(TargetRow, 22);
-        if (x < 0 || y < 0 ||
-            probe.Cell(TargetRow, 23) != ((0xA5B266 - x - y - identity.GuidHash1 -
-                identity.GuidHash2) & 0xFFFFFF))
-            return null;
-        return new(x / 16777215.0, y / 16777215.0);
-    }
-
-    private static VisualNameplateProbeSample? TryReadNameplateProbe(
-        in Probe probe, VisualTargetIdentity identity)
-    {
-        int status = probe.Cell(TargetRow, 26);
-        int marker = probe.Cell(TargetRow, 27);
-        if (status is < 0 or > 511 ||
-            marker != ((0xA5B488 - status - identity.GuidHash1 -
-                identity.GuidHash2) & 0xFFFFFF))
-            return null;
-        return new(status & 255, (status & 256) != 0);
-    }
-
     // The add-on writes the state only after the aura icons and every slot
     // reference rendered; a failed aura enumeration in combat leaves it black.
     // State 2 was the Seal-only layout and is refused.
@@ -631,49 +605,6 @@ public static class VisualBarReader
             ? VisualAuraReader.Read(probe.Pixels, probe.Width, probe.Height,
                 probe.Left, probe.Y(AuraStripTop), probe.Scale)
             : null;
-    }
-
-    private static VisualScreenPointSample? TryReadTargetLocator(
-        Bgra32[] pixels, int width, int height, double scale)
-    {
-        int offset = Math.Max(8, (int)Math.Round(12 * scale));
-        int blackOffset = Math.Max(4, (int)Math.Round(8 * scale));
-        int count = 0, minX = width, maxX = 0, minY = height, maxY = 0;
-        long sumX = 0, sumY = 0;
-        for (int y = offset; y < height - offset; y++)
-        {
-            for (int x = offset; x < width - offset; x++)
-            {
-                Bgra32 center = pixels[y * width + x];
-                if (center.R > 20 || center.G < 240 || center.B < 240 ||
-                    !Magenta(pixels[y * width + x - offset]) ||
-                    !Magenta(pixels[y * width + x + offset]) ||
-                    !Magenta(pixels[(y - offset) * width + x]) ||
-                    !Magenta(pixels[(y + offset) * width + x]) ||
-                    !(Black(pixels[y * width + x - blackOffset]) &&
-                      Black(pixels[y * width + x + blackOffset]) ||
-                      Magenta(pixels[y * width + x - blackOffset]) &&
-                      Magenta(pixels[y * width + x + blackOffset])))
-                    continue;
-                count++;
-                sumX += x;
-                sumY += y;
-                minX = Math.Min(minX, x);
-                maxX = Math.Max(maxX, x);
-                minY = Math.Min(minY, y);
-                maxY = Math.Max(maxY, y);
-            }
-        }
-        if (count < 2 || maxX - minX > 10 * scale ||
-            maxY - minY > 10 * scale)
-            return null;
-        return new((double)sumX / count / width,
-            1 - (double)sumY / count / height);
-
-        static bool Magenta(Bgra32 pixel) =>
-            pixel.R >= 240 && pixel.G <= 20 && pixel.B >= 240;
-        static bool Black(Bgra32 pixel) =>
-            pixel.R <= 20 && pixel.G <= 20 && pixel.B <= 20;
     }
 
     private static VisualCooldownGridSnapshot? TryReadCooldownGrid(

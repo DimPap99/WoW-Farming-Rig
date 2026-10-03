@@ -4,41 +4,26 @@
 -- encoded block ends in a checksum or marker pixel that stays black when any
 -- value it covers was protected or unreadable.
 
--- ForeverEvents.lua loads first (see the TOC) and owns the shared helpers.
+-- ForeverEvents.lua and ForeverNameplates.lua load first (see the TOC).
 local events = ForeverProbeEvents
+local nameplates = ForeverProbeNameplates
 local isSecret = events.IsSecret
 local readableNumber = events.ReadableNumber
 local floor = math.floor
 local actionKindCodes = { spell = 1, item = 2, macro = 3, flyout = 4 }
 local visual
 
+-- Version of the nameplate roster rows; the reader refuses any other.
+local ROSTER_VERSION = 1
+
 local function createVisual()
     local frame = CreateFrame("Frame", nil, UIParent)
     frame:SetSize(320, 190)
     frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -70)
-
-    -- The client may allow anchoring to its selected nameplate while hiding
-    -- the numeric frame center from Lua. This marker is decoded from pixels.
-    local locator = CreateFrame("Frame", nil, UIParent)
-    locator:SetSize(28, 28)
-    locator:SetFrameStrata("TOOLTIP")
-    local border = locator:CreateTexture(nil, "OVERLAY")
-    border:SetAllPoints(locator)
-    border:SetColorTexture(1, 0, 1, 1)
-    border:SetDrawLayer("OVERLAY", 0)
-    local black = locator:CreateTexture(nil, "OVERLAY")
-    black:SetSize(22, 22)
-    black:SetPoint("CENTER", locator, "CENTER")
-    black:SetColorTexture(0, 0, 0, 1)
-    black:SetDrawLayer("OVERLAY", 1)
-    local center = locator:CreateTexture(nil, "OVERLAY")
-    center:SetSize(6, 6)
-    center:SetPoint("CENTER", locator, "CENTER")
-    center:SetColorTexture(0, 1, 1, 1)
-    center:SetDrawLayer("OVERLAY", 2)
-    locator:Hide()
-    frame.targetLocator = locator
-    frame:SetScript("OnHide", function() locator:Hide() end)
+    -- Above the nameplate markers, so a plate in this corner cannot cover a
+    -- telemetry pixel. Children inherit the strata.
+    frame:SetFrameStrata("TOOLTIP")
+    frame:SetScript("OnHide", nameplates.HideMarkers)
 
     local function addBar(row, red, green, blue)
         local bar = CreateFrame("StatusBar", nil, frame)
@@ -116,17 +101,23 @@ local function createVisual()
     frame.targetMapXPixel = addPixel(13, 190)
     frame.targetMapYPixel = addPixel(14, 190)
     frame.targetMapValidPixel = addPixel(15, 190)
-    frame.targetScreenXPixel = addPixel(21, 190)
-    frame.targetScreenYPixel = addPixel(22, 190)
-    frame.targetScreenValidPixel = addPixel(23, 190)
-    frame.nameplateProbePixel = addPixel(26, 190)
-    frame.nameplateProbeValidPixel = addPixel(27, 190)
     frame.auraStatePixel = addPixel(28, 190)
     frame.auraStateValidPixel = addPixel(29, 190)
 
     frame.deathPixels, frame.lootPixels = {}, {}
     for i = 1, 4 do frame.deathPixels[i] = addPixel(16 + i, 205) end
     for i = 1, 9 do frame.lootPixels[i] = addPixel(16 + i, 225) end
+
+    -- The nameplate roster: a header with the plate counts and settings,
+    -- then one checksummed row of seven values per slot.
+    frame.rosterHeader = {}
+    for i = 1, 4 do frame.rosterHeader[i] = addPixel(16 + i, 245) end
+    frame.rosterRows = {}
+    for slot = 1, nameplates.SlotCount do
+        local row = {}
+        for i = 1, 7 do row[i] = addPixel(16 + i, 260 + (slot - 1) * 15) end
+        frame.rosterRows[slot] = row
+    end
 
     -- Render permitted aura icons through native textures. In combat the
     -- spell-ID lookup may return nil for an active restricted aura, so nil
@@ -368,7 +359,9 @@ local function createVisual()
 
     -- The target identity this update checked. Every later target probe is
     -- checksummed with these hashes, so it can only describe the same unit.
+    -- targetAbsent says this update read the flags and found no target.
     local checkedTargetGuid, checkedTargetHash1, checkedTargetHash2
+    local targetAbsent = false
 
     local function renderTarget()
         local guid = UnitGUID("target")
@@ -393,6 +386,7 @@ local function createVisual()
             32 -- protocol marker: older three-bit samples are rejected
         setIntPixel(frame.targetFlagsPixel, flags)
         setIntPixel(frame.targetFlagsValidPixel, (0xA57755 - flags) % 16777216)
+        targetAbsent = not present
 
         local hash1, hash2, packedLevel = 0, 0, 0
         if present then
@@ -461,63 +455,151 @@ local function createVisual()
                 checkedTargetHash1 - checkedTargetHash2) % 16777216)
     end
 
-    local function anchorLocator(plate)
-        frame.targetLocator:ClearAllPoints()
-        frame.targetLocator:SetPoint("CENTER", plate, "CENTER")
-        frame.targetLocator:Show()
+    -- A boolean API result as 0 unknown, 1 false, 2 true.
+    local function tri(value)
+        if isSecret(value) or type(value) ~= "boolean" then return 0 end
+        return value and 2 or 1
     end
 
-    -- Whether the selected unit has a nameplate, and where it is. The beta
-    -- hides the plate's numeric center, so the locator marker anchored to it
-    -- is found in the captured frame instead.
-    local function renderNameplate()
-        if not isCheckedTarget() or not C_NamePlate then return end
-        local count, matched = 0, false
-        local plate
-        if type(C_NamePlate.GetNamePlates) == "function" then
-            local plates = C_NamePlate.GetNamePlates()
-            if type(plates) == "table" and not isSecret(plates) then
-                count = math.min(#plates, 255)
-                for _, candidate in ipairs(plates) do
-                    local unit = type(candidate.GetUnit) == "function" and
-                        candidate:GetUnit() or candidate.namePlateUnitToken
-                    if type(unit) == "string" and not isSecret(unit) then
-                        local same = UnitIsUnit(unit, "target")
-                        if not isSecret(same) and
-                            type(same) == "boolean" and same then
-                            plate, matched = candidate, true
-                            break
+    -- "nameplate3" -> "nameplate3target", built once per token.
+    local targetOfToken = setmetatable({}, { __index = function(cache, token)
+        local unit = token .. "target"
+        cache[token] = unit
+        return unit
+    end })
+
+    -- Action kinds of main-bar slots 1 to 12 from the last action grid; only
+    -- a slot that holds an action is asked for its range to a plate.
+    local mainBarKinds = {}
+    for slot = 1, 12 do mainBarKinds[slot] = 0 end
+    local rangeWeights = {}
+    for slot = 1, 12 do rangeWeights[slot] = 4 ^ (slot - 1) end
+
+    local plateValues = { 0, 0, 0, 0, 0, 0 }
+
+    -- One roster slot: incarnation, GUID hashes (0 while identity is
+    -- protected), level and eight tri-state flags, then targets-player,
+    -- reaction, threat and the plate's alpha, then the main-bar ranges with
+    -- the action-state codes (0 unknown, 1 in range, 2 out of range). The
+    -- checksum names the slot and, for the target, the checked target hashes,
+    -- so a row cannot describe another slot or another target.
+    local function renderPlate(slot)
+        local row = frame.rosterRows[slot]
+        local v = plateValues
+        v[1], v[2], v[3], v[4], v[5], v[6] = 0, 0, 0, 0, 0, 0
+        local token = nameplates.tokens[slot]
+        local isTarget = 0
+        if token then
+            v[1] = nameplates.incarnations[slot]
+            local guid = UnitGUID(token)
+            if not isSecret(guid) and type(guid) == "string" and #guid > 0 then
+                v[2], v[3] = events.Hashes(guid)
+            end
+            local level = readableNumber(UnitLevel(token))
+            if not level or level < 1 or level > 255 or level ~= floor(level) then
+                level = 0
+            end
+            if checkedTargetGuid then
+                isTarget = tri(UnitIsUnit(token, "target"))
+            elseif targetAbsent then
+                isTarget = 1
+            end
+            local behind = tri(C_NamePlateManager.IsNamePlateUnitBehindCamera(token))
+            v[4] = level +
+                tri(UnitCanAttack("player", token)) * 256 +
+                tri(UnitIsDead(token)) * 1024 +
+                tri(UnitIsPlayer(token)) * 4096 +
+                tri(UnitIsTapDenied(token)) * 16384 +
+                tri(UnitAffectingCombat(token)) * 65536 +
+                isTarget * 262144 +
+                tri(UnitIsUnit(token, "mouseover")) * 1048576 +
+                behind * 4194304
+
+            local reaction = readableNumber(UnitReaction(token, "player"))
+            if not reaction or reaction < 1 or reaction > 8 or
+                reaction ~= floor(reaction) then
+                reaction = 0
+            end
+            -- 0 unreadable, 1 not on the player's threat table, 2 to 5 status 0 to 3.
+            local threat = 0
+            local status = UnitThreatSituation("player", token)
+            if not isSecret(status) then
+                if status == nil then
+                    threat = 1
+                elseif type(status) == "number" and status >= 0 and status <= 3 then
+                    threat = status + 2
+                end
+            end
+            -- 0 unreadable, else 1 + 254 * alpha.
+            local alpha = 0
+            local plate = C_NamePlate.GetNamePlateForUnit(token)
+            if not isSecret(plate) and plate then
+                local value = readableNumber(plate:GetAlpha())
+                if value and value >= 0 and value <= 1 then
+                    alpha = floor(value * 254 + 0.5) + 1
+                end
+            end
+            v[5] = tri(UnitIsUnit(targetOfToken[token], "player")) +
+                reaction * 4 + threat * 64 + alpha * 512
+
+            local ranges = 0
+            for action = 1, 12 do
+                if mainBarKinds[action] ~= 0 then
+                    local inRange = C_ActionBar.IsActionInRange(action, token)
+                    if not isSecret(inRange) then
+                        if inRange == true then
+                            ranges = ranges + rangeWeights[action]
+                        elseif inRange == false then
+                            ranges = ranges + 2 * rangeWeights[action]
                         end
                     end
                 end
             end
+            v[6] = ranges
+            -- A plate behind the camera is not drawn; its marker would be stale.
+            nameplates.ShowMarker(slot, behind ~= 2)
         end
-        local status = count + (matched and 256 or 0)
-        setIntPixel(frame.nameplateProbePixel, status)
-        setIntPixel(frame.nameplateProbeValidPixel,
-            (0xA5B488 - status - checkedTargetHash1 -
-                checkedTargetHash2) % 16777216)
-        if not plate and
-            type(C_NamePlate.GetNamePlateForUnit) == "function" then
-            plate = C_NamePlate.GetNamePlateForUnit("target")
+
+        local checksum = 0xA5C311 - slot
+        for i = 1, 6 do
+            setIntPixel(row[i], v[i])
+            checksum = checksum - v[i]
         end
-        if not plate or isSecret(plate) then return end
-        pcall(anchorLocator, plate)
-        local x, y = plate:GetCenter()
-        local width, height = UIParent:GetWidth(), UIParent:GetHeight()
-        x, y = readableNumber(x), readableNumber(y)
-        width, height = readableNumber(width), readableNumber(height)
-        if not x or not y or not width or not height or
-            width <= 0 or height <= 0 then return end
-        x, y = x / width, y / height
-        if x < 0 or x > 1 or y < 0 or y > 1 then return end
-        local ex = floor(x * 16777215 + 0.5)
-        local ey = floor(y * 16777215 + 0.5)
-        setIntPixel(frame.targetScreenXPixel, ex)
-        setIntPixel(frame.targetScreenYPixel, ey)
-        setIntPixel(frame.targetScreenValidPixel,
-            (0xA5B266 - ex - ey - checkedTargetHash1 -
-                checkedTargetHash2) % 16777216)
+        if isTarget == 2 then
+            checksum = checksum - checkedTargetHash1 - checkedTargetHash2
+        end
+        setIntPixel(row[7], checksum % 16777216)
+    end
+
+    -- How many plates the client shows (all, attackable, friendly players)
+    -- and the settings that decide which plates exist.
+    local function renderRosterHeader()
+        local total, attackable, friendly = nameplates.Counts()
+        local counts = math.min(total, 255) + math.min(attackable, 255) * 256 +
+            math.min(friendly, 255) * 65536
+        local distance = readableNumber(tonumber(C_CVar.GetCVar("nameplateMaxDistance")))
+        distance = distance and math.max(0, math.min(floor(distance), 255)) or 0
+        local settings = tri(C_CVar.GetCVarBool("nameplateShowEnemies")) +
+            tri(C_CVar.GetCVarBool("nameplateShowAll")) * 4 + distance * 16
+        local header = frame.rosterHeader
+        setIntPixel(header[1], counts)
+        setIntPixel(header[2], settings)
+        setIntPixel(header[3], ROSTER_VERSION)
+        setIntPixel(header[4],
+            (0xA5C211 - counts - settings - ROSTER_VERSION) % 16777216)
+    end
+
+    local function renderRoster()
+        local header = frame.rosterHeader
+        for i = 1, 4 do setBlack(header[i]) end
+        pcall(renderRosterHeader)
+        for slot = 1, nameplates.SlotCount do
+            local row = frame.rosterRows[slot]
+            for i = 1, 7 do setBlack(row[i]) end
+            -- Any failure leaves the row black and the marker hidden.
+            nameplates.ShowMarker(slot, false)
+            pcall(renderPlate, slot)
+        end
     end
 
     -- Type code and ID of an action slot, or nothing when unreadable.
@@ -594,6 +676,7 @@ local function createVisual()
             local kind, id = renderAction(slot, frame.actionGrid[slot])
             renderActionState(slot, kind, id, frame.actionStateGrid[slot])
             if slot <= 12 then
+                mainBarKinds[slot] = kind or 0
                 local cooldown = frame.cooldownGrid[slot]
                 setBlack(cooldown.marker)
                 cooldown.bar:Hide()
@@ -822,17 +905,16 @@ local function createVisual()
         setBlack(frame.targetFlagsValidPixel)
         setBlack(frame.targetIdentityValidPixel)
         checkedTargetGuid, checkedTargetHash1, checkedTargetHash2 = nil, nil, nil
+        targetAbsent = false
         pcall(renderTarget)
         setBlack(frame.targetWorldValidPixel)
         setBlack(frame.targetMapValidPixel)
-        setBlack(frame.targetScreenValidPixel)
-        setBlack(frame.nameplateProbeValidPixel)
-        frame.targetLocator:Hide()
         if checkedTargetGuid then
             pcall(renderTargetWorld)
             pcall(renderTargetMap)
-            pcall(renderNameplate)
         end
+        -- After the target: the target's roster row is checked against it.
+        renderRoster()
 
         setBlack(frame.castValidPixel)
         renderEvents()

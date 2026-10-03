@@ -18,8 +18,10 @@ frames or changing CVars on Forever.
 4. Copy `Addons/ForeverProbe` to the beta client's
    `_classic_beta_/Interface/AddOns/ForeverProbe` directory. It supplies the
    visual data required by the Forever dashboard and controller trial:
-   `ForeverEvents.lua` latches cast, death and loot events, `ForeverVisual.lua`
-   draws the channel, and `ForeverDiagnostics.lua` holds the one-shot probes. Its
+   `ForeverEvents.lua` latches cast, death and loot events,
+   `ForeverNameplates.lua` keeps the nameplate roster and its markers,
+   `ForeverVisual.lua` draws the channel, and `ForeverDiagnostics.lua` holds the
+   one-shot probes. Its
    optional `/foreverprobe` command records API value types in `ForeverProbeResults`
    under the beta client's account-wide SavedVariables. The out-of-combat
    `/forevercatalog` command records only numeric spellbook/action-slot IDs and
@@ -985,9 +987,11 @@ capture contains a checked target identity and a matched nameplate parent;
 its three-scale synthetic test passes, including a marker beyond X=650. Screen
 guidance remains conditional on nameplate visibility. The navigator uses marker
 X for mouse steering, Judgement range for the initial cast, then Holy Strike
-range for melee. This passed the live controller cycle below. The external
-`--watch-target-marker` overlay displays screenshot-derived X/Y; the add-on cannot
-recover those coordinates from its protected nameplate frame API.
+range for melee. This passed the live controller cycle below. The add-on cannot
+recover those coordinates from its protected nameplate frame API. Since
+2026-10-03 the target's marker is the nameplate roster's (below); the
+`--watch-nameplates` overlay labels every marker with its screenshot-derived
+position.
 
 ### Death and loot events
 
@@ -1094,3 +1098,49 @@ as types only. On build 1.60.1.70205, a level 7 Hunter in Durotar:
   so a click that misses keeps the current target; `autoInteract` is 0.
 - `softenemy` existed only in combat; `SoftTargetEnemy` is 1 and soft
   targeting is not used.
+
+### Nameplate roster (2026-10-03)
+
+`ForeverNameplates.lua` follows `NAME_PLATE_UNIT_ADDED`/`REMOVED` and gives
+each attackable plate one of eight slots; the target always gets one, taking
+the slot held longest when all are used. Each slot gets a new incarnation
+number whenever it takes a unit, and a marker anchored at its plate's centre:
+the old target locator's magenta square and black ring, with the 6-unit centre
+coded per slot (red 16 + 32 per slot, green and blue full). The markers sit
+below the telemetry panel, which moved to the `TOOLTIP` strata so a plate in
+the corner can no longer cover a telemetry pixel. A marker is hidden while
+its plate is behind the camera or could not be anchored.
+
+`ForeverVisual.lua` writes a checksummed header (plate counts, the
+`nameplateShowEnemies`/`nameplateShowAll` settings, `nameplateMaxDistance`
+and the roster version) and one row of seven values per slot beside the event
+latches: incarnation, GUID hashes (0 while protected), level and tri-state
+flags (attackable, dead, player, tapped by another, in combat, target,
+mouseover, behind camera), then targets-player, reaction, threat and plate
+alpha, then each main-bar slot's `IsActionInRange` to the plate in the
+action-state codes. A row naming the target is checksummed with the checked
+target hashes. `VisualNameplateReader` decodes it into
+`VisualBarSample.Nameplates`, and `VisualMarkerLocator` finds every slot's
+marker in one full-viewport scan (about 1.3 to 2 ms per 1920x1080 frame:
+a stride-2 search for the centre colour, then a full-resolution check around
+each hit). `TargetScreenPosition` is the target slot's marker; the single
+target locator, its probe pixel and the unused Lua screen-point cells are
+retired.
+
+Live on the Hunter in Durotar, `--watch-nameplates` labelled up to four
+plates at once and followed them while the camera turned and the character
+walked; ranges changed per plate as it approached, a hovered plate read
+`hover`, and a click on it made it `target` (the step automated next). A
+fought mob read `attacker`, and a far one `occluded`. Plates exist only for
+units in the camera's view: turning away removes a plate rather than flagging
+it behind the camera, and turning back adds it again under a new incarnation.
+The roster is therefore a census of what the camera sees, out to 45 yards,
+and finding enemies around the character means looking around. A marker
+reaching the screen edge is partly clipped and reads as not found. The
+controller cycle passed with pursuit steering on the roster's target marker.
+
+Offline, `--self-test` covers the header, rows, target linkage, corrupt and
+other-version rows, three markers and a duplicate at three UI scales. A
+scratch check ran the old and new add-on against one mocked API (all 1,775
+existing telemetry entries identical in four scenarios) and decoded the new
+panel with `VisualBarReader`, so the Lua encoding and the C# decoding agree.
