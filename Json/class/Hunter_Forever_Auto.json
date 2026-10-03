@@ -1,12 +1,14 @@
 {
   // Level 6 Troll Hunter without a pet, for the guarded Forever runtime: the
-  // same shared behaviour as the Paladin profile. Serpent Sting's range
-  // starts the fight and STARTATTACK starts Auto Shot at range. Inside the
-  // ranged minimum distance the fight closes into melee, where STARTATTACK
-  // starts melee swings and Raptor Strike follows. Melee reach comes from the
-  // Attack button, which must be on a main-bar slot (1 to 12): Raptor Strike's
-  // own slot reports in range even when it cannot swing. Aspect of the Monkey
-  // is on slot 64, and Forever reads auras and cooldowns for slots 1 to 12 only.
+  // same shared behaviour as the Paladin profile. Serpent Sting from range
+  // aggroes the mob and STARTATTACK starts the auto attack; Raptor Strike
+  // resolves on the melee swing once the mob is in contact.
+  // Known limitation: the beta reports Raptor Strike's slot in range at any
+  // distance, and the Attack ability's slot reports no range at all, so there
+  // is no melee-reach signal at this level. A mob that never comes into
+  // contact (passive, or below a ledge) ends the run on "Raptor Strike success
+  // was not confirmed". Aspect of the Monkey is on slot 64, and Forever reads
+  // auras and cooldowns for slots 1 to 12 only.
   "Loot": true,
   "UseMount": false,
   "Paths": [],

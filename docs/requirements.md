@@ -1126,9 +1126,8 @@ bound to its key, usable with enough mana, and off cooldown. Forever runs only t
 `"MacroText"` is typed as a command instead of pressing the key, for example
 `"/cast [@player] Holy Light(Rank 1)"`. `"Cooldown"` (milliseconds) limits how often
 an action is pressed, e.g. a 15-second sting. An action with `"AfterCastWaitSwing": true`
-resolves on the next melee swing, like Raptor Strike. It needs the Attack ability on a
-main-bar slot, whose range tells melee reach. With that button, `"AutoAttack"` is pressed
-again on reaching melee after starting at range.
+resolves on the next melee swing, like Raptor Strike, and gets a longer wait for its
+success event.
 
 See `Json/class/Paladin_Forever_Auto.json`, `Json/class/Hunter_Forever_Auto.json` and the
 [Forever port status](forever-port.md).
