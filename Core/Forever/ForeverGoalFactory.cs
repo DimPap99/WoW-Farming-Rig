@@ -22,8 +22,11 @@ public static class ForeverGoalFactory
     public static IServiceProvider Create(IServiceCollection services,
         IServiceProvider sp, ClassConfiguration classConfig)
     {
-        if (!ForeverPaladin.IsProfile(classConfig.FileName))
-            throw new NotSupportedException("Unsupported Forever Paladin profile.");
+        if (!ForeverVerifiedSetup.IsProfile(classConfig.FileName))
+            throw new NotSupportedException(
+                $"Forever profile '{classConfig.FileName}' has not been verified live.");
+        if (ForeverProfileRules.FindUnsupportedProfile(classConfig) is { } unsupported)
+            throw new NotSupportedException(unsupported);
 
         // GoapAgent's collaborators, minus the Classic grind session, bag and
         // coin logging, and blacklists.
@@ -40,14 +43,13 @@ public static class ForeverGoalFactory
         services.AddScoped<IMountHandler, MountHandler>();
         services.AddScoped<ForeverCaster>();
 
-        if (string.Equals(classConfig.FileName, ForeverPaladin.AutoProfile,
-                StringComparison.OrdinalIgnoreCase))
+        if (ForeverVerifiedSetup.IsAutoProfile(classConfig.FileName))
         {
             services.AddSingleton(sp.GetService<ForeverRunOptions>() ?? new ForeverRunOptions());
             services.AddScoped<ForeverTargetSelector>();
             services.AddScoped<ForeverNavigator>();
             services.AddScoped(_ => new MouseCameraInput(sp.GetRequiredService<WowProcess>()));
-            services.AddScoped<IForeverCombatRoutine, ForeverCombat>();
+            services.AddScoped<IForeverCombatRoutine, ForeverRotation>();
             services.AddScoped<IForeverLootRoutine, ForeverLoot>();
             services.AddScoped<GoapGoal, ForeverAutonomousGoal>();
         }

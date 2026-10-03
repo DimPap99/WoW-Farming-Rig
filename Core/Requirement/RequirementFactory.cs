@@ -402,7 +402,10 @@ public sealed partial class RequirementFactory
             AddMinPower(list, item, costReader, buffs);
             AddGameCooldown(list, item, playerReader, intVariables);
 
-            if (item.WhenUsable)
+            // On Forever the game cooldown above already requires a usable
+            // action with mana (ForeverCastGate.IsActionReady); the Classic
+            // usable and current-action cells do not exist there.
+            if (item.WhenUsable && !playerReader.IsForeverVisual)
             {
                 list.Add(
                     CreateActionUsable(item, playerReader,

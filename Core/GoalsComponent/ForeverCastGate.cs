@@ -8,13 +8,18 @@ using System;
 namespace Core.Goals;
 
 /// <summary>
-/// One-capture preflight for the guarded Forever Paladin action set.
-/// The controller must still be stopped at startup until its state flow has
-/// a separate bounded live run.
+/// One-capture preflight for a guarded Forever action from the class profile:
+/// the profile's spell is ready on its main-bar slot and bound to the key the
+/// profile names, on a verified setup. A targeted action also needs a living,
+/// attackable, non-player target in the slot's range. When to use an action
+/// is the profile's requirements; this gate only decides whether pressing it
+/// now is safe.
 /// </summary>
 public static class ForeverCastGate
 {
-    public static bool CanPress(VisualBarSample sample, KeyAction action, SpellDB spells)
+    /// <param name="selfCast">The action affects the player, so the target is not checked.</param>
+    public static bool CanPress(VisualBarSample sample, KeyAction action, SpellDB spells,
+        bool selfCast = false)
     {
         if (action.BaseAction || action.Item || action.HasForm ||
             action.BeforeCastDelay > 0 || action.AfterCastDelay > 0 ||
@@ -22,49 +27,26 @@ public static class ForeverCastGate
             action.AfterCastWaitBuff || action.AfterCastWaitBag ||
             action.AfterCastWaitSwing || action.AfterCastWaitCastbar ||
             action.AfterCastWaitCombat || action.AfterCastWaitGCD ||
-            action.AfterCastWaitMeleeRange || action.AfterCastAuraExpected ||
-            !string.IsNullOrEmpty(action.MacroText) ||
+            action.AfterCastWaitMeleeRange ||
             action.ConsoleKey == ConsoleKey.NoName ||
             action.Modifier != ModifierKey.None ||
-            sample.PlayerIdentity is not { ClassId: (int)UnitClass.Paladin } ||
-            sample.PlayerPowerType != ForeverFrame.ManaPowerType || sample.PlayerHealth <= 0 ||
+            !ForeverFrame.IsVerifiedSetup(sample) || sample.PlayerHealth <= 0 ||
             sample.TargetFlags is not { PlayerDead: false } flags ||
-            flags.Present != sample.TargetPresent ||
-            sample.Position is not { UIMapId: ForeverPaladin.UIMapId } ||
-            sample.WorldPosition is not { InstanceMapId: 0 } ||
-            sample.LastCastEvent is null ||
-            sample.Bindings is null ||
-            !IsActionReady(sample, action, spells))
-            return false;
-
-        if (action.Slot is < 1 or > 5 ||
-            !MatchesTrialAction(action) ||
+            !IsActionReady(sample, action, spells) ||
             !ForeverBindings.ActionButton(action.Slot, action.ConsoleKey, action.Modifier)
                 .IsBoundIn(sample))
             return false;
 
-        if (action.SpellId == ForeverPaladin.HolyLight)
-            return sample.PlayerPower >= 0.12;
+        if (selfCast)
+            return true;
 
-        if (action.SpellId == ForeverPaladin.SealOfRighteousness)
-            return ForeverPaladin.SealActive(sample) == false &&
-                sample.PlayerHealth >= 0.70 &&
-                sample.PlayerPower >= 0.25;
-
-        if (action.SpellId == ForeverPaladin.Judgement &&
-            ForeverPaladin.SealActive(sample) != true)
-            return false;
-        bool resourcesSafe = flags.PlayerCombat
-            ? sample.PlayerHealth > 0
-            : sample.PlayerHealth >= 0.70 && sample.PlayerPower >= 0.60;
         return ForeverFrame.HasTargetIdentity(sample) &&
             sample.TargetIdentity is { IsPlayer: false } identity &&
             sample.PlayerIdentity is { } player &&
-            identity.Level <= player.Level + 1 &&
+            identity.Level <= player.Level + ForeverFrame.MaxTargetLevelsAbove &&
             sample.TargetHealth > 0 &&
-            flags is
-            { Present: true, Attackable: true, Dead: false } &&
-            resourcesSafe &&
+            flags is { Present: true, Attackable: true, Dead: false } &&
+            (flags.PlayerCombat || ForeverFrame.CanOpenFight(sample, inCombat: false)) &&
             sample.ActionStates?.GetSlot(action.Slot) is { InRange: true };
     }
 
@@ -110,15 +92,4 @@ public static class ForeverCastGate
                 return true;
         return false;
     }
-
-    private static bool MatchesTrialAction(KeyAction action) =>
-        (action.Slot, action.SpellId, action.Name) switch
-        {
-            (ForeverPaladin.HolyLightSlot, ForeverPaladin.HolyLight, "Holy Light") => true,
-            (ForeverPaladin.JudgementSlot, ForeverPaladin.Judgement, "Judgement") => true,
-            (ForeverPaladin.HolyStrikeSlot, ForeverPaladin.HolyStrikeRank1, "Holy Strike") => true,
-            (ForeverPaladin.HolyStrikeSlot, ForeverPaladin.HolyStrikeRank2, "Holy Strike") => true,
-            (ForeverPaladin.SealSlot, ForeverPaladin.SealOfRighteousness, "Seal of Righteousness") => true,
-            _ => false
-        };
 }

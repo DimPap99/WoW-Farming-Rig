@@ -333,7 +333,7 @@ public sealed partial class GoapAgent : IDisposable
         if (playerReader.IsForeverVisual)
         {
             WorldState = playerReader.TryGetForeverVisualVitals(out VisualBarSample sample) &&
-                ForeverGoapWorldState.TryBuild(sample, out BitVector32 state)
+                ForeverGoapWorldState.TryBuild(sample, classConfig, out BitVector32 state)
                 ? state : default;
             return;
         }

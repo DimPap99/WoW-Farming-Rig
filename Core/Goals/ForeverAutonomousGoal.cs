@@ -7,7 +7,6 @@ using SharedLib;
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 
 using static System.Diagnostics.Stopwatch;
@@ -31,7 +30,6 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private readonly ForeverRunOptions runOptions;
     private readonly HashSet<VisualTargetIdentity> rejectedTargets = [];
     private int emptyTargetPresses;
-    private readonly ForeverCaster caster;
     private readonly ClassConfiguration config;
     private readonly CancellationToken token;
     private volatile Phase phase = Phase.Initial;
@@ -64,7 +62,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         ForeverVisualBarTracker tracker,
         ForeverTargetSelector selector, ForeverNavigator navigator,
         IForeverCombatRoutine combat, IForeverLootRoutine loot, ForeverRunOptions runOptions,
-        ForeverCaster caster, ClassConfiguration config,
+        ClassConfiguration config,
         CancellationTokenSource<GoapAgent> cts)
         : base(nameof(ForeverAutonomousGoal))
     {
@@ -75,7 +73,6 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         this.combat = combat;
         this.loot = loot;
         this.runOptions = runOptions;
-        this.caster = caster;
         this.config = config;
         token = cts.Token;
     }
@@ -84,21 +81,17 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     {
         if (!tracker.TryGetLatest(out VisualBarSample bars) ||
             !ForeverFrame.IsVerifiedSetup(bars) || bars.TargetFlags is not { } flags ||
-            flags.PlayerCombat || bars.PlayerHealth < 0.70 ||
-            bars.PlayerPower < 0.60 ||
+            flags.PlayerCombat || !ForeverFrame.CanOpenFight(bars, inCombat: false) ||
             !ForeverBindings.TargetNearestEnemy.IsBoundIn(bars) ||
-            !ForeverBindings.StartAttack.IsBoundIn(bars) ||
-            !ForeverBindings.ActionButton(ForeverPaladin.SealSlot, ConsoleKey.D5).IsBoundIn(bars) ||
-            bars.ActionBar?.GetSlot(ForeverPaladin.SealSlot) is not
-                { Kind: VisualActionKind.Spell, Id: ForeverPaladin.SealOfRighteousness } ||
-            ForeverPaladin.SealActive(bars) is null || bars.LastDeathEvent is null ||
+            bars.LastDeathEvent is null ||
             config.Loot && (bars.Loot is null ||
                 !ForeverBindings.InteractTarget.IsBoundIn(bars)))
         {
-            reason = "current frame, resources, or target and attack bindings are incomplete";
+            reason = "current frame, resources, or target and loot bindings are incomplete";
             return false;
         }
-        return navigator.TryReadOnlyPreflight(bars, out reason);
+        return combat.TryPreflight(bars, out reason) &&
+            navigator.TryReadOnlyPreflight(bars, out reason);
     }
 
     public void OnGoapEvent(GoapEventArgs e)
@@ -149,23 +142,19 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 TargetDied(bars, killed);
                 return;
             }
-            if (flags.PlayerCombat && bars.PlayerHealth < 0.70)
+            // The profile's Adhoc self heals and buffs, in every phase that acts
+            // and also while looting in combat. A corpse selected out of combat
+            // is looted or cleared first. A failed cast latches the caster
+            // closed; say so here rather than at the next action it refuses.
+            if ((phase is Phase.Acquire or Phase.Pursue or Phase.Fight or Phase.Recover ||
+                    phase == Phase.Loot && flags.PlayerCombat) &&
+                !(flags.Present && flags.Dead && !flags.PlayerCombat) &&
+                !combat.RunAdhoc(bars, navigator.StopPursuit, out string adhocReason))
             {
                 navigator.StopPursuit();
-                if (HolyLight() is { } heal)
-                {
-                    ForeverCastResult healed = caster.TryCast(heal,
-                        () => token.IsCancellationRequested);
-                    if (healed == ForeverCastResult.Succeeded)
-                        return;
-                    // A failed heal latches the caster closed; say so here
-                    // rather than at the next attack it refuses.
-                    if (healed == ForeverCastResult.Failed)
-                    {
-                        Fail("in-combat heal success was not confirmed");
-                        return;
-                    }
-                }
+                if (!string.IsNullOrEmpty(adhocReason))
+                    Fail(adhocReason);
+                return;
             }
             // Once acquired, keep the same opponent through pursuit and combat.
             // Aggro can begin before our first cast; that is not a reason to Tab.
@@ -173,7 +162,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             {
                 navigator.StopPursuit();
                 if (ForeverTargetSelector.TryEligibleTarget(bars, out var nearby) &&
-                    ForeverTargetSelector.InStrikeRange(bars))
+                    combat.InRange(bars, nearby))
                 {
                     target = nearby;
                     deathSequenceBefore = bars.LastDeathEvent?.Sequence ?? 0;
@@ -187,19 +176,6 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 }
                 else
                     return;
-            }
-
-            if (phase is Phase.Acquire or Phase.Pursue or Phase.Fight ||
-                phase == Phase.Recover && bars.PlayerHealth >= 0.90)
-            {
-                if (!(flags.Present && flags.Dead) &&
-                    !combat.EnsureSeal(bars, navigator.StopPursuit, out string sealReason))
-                {
-                    navigator.StopPursuit();
-                    if (!string.IsNullOrEmpty(sealReason))
-                        Fail(sealReason);
-                    return;
-                }
             }
 
             switch (phase)
@@ -266,7 +242,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             Fail("unexpected combat during target acquisition");
             return;
         }
-        if (bars.PlayerPower < 0.60)
+        if (!ForeverFrame.HasMana(bars, ForeverFrame.ReadyMana))
             return;
         if (GetElapsedTime(lastTargetPress).TotalMilliseconds < 650)
             return;
@@ -441,24 +417,14 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 Fail("combat did not clear after target death");
             return;
         }
-        if (bars.PlayerHealth < 0.90)
-        {
-            if (HolyLight() is not { } heal)
-            {
-                Fail("Holy Light recovery action missing");
-                return;
-            }
-            if (caster.TryCast(heal, () => token.IsCancellationRequested) ==
-                ForeverCastResult.Failed)
-                Fail("recovery heal success was not confirmed");
-            if (Elapsed() > 45000)
-                Fail("health did not recover in time");
-            return;
-        }
-        if (bars.PlayerPower < 0.60)
+        // Heals between fights are the profile's out-of-combat Adhoc actions,
+        // which run before this phase; here only wait for them and regeneration.
+        if (!ForeverFrame.IsRested(bars))
         {
             if (Elapsed() > 45000)
-                Fail("mana did not recover in time");
+                Fail(bars.PlayerHealth < ForeverFrame.RestedHealth
+                    ? "health did not recover in time"
+                    : "mana did not recover in time");
             return;
         }
         if (!observedDeadTarget)
@@ -493,9 +459,6 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         else
             Enter(Phase.Recover);
     }
-
-    private KeyAction? HolyLight() => config.Combat.Sequence.SingleOrDefault(
-        action => action.SpellId == ForeverPaladin.HolyLight);
 
     private double Elapsed() => GetElapsedTime(phaseStarted).TotalMilliseconds;
 
