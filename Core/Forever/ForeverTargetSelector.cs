@@ -1,9 +1,6 @@
-using Core.GOAP;
-
 using SharedLib;
 
 using System;
-using System.Threading;
 
 namespace Core.Forever;
 
@@ -11,16 +8,13 @@ namespace Core.Forever;
 public sealed class ForeverTargetSelector
 {
     private readonly ConfigurableInput input;
-    private readonly CancellationToken token;
     private readonly ExecGameCommand command;
 
     public ForeverTargetSelector(ConfigurableInput input,
-        ExecGameCommand command,
-        CancellationTokenSource<GoapAgent> cts)
+        ExecGameCommand command)
     {
         this.input = input;
         this.command = command;
-        token = cts.Token;
     }
 
     public static bool CanSelect(VisualBarSample bars) =>
@@ -89,7 +83,7 @@ public sealed class ForeverTargetSelector
     private void PressTargetNearestEnemy()
     {
         ConsoleKey key = ForeverBindings.TargetNearestEnemy.Key;
-        try { input.PressFixed(key, ForeverBinding.PressMs, token); }
+        try { input.PressRandom(key, ForeverBinding.PressMs); }
         finally { input.SetKeyState(key, false, true); }
     }
 }

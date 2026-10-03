@@ -930,6 +930,18 @@ navmesh turns on, the column resolver prefers ground under the requested X/Y
 over a higher surface beside it; Classic clients keep the upstream behaviour. Blocked straight movement tries checked sidesteps and pathfinder
 waypoints while retaining the same target.
 
+Movement is human-like since 2026-10-03. Roaming, approach, detours and
+pursuit share one walking routine: forward stays held while the right mouse
+button steers toward the heading, and the next three yards along the current
+facing are re-checked on every frame. The character turns standing only for a
+correction over 90 degrees, a pursuit marker more than 35% of the screen off
+center, or a way ahead that is not walkable. Held movement must cover 0.2 yards
+every 3 seconds. Roaming keeps walking between Tab presses and stops when a
+candidate appears. The earlier roam tapped forward for 200 ms (or a turn key
+for 45 to 120 ms), stopped to verify, and repeated. Key taps for casts and
+targeting last 60 to 90 ms at random instead of a fixed 75 ms. The one-step
+`--trial-move` test still sends its single 200 ms press by design.
+
 Live target-position audit on a selected level-6 mob found both
 `UnitPosition("target")` and `C_Map.GetPlayerMapPosition(mapId, "target")`
 unavailable, while the corresponding player positions work. A one-press
