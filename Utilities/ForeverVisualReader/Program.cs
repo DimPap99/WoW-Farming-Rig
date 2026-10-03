@@ -48,6 +48,8 @@ if (pidOption >= 0)
 
 if (args.Length == 1 && args[0] == "--self-test")
     return RunSelfTest();
+if (args.Length == 1 && args[0] == "--logic-test")
+    return LogicTest.Run();
 
 bool readerSmoke = args.Length == 1 && args[0] == "--reader-smoke";
 bool targetAudit = args.Length == 1 && args[0] == "--target-audit";

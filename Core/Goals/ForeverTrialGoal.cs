@@ -15,8 +15,6 @@ using System.Linq;
 using System.Numerics;
 using System.Threading;
 
-using static System.Diagnostics.Stopwatch;
-
 namespace Core.Goals;
 
 /// <summary>
@@ -29,9 +27,9 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
     private enum Phase { Initial, Stable, VerifyStep, AwaitTarget, AwaitRecovery, Passed, Failed }
 
     public override float Cost => 1;
-    public override bool CanRun() => phase is not (Phase.Passed or Phase.Failed);
-    public string TrialStatus => phase.ToString();
-    public string LastFailure { get; private set; } = string.Empty;
+    public override bool CanRun() => !machine.IsTerminal;
+    public string TrialStatus => machine.State.ToString();
+    public string LastFailure => machine.LastFailure;
 
     public bool TryReadOnlyRoutePreflight(out string reason)
     {
@@ -63,9 +61,8 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
     private readonly DataConfig data;
     private readonly WorldMapAreaDB maps;
     private readonly CancellationToken token;
+    private readonly ForeverStateMachine<Phase> machine;
 
-    private volatile Phase phase = Phase.Initial;
-    private long phaseStarted;
     private Vector2 origin;
     private double direction;
     private long firstFrameId;
@@ -91,13 +88,22 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
         this.data = data;
         this.maps = maps;
         token = cts.Token;
-        phaseStarted = GetTimestamp();
+
+        machine = new ForeverStateMachine<Phase>(logger, "Forever bounded trial",
+                Phase.Initial, Phase.Failed, Phase.Passed)
+            .On(Phase.Initial, Initial, exits: [Phase.Stable])
+            .On(Phase.Stable, Stable, exits: [Phase.VerifyStep])
+            .On(Phase.VerifyStep, VerifyStep, exits: [Phase.AwaitTarget])
+            .On(Phase.AwaitTarget, AwaitTarget, exits: [Phase.AwaitRecovery],
+                timeoutMs: 90000, onTimeout: "No safe selected target within the trial window")
+            .On(Phase.AwaitRecovery, AwaitRecovery, exits: [Phase.Passed],
+                timeoutMs: 90000, onTimeout: "Combat recovery was not verified within the trial window");
     }
 
     public void OnGoapEvent(GoapEventArgs e)
     {
         if (e is AbortEvent)
-            Fail("Controller stopped");
+            machine.Fail("Controller stopped");
     }
 
     public override void Update()
@@ -110,159 +116,159 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
             if (!tracker.TryGetLatest(out VisualBarSample bars) ||
                 !ForeverFrame.HasTrialInputs(bars))
             {
-                if (phase == Phase.Initial && !TimedOut(10000))
+                if (machine.State == Phase.Initial && machine.ElapsedMs <= 10000)
                     return;
-                Fail("Visual controller frame is missing or stale");
+                machine.Fail("Visual controller frame is missing or stale");
                 return;
             }
 
             if (!ForeverFrame.IsVerifiedSetup(bars) ||
-                bars.Position is not { } map ||
-                bars.WorldPosition is not { } world ||
-                bars.TargetFlags is not { PlayerDead: false } flags)
+                bars.Position is null || bars.WorldPosition is null ||
+                bars.TargetFlags is not { PlayerDead: false })
             {
-                Fail("Trial map, class, or combat flags changed");
+                machine.Fail("Trial map, class, or combat flags changed");
                 return;
             }
 
-            switch (phase)
-            {
-                case Phase.Initial:
-                    if (!IdleForMove(bars, flags))
-                    {
-                        Fail("Route start requires high health, mana, and no target or combat");
-                        return;
-                    }
-                    origin = new((float)world.X, (float)world.Y);
-                    direction = map.Direction;
-                    firstFrameId = bars.FrameId;
-                    Enter(Phase.Stable);
-                    break;
-
-                case Phase.Stable:
-                    if (bars.FrameId == firstFrameId && !TimedOut(5000))
-                        return;
-                    string reason = "player moved or resources changed";
-                    if (TimedOut(5000) || !IdleForMove(bars, flags) ||
-                        Vector2.Distance(origin, new((float)world.X, (float)world.Y)) > 0.3f ||
-                        AngularDifference(direction, map.Direction) > 0.1 ||
-                        !ForeverBindings.MoveForward.IsBoundTo(bars, input.ForwardKey) ||
-                        !RouteReady(bars, out reason))
-                    {
-                        Fail($"Route preflight failed: {reason}");
-                        return;
-                    }
-
-                    // A second full capture immediately preceded this one input.
-                    // PressFixed releases the key; the finally is a belt-and-braces
-                    // release if the process or cancellation interrupts the press.
-                    pressFrameId = bars.FrameId;
-                    ConsoleKey forwardKey = input.ForwardKey;
-                    try
-                    {
-                        input.PressFixed(forwardKey, 200, token);
-                    }
-                    finally
-                    {
-                        input.SetKeyState(forwardKey, false, true);
-                    }
-                    Enter(Phase.VerifyStep);
-                    break;
-
-                case Phase.VerifyStep:
-                    if (bars.FrameId == pressFrameId && !TimedOut(5000))
-                        return;
-                    if (!IdleForMove(bars, flags))
-                    {
-                        Fail("Combat or target changed during the route step");
-                        return;
-                    }
-                    Vector2 delta = new((float)world.X - origin.X, (float)world.Y - origin.Y);
-                    Vector2 forward = new(MathF.Cos((float)direction), MathF.Sin((float)direction));
-                    float along = Vector2.Dot(delta, forward);
-                    float lateral = MathF.Abs(delta.X * forward.Y - delta.Y * forward.X);
-                    if (along >= 0.2f && along < 4f && lateral < 2f)
-                    {
-                        if (logger.IsEnabled(LogLevel.Information))
-                            logger.LogInformation("Forever route step verified: {Distance:F2} yd forward", along);
-                        Enter(Phase.AwaitTarget);
-                    }
-                    else if (TimedOut(5000) || along >= 4f || lateral >= 2f)
-                        Fail("Route step displacement was not verified");
-                    break;
-
-                case Phase.AwaitTarget:
-                    if (TimedOut(90000))
-                    {
-                        Fail("No safe selected target within the trial window");
-                        return;
-                    }
-                    if (!ForeverFrame.CanOpenFight(bars, inCombat: true))
-                    {
-                        Fail("Low resources before the trial cast");
-                        return;
-                    }
-                    if (flags is not { Present: true, Attackable: true, Dead: false } ||
-                        bars.TargetHealth <= 0)
-                    {
-                        candidateIdentity = null;
-                        return;
-                    }
-                    if (bars.TargetIdentity is not { } selected)
-                        return;
-                    if (candidateIdentity is null)
-                    {
-                        candidateIdentity = selected;
-                        candidateFrameId = bars.FrameId;
-                        return;
-                    }
-                    if (candidateIdentity != selected)
-                    {
-                        Fail("Selected target changed before the trial cast");
-                        return;
-                    }
-                    if (bars.FrameId == candidateFrameId)
-                        return;
-
-                    KeyAction? opener = config.Pull.Sequence.SingleOrDefault();
-                    if (opener is null ||
-                        !ForeverCastGate.CanPress(bars, opener, spells,
-                            maxLevelsAbove: config.NPCMaxLevels_Above))
-                        return;
-
-                    if (caster.TryCast(opener, () => token.IsCancellationRequested) !=
-                        ForeverCastResult.Succeeded)
-                    {
-                        Fail($"{opener.Name} success event was not confirmed");
-                        return;
-                    }
-                    if (logger.IsEnabled(LogLevel.Information))
-                        logger.LogInformation("Forever trial {Action} confirmed", opener.Name);
-                    sawCombat |= flags.PlayerCombat;
-                    Enter(Phase.AwaitRecovery);
-                    break;
-
-                case Phase.AwaitRecovery:
-                    if (TimedOut(90000))
-                    {
-                        Fail("Combat recovery was not verified within the trial window");
-                        return;
-                    }
-                    sawCombat |= flags.PlayerCombat;
-                    sawDeadTarget |= flags.Present && flags.Dead;
-                    if ((sawCombat || sawDeadTarget) && !flags.Present &&
-                        !flags.PlayerCombat && ForeverFrame.CanOpenFight(bars, inCombat: true))
-                    {
-                        Enter(Phase.Passed);
-                        logger.LogInformation("Forever bounded route, action, and recovery trial passed");
-                    }
-                    break;
-            }
+            machine.Tick(bars);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Forever bounded trial stopped");
-            Fail("Trial preflight or controller update threw an exception");
+            machine.Fail("Trial preflight or controller update threw an exception");
+        }
+    }
+
+    private void Initial(VisualBarSample bars)
+    {
+        if (!IdleForMove(bars, bars.TargetFlags!.Value))
+        {
+            machine.Fail("Route start requires high health, mana, and no target or combat");
+            return;
+        }
+        VisualWorldPositionSample world = bars.WorldPosition!.Value;
+        origin = new((float)world.X, (float)world.Y);
+        direction = bars.Position!.Value.Direction;
+        firstFrameId = bars.FrameId;
+        machine.Go(Phase.Stable);
+    }
+
+    private void Stable(VisualBarSample bars)
+    {
+        bool timedOut = machine.ElapsedMs > 5000;
+        if (bars.FrameId == firstFrameId && !timedOut)
+            return;
+        VisualWorldPositionSample world = bars.WorldPosition!.Value;
+        string reason = "player moved or resources changed";
+        if (timedOut || !IdleForMove(bars, bars.TargetFlags!.Value) ||
+            Vector2.Distance(origin, new((float)world.X, (float)world.Y)) > 0.3f ||
+            AngularDifference(direction, bars.Position!.Value.Direction) > 0.1 ||
+            !ForeverBindings.MoveForward.IsBoundTo(bars, input.ForwardKey) ||
+            !RouteReady(bars, out reason))
+        {
+            machine.Fail($"Route preflight failed: {reason}");
+            return;
+        }
+
+        // A second full capture immediately preceded this one input.
+        // PressFixed releases the key; the finally is a belt-and-braces
+        // release if the process or cancellation interrupts the press.
+        pressFrameId = bars.FrameId;
+        ConsoleKey forwardKey = input.ForwardKey;
+        try
+        {
+            input.PressFixed(forwardKey, 200, token);
+        }
+        finally
+        {
+            input.SetKeyState(forwardKey, false, true);
+        }
+        machine.Go(Phase.VerifyStep);
+    }
+
+    private void VerifyStep(VisualBarSample bars)
+    {
+        bool timedOut = machine.ElapsedMs > 5000;
+        if (bars.FrameId == pressFrameId && !timedOut)
+            return;
+        if (!IdleForMove(bars, bars.TargetFlags!.Value))
+        {
+            machine.Fail("Combat or target changed during the route step");
+            return;
+        }
+        VisualWorldPositionSample world = bars.WorldPosition!.Value;
+        Vector2 delta = new((float)world.X - origin.X, (float)world.Y - origin.Y);
+        Vector2 forward = new(MathF.Cos((float)direction), MathF.Sin((float)direction));
+        float along = Vector2.Dot(delta, forward);
+        float lateral = MathF.Abs(delta.X * forward.Y - delta.Y * forward.X);
+        if (along >= 0.2f && along < 4f && lateral < 2f)
+        {
+            if (logger.IsEnabled(LogLevel.Information))
+                logger.LogInformation("Forever route step verified: {Distance:F2} yd forward", along);
+            machine.Go(Phase.AwaitTarget);
+        }
+        else if (timedOut || along >= 4f || lateral >= 2f)
+            machine.Fail("Route step displacement was not verified");
+    }
+
+    private void AwaitTarget(VisualBarSample bars)
+    {
+        VisualTargetFlags flags = bars.TargetFlags!.Value;
+        if (!ForeverFrame.CanOpenFight(bars, inCombat: true))
+        {
+            machine.Fail("Low resources before the trial cast");
+            return;
+        }
+        if (flags is not { Present: true, Attackable: true, Dead: false } ||
+            bars.TargetHealth <= 0)
+        {
+            candidateIdentity = null;
+            return;
+        }
+        if (bars.TargetIdentity is not { } selected)
+            return;
+        if (candidateIdentity is null)
+        {
+            candidateIdentity = selected;
+            candidateFrameId = bars.FrameId;
+            return;
+        }
+        if (candidateIdentity != selected)
+        {
+            machine.Fail("Selected target changed before the trial cast");
+            return;
+        }
+        if (bars.FrameId == candidateFrameId)
+            return;
+
+        KeyAction? opener = config.Pull.Sequence.SingleOrDefault();
+        if (opener is null ||
+            !ForeverCastGate.CanPress(bars, opener, spells,
+                maxLevelsAbove: config.NPCMaxLevels_Above))
+            return;
+
+        if (caster.TryCast(opener, () => token.IsCancellationRequested) !=
+            ForeverCastResult.Succeeded)
+        {
+            machine.Fail($"{opener.Name} success event was not confirmed");
+            return;
+        }
+        if (logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("Forever trial {Action} confirmed", opener.Name);
+        sawCombat |= flags.PlayerCombat;
+        machine.Go(Phase.AwaitRecovery);
+    }
+
+    private void AwaitRecovery(VisualBarSample bars)
+    {
+        VisualTargetFlags flags = bars.TargetFlags!.Value;
+        sawCombat |= flags.PlayerCombat;
+        sawDeadTarget |= flags.Present && flags.Dead;
+        if ((sawCombat || sawDeadTarget) && !flags.Present &&
+            !flags.PlayerCombat && ForeverFrame.CanOpenFight(bars, inCombat: true))
+        {
+            machine.Go(Phase.Passed);
+            logger.LogInformation("Forever bounded route, action, and recovery trial passed");
         }
     }
 
@@ -339,22 +345,4 @@ public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
 
     private static double AngularDifference(double a, double b) =>
         Math.Abs(Math.Atan2(Math.Sin(a - b), Math.Cos(a - b)));
-
-    private bool TimedOut(int milliseconds) =>
-        GetElapsedTime(phaseStarted).TotalMilliseconds > milliseconds;
-
-    private void Enter(Phase next)
-    {
-        phase = next;
-        phaseStarted = GetTimestamp();
-    }
-
-    private void Fail(string reason)
-    {
-        if (phase is Phase.Passed or Phase.Failed)
-            return;
-        LastFailure = reason;
-        Enter(Phase.Failed);
-        logger.LogWarning("Forever bounded trial failed closed: {Reason}", reason);
-    }
 }
