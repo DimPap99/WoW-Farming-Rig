@@ -17,7 +17,9 @@ frames or changing CVars on Forever.
    select `DataToColor_Camelot.toc`. Restart the game after copying add-on files.
 4. Copy `Addons/ForeverProbe` to the beta client's
    `_classic_beta_/Interface/AddOns/ForeverProbe` directory. It supplies the
-   visual data required by the Forever dashboard and controller trial. Its
+   visual data required by the Forever dashboard and controller trial:
+   `ForeverEvents.lua` latches cast, death and loot events, `ForeverVisual.lua`
+   draws the channel, and `ForeverDiagnostics.lua` holds the one-shot probes. Its
    optional `/foreverprobe` command records API value types in `ForeverProbeResults`
    under the beta client's account-wide SavedVariables. The out-of-combat
    `/forevercatalog` command records only numeric spellbook/action-slot IDs and
@@ -28,10 +30,8 @@ frames or changing CVars on Forever.
    five rows are player health (green), player power (blue), target health
    (red), 50% calibration (yellow), and 100% calibration (white). Five tiny RGB
    squares underneath carry map ID, normalized map X/Y, facing, and a validity
-   marker; the marker stays black if any position source fails. Two more squares
-   indicate cooldown validity and target presence (green = present, red = absent,
-   black = unknown). Two additional squares carry the watched action's numeric
-   ID and a validity/type/slot marker; missing or mismatched pixels are rejected.
+   marker; the marker stays black if any position source fails. Another square
+   indicates target presence (green = present, red = absent, black = unknown).
    A compact six-row grid beneath the bars carries type and ID for all 120
    action slots; each slot explicitly distinguishes empty from unreadable.
    A second grid carries up to 200 spellbook slots. Each entry contains a
@@ -46,10 +46,11 @@ frames or changing CVars on Forever.
    at 0.01-yard resolution. Map coordinates, world coordinates, and player
    vital maxima include a checksum marker; a damaged pixel is treated as
    unreadable. These coordinates are diagnostic data only.
-   A separate cyan sixth bar shows the remaining cooldown
-   fraction for action-bar slot 1, or
-   the slot selected with `/forevercooldown 1` through `/forevercooldown 12`.
-   This cooldown bar is still experimental.
+   Twelve cyan bars show the remaining cooldown fraction of main-bar slots 1 to
+   12, a further grid carries each of the 120 slots' usable, mana and range
+   state, and the aura strip compares player aura icons with each main-bar
+   slot's icon. The single watched-action row and `/forevercooldown` were
+   retired on 2026-10-03; the slot grids carry the same data for every slot.
 
 The read-only visual diagnostic can capture a lossless PNG, decode an existing
 PNG, or monitor those bars for a bounded time:
@@ -92,7 +93,7 @@ facing with no measurable lateral displacement.
 The Blazor dashboard now also has a **Forever diagnostic mode**. With Forever
 running, start `BlazorServer` normally and open its dashboard. It selects WGC,
 shows fresh player health/power and target-health percentages from the first
-five bars, plus the watched action's cooldown fill when its marker is present.
+five bars, plus what each main-bar slot holds and its remaining cooldown.
 It reports when the bars are missing or capture has stopped. A separate marker
 distinguishes an absent target from a target at zero health; an unreadable
 marker is reported as unknown. When the position marker is valid, the
@@ -268,6 +269,15 @@ profiles (`AutoProfileFor`). The controller trial loads the profile verified for
 the logged-in class. A new class or map needs a profile, a live bounded sweep,
 and an entry here. Rogue finishers, DoTs, forms and pets still need channel work
 first; the profile rules refuse them.
+
+Live results on 2026-10-03, level 6 Troll Hunter in Durotar with Attack on slot
+4: one `--auto-run` cycle and one `--sweep` each completed with a verified kill
+and status `Complete`. Serpent Sting opened from range (mana 100% to 90%), Start
+Attack began Auto Shot, the fight returned to pursuit inside the ranged minimum
+distance, and Raptor Strike's success event (2973) arrived with the melee swing.
+The game reported both corpses not lootable, so the loot path was not exercised
+on this character. Earlier attempts without the Attack button failed exactly as
+described above: Raptor Strike was pressed outside melee and never swung.
 
 ## Live findings from the beta client
 
@@ -926,7 +936,8 @@ unavailable, while the corresponding player positions work. A one-press
 `INTERACTTARGET` approach did not move the character. `ClosestUnitPosition`
 returned no usable result for the selected creature, and
 `UnitDistanceSquared("target")` returned zero for a visibly distant mob, so
-the latter is rejected. A normal nameplate frame list did contain the selected
+the latter is rejected (both probes were removed from the add-on on
+2026-10-03). A normal nameplate frame list did contain the selected
 mob: `C_NamePlate.GetNamePlates()` plus `frame:GetUnit()` and `UnitIsUnit`
 matched it, though `frame:GetCenter()` gave no usable numeric point.
 
