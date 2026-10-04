@@ -12,8 +12,20 @@ namespace Core.Forever;
 /// <param name="Until">When the task is done.</param>
 public abstract record ForeverTask(string Name, ForeverUntil Until);
 
-/// <summary>Whether a task takes units in view as it goes, or fights only what attacks.</summary>
-public enum ForeverPulls { None, Any }
+/// <summary>Which units in view a task takes as it goes; what attacks is fought whatever this says.</summary>
+public enum ForeverPulls
+{
+    /// <summary>Fights only what attacks.</summary>
+    None,
+    /// <summary>Takes the best unit in view, as a roam clearing its area does.</summary>
+    Any,
+    /// <summary>
+    /// Takes only units on the way: near the path still to walk, a little way
+    /// ahead, as a person on their way somewhere kills what stands in it and
+    /// makes no detour.
+    /// </summary>
+    OnTheWay,
+}
 
 /// <summary>
 /// Hunts where the run stands: looks round, takes what is in view, walks on
@@ -25,7 +37,8 @@ public sealed record ForeverHuntHereTask(ForeverUntil Until) : ForeverTask("Hunt
 /// Travels along the baked mesh through the <paramref name="Via"/> points to
 /// <paramref name="To"/>, and is done on arrival. Units that attack are
 /// fought whatever <paramref name="Pulls"/> says; with
-/// <see cref="ForeverPulls.Any"/> the units on the way are taken too.
+/// <see cref="ForeverPulls.OnTheWay"/> the units on the way are taken too,
+/// with <see cref="ForeverPulls.Any"/> any unit in view.
 /// </summary>
 public sealed record ForeverTravelTask(ForeverMapPoint To, IReadOnlyList<ForeverMapPoint> Via,
     ForeverPulls Pulls, ForeverUntil Until) : ForeverTask($"Travel to {To}", Until);

@@ -42,13 +42,17 @@ switch (walker.Update(bars, out string reason))
 {
     case ForeverWalkResult.Arrived:  walker.Stop(); break;   // or Begin the next point to flow through
     case ForeverWalkResult.Skipped:  /* pick another destination */ break;
-    case ForeverWalkResult.Failed:   /* stop the run with reason */ break;
+    case ForeverWalkResult.Failed when walker.NoProgress: /* walk again, or give the place up */ break;
+    case ForeverWalkResult.Failed:   /* fail with reason; the run falls back */ break;
 }
 ```
 
 - `Begin(to, reach, mayGiveUp, name)` sets off; a walk already under way
   turns toward the new point without stopping, so it flows through points on
-  the way.
+  the way. A failed walk begins afresh.
+- `NoProgress` tells a walk that ran out of progress (another walk from where
+  the character stands may get through) from any other failure, such as the
+  game losing focus, which is never walked again.
 - `Arrived` leaves forward held: the caller either begins the next point or
   calls `Stop()`.
 - `Resume()` after something else ran: the way is asked for afresh from where
@@ -98,8 +102,9 @@ roaming at 0.25. Facing a mob in a fight follows its marker as before.
 
 Borrowed from upstream's `StuckDetector`, redone with held keys and mouse
 turns. `WalkToward`'s own hop comes first when held movement stalls. Then each
-time the walk stalls (forward held without progress for 3 seconds, or no way
-from where it stands) it climbs one step:
+time the walk stalls (forward held without progress for 3 seconds, no way from
+where it stands, or turning standing 2 seconds without a walkable way ahead) it
+climbs one step:
 
 | Stall | Step |
 |---|---|
@@ -111,11 +116,25 @@ from where it stands) it climbs one step:
 Without a move-backward key the walker only steps aside. After each step the
 way is asked for afresh.
 
+Before each step the navigator checks that the next 3 yards along the facing
+are walkable, and turns standing while they are not. The mesh keeps a
+character's width away from walls and objects, so brushing past one can leave
+the character standing just off it, from where the check fails every way:
+within 2 yards of the mesh (`OffMeshYards`) the check is made from the
+nearest walkable point instead, and turning standing for 2 seconds
+(`WayAheadTurnMs`) without a walkable way ahead is a stall, not more turning;
+a shorter turn is left alone, since on a narrow way a slightly better facing
+is all it needs (a first version stalled at once when facing within 0.2
+radians, and sidestepped where a little more turning would have done). Live on
+2026-10-04 a trip stood 20 seconds on one spot in Ratchet, turning, before
+either was in place.
+
 ### Progress
 
 As upstream: only a new closest approach counts, a yard closer along the path,
 and it resets the ladder. Without one for 20 seconds the walk fails with why
-("walking to ... made no progress for 20 seconds: ...").
+("walking to ... made no progress for 20 seconds: ...") and `NoProgress`: a
+travel walks again from there, a roam gives the place up.
 
 ## Travelling
 
@@ -124,8 +143,11 @@ destination, each with the walker.
 
 - Within 6 yards of a point on the way it flows on to the next; within 3
   yards of the destination it stops, and the task is done.
-- A stuck walk may skip a point on the way; the destination itself is never
-  given up.
+- A walk that stalls, or makes no progress, skips a point on the way. The
+  destination is walked again from where the walk stalled, 3 walks in all
+  (`ForeverTravel.LegTries`, logged `Forever travel: ...; walking again from
+  here, walk 2 of 3`); after that the travel fails and the agenda gives it up
+  (see "When a task fails" in [forever-tasks.md](forever-tasks.md)).
 - With `Pulls: Any` it takes units in view as it goes; units that attack are
   always fought, and the travel resumes from wherever the fight left it.
 - When the task starts, every point must be on a map the map data has, on the
@@ -135,28 +157,63 @@ destination, each with the walker.
 
 ## Roaming an area
 
-`ForeverRoamArea` runs a `RoamArea` task. Its steps are `Walk` and `Look`:
+`ForeverRoamArea` runs a `RoamArea` task as a patrol. Its steps are `Walk` and
+`Look`:
 
 1. **Entering.** Inside the area it begins by looking round; outside, it draws
    a few spots inside, takes the nearest one that is reachable and walks
    there.
 2. **Look.** A calm full circle standing (a quarter of full turning speed),
-   taking units in view.
-3. **Walk** to the next spot, taking units in view on the way; on arrival,
-   look again.
-4. After a fight, loot or rest it goes on toward the same spot, back into the
-   area when the fight led out of it. There is no leash yet: a pursuit may
-   follow a unit outside the area.
-5. It ends when the task's `Until` holds. Four spots in a row given up, or
-   three draws that find no spot, stop the run with why.
+   taking units in view. The client draws a nameplate only for a unit the
+   camera sees, so looking round is how the camera checks all about.
+3. **Walk** to where the patrol leads (below), taking units in view on the way;
+   on arrival, look again.
+4. After a kill it looks round first, so what stands near is taken before it
+   walks on; after anything else (a failed click, a rest) it goes on toward
+   the same place, back into the area when a fight led out of it. There is no
+   leash yet: a pursuit may follow a unit outside the area.
+5. It ends when the task's `Until` holds. A walk that makes no progress gives
+   its place up, as a stall does. Four places in a row given up, or three
+   draws that find no spot, fail the roam with why, and the agenda goes on
+   with the next task.
 
-A spot counts as reached within 4 yards. With `Pulls: None` it walks and looks
-without taking units.
+A place counts as reached within 4 yards. With `Pulls: None` it walks and
+looks without taking units.
 
-### Choosing spots
+### Where the patrol leads
 
-`ForeverSpotPicker` picks spots the way upstream's generated Wander routes pick
-their stops:
+What the camera shows always comes first: every frame of the walk and the
+look offers the best pull in view ([forever-tasks.md](forever-tasks.md)),
+until nothing is left in view. Only then, at the end of a look round, does
+`ForeverPatrol.TryNext` choose where to walk, in this order:
+
+1. **A mob seen lately** (`TryRemembered`), in or within 15 yards of the area
+   (`EdgeYards`), one the run may pull, set aside by nothing, and off screen
+   now: the nearest. `ForeverMobMemory` keeps every plate the camera showed
+   for 2 minutes, where its bearing and range band (or its tracked dot) placed
+   it; it forgets a unit reported dead, and one that a look round passing
+   within 40 yards of its place did not see again. Any class has it.
+2. **A dot of the minimap's tracking** (`TryTracked`), in or around the area
+   and more than 35 yards off (`SightYards`; a dot nearer than that showed no
+   plate worth a pull in the look round: a critter, or a unit the profile
+   does not take): the nearest. Only where the class tracks.
+3. **The part of the area seen least** (`TryLeastCovered`). The area is split
+   into 25-yard cells (`CellYards`); a cell counts as seen when a look round
+   ends within 40 yards of it (`LookYards`), or the walk passes within 20
+   (`PassYards`). The nearest cell never seen goes first; once every cell is
+   seen, the one seen longest ago.
+
+A place that is off the mesh or out of reach is passed over, and so is one a
+walk to a mob or a dot reached without taking anything, for 90 seconds
+(`VisitedMs`, within 10 yards). Each walk says why:
+`Forever roam: nothing in view; heading for a tracked dot in the area around ..., 80 yards off (5 of 12 cells seen)`.
+With no lead at all it draws a spot as below.
+
+### Drawing spots
+
+`ForeverSpotPicker` draws the spot that walks into the area from outside, and
+the fallback when the patrol leads nowhere, the way upstream's generated
+Wander routes pick their stops:
 
 1. A random point of the area, drawn from the task's seed.
 2. Snapped onto the ground under it (`TrySnapWalkable`).
@@ -181,15 +238,24 @@ the same seed draws the same spots.
 | heading point along the path | `ForeverWalker.CarrotYards` | 20 yd |
 | progress needed | `ForeverWalker.ProgressYards` | 1 yd |
 | give up without progress | `ForeverWalker.GiveUpMs` | 20 s |
+| walks to a travel's destination before it fails | `ForeverTravel.LegTries` | 3 |
 | spot spacing | `ForeverSpotPicker.MaxSpacingYards` | 25 yd |
 | draws per spot | `ForeverSpotPicker.MaxAttempts` | 40 |
+| patrol cell side | `ForeverPatrol.CellYards` | 25 yd |
+| seen by a look round / by the walk | `ForeverPatrol.LookYards` / `PassYards` | 40 / 20 yd |
+| a tracked dot nearer is passed over | `ForeverPatrol.SightYards` | 35 yd |
+| leads past the area's edge | `ForeverPatrol.EdgeYards` | 15 yd |
+| a place found empty is passed over | `ForeverPatrol.VisitedMs` within `VisitedYards` | 90 s, 10 yd |
+| a mob is remembered | `ForeverMobMemory.RememberMs` | 2 min |
 
 ## Checks
 
 Offline (`--logic-test`): map conversion, path following on straight and
 cut-corner paths, the off-path distance, the ladder's order, the progress
 rule, a walker following a real 190-yard Durotar path, area containment, the
-spot picker on stand-ins and ten spots around Razor Hill on the baked mesh.
+spot picker on stand-ins and ten spots around Razor Hill on the baked mesh,
+and the patrol: remembering and forgetting mobs, tracked dots, the cells seen
+least, and the order of the leads.
 Live: `ForeverControllerTrial --travel <x> <y>` and
 `--roam <x1> <y1> <x2> <y2> <kills>` (see the testing handover). On
 2026-10-04 in The Barrens, travel passed over 60 yards of open ground and over

@@ -9,7 +9,7 @@ public enum VisualGameError
     None = 0,
     /// <summary>"Target not in line of sight".</summary>
     LineOfSight = 1,
-    /// <summary>"You are too far away!": melee cannot reach the target.</summary>
+    /// <summary>"You are too far away!": melee, a body to loot or a unit to interact with is out of reach.</summary>
     TooFarAway = 2,
     /// <summary>"Out of range".</summary>
     OutOfRange = 3,
@@ -27,6 +27,12 @@ public enum VisualGameError
     Prevented = 9,
     /// <summary>The target is dead or cannot be attacked.</summary>
     BadTarget = 10,
+    /// <summary>"Inventory is full.": the bags have no room for the loot.</summary>
+    InventoryFull = 11,
+    /// <summary>The body is not the player's to loot: another's kill, already looted, or being looted.</summary>
+    LootRefused = 12,
+    /// <summary>"Requires Skinning 40" or "Skill not high enough".</summary>
+    SkillTooLow = 13,
 }
 
 /// <summary>The last game error message of a kind the runtime reacts to, latched with a sequence.</summary>
@@ -50,7 +56,7 @@ public static class VisualErrorReader
         int sequence = probe.Cell(Row, FirstCell);
         int code = probe.Cell(Row, FirstCell + 1);
         int marker = probe.Cell(Row, FirstCell + 2);
-        if (sequence is < 0 or > 65535 || code is < 0 or > (int)VisualGameError.BadTarget ||
+        if (sequence is < 0 or > 65535 || code is < 0 or > (int)VisualGameError.SkillTooLow ||
             (sequence == 0) != (code == 0) ||
             marker != ((Seed - sequence - code) & 0xFFFFFF))
             return null;

@@ -36,6 +36,9 @@ public sealed class MouseCameraInput : IDisposable
 
     public MouseCameraInput(WowProcess process) => this.process = process;
 
+    /// <summary>The game is the active window; a click elsewhere is how a person takes the PC back.</summary>
+    public bool HasFocus => WinAPI.NativeMethods.GetForegroundWindow() == process.MainWindowHandle;
+
     /// <summary>
     /// Brings the game window to the foreground, as a person's first click
     /// would; the game only follows a mouse it has focus for.

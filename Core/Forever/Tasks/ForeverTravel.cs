@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 
 using SharedLib;
 
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -10,28 +11,40 @@ namespace Core.Forever;
 /// <summary>
 /// Carries out <see cref="ForeverTravelTask"/>: a <see cref="ForeverWalker"/>
 /// through each point on the way to the destination, flowing through the
-/// points on the way, which a stuck walk may skip; the destination itself it
-/// does not give up. With <see cref="ForeverPulls.Any"/> it takes the units
-/// in view on the way, as hunting does.
+/// points on the way, which a stuck walk may skip. A walk to the destination
+/// that makes no progress is walked again from where the character stands,
+/// <see cref="LegTries"/> walks in all, before the travel fails and the
+/// agenda falls back. With <see cref="ForeverPulls.OnTheWay"/> it takes the
+/// units standing on its way, and with <see cref="ForeverPulls.Any"/> any unit
+/// in view, as hunting does.
 /// </summary>
 public sealed class ForeverTravel : IForeverTaskRunner
 {
     /// <summary>The destination counts as reached within this many yards.</summary>
     public const float ArriveYards = 3;
+    /// <summary>Walks to the destination, each from where the last one stalled, before the travel fails.</summary>
+    public const int LegTries = 3;
     /// <summary>A point on the way counts as passed within this many yards, so the walk flows through it.</summary>
     public const float ViaYards = 6;
+    /// <summary>
+    /// <see cref="ForeverPulls.OnTheWay"/>: a unit this near the way still to
+    /// walk stands on it, a few steps aside at most.
+    /// </summary>
+    public const float OnTheWayYards = 20;
+    /// <summary><see cref="ForeverPulls.OnTheWay"/>: how far ahead along the way a unit is taken.</summary>
+    public const float AheadYards = 80;
 
     private readonly ILogger logger;
     private readonly ForeverTravelTask task;
-    private readonly ForeverEngageActivity engage;
     private readonly ForeverNavigator navigator;
-    private readonly IForeverCombatRoutine combat;
-    private readonly ClassConfiguration config;
+    private readonly ForeverPulling pulling;
     private readonly WorldMapAreaDB maps;
     private readonly ForeverWalker walker;
 
     private List<(Vector2 World, ForeverMapPoint Map)>? legs;
     private int leg;
+    // Walks of the current leg so far.
+    private int tries;
     private string? failure;
 
     public ForeverTravel(ILogger logger, ForeverTravelTask task, ForeverEngageActivity engage,
@@ -39,10 +52,8 @@ public sealed class ForeverTravel : IForeverTaskRunner
     {
         this.logger = logger;
         this.task = task;
-        this.engage = engage;
         this.navigator = navigator;
-        this.combat = combat;
-        this.config = config;
+        pulling = new(logger, combat, config, engage, navigator);
         this.maps = maps;
         walker = new(logger, navigator);
     }
@@ -73,13 +84,17 @@ public sealed class ForeverTravel : IForeverTaskRunner
     {
         if (failure is not null)
             return ForeverActivityResult.Failed(failure);
-        if (task.Pulls == ForeverPulls.Any)
+        if (task.Pulls != ForeverPulls.None && bars.WorldPosition is { } world)
         {
-            switch (ForeverPulling.TryPull(bars, combat, config, engage, out string unusable))
+            Vector2 here = new((float)world.X, (float)world.Y);
+            Func<Vector2, bool>? onTheWay = task.Pulls == ForeverPulls.OnTheWay
+                ? point => walker.IsOnTheWay(here, point, OnTheWayYards, AheadYards)
+                : null;
+            switch (pulling.TryPull(bars, out string unusable, onTheWay))
             {
-                case ForeverPull.Unusable:
+                case ForeverPull.Failed:
                     return ForeverActivityResult.Failed(unusable);
-                case ForeverPull.Offered:
+                case ForeverPull.Offered or ForeverPull.Turning:
                     return ForeverActivityResult.Running;
             }
         }
@@ -94,11 +109,21 @@ public sealed class ForeverTravel : IForeverTaskRunner
                 leg++;
                 BeginLeg();
                 break;
+            // A point on the way the walk cannot get past is passed by.
             case ForeverWalkResult.Skipped:
+            case ForeverWalkResult.Failed when walker.NoProgress && leg < legs!.Count - 1:
                 if (logger.IsEnabled(LogLevel.Information))
                     logger.LogInformation("Forever travel skipped {Point} on the way: {Reason}", legs![leg].Map, reason);
                 leg++;
                 BeginLeg();
+                break;
+            // The destination is walked again from where the walk stalled.
+            case ForeverWalkResult.Failed when walker.NoProgress && tries < LegTries:
+                tries++;
+                if (logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation("Forever travel: {Reason}; walking again from here, walk {Try} of {Tries}",
+                        reason, tries, LegTries);
+                Walk();
                 break;
             case ForeverWalkResult.Failed:
                 return ForeverActivityResult.Failed(reason);
@@ -109,6 +134,12 @@ public sealed class ForeverTravel : IForeverTaskRunner
     public void Exit() => walker.Stop();
 
     private void BeginLeg()
+    {
+        tries = 1;
+        Walk();
+    }
+
+    private void Walk()
     {
         bool final = leg == legs!.Count - 1;
         walker.Begin(legs[leg].World, final ? ArriveYards : ViaYards, mayGiveUp: !final, legs[leg].Map.ToString());

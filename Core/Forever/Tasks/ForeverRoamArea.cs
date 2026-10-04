@@ -5,19 +5,22 @@ using SharedLib;
 using System;
 using System.Numerics;
 
+using static System.Diagnostics.Stopwatch;
+
 namespace Core.Forever;
 
 public enum ForeverRoamState { Idle, Walk, Look, Failed }
 
 /// <summary>
-/// Carries out <see cref="ForeverRoamAreaTask"/>: from outside, walks into
-/// the area to the nearest reachable spot; inside, looks round, walks to the
-/// next spot (<see cref="ForeverSpotPicker"/>) and looks round again, until
-/// the task's condition holds. Units in view are taken on the walk and while
-/// looking, unless the task says otherwise, and fought by
-/// <see cref="ForeverEngageActivity"/>. The roam keeps its place meanwhile:
-/// afterwards it walks on toward the same spot, back into the area when a
-/// fight led out of it.
+/// Carries out <see cref="ForeverRoamAreaTask"/> as a patrol: from outside,
+/// walks into the area to the nearest reachable spot; inside, takes whatever
+/// the camera shows, on the walk and while looking round, until nothing is
+/// left in view, and with nothing in view walks where <see cref="ForeverPatrol"/>
+/// leads: a mob seen lately, a dot of the minimap's tracking, or the part of
+/// the area seen least; there it looks round again. Units are taken unless
+/// the task says otherwise, and fought by <see cref="ForeverEngageActivity"/>.
+/// After a kill it looks round first; after anything else it walks on toward
+/// the same place, back into the area when a fight led out of it.
 /// </summary>
 public sealed class ForeverRoamArea : IForeverTaskRunner
 {
@@ -37,8 +40,9 @@ public sealed class ForeverRoamArea : IForeverTaskRunner
     private readonly ForeverRoamAreaTask task;
     private readonly ForeverEngageActivity engage;
     private readonly ForeverNavigator navigator;
-    private readonly IForeverCombatRoutine combat;
     private readonly ClassConfiguration config;
+    private readonly ForeverPulling pulling;
+    private readonly ForeverMobMemory memory;
     private readonly WorldMapAreaDB maps;
     private readonly ForeverWalker walker;
     private readonly ForeverStateMachine<ForeverRoamState> machine;
@@ -46,20 +50,27 @@ public sealed class ForeverRoamArea : IForeverTaskRunner
 
     private ForeverWorldArea? area;
     private ForeverSpotPicker? picker;
+    private ForeverPatrol? patrol;
+    // Where the walk is heading for, when the patrol sent it.
+    private ForeverPatrolGoal? goal;
+    private long lookBegan;
+    private long lastKillSeen;
     private int skipsInARow;
     private int emptyPicks;
     // The frame the mesh queries of a pick read the player's position from.
     private VisualBarSample frame;
 
     public ForeverRoamArea(ILogger logger, ForeverRoamAreaTask task, ForeverEngageActivity engage,
-        ForeverNavigator navigator, IForeverCombatRoutine combat, ClassConfiguration config, WorldMapAreaDB maps)
+        ForeverNavigator navigator, IForeverCombatRoutine combat, ClassConfiguration config, WorldMapAreaDB maps,
+        ForeverMobMemory memory)
     {
         this.logger = logger;
         this.task = task;
         this.engage = engage;
         this.navigator = navigator;
-        this.combat = combat;
         this.config = config;
+        pulling = new(logger, combat, config, engage, navigator);
+        this.memory = memory;
         this.maps = maps;
         walker = new(logger, navigator);
         // Walking allows what the walk allows; looking round, nothing.
@@ -69,7 +80,7 @@ public sealed class ForeverRoamArea : IForeverTaskRunner
             .On(ForeverRoamState.Walk, Walk, exits: [ForeverRoamState.Look],
                 exit: navigator.StopPursuit)
             .On(ForeverRoamState.Look, Look, exits: [ForeverRoamState.Walk],
-                enter: lookAround.Reset, exit: navigator.StopPursuit)
+                enter: BeginLook, exit: navigator.StopPursuit)
             .On(ForeverRoamState.Failed, enter: navigator.StopPursuit);
     }
 
@@ -98,14 +109,21 @@ public sealed class ForeverRoamArea : IForeverTaskRunner
             case ForeverRoamState.Idle:
                 SetOff(bars, approach: true);
                 break;
-            // After a fight or a rest: on toward the same spot, or a fresh circle.
+            // After a kill: look round first, so what stands near is taken
+            // before walking on.
+            case ForeverRoamState.Walk when facts.LastKillAt != lastKillSeen:
+                walker.Stop();
+                machine.Go(ForeverRoamState.Look);
+                break;
+            // After anything else: on toward the same place, or a fresh circle.
             case ForeverRoamState.Walk:
                 walker.Resume();
                 break;
             case ForeverRoamState.Look:
-                lookAround.Reset();
+                BeginLook();
                 break;
         }
+        lastKillSeen = facts.LastKillAt;
     }
 
     public ForeverActivityResult Update(VisualBarSample bars, in ForeverFacts facts, ForeverTaskProgress done)
@@ -171,6 +189,7 @@ public sealed class ForeverRoamArea : IForeverTaskRunner
         int seed = task.Seed ?? Random.Shared.Next();
         area = resolved;
         picker = new(resolved, seed);
+        patrol = new(resolved, memory);
         if (logger.IsEnabled(LogLevel.Information))
             logger.LogInformation("Forever roam of the {Area}: seed {Seed}, spots at least {Spacing:0} yards apart",
                 task.Area, seed, picker.Spacing);
@@ -181,14 +200,22 @@ public sealed class ForeverRoamArea : IForeverTaskRunner
     {
         if (TookUnit(bars))
             return;
+        // What lies ahead of the walk counts as seen.
+        patrol!.Cover(Here(bars), ForeverPatrol.PassYards, GetTimestamp());
         switch (walker.Update(bars, out string reason))
         {
             case ForeverWalkResult.Arrived:
                 walker.Stop();
                 skipsInARow = 0;
+                // A mob or a dot led here and nothing was taken on the way:
+                // the look round decides, and the place is passed over a while.
+                if (goal is { Lead: not ForeverPatrolLead.Uncovered } led)
+                    patrol.Visited(led.Mark, GetTimestamp());
                 machine.Go(ForeverRoamState.Look);
                 break;
+            // A spot the walk cannot get to is given up for another.
             case ForeverWalkResult.Skipped:
+            case ForeverWalkResult.Failed when walker.NoProgress:
                 if (++skipsInARow >= MaxSkipsInARow)
                 {
                     machine.Fail($"no spot in the {task.Area} could be reached: {reason}");
@@ -196,6 +223,8 @@ public sealed class ForeverRoamArea : IForeverTaskRunner
                 }
                 if (logger.IsEnabled(LogLevel.Information))
                     logger.LogInformation("Forever roam gave up a spot it could not reach: {Reason}", reason);
+                if (goal is { } given)
+                    patrol.Visited(given.Mark, GetTimestamp());
                 SetOff(bars, approach: !area!.Contains(Here(bars)));
                 break;
             case ForeverWalkResult.Failed:
@@ -215,34 +244,57 @@ public sealed class ForeverRoamArea : IForeverTaskRunner
                 machine.Fail(turnReason);
             return;
         }
-        // A full look-around found nothing to take: on to the next spot.
+        // A full look round found nothing to take: everything within sight of
+        // here is seen, and a mob remembered near here did not show again.
+        Vector2 here = Here(bars);
+        patrol!.Cover(here, ForeverPatrol.LookYards, GetTimestamp());
+        memory.Forget(here, ForeverPatrol.LookYards, lookBegan);
         navigator.StopPursuit();
-        SetOff(bars, approach: !area!.Contains(Here(bars)));
+        SetOff(bars, approach: !area!.Contains(here));
+    }
+
+    private void BeginLook()
+    {
+        lookAround.Reset();
+        lookBegan = GetTimestamp();
     }
 
     // Units in view are taken unless the task says otherwise; an attack the
     // client cannot use stops the run first, as before every pull.
     private bool TookUnit(VisualBarSample bars)
     {
-        if (task.Pulls != ForeverPulls.Any)
+        if (task.Pulls == ForeverPulls.None)
             return false;
-        switch (ForeverPulling.TryPull(bars, combat, config, engage, out string unusable))
+        switch (pulling.TryPull(bars, out string unusable))
         {
-            case ForeverPull.Unusable:
+            case ForeverPull.Failed:
                 machine.Fail(unusable);
                 return true;
-            case ForeverPull.Offered:
+            case ForeverPull.Offered or ForeverPull.Turning:
                 return true;
             default:
                 return false;
         }
     }
 
-    // Draws the next spot, or from outside the nearest one inside, and sets
-    // the walk toward it; with none, looks round again and draws anew.
+    // From outside, the nearest spot inside; inside, where the patrol leads,
+    // or a drawn spot when it leads nowhere. Sets the walk toward it; with
+    // none, looks round again and draws anew.
     private void SetOff(VisualBarSample bars, bool approach)
     {
         frame = bars;
+        goal = null;
+        if (!approach && patrol!.TryNext(bars, config, engage.Exclusions, Snap, Reachable, GetTimestamp(),
+                out ForeverPatrolGoal lead))
+        {
+            goal = lead;
+            emptyPicks = 0;
+            Say(lead, Here(bars));
+            walker.Begin(lead.Where, SpotYards, mayGiveUp: true, Name(lead.Lead));
+            if (machine.State != ForeverRoamState.Walk)
+                machine.Go(ForeverRoamState.Walk);
+            return;
+        }
         Vector2? spot = approach
             ? picker!.Nearest(Here(bars), Snap, Reachable)
             : picker!.Next(Snap, Reachable);
@@ -263,6 +315,23 @@ public sealed class ForeverRoamArea : IForeverTaskRunner
         walker.Begin(next, SpotYards, mayGiveUp: true, $"a spot in the {task.Area}");
         if (machine.State != ForeverRoamState.Walk)
             machine.Go(ForeverRoamState.Walk);
+    }
+
+    private string Name(ForeverPatrolLead lead) => lead switch
+    {
+        ForeverPatrolLead.Remembered => $"a mob seen in the {task.Area}",
+        ForeverPatrolLead.Tracked => $"a tracked dot in the {task.Area}",
+        _ => $"the part of the {task.Area} seen least",
+    };
+
+    // Says where the patrol leads and why, once per walk.
+    private void Say(ForeverPatrolGoal next, Vector2 here)
+    {
+        if (!logger.IsEnabled(LogLevel.Information))
+            return;
+        (int seen, int cells) = patrol!.Coverage;
+        logger.LogInformation("Forever roam: nothing in view; heading for {Lead}, {Yards:0} yards off ({Seen} of {Cells} cells seen)",
+            Name(next.Lead), Vector2.Distance(here, next.Where), seen, cells);
     }
 
     private Vector2? Snap(Vector2 hint) => navigator.TrySnapWalkable(frame, hint, out Vector2 spot) ? spot : null;

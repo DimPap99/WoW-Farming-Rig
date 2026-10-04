@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging;
 
+using System.Numerics;
+
 using static System.Diagnostics.Stopwatch;
 
 namespace Core.Forever;
@@ -7,11 +9,14 @@ namespace Core.Forever;
 public enum ForeverThreatState { Idle, Watch, Failed }
 
 /// <summary>
-/// In combat with nothing engaged: find what fights the player. A selected
-/// unit that fights in reach is adopted as it is; otherwise an attacking
-/// plate is clicked. While combat only lingers, a person stands and waits
-/// for it to drop; only while taking damage do they turn round to find the
-/// attacker out of view. Upstream's FindThreatGoal does this job there.
+/// In combat with nothing engaged: find what fights the player or the pet,
+/// whatever its level. A selected unit that fights in reach is adopted as it
+/// is; otherwise an attacking plate is clicked. An attacker whose plate shows
+/// no marker, as one that went for the pet behind the player, is turned to at
+/// once, toward where it was last seen. While combat only lingers, a person
+/// stands and waits for it to drop; only while taking damage from something
+/// no plate shows do they turn round to find it. Upstream's FindThreatGoal
+/// does this job there.
 /// </summary>
 public sealed class ForeverThreatActivity : IForeverActivity
 {
@@ -32,17 +37,20 @@ public sealed class ForeverThreatActivity : IForeverActivity
     private readonly ForeverNavigator navigator;
     private readonly IForeverCombatRoutine combat;
     private readonly ClassConfiguration config;
+    private readonly ForeverCorpses sightings;
     private readonly ForeverStateMachine<ForeverThreatState> machine;
     private readonly ForeverLookAround lookAround = new();
     private ForeverFacts facts;
 
     public ForeverThreatActivity(ILogger<ForeverThreatActivity> logger, ForeverEngageActivity engage,
-        ForeverNavigator navigator, IForeverCombatRoutine combat, ClassConfiguration config)
+        ForeverNavigator navigator, IForeverCombatRoutine combat, ClassConfiguration config,
+        ForeverCorpses sightings)
     {
         this.engage = engage;
         this.navigator = navigator;
         this.combat = combat;
         this.config = config;
+        this.sightings = sightings;
         machine = new ForeverStateMachine<ForeverThreatState>(logger, "Forever threat",
                 ForeverThreatState.Idle, ForeverThreatState.Failed)
             .On(ForeverThreatState.Idle, exits: [ForeverThreatState.Watch])
@@ -86,6 +94,14 @@ public sealed class ForeverThreatActivity : IForeverActivity
             machine.Go(ForeverThreatState.Idle);
     }
 
+    /// <summary>Finding the attackers failed: while combat lasts, the watch begins afresh.</summary>
+    public string FallBack(string reason)
+    {
+        navigator.StopPursuit();
+        machine.Reset();
+        return "the attackers are looked for afresh";
+    }
+
     private void Watch(VisualBarSample bars)
     {
         // Aggro can begin before our first cast: a selected unit in reach is
@@ -97,10 +113,23 @@ public sealed class ForeverThreatActivity : IForeverActivity
             engage.Adopt(bars, selected);
             return;
         }
-        // In combat the policy offers only plates that fight the player.
-        if (ForeverTargetPolicy.TryChoose(bars, config, combat, engage.Exclusions, out VisualNameplate chosen))
+        // Only plates that fight the player or the pet, whatever their level.
+        if (ForeverTargetPolicy.TryChooseAttacker(bars, config, combat, out VisualNameplate chosen))
         {
             engage.Offer(chosen);
+            return;
+        }
+        // An attacker no marker shows, as one on the pet behind the player:
+        // turn to it now, toward where it was last seen, else on round, until
+        // its plate shows, whether or not it hits the player.
+        if (ForeverTargetPolicy.TryAttackerOutOfView(bars, config, out VisualNameplate unseen))
+        {
+            double rate = sightings.TryLocate(unseen.GuidHash1, unseen.GuidHash2, out Vector2 near, out Vector2 far) &&
+                ForeverNavigator.TurnRateToward(bars, Vector2.Lerp(near, far, 0.5f), CombatLookAroundRate) is { } toward
+                    ? toward
+                    : CombatLookAroundRate;
+            if (navigator.TurnInPlace(bars, rate, out string unseenReason) == ForeverNavigationResult.Failed)
+                machine.Fail(unseenReason);
             return;
         }
         if (facts.LastKillAt != 0 && GetElapsedTime(facts.LastKillAt).TotalMilliseconds < CombatLingersMs)

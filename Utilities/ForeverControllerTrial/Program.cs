@@ -204,6 +204,9 @@ try
 
     IWowScreen screen = provider.GetRequiredService<IWowScreen>();
     ForeverVisualBarTracker tracker = provider.GetRequiredService<ForeverVisualBarTracker>();
+    // A capture the bars cannot be read from is kept beside the live logs, when there are any.
+    if (Directory.Exists(Path.Combine("local", "logs")))
+        tracker.UnreadableFrameFolder = Path.GetFullPath(Path.Combine("local", "logs"));
     bool ready = false;
     int classId = 0;
     int uiMapId = 0;
@@ -224,7 +227,10 @@ try
     }
     if (!ready)
     {
-        Console.Error.WriteLine("No complete fresh Forever trial frame; no input sent.");
+        string missing = tracker.TryGetLatest(out VisualBarSample last)
+            ? $"{ForeverFrame.MissingTrialInput(last)} did not read"
+            : tracker.Problem;
+        Console.Error.WriteLine($"No complete fresh Forever trial frame ({missing}); no input sent.");
         return 2;
     }
     if (travel is [double travelX, double travelY])
@@ -297,7 +303,13 @@ try
         }
         Console.WriteLine("Autonomous current-position preflight passed.");
         if (!run)
+        {
+            IReadOnlyList<ForeverPullOption> pulls = automatic.PullOptions();
+            Console.WriteLine(pulls.Count == 0
+                ? "Pull options now: none in view."
+                : "Pull options now, the best first: " + string.Join("; ", pulls) + ".");
             return 0;
+        }
 
         // The run steers and clicks with the mouse, which the game follows only
         // while it is the active window; Windows will not hand that over to a
@@ -336,7 +348,7 @@ try
                         $"cast={current.LastCastEvent}, death={current.LastDeathEvent}, loot={current.Loot}, " +
                         $"frameReady={ForeverFrame.HasTrialInputs(current)}");
                 else
-                    Console.WriteLine("  visual frame unavailable");
+                    Console.WriteLine($"  visual frame unavailable: {tracker.Problem}");
                 nextSnapshot = DateTime.UtcNow.AddSeconds(2);
             }
             Thread.Sleep(100);

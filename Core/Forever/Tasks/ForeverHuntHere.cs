@@ -21,10 +21,8 @@ public sealed class ForeverHuntHere : IForeverTaskRunner
     private const int RoamMs = 8000;
 
     private readonly ForeverHuntHereTask task;
-    private readonly ForeverEngageActivity engage;
     private readonly ForeverNavigator navigator;
-    private readonly IForeverCombatRoutine combat;
-    private readonly ClassConfiguration config;
+    private readonly ForeverPulling pulling;
     private readonly ForeverStateMachine<ForeverHuntHereState> machine;
     private readonly ForeverLookAround lookAround = new();
     private long roamSince;
@@ -34,10 +32,8 @@ public sealed class ForeverHuntHere : IForeverTaskRunner
         ForeverNavigator navigator, IForeverCombatRoutine combat, ClassConfiguration config)
     {
         this.task = task;
-        this.engage = engage;
         this.navigator = navigator;
-        this.combat = combat;
-        this.config = config;
+        pulling = new(logger, combat, config, engage, navigator);
         // Walking hops when snagged, and now and then for no reason.
         machine = new ForeverStateMachine<ForeverHuntHereState>(logger, "Forever hunt here",
                 ForeverHuntHereState.Idle, ForeverHuntHereState.Failed)
@@ -82,12 +78,12 @@ public sealed class ForeverHuntHere : IForeverTaskRunner
     {
         // Before the next pull: an attack the client cannot use, such as a
         // shot without ammo, stops the run with why.
-        switch (ForeverPulling.TryPull(bars, combat, config, engage, out string unusable))
+        switch (pulling.TryPull(bars, out string unusable))
         {
-            case ForeverPull.Unusable:
+            case ForeverPull.Failed:
                 machine.Fail(unusable);
                 return;
-            case ForeverPull.Offered:
+            case ForeverPull.Offered or ForeverPull.Turning:
                 return;
         }
         if (!lookAround.Turned(bars))

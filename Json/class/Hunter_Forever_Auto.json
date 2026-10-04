@@ -11,8 +11,14 @@
   // Forever reads auras and cooldowns for slots 1 to 12 only. The spell IDs
   // name rank 1; at start-up each action takes the rank its slot holds.
   "Loot": true,
+  // Skin each body once its loot is taken, where the game allows it (a
+  // skinnable beast, enough Skinning skill); false leaves the bodies.
+  "Skin": true,
   "UseMount": false,
   "AutoPetAttack": true,
+  // Mobs up to two levels above are pulled too, preferring one on its own;
+  // whatever attacks the player or the pet is fought at any level.
+  "NPCMaxLevels_Above": 2,
   "Paths": [],
   "Combat": {
     "Sequence": [

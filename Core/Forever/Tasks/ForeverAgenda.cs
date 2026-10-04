@@ -28,9 +28,16 @@ public sealed class ForeverTaskProgress
 /// task that was current when they were verified. Code adds tasks with
 /// <see cref="Add"/>; the run finishes when the last task is done, or, for an
 /// agenda that repeats, starts over with the first, as a farming loop does.
+/// A task that fails is given up and the next one starts (<see cref="GiveUp"/>).
 /// </summary>
 public sealed class ForeverAgenda
 {
+    /// <summary>
+    /// How long the run hunts where it stands before it tries again the last
+    /// task of an agenda that it gave up.
+    /// </summary>
+    public const double FallbackMinutes = 3;
+
     private readonly List<ForeverTask> tasks;
     private readonly bool repeat;
     private int index;
@@ -52,8 +59,40 @@ public sealed class ForeverAgenda
     /// <summary>Times a repeating agenda has started over.</summary>
     public int Laps { get; private set; }
 
+    /// <summary>Tasks done, and tasks given up, in this run.</summary>
+    public int Completed { get; private set; }
+    public int GivenUp { get; private set; }
+
     /// <summary>Appends <paramref name="task"/> after the tasks already planned.</summary>
     public void Add(ForeverTask task) => tasks.Add(task);
+
+    /// <summary>The current task is done; the next one starts with fresh progress.</summary>
+    public void Complete()
+    {
+        Completed++;
+        Advance();
+    }
+
+    /// <summary>
+    /// The current task failed and is given up: the next one starts, the next
+    /// bigger goal, as a person who cannot get to one place goes on to the
+    /// next. When it was the last task of an agenda that does not repeat,
+    /// nothing is left above it but itself: the run hunts where it stands for
+    /// <see cref="FallbackMinutes"/>, then tries it again, and is never left
+    /// with nothing to do.
+    /// </summary>
+    public void GiveUp()
+    {
+        if (Current is not { } failed)
+            return;
+        GivenUp++;
+        if (!repeat && index == tasks.Count - 1)
+        {
+            tasks.Add(ForeverTasks.HuntHere(ForeverUntil.AfterMinutes(FallbackMinutes)));
+            tasks.Add(failed);
+        }
+        Advance();
+    }
 
     /// <summary>Ends the current task; the next one starts with fresh progress.</summary>
     public void Advance()
@@ -73,7 +112,8 @@ public sealed class ForeverAgenda
     /// <summary>Which task runs and how far it got, for the trial runner.</summary>
     public string Describe() => Current is not { } task
         ? "agenda done"
-        : $"task {index + 1} of {tasks.Count}{(Laps > 0 ? $", lap {Laps + 1}" : string.Empty)}: {task.Name} ({Progress})";
+        : $"task {index + 1} of {tasks.Count}{(Laps > 0 ? $", lap {Laps + 1}" : string.Empty)}" +
+          $"{(GivenUp > 0 ? $", {GivenUp} given up" : string.Empty)}: {task.Name} ({Progress})";
 
     /// <summary>
     /// The run's tasks when the options name them. Otherwise what the bounded

@@ -1,0 +1,13 @@
+{
+  // To the Crossroads from west of it, clearing what stands on the way: the
+  // travel takes only the units near the path ahead ("Pulls": "OnTheWay"),
+  // fights whatever attacks, loots and, with the profile's "Skin", skins each
+  // body, rests when low, and walks on. Run it with
+  //   dotnet run --project Utilities/ForeverControllerTrial -- --route crossroads_trip.json
+  "Name": "To the Crossroads, clearing the way",
+  "UIMapId": 1413,
+  "Steps": [
+    { "Travel": { "To": [51.9, 29.9], "Pulls": "OnTheWay" } }
+  ],
+  "Repeat": false
+}

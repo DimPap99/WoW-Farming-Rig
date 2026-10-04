@@ -11,14 +11,17 @@ namespace Core.Goals;
 /// One-capture preflight for a guarded Forever action from the class profile:
 /// the profile's spell is ready on its main-bar slot and bound to the key the
 /// profile names, on a verified setup. A targeted action also needs a living,
-/// attackable, non-player target in the slot's range. When to use an action
-/// is the profile's requirements; this gate only decides whether pressing it
-/// now is safe.
+/// attackable, non-player target in the slot's range, no more than
+/// <c>maxLevelsAbove</c> above the player unless it fights the player or the
+/// pet. When to use an action is the profile's requirements; this gate only
+/// decides whether pressing it now is safe.
 /// </summary>
 public static class ForeverCastGate
 {
     /// <param name="selfCast">The action affects the player, so the target is not checked.</param>
-    /// <param name="maxLevelsAbove">The profile's <see cref="ClassConfiguration.NPCMaxLevels_Above"/>.</param>
+    /// <param name="maxLevelsAbove">The profile's <see cref="ClassConfiguration.NPCMaxLevels_Above"/>,
+    /// which keeps the run from opening on a unit too strong for it; one that
+    /// already fights back is fought whatever its level.</param>
     public static bool CanPress(VisualBarSample sample, KeyAction action, SpellDB spells,
         bool selfCast = false, int maxLevelsAbove = ForeverFrame.DefaultMaxTargetLevelsAbove)
     {
@@ -44,7 +47,7 @@ public static class ForeverCastGate
         return ForeverFrame.HasTargetIdentity(sample) &&
             sample.TargetIdentity is { IsPlayer: false } identity &&
             sample.PlayerIdentity is { } player &&
-            identity.Level <= player.Level + maxLevelsAbove &&
+            (identity.Level <= player.Level + maxLevelsAbove || ForeverTargetPolicy.TargetAttacks(sample)) &&
             sample.TargetHealth > 0 &&
             flags is { Present: true, Attackable: true, Dead: false } &&
             (flags.PlayerCombat || ForeverFrame.CanOpenFight(sample, inCombat: false)) &&

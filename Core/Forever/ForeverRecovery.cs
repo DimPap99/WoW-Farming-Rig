@@ -22,7 +22,8 @@ public enum ForeverSetback
 /// the search starts again, as a person gives up on a mob across a ravine and
 /// picks another. In combat only a selection may be retried, since the unit
 /// fighting the player stays a threat; any other setback in combat, and more
-/// than <see cref="Budget"/> setbacks without a kill, stop the run.
+/// than <see cref="Budget"/> setbacks without a kill, fail the engagement,
+/// which the run falls back from (<see cref="ForeverSetbacks"/>).
 /// </summary>
 public sealed class ForeverRecovery
 {

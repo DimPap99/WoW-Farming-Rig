@@ -74,7 +74,7 @@ internal sealed class SyntheticPanel(int width, int height, double scale, int le
     public SyntheticPanel WithCalibration()
     {
         Bar(3, 0.5, new Bgra32(255, 255, 0));
-        Bar(4, 1.0, new Bgra32(255, 255, 255));
+        Bar(4, 1.0, new Bgra32(255, 0, 255));
         return this;
     }
 
@@ -328,7 +328,10 @@ internal static class NameplateSelfTest
             Check(Read(panel).LastError is null, "damaged error checksum refused" + at);
             panel.Error(0, (int)VisualGameError.OutOfRange);
             Check(Read(panel).LastError is null, "an error kind without a sequence refused" + at);
-            panel.Error(6, 11);
+            panel.Error(6, (int)VisualGameError.InventoryFull);
+            Check(Read(panel).LastError is { Sequence: 6, Error: VisualGameError.InventoryFull },
+                $"full bags message{at}: {Read(panel).LastError}");
+            panel.Error(7, 14);
             Check(Read(panel).LastError is null, "an unknown error kind refused" + at);
 
             // The pet: there or not, dead or alive, and the unit it attacks.

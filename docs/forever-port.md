@@ -190,7 +190,8 @@ Forever-owned code:
   `ForeverCorpses` (the bodies of a fight and where they fell), `ForeverLoot`
   (the loot round after it), `ForeverNavigator` (also `IForeverFacing`),
   `ForeverHops` (when walking hops), `ForeverDragPoint` (where a camera drag may begin),
-  `ForeverTargetPolicy` (which units to fight, which plate next),
+  `ForeverTargetPolicy` (which units to fight, which attacker next),
+  `ForeverPullOptions` (which pull, by cost),
   `ForeverTargetSelector`, `ForeverPointAndClick` (aim, confirm, click,
   confirm), `ForeverExclusions` (units set aside for a while),
   `ForeverRecovery` (what a setback with one unit costs),
@@ -1848,6 +1849,227 @@ yards and in map coordinates, and the one along the target's bearing;
 `--read <png>` does the same for a saved capture.
 
 Offline, `--logic-test` has 244 checks.
+
+### Fighting back, and choosing pulls by cost (2026-10-04)
+
+The first roam test (`--roam`, west of the Crossroads) pulled a mob, and a
+second, hostile mob joined on the pet. The first died; the second killed the
+pet and went for the player, and the bot never attacked it: for 30 seconds
+Threat stood still, then turned round and round while taking damage, until the
+run was stopped. The second mob was almost certainly above the profile's level
+window (`NPCMaxLevels_Above` 1), and the window applied to attackers too, in
+three places: which plates count as eligible (so `TryChoose` passed it over
+and `AttackedByAnother` ignored it, both by design and with a check saying
+so), the selected unit's eligibility, and `ForeverCastGate`'s level cap,
+which refuses every press on such a target. What changed:
+
+- **Fight back whatever the level.** A unit that fights the player or the pet
+  (`VisualNameplate.Attacks`) only has to be attackable, alive and not a
+  player (`ForeverTargetPolicy.IsDefendable`); the level window, `TargetMask`
+  and the tap decide only what the run pulls. The selected unit follows its
+  own plate (`TargetAttacks`), and the cast gate's cap applies only while the
+  target does not fight back. The user's rule: "if 2 mobs get pulled u should
+  kill them both".
+- **No spinning while an attacker is known.** In combat Threat takes the
+  attacker it can click (`TryChooseAttacker`); an attacker whose plate shows no
+  marker, as one on the pet behind the player, is turned to at once, toward
+  where it was last seen (`ForeverNavigator.TurnRateToward`), whether or not
+  it hits the player. The look-around while taking damage remains for
+  attackers no plate shows.
+- **Pulls by cost.** Out of combat `ForeverPullOptions` lists every unit the
+  run could pull and orders them: first the fewest hostile units within 20
+  yards that could join the fight, then the least effort (its distance, 40
+  when the camera cannot see it, 10 out of reach, 5 per level above, 5 for a
+  click); each pull logs its options. The user asked for this: "aim for mobs
+  that are alone ... if a yellow mob is near a red, u go for the red first
+  then the yellow ... if 2 reds are together u try to pull only 1", as "a
+  class/method that ... resolves what is the most beneficial based on some
+  cost analysis ... present with the options". A first version added the
+  parts into one cost and refused pulls above a ceiling; the user saw the
+  flaw ("even if i want to get to a mob i avoid getting there in the first
+  place cause the cost model tells me its not worth it"): distance and level
+  then decided whether a mob was taken at all, from estimates that are rough
+  far off. Now the order never refuses: what may be pulled is the profile's
+  and the target policy's to say, and a lone mob a level or two above is
+  pulled however far ("if a mob is a level above me or 2 but theres nothing
+  else around that doesnt mean i shouldnt fight it"); the Hunter profile's
+  `NPCMaxLevels_Above` is 2 for that. Details in
+  [forever-tasks.md](forever-tasks.md).
+- **A pull on its own.** When another hostile unit stands near the mob, the
+  Hunter keeps the pet back: the opener draws the mob to the player, and the
+  pet goes in once the mob fights.
+
+Units are placed as the bodies are: the marker's bearing and the range flags'
+band, or the minimap's tracked dot along the bearing. Not yet used: tracked
+dots without a plate (a hostile unit beyond plate distance or behind the
+camera); that needs the dot's colour kept with its position. Nor is the way
+to the mob weighed, such as hostile units the pet would pass on its run in.
+
+Offline, `--logic-test` has 263 checks.
+
+Live, the second roam test (2026-10-04, west of the Crossroads) killed two
+hostile mobs, the second one joining the first and fought right after the
+first kill. Then it walked between random spots for two minutes with no
+nameplate in range while the minimap showed tracked mobs farther out, and
+the user stopped it. Their rule for "wander mode": what the camera shows is
+killed first, until nothing is in view; then go where the minimap's tracking
+shows mobs; with neither, go to the part of the area covered least; and "this
+should be in the context of a API. there should be methods that resolve
+that". Built as `ForeverPatrol` (`TryRemembered`, `TryTracked`,
+`TryLeastCovered`, `TryNext` in that order) with `ForeverMobMemory`, which
+remembers every plate the camera showed so any class can go back to a mob out
+of view; see [forever-movement.md](forever-movement.md), "Where the patrol
+leads". The roam now looks round after each kill.
+
+The same run had four failed selections at its start (two "the unit selected
+is not the eligible candidate", two "the candidate's nameplate is gone"), new
+in this run. The log could not say which check refused the unit: the
+selection now waits 600 ms for the target's rows to agree with the plate
+that confirmed it, and a failure names the check, the target's identity and
+the candidate's plate (level, reaction, where its marker was).
+
+The third roam run (north-west Barrens) stopped after 26 seconds with two
+failed selections, and the new reasons named them: both candidates' markers
+lay at the right edge of the screen, one on the minimap (0.91, 0.89) and one
+at the edge (0.99, 0.84). The look round turned them into view at the edge
+and the run went for them at once; the minimap took the click, and the edge
+clipped the marker out of sight. A person would turn to face the mob first,
+and the run now does: a click goes only to a marker in the middle of the
+screen, clear of the edges and the default interface
+(`ForeverTargetPolicy.Clickable`), and when the best pull stands at the side
+the run stops, turns to face it and then clicks (`ForeverPull.Turning`). In
+combat an attacker beside the middle is turned to, toward where it was last
+seen, rather than clicked, and one low on screen between the clickable sides
+is still taken when no other is.
+
+Offline, `--logic-test` has 272 checks.
+
+**A trip with everything on it.** The user asked for one scenario that uses
+the API end to end: travel to the Crossroads, clearing the mobs on the way,
+looting and skinning each body, as an optional profile flag. Built for it:
+`ForeverPulls.OnTheWay` (a travel takes only units within 20 yards of the
+path still to walk, over its next 80; `ForeverWalker.IsOnTheWay`, passed to
+`ForeverPulling.TryPull` as a filter on each option's place, which
+`ForeverPullOption.At` now carries), and skinning in `ForeverLoot` behind the
+profile's `"Skin"` (upstream's flag): the Interact Key again on the emptied
+body, the Skinning cast and its window, or the body left when the game does
+not allow it. The route is `Json/path/_forever/crossroads_trip.json`; the
+Hunter profile has `"Skin": true`. Handing in a quest at the end has no code
+yet (quests come later, see below) and is left to the user.
+
+Offline, `--logic-test` has 276 checks.
+
+Live, the trip (`5-crossroads`) walked toward the Crossroads and pulled
+three lone neutral mobs on its way, each by the cost order, and walked on
+after each fight, until the user stopped it. It looted none: both bodies it
+looked for were melee kills, whose line runs from where the player stood to
+8 yards ahead, and the round reached the line's end in about two seconds and
+gave the body up, the Interact Key's soft target never having shown it (in
+the passing run 2a the body was found 11 yards off). The round now turns
+round once at the end of the line before giving a body up, and a body of the
+fight that the key finds with nothing on it is done, or skinned, instead of
+walked past.
+
+Offline, `--logic-test` has 277 checks.
+
+The second trip (`5-crossroads2`) got to the Crossroads with two kills on
+the way, and skinned the first body, but looted neither. The Interact Key
+found both bodies, and `CanLootUnit` read false for both, which a first
+version took for "nothing on it": it went straight to skinning. On the first
+body the press opened its loot window (one item, which closed untaken), on
+the second nothing came of it. `CanLootUnit` reads false out of reach too, as
+the looting notes of 2026-10-04 above found. The round now trusts the key:
+it presses on a body of the fight the key finds, steps closer on "too far
+away", loots first and skins after; see [forever-activities.md](forever-activities.md).
+
+Offline, `--logic-test` has 280 checks.
+
+The third trip, from Ratchet after a client restart, walked 75 yards and then
+stood on one spot for 20 seconds until the walk gave up: no unstick step ran.
+The path was complete (1,336 yards to the Crossroads); the step's own
+3-yard look-ahead failed. `TryWalkStraight` refuses a start more than half a
+yard from the walkable surface, which the mesh keeps a character's width from
+walls and objects, and the navigator answered a failed look-ahead with a
+standing turn that never ended. The look-ahead is now judged from the nearest
+walkable point within 2 yards, and facing the way with no walkable way ahead
+reports `Blocked`, so the walker's unstick ladder runs
+([forever-movement.md](forever-movement.md), "Getting unstuck").
+
+The fourth trip walked out of Ratchet and pulled a neutral level 16 mob; the
+pet held it to about 29%, then the fight stalled in the hunter's dead zone,
+too close for the bow and not in melee reach, the pet died, and the player
+fell to 23% while the bot moved about 80 yards with the mob behind it: the
+approach's local search walked forward looking for a target that stood at
+its back. The user stopped it and gave the rule: prefer range while the mob is
+not on you, melee only when it is or without ammo, back to range when it
+leaves you. Built as the fight's stance (`ForeverStance`, `ForeverRotation.Stance`,
+the `StepBack` step and `ForeverNavigator.StepBack`); a close target out of
+view is turned to, never searched for on foot. See
+[forever-activities.md](forever-activities.md), "Ranged or melee: the stance".
+
+Offline, `--logic-test` has 288 checks.
+
+The fifth trip stopped itself in its first fight: an Arcane Shot was pressed,
+the target vanished before the success event came, and the caster's wait ran
+out, which stops the run ("Arcane Shot success was not confirmed"). A press
+whose target is gone had nothing to land on: `ForeverCaster` now gives such a
+press half a second for a late success or death event, then returns
+`ForeverCastResult.Voided`, and the fight's own handling of a vanished target
+goes on. The same trip showed the first walking fix stalling too eagerly
+(sidesteps where a little more turning would do); it now stalls only after 2
+seconds of turning standing.
+
+### Falling back instead of stopping (2026-10-04)
+
+The sixth trip (`5-crossroads7`) pulled two lone neutral mobs on its way and
+killed both. The first body was skinned. The Interact Key found the second
+body from where the player stopped, about 11 yards on, reading not lootable;
+two presses there opened no window and started no cast, and the round gave it
+up. Then, walking on, the run stopped: "visual controller frame unavailable
+for five continuous seconds". The game kept focus throughout and the log could
+not say why the frame went (the reader kept no reason).
+
+The reasons the reader now keeps, and the capture the trial saved, showed it
+the same evening: the reader anchors on the add-on's full bar, the longest run
+of white in the top-left corner, and with the camera raised toward a bright
+daylight sky the sky behind that corner was a longer white run (550 pixels
+against the bar's 320), or merged with the bar's own row. Looking at the ground
+read fine. The anchor bar is now magenta, which the sky never is, a white or
+magenta run counts only with the half-filled yellow calibration row above it,
+and the add-on draws black behind the five bars, so the scene never touches
+them. The self-test covers a bright band above the bars and haze beside the
+anchor row. An add-on from before this change no longer reads: `/reload`
+after copying it.
+
+Every earlier run that looted (2a, 2b, the mountain, 3b, the second roam)
+pressed only on a body that read lootable, in reach. Both presses that came
+to nothing (here and in `5-crossroads2`) came the moment the key first found a
+body that did not. The rule "trust the key" stays, from closer: a body reading
+lootable is pressed at once; one that does not gets a step closer first, and a
+press nothing answers, or that draws "too far away", another step and press,
+3 presses in all. Only the game's word leaves a body sooner: full bags (every
+body then, the user's one reason), not the player's to loot, or empty and
+beyond the skinning skill. ForeverProbe's error latch now codes those messages
+and the loot and interact "too far" ones. See
+[forever-activities.md](forever-activities.md), "Loot".
+
+The user also asked that a failure never leave the bot with nothing to do,
+falling back to the bigger goal each time, up a hierarchy of goals. The layers
+were there (a press, a body or a unit, an activity, a task's places, the
+task, the route); what was missing was that every failure stopped the run.
+Now each layer absorbs the failures of the one below
+([forever-activities.md](forever-activities.md), "When something fails"):
+activities fall back as each knows how and start afresh, a failed task is
+given up for the next, a travel walks to its destination again before it
+fails, and the last task of a route is retried after hunting here a while.
+The run stops only when the game loses focus, the setup breaks, the player
+dies, the frame stays unreadable for 60 seconds (it pauses before that, says
+why, and the trial runner saves the first unreadable capture in `local/logs`),
+or ten failures come in a row with no kill, loot or task done between them.
+No generic goal tree was built: the user asked whether this was getting too
+complicated, and the existing layers are the tree.
+
+Offline, `--logic-test` has 302 checks.
 
 ### Quests (later)
 

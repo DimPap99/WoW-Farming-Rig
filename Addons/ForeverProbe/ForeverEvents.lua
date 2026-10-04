@@ -106,6 +106,7 @@ end
 local ERROR_CODES = {
     SPELL_FAILED_LINE_OF_SIGHT = 1,
     ERR_BADATTACKPOS = 2,                       -- "You are too far away!"
+    ERR_LOOT_TOO_FAR = 2, ERR_TOO_FAR_TO_INTERACT = 2,
     SPELL_FAILED_OUT_OF_RANGE = 3, ERR_OUT_OF_RANGE = 3,
     SPELL_FAILED_TOO_CLOSE = 4,
     ERR_BADATTACKFACING = 5, SPELL_FAILED_UNIT_NOT_INFRONT = 5,
@@ -115,11 +116,29 @@ local ERROR_CODES = {
     SPELL_FAILED_STUNNED = 9, ERR_ATTACK_STUNNED = 9, ERR_ATTACK_PACIFIED = 9,
     SPELL_FAILED_PACIFIED = 9, SPELL_FAILED_INTERRUPTED = 9,
     SPELL_FAILED_TARGETS_DEAD = 10, ERR_INVALID_ATTACK_TARGET = 10, SPELL_FAILED_BAD_TARGETS = 10,
+    -- Looting and skinning: no room in the bags; a body that is not the
+    -- player's to loot; a skill too low for the body.
+    ERR_INV_FULL = 11,
+    ERR_LOOT_DIDNT_KILL = 12, ERR_LOOT_GONE = 12, ERR_LOOT_LOCKED = 12,
+    SPELL_FAILED_LOW_CASTLEVEL = 13,
 }
-local errorCodes = {}
+-- Messages the client formats, such as "Requires Skinning 40", matched as
+-- patterns built once from their format strings.
+local ERROR_FORMATS = {
+    ERR_USE_LOCKED_WITH_SPELL_KNOWN_SI = 13,
+}
+local errorCodes, errorPatterns = {}, {}
 for name, code in pairs(ERROR_CODES) do
     local text = _G[name]
     if type(text) == "string" and readable(text) then errorCodes[text] = code end
+end
+for name, code in pairs(ERROR_FORMATS) do
+    local text = _G[name]
+    if type(text) == "string" and readable(text) then
+        local pattern = text:gsub("[%^%$%(%)%.%[%]%*%+%-%?]", "%%%0")
+            :gsub("%%s", ".+"):gsub("%%d", "%%d+")
+        errorPatterns[#errorPatterns + 1] = { "^" .. pattern .. "$", code }
+    end
 end
 
 -- The message is the last argument on every client's event layout.
@@ -129,6 +148,14 @@ local function errorMessage(...)
     local message = select(count, ...)
     if not readable(message) or type(message) ~= "string" then return end
     local code = errorCodes[message]
+    if not code then
+        for i = 1, #errorPatterns do
+            if message:find(errorPatterns[i][1]) then
+                code = errorPatterns[i][2]
+                break
+            end
+        end
+    end
     if not code then return end
     E.errorSequence = E.errorSequence % 65535 + 1
     E.errorCode = code

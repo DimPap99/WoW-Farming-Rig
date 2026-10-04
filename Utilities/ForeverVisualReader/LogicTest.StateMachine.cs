@@ -86,6 +86,19 @@ internal static partial class LogicTest
         check("machine: a handler that does not move still fails the run",
             handing.State == Step.Failed && handing.LastFailure == "slow walk", $"{handing.State} '{handing.LastFailure}'");
 
+        // A goal that falls back from a failure starts its machine afresh.
+        ForeverStateMachine<Step> again = Machine();
+        again.Go(Step.Walk);
+        again.Fail("stuck");
+        again.Reset();
+        bool restarted = again.State == Step.Start && !again.IsTerminal && again.LastFailure == "stuck";
+        again.Go(Step.Walk);
+        log.Clear();
+        again.Reset();
+        check("machine: a reset starts afresh from a failed state, the failure kept on record, and from a live one after its exit hook",
+            restarted && again.State == Step.Start && string.Join(",", log) == "exit Walk",
+            $"{again.State} '{again.LastFailure}' {string.Join(",", log)}");
+
         // What a state allows besides its work is declared with it.
         ForeverStateMachine<Step> allowing = new ForeverStateMachine<Step>(NullLogger.Instance, "test",
                 Step.Start, Step.Failed, Step.Done)

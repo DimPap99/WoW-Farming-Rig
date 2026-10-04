@@ -329,6 +329,19 @@ internal static partial class LogicTest
             Check("Paladin: Judgement out of range but melee in range is too close",
                 close.TooCloseToOpen(Frame(judgementRange: false, strikeRange: true)));
             Check("Paladin: out of every range is not too close", !close.TooCloseToOpen(Frame()));
+            {
+                // Judgement reaches a mob in melee, so a Paladin never steps back.
+                VisualNameplateRoster notOnPlayer = new(
+                    [new VisualNameplate(1, 1, mob.GuidHash1, mob.GuidHash2, mob.Level, true, false, false, false, true,
+                        true, false, false, false, 2, true, 3, 1.0, default) { TargetsPet = false },
+                     null, null, null, null, null, null, null], 1, 1, 0, true, true, 45);
+                VisualBarSample inMelee = Frame(judgementRange: true, strikeRange: true, judgementCooldown: 0.4, melee: true)
+                    with { Nameplates = notOnPlayer };
+                current = inMelee;
+                ForeverFightPlan paladinPlan = NewRotation().Plan(inMelee, mob);
+                Check("Paladin: a mob in melee that is not on the player is fought there, never stepped back from",
+                    paladinPlan.Step != ForeverFightStep.StepBack, $"{paladinPlan.Step}");
+            }
         }
         {
             ForeverRotation rotation = NewRotation();
@@ -507,10 +520,68 @@ internal static partial class LogicTest
                     ForeverFightStep.Combat, "Serpent Sting");
                 HExpect("out of reach: the pet waits with the fight, so the hand-back for range is not held off",
                     HFrame(ranged: false, close: false, melee: true, pet: idle), ForeverFightStep.NeedRange);
+                // Another hostile unit stands beside the mob, both within follow
+                // distance: the shot pulls the mob on its own, and the pet goes
+                // in once it comes, not first, where its run would draw both.
+                VisualNameplateRoster Pair(int neighbourReaction) => new(
+                    [new VisualNameplate(1, 1, hmob.GuidHash1, hmob.GuidHash2, hmob.Level, true, false, false, false, false,
+                        true, false, false, false, 2, false, null, 1.0, new VisualSlotRanges(RosterRanges(2, 3)))
+                        { Screen = new(0.5, 0.5), Close = false, WithinFollowDistance = true, TargetsPet = false },
+                     new VisualNameplate(2, 1, 7, 8, hmob.Level, true, false, false, false, false,
+                        false, false, false, false, neighbourReaction, false, null, 1.0, default)
+                        { Screen = new(0.53, 0.5), Close = false, WithinFollowDistance = true, TargetsPet = false },
+                     null, null, null, null, null, null],
+                    2, 2, 0, true, true, 45);
+                HExpect("a hostile unit beside the mob: the pet stays back and the shot pulls the mob on its own",
+                    HFrame(ranged: true, close: false, combat: false, pet: idle) with { Nameplates = Pair(2) },
+                    ForeverFightStep.Combat, "Serpent Sting");
+                HExpect("the mob pulled on its own fights: now the pet goes in",
+                    HFrame(ranged: true, close: false, combat: true, pet: idle) with { Nameplates = Pair(2) },
+                    ForeverFightStep.PetAttack);
+                HExpect("a neutral unit beside the mob does not join: the pet goes first as ever",
+                    HFrame(ranged: true, close: false, combat: false, pet: idle) with { Nameplates = Pair(ForeverPullOptions.NeutralReaction) },
+                    ForeverFightStep.PetAttack);
                 hunterConfig.AutoPetAttack = false;
                 HExpect("AutoPetAttack off: not sent", HFrame(ranged: true, close: false, combat: false, pet: idle),
                     ForeverFightStep.Combat, "Serpent Sting");
                 hunterConfig.AutoPetAttack = true;
+            }
+
+            // The stance: ranged while the mob is not on the player, stepping
+            // back to range when it comes too close for the shots; melee once
+            // it goes for the player, or with the shots unusable (no ammo).
+            {
+                VisualNameplateRoster Mob(bool onPlayer) => new(
+                    [new VisualNameplate(1, 1, hmob.GuidHash1, hmob.GuidHash2, hmob.Level, true, false, false, false, true,
+                        true, false, false, onPlayer, 2, true, 3, 1.0, new VisualSlotRanges(RosterRanges(1)))
+                        { TargetsPet = !onPlayer }, null, null, null, null, null, null, null],
+                    1, 1, 0, true, true, 45);
+                VisualBarSample closeOnPet = HFrame(ranged: false, close: true, melee: true) with { Nameplates = Mob(onPlayer: false) };
+                VisualBarSample closeOnPlayer = HFrame(ranged: false, close: true, melee: true) with { Nameplates = Mob(onPlayer: true) };
+                current = closeOnPet;
+                Check("hunter: the mob on the pet is the ranged stance; on the player, melee",
+                    HRotation().Stance(closeOnPet) == ForeverStance.Ranged &&
+                    HRotation().Stance(closeOnPlayer) == ForeverStance.Melee, "");
+                HExpect("the mob on the pet and too close for the shots: step back to range, not melee",
+                    closeOnPet, ForeverFightStep.StepBack);
+                HExpect("the mob on the player and close: melee, Raptor Strike",
+                    closeOnPlayer, ForeverFightStep.Combat, "Raptor Strike");
+                HExpect("the mob on the pet with the shots unusable (no ammo): melee where it stands",
+                    HFrame(ranged: false, close: true, melee: true, shotsUsable: false) with { Nameplates = Mob(onPlayer: false) },
+                    ForeverFightStep.Combat, "Raptor Strike");
+                HExpect("the mob on the pet and in the shots' range: shoot, no step back",
+                    HFrame(ranged: true, close: false, stingCooldown: 0.5) with { Nameplates = Mob(onPlayer: false) },
+                    ForeverFightStep.StartAttack);
+                HExpect("who the mob is on unknown: no step back, the fight as it stands",
+                    HFrame(ranged: false, close: true, melee: true), ForeverFightStep.Combat, "Raptor Strike");
+                ForeverRotation stepping = HRotation();
+                current = closeOnPet;
+                stepping.Plan(closeOnPet, hmob);
+                typeof(ForeverRotation).GetField("stepBackSince", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .SetValue(stepping, System.Diagnostics.Stopwatch.GetTimestamp() - (long)((ForeverRotation.StepBackMs + 100) / 1000.0 * System.Diagnostics.Stopwatch.Frequency));
+                ForeverFightPlan rested = stepping.Plan(closeOnPet, hmob);
+                Check("hunter: steps back that do not bring the range back give way to melee for a while",
+                    rested is { Step: ForeverFightStep.Combat, Action.Name: "Raptor Strike" }, $"{rested.Step} {Describe(rested.Action)}");
             }
 
             // The game's error messages: what a refused press does.
@@ -579,6 +650,18 @@ internal static partial class LogicTest
             current = HFrame(ranged: true, close: false, combat: false) with { TargetIdentity = higher };
             Check("level cap from the profile: +1 mob refused when NPCMaxLevels_Above is 0",
                 HRotation().Plan(current, higher).Step != ForeverFightStep.Combat);
+            // The cap keeps the run from opening on such a unit; one that
+            // already fights the player or the pet is fought all the same.
+            current = HFrame(ranged: true, close: false) with
+            {
+                TargetIdentity = higher,
+                Nameplates = new([new VisualNameplate(1, 1, higher.GuidHash1, higher.GuidHash2, higher.Level, true, false, false,
+                    false, true, true, false, false, true, 2, true, 3, 1.0, new VisualSlotRanges(RosterRanges(2, 3))),
+                    null, null, null, null, null, null, null], 1, 1, 0, true, true, 45)
+            };
+            Check("level cap from the profile: a +1 mob that fights the player is fought at NPCMaxLevels_Above 0",
+                HRotation().Plan(current, higher).Step == ForeverFightStep.Combat);
+            current = HFrame(ranged: true, close: false, combat: false) with { TargetIdentity = higher };
             hunterConfig.NPCMaxLevels_Above = 1;
             Check("level cap from the profile: +1 mob accepted when NPCMaxLevels_Above is 1",
                 HRotation().Plan(current, higher).Step == ForeverFightStep.Combat);
@@ -693,6 +776,8 @@ internal static partial class LogicTest
         DangerChecks(Check);
         TravelChecks(Check);
         RoamChecks(Check);
+        PatrolChecks(Check);
+        OnTheWayChecks(Check);
         RouteChecks(Check);
         TrackingChecks(Check);
 

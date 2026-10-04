@@ -24,12 +24,15 @@ public sealed class ForeverEngageActivity : IForeverActivity
     public const float Priority = 4f;
 
     private const int SelectMs = 8000;
+    // A selection the candidate's own plate confirms gets this long for the
+    // target's rows to agree before it counts as a setback.
+    private const int SelectSettleMs = 600;
     private const int ApproachMs = 20000;
     private const int FightMs = 75000;
     // Range pixels refresh on their own 500ms cadence; a newly selected
     // identity gets this long before its range bits are read.
     private const int RangeSettleMs = 650;
-    // A target identity that stays unreadable this long in the fight stops the run.
+    // A target identity that stays unreadable this long in the fight fails the engagement.
     private const int UnreadableIdentityMs = 2000;
     // Reach flickers at its edges: the action rows refresh every 0.5 s and
     // the target distance every 0.1 s, and a mob closing in crosses a ranged
@@ -70,6 +73,7 @@ public sealed class ForeverEngageActivity : IForeverActivity
     private VisualNameplate? candidate;
     private VisualTargetIdentity? target;
     private long targetSelectedAt;
+    private long selectDoneAt;
     private long targetUnreadableAt;
     private long targetLostAt;
     private long reachLostAt;
@@ -82,6 +86,8 @@ public sealed class ForeverEngageActivity : IForeverActivity
     private long sightLoggedAt;
     private bool sightTrackedLogged;
     private int deathSequenceBefore;
+    // Move-backward is held for the fight's step back to range.
+    private bool steppingBack;
 
     public ForeverEngageActivity(ILogger<ForeverEngageActivity> logger, ForeverTargetSelector selector,
         ForeverNavigator navigator, IForeverCombatRoutine combat, ClassConfiguration config,
@@ -95,14 +101,18 @@ public sealed class ForeverEngageActivity : IForeverActivity
         this.sightings = sightings;
 
         // Select's and Approach's bounds hand over to a setback instead of
-        // failing; Fight's stops the run.
+        // failing; Fight's fails the engagement, which the run falls back from.
         machine = new ForeverStateMachine<ForeverEngageState>(logger, "Forever engage",
                 ForeverEngageState.Idle, ForeverEngageState.Failed)
             .On(ForeverEngageState.Idle, exits: [ForeverEngageState.Select, ForeverEngageState.Fight])
             .On(ForeverEngageState.Select, Select, exits: [ForeverEngageState.Approach, ForeverEngageState.Idle],
                 timeoutMs: SelectMs, onTimeout: "selecting the chosen unit did not finish",
                 timedOut: reason => SetBack(ForeverSetback.SelectFailed, reason),
-                enter: navigator.StopPursuit)
+                enter: () =>
+                {
+                    navigator.StopPursuit();
+                    selectDoneAt = 0;
+                })
             .On(ForeverEngageState.Approach, Approach, exits: [ForeverEngageState.Fight, ForeverEngageState.Idle],
                 timeoutMs: ApproachMs, onTimeout: "target did not enter spell range within local pursuit bound",
                 timedOut: reason => SetBack(ForeverSetback.OutOfReach, reason),
@@ -199,6 +209,31 @@ public sealed class ForeverEngageActivity : IForeverActivity
     }
 
     /// <summary>
+    /// The fight failed: out of combat its unit is set aside for a while, as
+    /// after a setback, so the next pull takes another; in combat it stays a
+    /// threat and Threat takes it again. The engagement starts afresh.
+    /// </summary>
+    public string FallBack(string reason)
+    {
+        navigator.StopPursuit();
+        steppingBack = false;
+        TimeSpan aside = ForeverRecovery.SetAsideFor(ForeverSetback.SelectFailed, facts.InCombat);
+        if (aside > TimeSpan.Zero)
+        {
+            if (candidate is { } plate)
+                Exclusions.Exclude(plate, aside);
+            if (target is { } unit)
+                Exclusions.Exclude(unit, aside);
+        }
+        bool hadUnit = candidate is not null || target is not null;
+        candidate = null;
+        target = null;
+        machine.Reset();
+        return !hadUnit ? "the fight starts afresh"
+            : aside > TimeSpan.Zero ? "its unit is set aside for a while" : "the attackers are looked for afresh";
+    }
+
+    /// <summary>
     /// The locked unit died: its death latch confirms it, or the target shows
     /// it dead. The host asks before anything else acts on a frame, while the
     /// unit is pursued or fought.
@@ -228,7 +263,7 @@ public sealed class ForeverEngageActivity : IForeverActivity
             case ForeverClickResult.Pointing:
                 return;
             case ForeverClickResult.Done:
-                if (ForeverTargetPolicy.TryEligibleTarget(bars, config, out VisualTargetIdentity selected) &&
+                if (ForeverTargetPolicy.TryEligibleTarget(bars, config, out VisualTargetIdentity selected, out string why) &&
                     (!chosen.HasIdentity || chosen.Is(selected)))
                 {
                     candidate = null;
@@ -236,11 +271,24 @@ public sealed class ForeverEngageActivity : IForeverActivity
                     machine.Go(ForeverEngageState.Approach);
                     return;
                 }
-                reason = "the unit selected is not the eligible candidate";
+                if (selectDoneAt == 0)
+                    selectDoneAt = GetTimestamp();
+                if (GetElapsedTime(selectDoneAt).TotalMilliseconds < SelectSettleMs)
+                    return;
+                reason = why.Length > 0
+                    ? $"the unit selected cannot be taken: {why}"
+                    : $"the click selected another unit (target {selected.GuidHash1}/{selected.GuidHash2})";
                 break;
         }
-        SetBack(ForeverSetback.SelectFailed, reason);
+        SetBack(ForeverSetback.SelectFailed, $"{reason}; the candidate: {Describe(chosen)}");
     }
+
+    // A candidate as the log names it: identity, level, reaction and where its
+    // marker was when it was chosen.
+    private static string Describe(VisualNameplate plate) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"plate {plate.GuidHash1}/{plate.GuidHash2}, level {plate.Level}, reaction {plate.Reaction}, " +
+            $"marker at {plate.Screen?.X:0.00}, {plate.Screen?.Y:0.00}");
 
     private void Approach(VisualBarSample bars)
     {
@@ -269,6 +317,13 @@ public sealed class ForeverEngageActivity : IForeverActivity
         if (combat.InRange(bars, selected))
         {
             machine.Go(ForeverEngageState.Fight);
+            return;
+        }
+        // Close but out of view, as a mob behind the player: a person turns
+        // round to it, never walks off searching with it at their back.
+        if (bars.Attack?.TargetClose == true && bars.TargetScreenPosition is null)
+        {
+            navigator.FaceTarget(bars);
             return;
         }
         ForeverNavigationResult result = navigator.Approach(bars,
@@ -338,8 +393,28 @@ public sealed class ForeverEngageActivity : IForeverActivity
             out string reason);
         if (result != ForeverCombatResult.NeedRange)
             reachLostAt = 0;
+        // A step back ends as soon as the fight asks for anything else.
+        if (steppingBack && result != ForeverCombatResult.StepBack)
+        {
+            navigator.StopPursuit();
+            steppingBack = false;
+        }
         switch (result)
         {
+            // Ranged while the mob is not on the player, and too close for the
+            // ranged attacks: a few steps back, facing it, to the bow's range.
+            // Ground that will not take the steps leaves the fight where it is.
+            case ForeverCombatResult.StepBack:
+                switch (navigator.StepBack(bars, out reason))
+                {
+                    case ForeverNavigationResult.Failed:
+                        machine.Fail(reason);
+                        return;
+                    case ForeverNavigationResult.StepSent:
+                        steppingBack = true;
+                        return;
+                }
+                return;
             case ForeverCombatResult.NeedRange:
                 if (reachLostAt == 0)
                     reachLostAt = GetTimestamp();
@@ -500,7 +575,7 @@ public sealed class ForeverEngageActivity : IForeverActivity
     }
 
     // A setback with the chosen or selected unit: set it aside and end the
-    // engagement, or stop when recovery refuses (in combat, or past its budget).
+    // engagement, or fail it when recovery refuses (in combat, or past its budget).
     private void SetBack(ForeverSetback kind, string reason)
     {
         if (!recovery.TryRecover(kind, facts.InCombat, out string refusal))

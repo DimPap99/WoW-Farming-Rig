@@ -1631,7 +1631,7 @@ static int RunSelfTest()
         Draw(1, 0.25, new Bgra32 { B = 255, A = 255 });
         Draw(2, 0.60, new Bgra32 { R = 255, A = 255 });
         Draw(3, 0.50, new Bgra32 { R = 255, G = 255, A = 255 });
-        Draw(4, 1.00, new Bgra32 { R = 255, G = 255, B = 255, A = 255 });
+        Draw(4, 1.00, new Bgra32 { R = 255, B = 255, A = 255 });
         DrawPositionPixel(0, 42);
         DrawPositionPixel(1, (int)Math.Floor(0.345678 * 16777215));
         DrawPositionPixel(2, (int)Math.Floor(0.789012 * 16777215));
@@ -1839,6 +1839,25 @@ static int RunSelfTest()
                 Console.Error.WriteLine($"Full-viewport marker tracking failed at scale {scale}.");
                 return 1;
             }
+        }
+
+        // A bright sky behind the corner (live, 2026-10-04): a band above the
+        // bars longer than any bar, and haze right beside the anchor row,
+        // must not move the anchor.
+        Bgra32[] sky = (Bgra32[])pixels.Clone();
+        Bgra32 haze = new() { R = 235, G = 230, B = 225, A = 255 };
+        for (int y = 20; y < 45; y++)
+            for (int x = 0; x < VisualBarReader.SearchWidth; x++)
+                sky[y * width + x] = haze;
+        int anchorTop = top + 4 * rowStep;
+        for (int y = anchorTop; y < anchorTop + barHeight; y++)
+            for (int x = left + barWidth; x < VisualBarReader.SearchWidth; x++)
+                sky[y * width + x] = haze;
+        if (!VisualBarReader.TryRead(sky, width, height, out VisualBarSample hazy) ||
+            hazy.Left != result.Left || hazy.Bottom != result.Bottom || hazy.Width != result.Width)
+        {
+            Console.Error.WriteLine($"A bright sky behind the bars moved the anchor at UI scale {scale}.");
+            return 1;
         }
 
         // The reference and aura textures share scale and rendering. A
@@ -2584,7 +2603,7 @@ static int RunSelfTest()
         }
 
         Array.Clear(pixels);
-        Draw(4, 1.00, new Bgra32 { R = 255, G = 255, B = 255, A = 255 });
+        Draw(4, 1.00, new Bgra32 { R = 255, B = 255, A = 255 });
         if (VisualBarReader.TryRead(pixels, width, height, out _))
         {
             Console.Error.WriteLine($"Visual reader accepted missing bars at UI scale {scale}.");

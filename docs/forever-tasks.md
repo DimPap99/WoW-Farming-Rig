@@ -23,6 +23,35 @@ how the run interleaves tasks with fighting, looting and resting is in
 - A task ends when its `Until` holds or its runner reports it done; the next
   task then starts with fresh progress. The run completes when the agenda is
   done, unless the agenda repeats.
+- **A task that fails is given up**, and the agenda goes on with the next
+  (below); the run never stops for it.
+
+## When a task fails
+
+The agenda is the route's plan from the top: each task is a bigger goal than
+the places and fights within it, and the next task is the next bigger goal.
+So a failed task falls back to the next one, as the user put it: "if
+something completely breaks at the first place then maybe the bigger goal in
+that place is roam at the areas in that place we havent gone. then next
+bigger goal is to go to the next area. and the one after that and to cross
+roads."
+
+1. **Inside a task** the runner falls back first: a roam spot it cannot get
+   to is given up for the part of the area seen least, a point on the way of
+   a travel is skipped, and a travel's destination is walked again from where
+   the walk stalled, 3 walks in all ([forever-movement.md](forever-movement.md)).
+2. **The task.** When the runner fails all the same (no spot of the area
+   reachable, the destination not reached after 3 walks, 45 seconds of hunting
+   here with nothing in view), `ForeverTaskActivity.FallBack` gives it up and
+   `ForeverAgenda.GiveUp` starts the next task.
+3. **The last task.** With nothing above it, a route that does not repeat
+   hunts where the character stands for `ForeverAgenda.FallbackMinutes` (3),
+   then tries that task again, until the time bound. A repeating route simply
+   starts its next lap.
+
+The fights, loot rounds and rests that take over from a task fall back the
+same way, each as it knows how; what stops the run is in "When something
+fails" in [forever-activities.md](forever-activities.md).
 
 ## Building tasks: `ForeverTasks`
 
@@ -44,7 +73,7 @@ ForeverTask back = ForeverTasks.TravelTo(
 | Method | Does | Done when |
 |---|---|---|
 | `TravelTo(to, via = null, pulls = None)` | walks along the baked mesh through `via` in order to `to` | it arrives (or its `Until`, normally never) |
-| `RoamArea(area, until, pulls = Any, seed = null)` | walks into the area, then from spot to spot inside, looking round at each | `until` holds |
+| `RoamArea(area, until, pulls = Any, seed = null)` | walks into the area and patrols it: takes what the camera shows, then heads for a mob seen lately, a tracked dot, or the part seen least, looking round at each | `until` holds |
 | `HuntHere(until)` | looks round where it stands, takes what it sees, wanders within 25 yards, looks again | `until` holds, or (with `NothingInView`) a full look-around finds nothing |
 
 `HuntHere` is what the bounded trials run (`--auto-run`, `--sweep`). `TravelTo`
@@ -88,11 +117,77 @@ does not end by itself.
 
 ## Pulling: `ForeverPulls`
 
-`Any` takes eligible units in view as the task goes; `None` fights only what
-attacks. Units that attack are always fought, whatever the task says (that is
-the Threat activity). Before every pull, an attack the client reports unusable
-for a reason other than mana stops the run with why (`ForeverPulling`).
+`Any` takes eligible units in view as the task goes; `OnTheWay` takes only
+those standing on the way, within 20 yards of the path still to walk over its
+next 80 (`ForeverTravel.OnTheWayYards`, `AheadYards`; `ForeverWalker.IsOnTheWay`),
+as a person on their way somewhere kills what stands in it and makes no
+detour; `None` fights only what attacks. Units that attack the player or the pet are always fought, whatever
+the task says and whatever their level (that is the Threat activity). Before
+every pull, an attack the client reports unusable for a reason other than mana
+stops the run with why (`ForeverPulling`).
 Defaults: travelling `None`, roaming `Any`.
+
+### Which unit: the pull's cost
+
+`ForeverPullOptions` lists every unit the run could pull now (eligible, its
+marker on screen between the clickable bottom and top, not set aside, not too
+close for every opener) and puts them in order; the best is offered. A click
+reaches a plate only in the middle of the screen
+(`ForeverTargetPolicy.Clickable`: 0.08 to 0.8 across, 0.33 to 0.94 up from
+the bottom): off the edges, where a marker clips and slips out of view as the
+camera moves, and clear of the default interface, whose frames take the
+click instead (the minimap and objective tracker at the right, the unit
+frames, chat and action bars at the bottom). When the best unit stands at the
+side of the screen, the run does what a person does: it stops, turns to face
+it, and clicks once its marker is in the middle (`ForeverPull.Turning`,
+logged once as `Forever pull: turning to face ... first`). A unit too high on
+screen, far off near the horizon, comes down into reach as the patrol walks
+toward it. The order never refuses a pull, so a unit is
+never passed by for being far, out of sight or above the player's level: what
+may be pulled at all is the target policy's to say (the profile's level
+window, a unit tapped by someone else, kinds such as elites).
+
+1. **Safety first**: the fewer other hostile units that could join the fight
+   (alive, fighting no one, within 20 yards of it, `NeighbourYards`), the
+   better, whatever the distance. A unit on its own always comes before one
+   with company.
+2. **Then the effort**, in yards of walking:
+
+   | Part of the effort | Constant | Yards |
+   |---|---|---|
+   | how far the unit stands | (the estimate) | its yards |
+   | the camera cannot see it | `OccludedYards` | 40 |
+   | no attack reaches it from here | `OutOfReachYards` | 10 |
+   | each level above the player | `LevelAboveYards` | 5 |
+   | not the current target (a click) | `ClickYards` | 5 |
+   | at the side of the screen (a turn first) | `TurnYards` | 5 |
+
+3. Then the lowest on screen, the nearest on open ground.
+
+So: a unit on its own beats a nearer one with a hostile unit beside it; of a
+hostile (red) and a neutral (yellow) unit standing together the hostile one
+goes first, since the neutral one does not join a fight it was not drawn into,
+and the neutral one, alone after that, next; of two or three hostile units
+together one is still pulled when nothing better is in view, on its own (see
+below). Levels above count for little: a mob two levels above weighs as one of
+the player's level 10 yards farther.
+
+A unit stands where its nameplate places it: along the marker's bearing, at
+the middle of the distance band its range flags give (within 8, 8 to 28, or 28
+yards to the plate distance), or exactly where the minimap's tracking shows a
+dot along that bearing. A plate whose flags say nothing is too vague to count
+as a neighbour. Far off the bands are wide, so a unit may look accompanied
+from afar; that only puts it later in the order, and the pet is held back on
+such a pull anyway.
+
+Each pull logs its options:
+`Forever pull: hostile level 12, 18 yd, alone: effort 23; passed over neutral level 12, 20 yd, 1 hostile near: effort 25`.
+`ForeverControllerTrial --auto-check` prints the options for where the player
+stands, read-only.
+
+A Hunter pulling a unit with a hostile unit near it keeps the pet back: the
+opener draws the mob to the player, and the pet goes in once the mob fights,
+since the pet's run in would draw the other one too.
 
 ## The agenda
 
@@ -103,10 +198,13 @@ Defaults: travelling `None`, roaming `Any`.
 | `Current`, `Tasks` | the task now, and all of them |
 | `Progress` | the current task's kills and start time (`ForeverTaskProgress`) |
 | `Add(task)` | appends a task after those planned |
+| `Complete()` | the current task is done; the next starts |
+| `GiveUp()` | the current task failed; the next starts, or, after the last of an agenda that does not repeat, hunting here for 3 minutes and then that task again |
 | `Advance()` | ends the current task; a repeating agenda starts over after the last |
 | `Finished` | no task left (never for a repeating agenda) |
 | `Laps` | times a repeating agenda started over |
-| `Describe()` | "task 2 of 3, lap 2: Roam the area around 52.5, 45 on map 1411 (1 kills in 2.3 minutes)" |
+| `Completed`, `GivenUp` | tasks done, and given up, in this run |
+| `Describe()` | "task 2 of 3, lap 2: Roam the area around 52.5, 45 on map 1411 (1 kills in 2.3 minutes)", with ", 1 given up" once one was |
 
 A session gets its agenda from `ForeverRunOptions`: `Tasks` and `RepeatTasks`
 when set; otherwise one `HuntHere` task built from `MaxCompletedCycles` (until
@@ -134,7 +232,8 @@ walkable ground inside. It is asked until it passes once.
      rest; resume from where the character is.
    - `Update(bars, facts, progress)`: one frame's work; `Done` when the
      runner's own part is over (the agenda checks `Until` itself), `Failed`
-     with a reason to stop the run.
+     with a reason once its own fallbacks are spent: the agenda gives the
+     task up and goes on (see "When a task fails").
    - `Exit()`: release whatever is held; it is called whenever something
      more urgent takes over.
    - `Allowed` and `Status`: from the runner's own state machine.

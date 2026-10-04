@@ -101,7 +101,7 @@ internal static partial class LogicTest
         ForeverNavigator navigator = new(NullLogger<ForeverNavigator>.Instance, null!, new MouseCameraInput(null!), maps, data);
         bool Preflight(IEnumerable<ForeverTask> tasks, out string reason) =>
             new ForeverTaskActivity(NullLogger<ForeverTaskActivity>.Instance, new ForeverAgenda(tasks), null!,
-                navigator, null!, new ClassConfiguration(), maps).TryPreflight(player, out reason);
+                navigator, null!, new ClassConfiguration(), maps, new ForeverMobMemory()).TryPreflight(player, out reason);
         bool examplePasses = Preflight(route.Tasks, out string exampleReason);
         bool elsewhereRefused = !Preflight([ForeverTasks.TravelTo(new(ForeverVerifiedSetup.TirisfalGlades, 60, 50))],
             out string elsewhere);

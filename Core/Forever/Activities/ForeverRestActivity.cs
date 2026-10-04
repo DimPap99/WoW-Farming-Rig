@@ -80,6 +80,18 @@ public sealed class ForeverRestActivity : IForeverActivity
             machine.Go(ForeverRestState.Idle);
     }
 
+    /// <summary>
+    /// The rest failed: it is over, and the run goes on; while health or
+    /// mana stay below what a pull needs, the selector rests again.
+    /// </summary>
+    public string FallBack(string reason)
+    {
+        navigator.StopPursuit();
+        Pending = false;
+        machine.Reset();
+        return "the rest is over";
+    }
+
     private void Rest(VisualBarSample bars)
     {
         // Short of what a pull needs, with no fight to recover from: stand
