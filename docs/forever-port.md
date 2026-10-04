@@ -1619,9 +1619,9 @@ activities, which activity the facts pick in every case above, a loot round
 ending itself after its last body, and the trial agendas. Not yet verified
 live.
 
-Built on it since: `TravelTo` and `RoamArea` (see "Travelling" and "Roaming
-an area" below). Next, per the plan: route files that chain them. Quests come
-later as more step kinds and conditions on the same agenda.
+Built on it since: `TravelTo`, `RoamArea` and route files that chain them
+(see "Travelling", "Roaming an area" and "Route files" below). Quests come
+later as more step kinds and conditions on the same agenda ("Quests (later)").
 
 ### Travelling (2026-10-04)
 
@@ -1699,4 +1699,72 @@ Offline, `--logic-test` has 225 checks, among them the picker drawing ten
 spots around Razor Hill on the baked mesh, every one inside the area, on the
 mesh and reachable from its middle. Not yet verified live.
 
-Next: route files that chain travelling and roaming into one data-driven route.
+### Route files (2026-10-04)
+
+A route file is the agenda as data, in `Json/path/_forever`: steps in order
+on one zone map, in the coordinates a player reads (0 to 100), each a
+`Travel` or a `Roam`. It loads into the same tasks the `ForeverTasks` API
+builds (`ForeverRouteFile`), so a route written by hand and one built in code
+run the same way. `durotar_example.json` ships as a commented example:
+
+```json
+{
+  "Name": "Durotar example: south of Razor Hill",
+  "UIMapId": 1411,
+  "Steps": [
+    { "Travel": { "To": [52.5, 44.5] } },
+    { "Roam": { "Area": [[51.5, 44.0], [53.5, 46.0]], "Until": { "Kills": 3, "Minutes": 10 } } },
+    { "Travel": { "To": [52.5, 43.0] } }
+  ],
+  "Repeat": false
+}
+```
+
+- **Travel** walks to `To` through the `Via` points, in order. `"Pulls":
+  "Any"` also takes units in view on the way; `"None"`, the default, fights
+  only what attacks.
+- **Roam** hunts inside `Area` (two opposite corners, or three or more in
+  order) until `Until` holds: `Kills`, `Minutes` or `Level`, whichever comes
+  first. A roam must say when it ends. `"Pulls": "None"` roams without taking
+  units; `Seed` pins the spots it walks between.
+- A step may name another map with its own `UIMapId`. `"Repeat": true` starts
+  over after the last step, a farming loop that runs until the time bound;
+  laps are logged.
+- **Mistakes are refused when the file loads, naming the step**: a step with
+  both kinds or neither, a point that is not `[x, y]` or off the map, a map not
+  verified, a roam without an end, and any field the format does not know, so
+  a misspelt `Kils` fails instead of silently doing nothing.
+- **Start-up check.** Before anything moves, every travel point must be on
+  the player's continent and on the baked mesh, and every roam area must have
+  walkable ground inside.
+
+Trial: `ForeverControllerTrial --route <file>` runs a route (20-minute bound,
+`--minutes <n>` to change it) and prints each step as it starts with the
+agenda's progress; the file is read and checked before anything attaches to
+the game. `ForeverVisualReader --where [seconds]` prints the player's zone and
+map position, as `[x, y]`, whenever it changes, so a route is written by
+walking to each stop or corner and copying it. Offline, `--logic-test` has 229
+checks, among them the example loading, every refusal naming its step, a
+repeating agenda starting over, and the start-up check finding the example's
+points on the baked mesh. Not yet verified live.
+
+### Quests (later)
+
+Not designed yet; this note records what the design above leaves room for.
+While levelling, quests should work together with grinding on one route: walk
+to coordinates, speak to an NPC to take or hand in a quest, roam an area until
+the quest's objectives are done, and grind on. In this design a quest needs
+no new machinery, only:
+
+- **More step kinds**: talk to an NPC at given coordinates to accept or hand
+  in a quest, interact with an object. Each is a task with its runner, like
+  `Travel` and `Roam`, built from code and from route files alike.
+- **More `Until` conditions**: a quest's objectives done, an item count. These
+  need quest-log and bag telemetry from the add-on.
+- **More facts**: an NPC id per nameplate, so a roam can take only the mobs a
+  quest asks for ("kill 8 of this mob").
+- **Interaction without chat commands**: the NPC clicked as a person does
+  (`ForeverPointAndClick`), and the quest frames answered the same way.
+
+A levelling route then interleaves quest steps with `Roam` steps; the
+reactive activities (fight, loot, rest) still take over and hand back as now.

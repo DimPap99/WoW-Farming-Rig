@@ -26,9 +26,19 @@ bool run = args.Contains("--run");
 bool sweep = args.Contains("--sweep");
 // --travel X Y: walk to that point of the current zone's map (0 to 100), then stop.
 // --roam X1 Y1 X2 Y2 KILLS: roam that rectangle of the current zone's map until KILLS kills.
+// --route FILE: run a route file from Json/path/_forever (or a path), steps in order.
+// --minutes N: the run's time bound instead of the mode's own.
 HashSet<int> values = [];
 double[]? travel = NumbersAfter("--travel", 2);
 double[]? roam = NumbersAfter("--roam", 5);
+double[]? minutes = NumbersAfter("--minutes", 1);
+string? routeName = null;
+int routeIndex = Array.IndexOf(args, "--route");
+if (routeIndex >= 0 && routeIndex + 1 < args.Length && !args[routeIndex + 1].StartsWith("--", StringComparison.Ordinal))
+{
+    routeName = args[routeIndex + 1];
+    values.Add(routeIndex + 1);
+}
 if (travel is [] || travel is not null && travel.Any(OffMap))
 {
     Console.Error.WriteLine("Use --travel <x> <y> with map coordinates of the current zone, 0 to 100.");
@@ -39,19 +49,49 @@ if (roam is [] || roam is not null && (roam[..4].Any(OffMap) || roam[4] < 1 || r
     Console.Error.WriteLine("Use --roam <x1> <y1> <x2> <y2> <kills>: opposite corners on the current zone's map, 0 to 100, and a number of kills.");
     return 1;
 }
-bool task = travel is not null || roam is not null;
+if (routeIndex >= 0 && routeName is null)
+{
+    Console.Error.WriteLine("Use --route <file>, a route file in Json/path/_forever or a path to one.");
+    return 1;
+}
+if (minutes is [] || minutes is [<= 0 or > 600])
+{
+    Console.Error.WriteLine("Use --minutes <n> with a time bound from 1 to 600 minutes.");
+    return 1;
+}
+bool task = travel is not null || roam is not null || routeName is not null;
 bool auto = args.Contains("--auto-check") || args.Contains("--auto-run") || sweep || task;
 run |= args.Contains("--auto-run") || sweep || task;
 if (args.Where((_, i) => !values.Contains(i))
-        .Any(a => a is not ("--check" or "--run" or "--auto-check" or "--auto-run" or "--sweep" or "--travel" or "--roam" or "--pid") &&
-            !int.TryParse(a, out _)) ||
+        .Any(a => a is not ("--check" or "--run" or "--auto-check" or "--auto-run" or "--sweep" or "--travel" or
+            "--roam" or "--route" or "--minutes" or "--pid") && !int.TryParse(a, out _)) ||
     (run && (args.Contains("--check") || args.Contains("--auto-check"))) ||
     (auto && (args.Contains("--check") || args.Contains("--run"))) ||
-    new[] { args.Contains("--auto-run"), sweep, travel is not null, roam is not null }.Count(mode => mode) > 1)
+    (minutes is not null && !run) ||
+    new[] { args.Contains("--auto-run"), sweep, travel is not null, roam is not null, routeName is not null }
+        .Count(mode => mode) > 1)
 {
-    Console.Error.WriteLine("Use --check, --run, --auto-check, --auto-run, --sweep, --travel <x> <y> " +
-        "or --roam <x1> <y1> <x2> <y2> <kills> [--pid <WowB process ID>].");
+    Console.Error.WriteLine("Use --check, --run, --auto-check, --auto-run, --sweep, --travel <x> <y>, " +
+        "--roam <x1> <y1> <x2> <y2> <kills> or --route <file>, [--minutes <n>] [--pid <WowB process ID>].");
     return 1;
+}
+
+// A route is read and checked before anything attaches to the game, so a
+// mistake in the file shows at once.
+ForeverRoute? route = null;
+if (routeName is not null)
+{
+    DataConfig routeData = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
+    string routePath = ForeverRouteFile.Resolve(routeData, routeName);
+    if (!ForeverRouteFile.TryLoad(routePath, new WorldMapAreaDB(routeData), out ForeverRoute loaded, out string routeError))
+    {
+        Console.Error.WriteLine($"Route refused: {routeError}");
+        return 1;
+    }
+    route = loaded;
+    Console.WriteLine($"Route {route.Name}: {route.Tasks.Count} steps{(route.Repeat ? ", repeating" : string.Empty)}.");
+    for (int i = 0; i < route.Tasks.Count; i++)
+        Console.WriteLine($"  {i + 1}. {route.Tasks[i].Name}");
 }
 
 // The numbers after a flag: null without the flag, empty when they do not parse.
@@ -188,6 +228,8 @@ try
         runOptions = runOptions with { Tasks = [ForeverTasks.RoamArea(area, ForeverUntil.AfterKills((int)kills))] };
         Console.WriteLine($"Roaming the {area} until {kills} kills.");
     }
+    if (route is not null)
+        runOptions = runOptions with { Tasks = route.Tasks, RepeatTasks = route.Repeat };
 
     // The autonomous run uses the profile verified for the logged-in class;
     // the bounded route trial exists for the Paladin only.
@@ -255,7 +297,8 @@ try
             return 2;
         }
         controller.ToggleBotStatus();
-        DateTime autoDeadline = DateTime.UtcNow.AddSeconds(roam is not null ? 900 : sweep ? 600 : travel is not null ? 300 : 170);
+        DateTime autoDeadline = DateTime.UtcNow.AddSeconds(minutes is [double bound] ? bound * 60 :
+            route is not null ? 1200 : roam is not null ? 900 : sweep ? 600 : travel is not null ? 300 : 170);
         DateTime nextSnapshot = DateTime.MinValue;
         string autoLastStatus = string.Empty;
         while (!cts.IsCancellationRequested && DateTime.UtcNow < autoDeadline &&
@@ -264,7 +307,7 @@ try
             string status = automatic.Status;
             if (status != autoLastStatus)
             {
-                Console.WriteLine($"Autonomous phase: {status}; completed cycles={automatic.CompletedKills}, looted={automatic.CompletedLoots}");
+                Console.WriteLine($"Autonomous phase: {status}; completed cycles={automatic.CompletedKills}, looted={automatic.CompletedLoots}; {automatic.AgendaStatus}");
                 autoLastStatus = status;
             }
             if (DateTime.UtcNow >= nextSnapshot)
@@ -291,7 +334,15 @@ try
         Console.WriteLine($"Autonomous kills: {automatic.CompletedKills}; deaths observed: {automatic.ObservedDeaths}; " +
             $"corpses looted: {automatic.CompletedLoots}; " +
             $"status: {automatic.Status}; {automatic.LastFailure}");
-        if (DateTime.UtcNow >= autoDeadline)
+        bool timedOut = DateTime.UtcNow >= autoDeadline;
+        // A repeating route has no end of its own: the time bound, reached
+        // without a failure, is how it ends.
+        if (timedOut && route is { Repeat: true } && automatic.Status != "Failed")
+        {
+            Console.WriteLine($"Time limit reached; the repeating route ran until then ({automatic.AgendaStatus}).");
+            return 0;
+        }
+        if (timedOut)
             Console.Error.WriteLine("Trial time limit reached before the run completed.");
         return automatic.Status == "Complete" ? 0 : 3;
     }

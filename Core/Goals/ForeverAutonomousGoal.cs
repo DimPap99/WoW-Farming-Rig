@@ -57,6 +57,10 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         : machine.State.ToString();
 
     public string LastFailure => machine.LastFailure;
+
+    /// <summary>Which task of the agenda runs and how far it got.</summary>
+    public string AgendaStatus => agenda.Describe();
+
     public int CompletedKills => completedKills;
     public int ObservedDeaths => observedDeaths;
     public int CompletedLoots => looting.Collected;
@@ -153,7 +157,8 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             }
         }
         return combat.TryPreflight(bars, out reason) &&
-            navigator.TryReadOnlyPreflight(bars, out reason);
+            navigator.TryReadOnlyPreflight(bars, out reason) &&
+            tasking.TryPreflight(bars, out reason);
     }
 
     public void OnGoapEvent(GoapEventArgs e)

@@ -9,4 +9,6 @@ public sealed record ForeverRunOptions
     public int? MaxCompletedCycles { get; init; }
     /// <summary>The run's agenda; when empty, the run hunts where it stands (see <see cref="ForeverAgenda.For"/>).</summary>
     public IReadOnlyList<ForeverTask> Tasks { get; init; } = [];
+    /// <summary>The agenda starts over after its last task, as a farming loop.</summary>
+    public bool RepeatTasks { get; init; }
 }
