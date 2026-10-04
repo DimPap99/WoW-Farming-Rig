@@ -1,5 +1,8 @@
 @page "/ForeverRuns"
 
+@using Core.Forever
+@using System.Threading
+
 @inject IServiceProvider services
 
 @implements IDisposable
@@ -17,13 +20,12 @@
         color: #ddd;
         padding: 8px;
         border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
     }
 
-    .forever-output pre {
-        margin: 0;
-        font-size: 12px;
+    .forever-output .line {
         white-space: pre-wrap;
-        color: inherit;
     }
 </style>
 
@@ -103,7 +105,7 @@
                         {
                             <p>
                                 Route: @host.Route<br />
-                                Started: @host.StartedAt?.ToString("HH:mm:ss"), @Elapsed
+                                Started: @host.StartedAtUtc?.ToLocalTime().ToString("HH:mm:ss"), @Elapsed
                                 @if (host.LogFile.Length > 0)
                                 {
                                     <br /><span class="text-muted">Log: @host.LogFile</span>
@@ -126,12 +128,17 @@
                     <div class="card-header">
                         Output
                         <label class="float-end" style="font-weight: normal">
-                            <input type="checkbox" @bind="showFrames" /> frame snapshots
+                            <input type="checkbox" @bind="showSnapshots" /> frame snapshots
                         </label>
                     </div>
                     <div class="card-body">
                         <div class="forever-output">
-                            <pre>@string.Join('\n', host.Lines.Where(line => showFrames || !line.StartsWith("  map=", StringComparison.Ordinal)))</pre>
+                            <div>
+                                @foreach (ForeverRunLine line in host.Output(showSnapshots))
+                                {
+                                    <div class="line" @key="line.Number">@line.Text</div>
+                                }
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -146,28 +153,43 @@
     private string selected = string.Empty;
     private int minutes = 20;
     private string error = string.Empty;
-    private bool showFrames;
+    private bool showSnapshots;
     private System.Threading.Timer? refresh;
+    // Set when the host reports a change; the timer draws the page then, and
+    // every second while a run is live, for its elapsed time.
+    private int changed;
+    private int ticks;
 
     private ForeverRouteChoice? Chosen => routes.FirstOrDefault(route => route.File == selected);
 
     private string StateText => host switch
     {
         null => string.Empty,
-        { IsRunning: true, StopRequested: true } => "Stopping",
+        { IsRunning: true, StopRequested: true } => "Stopping: the run lets go of the keys and the mouse",
         { IsRunning: true, WaitingForClick: true } => "Waiting for your click into the game window (60 seconds)",
         { IsRunning: true, Phase.Length: 0 } => "Starting: reading the game and checking the route",
         { IsRunning: true } => "Running",
-        { ExitCode: 0 } => "Done: the route completed (or a repeating route reached its time bound)",
-        { ExitCode: 2 } => "Refused before anything moved (exit 2): see the output",
-        { ExitCode: 1 } => "Refused: the route or the options (exit 1): see the output",
+        { Route.Length: 0 } => "No run yet",
+        { StopRequested: true, ExitCode: ForeverRunProtocol.ExitRefused } => "Stopped before anything moved",
+        { StopRequested: true } => "Stopped",
+        { ExitCode: ForeverRunProtocol.ExitComplete } => "Done: the route completed (or a repeating route reached its time bound)",
+        { ExitCode: ForeverRunProtocol.ExitRefused } => "Refused before anything moved: see the output",
+        { ExitCode: ForeverRunProtocol.ExitUsage } => "Refused: the route or the options; see the output",
+        { ExitCode: ForeverRunProtocol.ExitFailed } => "Ended: it failed, or ran out of time; see the run's last lines",
         { ExitCode: { } code } => $"Ended (exit {code}): see the run's last lines",
-        _ => "No run yet",
+        _ => "Ended",
     };
 
-    private string Elapsed => host?.StartedAt is { } started
-        ? $"{((host.EndedAt ?? DateTime.Now) - started):mm\\:ss} {(host.IsRunning ? "so far" : "in all")}"
-        : string.Empty;
+    private string Elapsed
+    {
+        get
+        {
+            if (host?.StartedAtUtc is not { } started)
+                return string.Empty;
+            TimeSpan elapsed = (host.EndedAtUtc ?? DateTime.UtcNow) - started;
+            return $"{(int)elapsed.TotalHours}:{elapsed:mm\\:ss} {(host.IsRunning ? "so far" : "in all")}";
+        }
+    }
 
     protected override void OnInitialized()
     {
@@ -175,7 +197,20 @@
         if (host is null)
             return;
         LoadRoutes();
-        refresh = new(_ => InvokeAsync(StateHasChanged), null, 500, 500);
+        host.Changed += OnChanged;
+        refresh = new(_ => Refresh(), null, 500, 500);
+    }
+
+    private void OnChanged()
+    {
+        Interlocked.Exchange(ref changed, 1);
+    }
+
+    private void Refresh()
+    {
+        bool live = host is { IsRunning: true } && ++ticks % 2 == 0;
+        if (Interlocked.Exchange(ref changed, 0) == 1 || live)
+            _ = InvokeAsync(StateHasChanged);
     }
 
     private void LoadRoutes()
@@ -198,9 +233,14 @@
             error = "The time bound is 1 to 600 minutes.";
             return;
         }
-        if (!host.TryStart(route.File, minutes, out string why))
+        if (!host.TryStart(route, minutes, out string why))
             error = $"Not started: {why}.";
     }
 
-    public void Dispose() => refresh?.Dispose();
+    public void Dispose()
+    {
+        if (host is not null)
+            host.Changed -= OnChanged;
+        refresh?.Dispose();
+    }
 }

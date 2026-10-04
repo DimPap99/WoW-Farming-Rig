@@ -18,6 +18,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 
 // The dashboard keeps ForeverDiagnosticController. This explicit command
@@ -26,7 +27,12 @@ bool run = args.Contains("--run");
 bool sweep = args.Contains("--sweep");
 // --listen: the host that started this run (the web UI) stops it with a
 // "stop" line on standard input, and its input closing stops it too.
-bool listen = args.Contains("--listen");
+bool listen = args.Contains(ForeverRunProtocol.ListenOption);
+// The host reads this output as UTF-8, whatever the console's code page.
+if (listen)
+{
+    Console.OutputEncoding = Encoding.UTF8;
+}
 // --travel X Y: walk to that point of the current zone's map (0 to 100), then stop.
 // --roam X1 Y1 X2 Y2 KILLS: roam that rectangle of the current zone's map until KILLS kills.
 // --route FILE: run a route file from Json/path/_forever (or a path), steps in order.
@@ -45,29 +51,29 @@ if (routeIndex >= 0 && routeIndex + 1 < args.Length && !args[routeIndex + 1].Sta
 if (travel is [] || travel is not null && travel.Any(OffMap))
 {
     Console.Error.WriteLine("Use --travel <x> <y> with map coordinates of the current zone, 0 to 100.");
-    return 1;
+    return ForeverRunProtocol.ExitUsage;
 }
 if (roam is [] || roam is not null && (roam[..4].Any(OffMap) || roam[4] < 1 || roam[4] != Math.Floor(roam[4])))
 {
     Console.Error.WriteLine("Use --roam <x1> <y1> <x2> <y2> <kills>: opposite corners on the current zone's map, 0 to 100, and a number of kills.");
-    return 1;
+    return ForeverRunProtocol.ExitUsage;
 }
 if (routeIndex >= 0 && routeName is null)
 {
     Console.Error.WriteLine("Use --route <file>, a route file in Json/path/_forever or a path to one.");
-    return 1;
+    return ForeverRunProtocol.ExitUsage;
 }
 if (minutes is [] || minutes is [<= 0 or > 600])
 {
     Console.Error.WriteLine("Use --minutes <n> with a time bound from 1 to 600 minutes.");
-    return 1;
+    return ForeverRunProtocol.ExitUsage;
 }
 bool task = travel is not null || roam is not null || routeName is not null;
 bool auto = args.Contains("--auto-check") || args.Contains("--auto-run") || sweep || task;
 run |= args.Contains("--auto-run") || sweep || task;
 if (args.Where((_, i) => !values.Contains(i))
         .Any(a => a is not ("--check" or "--run" or "--auto-check" or "--auto-run" or "--sweep" or "--travel" or
-            "--roam" or "--route" or "--minutes" or "--pid" or "--listen") && !int.TryParse(a, out _)) ||
+            "--roam" or "--route" or "--minutes" or "--pid" or ForeverRunProtocol.ListenOption) && !int.TryParse(a, out _)) ||
     (run && (args.Contains("--check") || args.Contains("--auto-check"))) ||
     (auto && (args.Contains("--check") || args.Contains("--run"))) ||
     (minutes is not null && !run) ||
@@ -76,7 +82,7 @@ if (args.Where((_, i) => !values.Contains(i))
 {
     Console.Error.WriteLine("Use --check, --run, --auto-check, --auto-run, --sweep, --travel <x> <y>, " +
         "--roam <x1> <y1> <x2> <y2> <kills> or --route <file>, [--minutes <n>] [--pid <WowB process ID>].");
-    return 1;
+    return ForeverRunProtocol.ExitUsage;
 }
 
 // A route is read and checked before anything attaches to the game, so a
@@ -89,7 +95,7 @@ if (routeName is not null)
     if (!ForeverRouteFile.TryLoad(routePath, new WorldMapAreaDB(routeData), out ForeverRoute loaded, out string routeError))
     {
         Console.Error.WriteLine($"Route refused: {routeError}");
-        return 1;
+        return ForeverRunProtocol.ExitUsage;
     }
     route = loaded;
     Console.WriteLine($"Route {route.Name}: {route.Tasks.Count} steps{(route.Repeat ? ", repeating" : string.Empty)}.");
@@ -135,7 +141,7 @@ if (pidIndex >= 0)
         !int.TryParse(args[pidIndex + 1], out int id) || id <= 0)
     {
         Console.Error.WriteLine("Use --pid with a positive WowB process ID.");
-        return 1;
+        return ForeverRunProtocol.ExitUsage;
     }
     requestedPid = id;
 }
@@ -146,7 +152,7 @@ Process? wow = Process.GetProcessesByName("WowB")
 if (wow is null)
 {
     Console.Error.WriteLine("WowB is not running.");
-    return 2;
+    return ForeverRunProtocol.ExitRefused;
 }
 
 using CancellationTokenSource cts = new();
@@ -163,7 +169,7 @@ if (listen)
         {
             string? line;
             while ((line = Console.In.ReadLine()) is not null &&
-                   !line.Trim().Equals("stop", StringComparison.OrdinalIgnoreCase))
+                   !line.Trim().Equals(ForeverRunProtocol.StopCommand, StringComparison.OrdinalIgnoreCase))
             {
             }
             Console.WriteLine(line is null ? "The host went away; stopping." : "Stop requested; stopping.");
@@ -176,13 +182,15 @@ if (listen)
     { IsBackground = true, Name = "Forever run listener" }.Start();
 }
 
+// Once the controller runs, an error ends a run that may have moved, not a refusal.
+bool started = false;
 try
 {
     WowProcess process = new(cts, Options.Create(new StartupConfigPid { Id = wow.Id }));
     if (process.FileVersion is not { Major: 1, Minor: >= 60 })
     {
         Console.Error.WriteLine("The selected client is not Forever.");
-        return 2;
+        return ForeverRunProtocol.ExitRefused;
     }
 
     IServiceCollection services = new ServiceCollection();
@@ -254,7 +262,7 @@ try
             ? $"{ForeverFrame.MissingTrialInput(last)} did not read"
             : tracker.Problem;
         Console.Error.WriteLine($"No complete fresh Forever trial frame ({missing}); no input sent.");
-        return 2;
+        return ForeverRunProtocol.ExitRefused;
     }
     if (travel is [double travelX, double travelY])
     {
@@ -279,7 +287,7 @@ try
     if (profile is null)
     {
         Console.Error.WriteLine($"No verified Forever profile for class {(UnitClass)classId}; no input sent.");
-        return 2;
+        return ForeverRunProtocol.ExitRefused;
     }
     Console.WriteLine($"Loading {profile}.");
 
@@ -287,7 +295,7 @@ try
     if (!controller.LoadClassProfile(profile))
     {
         Console.Error.WriteLine("Normal controller did not load the Forever profile.");
-        return 2;
+        return ForeverRunProtocol.ExitRefused;
     }
 
     if (auto)
@@ -295,7 +303,7 @@ try
         if (controller.GoapAgent?.AvailableGoals is not [ForeverAutonomousGoal automatic])
         {
             Console.Error.WriteLine("Normal controller did not load the autonomous goal.");
-            return 2;
+            return ForeverRunProtocol.ExitRefused;
         }
         string autoReason = string.Empty;
         bool autoReady = false;
@@ -322,7 +330,7 @@ try
         if (!autoReady)
         {
             Console.Error.WriteLine($"Autonomous preflight refused: {autoReason}. No input sent.");
-            return 2;
+            return ForeverRunProtocol.ExitRefused;
         }
         Console.WriteLine("Autonomous current-position preflight passed.");
         if (!run)
@@ -331,7 +339,7 @@ try
             Console.WriteLine(pulls.Count == 0
                 ? "Pull options now: none in view."
                 : "Pull options now, the best first: " + string.Join("; ", pulls) + ".");
-            return 0;
+            return ForeverRunProtocol.ExitComplete;
         }
 
         // The run steers and clicks with the mouse, which the game follows only
@@ -340,9 +348,10 @@ try
         if (!WaitForGameWindow(process, cts.Token))
         {
             Console.Error.WriteLine("The game window did not become active; no input sent.");
-            return 2;
+            return ForeverRunProtocol.ExitRefused;
         }
         controller.ToggleBotStatus();
+        started = true;
         DateTime autoDeadline = DateTime.UtcNow.AddSeconds(minutes is [double bound] ? bound * 60 :
             route is not null ? 1200 : roam is not null ? 900 : sweep ? 600 : travel is not null ? 300 : 170);
         DateTime nextSnapshot = DateTime.MinValue;
@@ -353,13 +362,13 @@ try
             string status = automatic.Status;
             if (status != autoLastStatus)
             {
-                Console.WriteLine($"Autonomous phase: {status}; completed cycles={automatic.CompletedKills}, looted={automatic.CompletedLoots}; {automatic.AgendaStatus}");
+                Console.WriteLine($"{ForeverRunProtocol.PhasePrefix} {status}; completed cycles={automatic.CompletedKills}, looted={automatic.CompletedLoots}; {automatic.AgendaStatus}");
                 autoLastStatus = status;
             }
             if (DateTime.UtcNow >= nextSnapshot)
             {
                 if (tracker.TryGetLatest(out VisualBarSample current))
-                    Console.WriteLine($"  map={current.Position?.UIMapId} {current.Position?.MapX * 100:0.00},{current.Position?.MapY * 100:0.00}, " +
+                    Console.WriteLine($"{ForeverRunProtocol.SnapshotPrefix}{current.Position?.UIMapId} {current.Position?.MapX * 100:0.00},{current.Position?.MapY * 100:0.00}, " +
                         $"health={current.PlayerHealth:P0}, mana={current.PlayerPower:P0}, " +
                         $"target={current.TargetHealth:P0}, flags={current.TargetFlags}, " +
                         $"auras={current.SlotAuras?.ToString() ?? "unreadable"}, marker={current.TargetScreenPosition}, " +
@@ -378,7 +387,7 @@ try
         }
         if (controller.IsBotActive)
             controller.ToggleBotStatus();
-        Console.WriteLine($"Autonomous kills: {automatic.CompletedKills}; deaths observed: {automatic.ObservedDeaths}; " +
+        Console.WriteLine($"{ForeverRunProtocol.SummaryPrefix} {automatic.CompletedKills}; deaths observed: {automatic.ObservedDeaths}; " +
             $"corpses looted: {automatic.CompletedLoots}; " +
             $"status: {automatic.Status}; {automatic.LastFailure}");
         bool timedOut = DateTime.UtcNow >= autoDeadline;
@@ -387,17 +396,17 @@ try
         if (timedOut && route is { Repeat: true } && automatic.Status != "Failed")
         {
             Console.WriteLine($"Time limit reached; the repeating route ran until then ({automatic.AgendaStatus}).");
-            return 0;
+            return ForeverRunProtocol.ExitComplete;
         }
         if (timedOut)
             Console.Error.WriteLine("Trial time limit reached before the run completed.");
-        return automatic.Status == "Complete" ? 0 : 3;
+        return automatic.Status == "Complete" ? ForeverRunProtocol.ExitComplete : ForeverRunProtocol.ExitFailed;
     }
 
     if (controller.GoapAgent?.AvailableGoals is not [ForeverTrialGoal goal])
     {
         Console.Error.WriteLine("Normal controller did not load the isolated trial goal.");
-        return 2;
+        return ForeverRunProtocol.ExitRefused;
     }
 
     Console.WriteLine("Normal Forever controller loaded with one bounded trial goal.");
@@ -405,16 +414,17 @@ try
     if (!routeReady)
     {
         Console.Error.WriteLine($"Route preflight refused: {routeReason}. No game input sent.");
-        return 2;
+        return ForeverRunProtocol.ExitRefused;
     }
     Console.WriteLine("Route preflight passed.");
     if (!run)
     {
         Console.WriteLine("Read-only check passed; no game input sent.");
-        return 0;
+        return ForeverRunProtocol.ExitComplete;
     }
 
     controller.ToggleBotStatus();
+    started = true;
     DateTime deadline = DateTime.UtcNow.AddSeconds(195);
     string lastStatus = string.Empty;
     while (!cts.IsCancellationRequested && DateTime.UtcNow < deadline &&
@@ -432,12 +442,17 @@ try
         controller.ToggleBotStatus();
 
     Console.WriteLine($"Controller trial status: {goal.TrialStatus}. {goal.LastFailure}");
-    return goal.TrialStatus == "Passed" ? 0 : 3;
+    return goal.TrialStatus == "Passed" ? ForeverRunProtocol.ExitComplete : ForeverRunProtocol.ExitFailed;
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"Controller trial refused: {ex.Message}");
-    return 2;
+    if (!started)
+    {
+        Console.Error.WriteLine($"Controller trial refused: {ex.Message}");
+        return ForeverRunProtocol.ExitRefused;
+    }
+    Console.Error.WriteLine($"Controller trial stopped by an error: {ex.Message}");
+    return ForeverRunProtocol.ExitFailed;
 }
 finally
 {
@@ -448,7 +463,7 @@ static bool WaitForGameWindow(WowProcess process, CancellationToken token)
 {
     if (WinAPI.NativeMethods.GetForegroundWindow() == process.MainWindowHandle)
         return true;
-    Console.WriteLine("Click into the game window to start the run (waiting up to 60 seconds).");
+    Console.WriteLine($"{ForeverRunProtocol.ClickPrompt} to start the run (waiting up to 60 seconds).");
     for (int i = 0; i < 600 && !token.IsCancellationRequested; i++)
     {
         if (WinAPI.NativeMethods.GetForegroundWindow() == process.MainWindowHandle)

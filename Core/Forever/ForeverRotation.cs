@@ -510,7 +510,10 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         return new(ForeverFightStep.Wait);
     }
 
-    public void ReleaseCasting() => caster.Release();
+    public void ReleaseCasting()
+    {
+        caster.Release();
+    }
 
     public ForeverCombatResult ShootOnTheMove(VisualBarSample bars, VisualTargetIdentity identity,
         Action<VisualBarSample> keepWalking, out string reason)

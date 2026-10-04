@@ -89,8 +89,9 @@ From the web UI: start BlazorServer (`BlazorServer\build.bat`, then
 It lists the route files with their steps (or why one is refused), starts one
 with a time bound, shows the run's activity, progress and output as it goes,
 and stops it. The server itself stays read-only: `ForeverRunHost` starts the
-same trial runner as below, as a child process with `--listen` (a "stop" line
-on its input stops it as Ctrl+C does), and keeps its output in
+same trial runner as below on the client the server watches (`--pid`), as a child
+process with `--listen` (a "stop" line on its input stops it as Ctrl+C does,
+and the server waits for it to let go before anything else), and keeps its output in
 `local/logs/web-<route>-<time>.log` when that folder exists. After Start, click
 into the game; since the bot steers with the mouse, clicking anywhere else on
 the PC stops the run, so watch from another screen or device. Build
@@ -116,8 +117,9 @@ dotnet run --project Utilities/ForeverControllerTrial -- --route my_loop.json --
   `Autonomous phase: Task/Roam the area around 52.5, 45 on map 1411/Look; ...; task 2 of 3: ... (1 kills in 2.3 minutes)`.
 - The time bound is 20 minutes, or `--minutes <n>` (1 to 600).
 - Exit code 0 when the route completes, or when a repeating route reaches its
-  time bound without failing; 3 when it fails or a non-repeating route runs out
-  of time; 2 when the game or the preflight refused it before anything moved;
+  time bound without failing; 3 when it fails, stops or errs after it started, or a
+  non-repeating route runs out of time; 2 when the game, the frame, the preflight
+  or a missing click refused it before anything moved;
   1 for a usage mistake or a route file refused when it loads.
 
 ## Writing a route

@@ -1,10 +1,13 @@
 using Core.Forever;
 
+using Game;
+
 using SharedLib;
 
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -12,37 +15,52 @@ using System.Threading;
 
 namespace Frontend;
 
-/// <summary>A route file as the runs page lists it: its file, its name and steps, or why it is refused.</summary>
-public sealed record ForeverRouteChoice(string File, string Name, IReadOnlyList<string> Steps, bool Repeat, string Error);
+/// <summary>A route file as the runs page lists it: where it is, its name and steps, or why it is refused.</summary>
+public sealed record ForeverRouteChoice(string FullPath, string File, string Name, IReadOnlyList<string> Steps,
+    bool Repeat, string Error);
+
+/// <summary>One line of a run's output, numbered in the order it came.</summary>
+public readonly record struct ForeverRunLine(long Number, string Text);
 
 /// <summary>
 /// Starts and stops WoW: Forever runs for the web UI, which itself stays read-only.
 /// A run is the same trial runner the live tests use (<c>ForeverControllerTrial
-/// --route</c>), started as a child process with <c>--listen</c>: its output is
-/// kept for the page (and in <c>local/logs</c> when that folder exists), and a
-/// "stop" line on its input stops it the way Ctrl+C does, releasing what it holds.
-/// One run at a time.
+/// --route</c>), started as a child process on the client this server watches,
+/// listening (<see cref="ForeverRunProtocol.ListenOption"/>): its output is kept
+/// for the page (and in <c>local/logs</c> when that folder exists), and
+/// <see cref="ForeverRunProtocol.StopCommand"/> on its input stops it the way
+/// Ctrl+C does, releasing what it holds. One run at a time.
 /// </summary>
 public sealed class ForeverRunHost : IDisposable
 {
-    /// <summary>Output lines kept for the page.</summary>
+    /// <summary>Output lines kept for the page, frame snapshots apart.</summary>
     public const int KeptLines = 400;
-    private const int StopGraceMs = 10000;
+    /// <summary>Frame snapshots kept: one comes every two seconds, and an old one says little.</summary>
+    public const int KeptSnapshots = 30;
+    /// <summary>How long a stopped run gets to release what it holds and exit before it is ended.</summary>
+    public const int StopGraceMs = 10000;
     private const string RunnerName = "ForeverControllerTrial";
+    private const string SolutionFile = "WoWFarmingRig.sln";
 
     private readonly object sync = new();
+    private readonly WorldMapAreaDB maps;
+    private readonly WowProcess wow;
     private readonly string repositoryRoot;
-    private readonly DataConfig data;
-    private readonly Queue<string> lines = new();
-    private WorldMapAreaDB? maps;
+    private readonly string routesFolder;
+    private readonly Queue<ForeverRunLine> lines = new();
+    private readonly Queue<ForeverRunLine> snapshots = new();
+    private long lineNumber;
     private Process? process;
     private StreamWriter? log;
     private Timer? killTimer;
 
-    public ForeverRunHost(DataConfig data)
+    public ForeverRunHost(DataConfig data, WorldMapAreaDB maps, WowProcess wow)
     {
-        this.data = data;
-        repositoryRoot = Path.GetFullPath(Path.Combine(data.Root, ".."));
+        this.maps = maps;
+        this.wow = wow;
+        repositoryRoot = FindRepositoryRoot() ?? Path.GetFullPath(Path.Combine(data.Root, ".."));
+        // The runner reads routes from Json under its working directory, the repository.
+        routesFolder = Path.Combine(repositoryRoot, "Json", "path", ForeverRouteFile.Folder);
     }
 
     /// <summary>Something the page shows changed: a line, the state.</summary>
@@ -51,46 +69,44 @@ public sealed class ForeverRunHost : IDisposable
     public bool IsRunning { get; private set; }
     public bool StopRequested { get; private set; }
     public string Route { get; private set; } = string.Empty;
-    public DateTime? StartedAt { get; private set; }
-    public DateTime? EndedAt { get; private set; }
+    public DateTime? StartedAtUtc { get; private set; }
+    public DateTime? EndedAtUtc { get; private set; }
     public int? ExitCode { get; private set; }
-    /// <summary>The latest "Autonomous phase" line: the activity, its step and the route's progress.</summary>
+    /// <summary>The latest phase line: the activity, its step and the route's progress.</summary>
     public string Phase { get; private set; } = string.Empty;
     /// <summary>The run's closing line: kills, loot and its status.</summary>
     public string Summary { get; private set; } = string.Empty;
-    /// <summary>The trial runner asks for a click into the game before it moves anything.</summary>
+    /// <summary>The runner asks for a click into the game before it moves anything.</summary>
     public bool WaitingForClick { get; private set; }
     public string LogFile { get; private set; } = string.Empty;
 
-    public IReadOnlyList<string> Lines
+    /// <summary>The run's output in order, with the frame snapshots when <paramref name="withSnapshots"/>.</summary>
+    public IReadOnlyList<ForeverRunLine> Output(bool withSnapshots)
     {
-        get
+        lock (sync)
         {
-            lock (sync)
-                return [.. lines];
+            return withSnapshots ? [.. lines.Concat(snapshots).OrderBy(line => line.Number)] : [.. lines];
         }
     }
 
-    /// <summary>The route files in <c>Json/path/_forever</c>, each loaded and checked as a run would.</summary>
+    /// <summary>The route files the runner can run, each loaded and checked as a run would.</summary>
     public IReadOnlyList<ForeverRouteChoice> Routes()
     {
-        string folder = Path.Combine(data.Path, ForeverRouteFile.Folder);
-        if (!Directory.Exists(folder))
+        if (!Directory.Exists(routesFolder))
             return [];
-        maps ??= new WorldMapAreaDB(data);
         List<ForeverRouteChoice> routes = [];
-        foreach (string path in Directory.EnumerateFiles(folder, "*.json").OrderBy(Path.GetFileName))
+        foreach (string path in Directory.EnumerateFiles(routesFolder, "*.json").OrderBy(Path.GetFileName))
         {
             string file = Path.GetFileName(path);
             routes.Add(ForeverRouteFile.TryLoad(path, maps, out ForeverRoute route, out string error)
-                ? new(file, route.Name, [.. route.Tasks.Select(task => task.Name)], route.Repeat, string.Empty)
-                : new(file, file, [], false, error));
+                ? new(path, file, route.Name, [.. route.Tasks.Select(task => task.Name)], route.Repeat, string.Empty)
+                : new(path, file, file, [], false, error));
         }
         return routes;
     }
 
-    /// <summary>Starts <paramref name="routeFile"/> for at most <paramref name="minutes"/>; false with why when it cannot.</summary>
-    public bool TryStart(string routeFile, int minutes, out string error)
+    /// <summary>Starts <paramref name="route"/> for at most <paramref name="minutes"/>; false with why when it cannot.</summary>
+    public bool TryStart(ForeverRouteChoice route, int minutes, out string error)
     {
         lock (sync)
         {
@@ -116,35 +132,42 @@ public sealed class ForeverRunHost : IDisposable
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8,
             };
-            foreach (string argument in new[] { "--route", routeFile, "--minutes", minutes.ToString(), "--listen" })
+            // The full path: the runner looks in its working directory first.
+            List<string> arguments = ["--route", route.FullPath,
+                "--minutes", minutes.ToString(CultureInfo.InvariantCulture), ForeverRunProtocol.ListenOption];
+            // The client this server watches, not whichever the runner would pick.
+            if (wow.Id > 0)
+                arguments.AddRange(["--pid", wow.Id.ToString(CultureInfo.InvariantCulture)]);
+            foreach (string argument in arguments)
                 start.ArgumentList.Add(argument);
 
             Process child = new() { StartInfo = start, EnableRaisingEvents = true };
-            child.OutputDataReceived += (_, e) => Received(e.Data);
-            child.ErrorDataReceived += (_, e) => Received(e.Data);
+            child.OutputDataReceived += (_, e) => Received(child, e.Data);
+            child.ErrorDataReceived += (_, e) => Received(child, e.Data);
             child.Exited += (_, _) => Ended(child);
-
-            lines.Clear();
-            Route = routeFile;
-            Phase = Summary = string.Empty;
-            StartedAt = DateTime.Now;
-            EndedAt = null;
-            ExitCode = null;
-            StopRequested = false;
-            WaitingForClick = false;
-            log = OpenLog(routeFile);
             try
             {
                 child.Start();
             }
             catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
             {
-                log?.Dispose();
-                log = null;
+                // The last run stays on the page as it was.
+                child.Dispose();
                 error = $"the run could not start: {ex.Message}";
                 return false;
             }
+
+            process?.Dispose();
             process = child;
+            lines.Clear();
+            snapshots.Clear();
+            Route = route.File;
+            Phase = Summary = string.Empty;
+            StartedAtUtc = DateTime.UtcNow;
+            EndedAtUtc = null;
+            ExitCode = null;
+            StopRequested = WaitingForClick = false;
+            log = OpenLog(route.File);
             IsRunning = true;
             child.BeginOutputReadLine();
             child.BeginErrorReadLine();
@@ -156,7 +179,8 @@ public sealed class ForeverRunHost : IDisposable
 
     /// <summary>
     /// Asks the run to stop: it releases its keys and the mouse and exits, as
-    /// with Ctrl+C. A run that has not exited after a grace period is ended.
+    /// with Ctrl+C. Only a run that has not exited after <see cref="StopGraceMs"/>
+    /// is ended outright.
     /// </summary>
     public void Stop()
     {
@@ -167,10 +191,10 @@ public sealed class ForeverRunHost : IDisposable
             StopRequested = true;
             try
             {
-                child.StandardInput.WriteLine("stop");
+                child.StandardInput.WriteLine(ForeverRunProtocol.StopCommand);
                 child.StandardInput.Flush();
             }
-            catch (Exception ex) when (ex is IOException or InvalidOperationException)
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
             {
             }
             killTimer = new(_ => Kill(child), null, StopGraceMs, Timeout.Infinite);
@@ -178,61 +202,100 @@ public sealed class ForeverRunHost : IDisposable
         Changed?.Invoke();
     }
 
+    /// <summary>
+    /// The server goes away: a run is stopped and gets its full grace period to
+    /// release what it holds, as BlazorServer stops nothing before input is released.
+    /// </summary>
     public void Dispose()
     {
         Process? child;
         lock (sync)
+        {
             child = IsRunning ? process : null;
-        if (child is null)
-            return;
-        Stop();
-        if (!child.WaitForExit(3000))
-            Kill(child);
+        }
+        if (child is not null)
+        {
+            Stop();
+            try
+            {
+                if (!child.WaitForExit(StopGraceMs))
+                    Kill(child);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+            }
+        }
+        lock (sync)
+        {
+            killTimer?.Dispose();
+            killTimer = null;
+            log?.Dispose();
+            log = null;
+            process?.Dispose();
+            process = null;
+        }
     }
 
-    private void Received(string? line)
+    private void Received(Process child, string? line)
     {
         if (line is null)
             return;
         lock (sync)
         {
-            lines.Enqueue(line);
-            while (lines.Count > KeptLines)
-                lines.Dequeue();
+            if (child != process)
+                return;
+            ForeverRunLine numbered = new(++lineNumber, line);
+            Queue<ForeverRunLine> kept = line.StartsWith(ForeverRunProtocol.SnapshotPrefix, StringComparison.Ordinal)
+                ? snapshots : lines;
+            kept.Enqueue(numbered);
+            while (kept.Count > (kept == snapshots ? KeptSnapshots : KeptLines))
+                kept.Dequeue();
             log?.WriteLine(line);
-            if (line.StartsWith("Autonomous phase:", StringComparison.Ordinal))
+            if (line.StartsWith(ForeverRunProtocol.PhasePrefix, StringComparison.Ordinal))
             {
-                Phase = line["Autonomous phase:".Length..].Trim();
+                Phase = line[ForeverRunProtocol.PhasePrefix.Length..].Trim();
                 WaitingForClick = false;
             }
-            else if (line.StartsWith("Autonomous kills:", StringComparison.Ordinal))
+            else if (line.StartsWith(ForeverRunProtocol.SummaryPrefix, StringComparison.Ordinal))
+            {
                 Summary = line;
-            else if (line.StartsWith("Click into the game window", StringComparison.Ordinal))
+            }
+            else if (line.StartsWith(ForeverRunProtocol.ClickPrompt, StringComparison.Ordinal))
+            {
                 WaitingForClick = true;
+            }
         }
         Changed?.Invoke();
     }
 
+    // Runs on the thread that saw the exit. The streams may still hold the
+    // last lines: they are read to the end first, outside the lock their
+    // handler takes. The process object is kept until the next start or the
+    // server's end, so nothing here races with Dispose.
     private void Ended(Process child)
     {
-        // The streams may still hold the last lines; they are read to the end
-        // first, outside the lock their handler takes.
-        child.WaitForExit();
+        int? code = null;
+        try
+        {
+            child.WaitForExit();
+            code = child.ExitCode;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+        }
         lock (sync)
         {
             if (child != process)
                 return;
-            ExitCode = child.ExitCode;
-            EndedAt = DateTime.Now;
+            ExitCode = code;
+            EndedAtUtc = DateTime.UtcNow;
             IsRunning = false;
             WaitingForClick = false;
             killTimer?.Dispose();
             killTimer = null;
-            log?.WriteLine($"exit={ExitCode}");
+            log?.WriteLine($"exit={code}");
             log?.Dispose();
             log = null;
-            child.Dispose();
-            process = null;
         }
         Changed?.Invoke();
     }
@@ -249,14 +312,28 @@ public sealed class ForeverRunHost : IDisposable
         }
     }
 
-    // The newest build of the trial runner beside the repository's Json folder.
+    // The repository the server runs from: the folder with the solution, above its build output.
+    private static string? FindRepositoryRoot()
+    {
+        for (DirectoryInfo? folder = new(AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
+        {
+            if (File.Exists(Path.Combine(folder.FullName, SolutionFile)))
+                return folder.FullName;
+        }
+        return null;
+    }
+
+    // The runner's build output written last, its own files and the Core it
+    // carries alike, so a rebuild that only changed Core counts.
     private string? FindRunner()
     {
         string bin = Path.Combine(repositoryRoot, "Utilities", RunnerName, "bin");
-        return Directory.Exists(bin)
-            ? Directory.EnumerateFiles(bin, RunnerName + ".exe", SearchOption.AllDirectories)
-                .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault()
-            : null;
+        if (!Directory.Exists(bin))
+            return null;
+        return Directory.EnumerateFiles(bin, RunnerName + ".exe", SearchOption.AllDirectories)
+            .OrderByDescending(exe => Directory.EnumerateFiles(Path.GetDirectoryName(exe)!, "*.dll")
+                .Append(exe).Max(File.GetLastWriteTimeUtc))
+            .FirstOrDefault();
     }
 
     // Beside the live tests' logs, when the repository keeps them.
