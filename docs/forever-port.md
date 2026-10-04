@@ -180,7 +180,11 @@ Forever-owned code:
 
 - `Core/Forever/` - the guarded runtime: `ForeverGoalFactory` (the session's
   composition root), `ForeverStateMachine` (the declared states, exits, time
-  bounds, release hooks and allowances both Forever goals run on), `ForeverCaster` (one
+  bounds, release hooks and allowances both Forever goals run on),
+  `ForeverSelector` and `ForeverFacts` (which activity runs on a frame),
+  `Activities/` (Engage, Threat, Loot, Rest and the agenda's Task),
+  `Tasks/` (`ForeverAgenda`, the `ForeverTasks` API, `ForeverUntil` and the
+  task runners), `ForeverLookAround`, `ForeverCaster` (one
   checked keypress per cast),
   `ForeverRotation` (the class profile's Pull, Combat and Adhoc lists),
   `ForeverCorpses` (the bodies of a fight and where they fell), `ForeverLoot`
@@ -231,8 +235,9 @@ A Forever-owned controller loop would let `BotController`, `GoapAgent`,
 The runtime names no class or spell. As upstream, the class profile carries
 everything class-specific and the behaviour is shared:
 
-- `ForeverAutonomousGoal` runs Acquire, Pursue, Fight, Loot and Recover for
-  every class.
+- `ForeverAutonomousGoal` runs the same activities for every class: finding,
+  clicking and fighting a unit, looting and resting (since 2026-10-04 as
+  activities under a selector; see "Activities and the agenda").
 - `ForeverRotation` reads the profile. **Adhoc** holds self heals and buffs,
   gated by the upstream `InCombat` flag. A buff is an action with
   `AfterCastAuraExpected`, and its aura is matched against its slot icon
@@ -916,18 +921,20 @@ mouse button, and uses checked spell range to stop. Seal (slot 5), Judgement
 This profile remains available through the explicit bounded utility;
 `ForeverDiagnosticController` still guards dashboard startup.
 
-The run is an explicit state machine (`ForeverStateMachine`, since
-2026-10-03): Start, Search, Select, Approach, Fight, Loot, Rest and Recover,
-then Complete or Failed. The goal's constructor declares every state once: its
-work on a frame, the states it may move to, its hard time bound (Search 45 s,
-Select 8 s, Approach 20 s, Fight 75 s; Select's and Approach's hand over to
-recovery instead of failing), the hooks that release what it holds, such
-as held movement when pursuit ends, and since 2026-10-04 what it allows besides
-its work (`ForeverAllowed`): a routine several states share, such as walking,
-does only what the current state allows. A move the declaration does not allow ends the run
-instead of acting on a bug; a bound is checked before the state's work on each
-frame. The bounded trial goal runs on the same class. Its checks, together
-with the rotation, preflight and key checks, run offline:
+Since 2026-10-04 the run is a selector over activities (see "Activities and
+the agenda" below); until then it was one state machine with the phases Start,
+Search, Select, Approach, Fight, Loot, Rest and Recover. Each activity runs on
+its own explicit state machine (`ForeverStateMachine`, since 2026-10-03),
+which declares every state once: its work on a frame, the states it may move
+to, its hard time bound (searching 45 s, Select 8 s, Approach 20 s, Fight
+75 s, a loot round 120 s; Select's and Approach's hand over to a setback
+instead of failing), the hooks that release what it holds, such as held
+movement when pursuit ends, and what it allows besides its work
+(`ForeverAllowed`): a routine several states share, such as walking, does only
+what the current state allows. A move the declaration does not allow ends the
+run instead of acting on a bug; a bound is checked before the state's work on
+each frame. The bounded trial goal runs on the same class. Its checks,
+together with the selector, rotation, preflight and key checks, run offline:
 
 ```powershell
 dotnet run --project Utilities/ForeverVisualReader -- --logic-test
@@ -1549,3 +1556,71 @@ the version 4 rows at three UI scales. A scratch run of the committed and
 working add-on on one mocked API kept all 1,825 other telemetry entries
 identical and decoded the pet and the new cells end to end, including a
 protected pet target and a failing pet query. Not yet verified live.
+
+### Activities and the agenda (2026-10-04)
+
+The controller had grown into one state machine that wired every edge by
+hand: Search alone decided about loot, aggro, health and mana, attackers,
+looking around and roaming. Adding travel, food, death or quests there would
+have kept growing one class. The run is now split the way upstream splits its
+goals, keeping the declared state machines inside each part.
+
+- **Facts.** `ForeverFacts` is built once per frame: in combat, in danger,
+  taking damage, a unit engaged, bodies pending, enough to open a fight, and
+  when the last kill was.
+- **Selector.** `ForeverSelector` runs the cheapest activity that wants to
+  run, re-checked on every frame, as upstream's `GoapAgent` runs the cheapest
+  goal that can. A switch exits the old activity first, so its hooks release
+  held keys and the mouse, then enters the new one, and the log says why
+  ("Forever activity: Task -> Engage (engaged)").
+- **Activities**, each on its own `ForeverStateMachine`:
+
+  | Activity | Wants to run when | Cost |
+  |---|---|---|
+  | Engage | a unit is chosen to click, or locked to fight | 4 |
+  | Loot | bodies are pending, nothing fights the player, `Loot` is on | 4.5 |
+  | Threat | in combat with nothing engaged | 4.6 |
+  | Rest | out of combat, after a fight until rested, or below what a pull needs | 5 |
+  | Task | always: the agenda's current task | 20 |
+
+  Engage is the old Select, Approach and Fight, with the setbacks, the units
+  set aside and the recovery budget. Threat is Search's in-combat part: it
+  adopts the selected unit that fights in reach, takes an attacking plate,
+  stands still while combat only lingers and turns round only while taking
+  damage. The costs keep the old precedence: in danger Loot does not want to
+  run and Threat goes first; while combat only lingers the bodies are looted;
+  an attack during a rest is combat, where Threat takes over.
+- **Agenda and tasks.** `ForeverAgenda` holds the run's tasks in order. A task
+  is a record (data), carried out by a runner over many frames; it never
+  blocks, since a fight can take over on any frame and the task resumes
+  afterwards. Kills count toward the task that was current. A task ends when
+  its runner says so or its `ForeverUntil` holds, and the run completes when
+  the agenda is done. Code builds tasks through `ForeverTasks`, for example
+  `ForeverTasks.HuntHere(ForeverUntil.AfterKills(1))`; route files will load
+  into the same records.
+
+The bounded trials are agendas of one task: `--auto-run` hunts here until one
+kill, `--sweep` until a full look-around finds nothing, and with neither the
+hunt runs until its 45-second search bound. Hunting here is Search's
+out-of-combat part: look round, take an eligible plate, walk on a stretch
+within 25 yards, look again. A verified kill is still checked before anything
+else acts on a frame, and the profile's Adhoc actions still run first, except
+while looting out of combat or with a corpse selected out of combat.
+
+Behaviour is meant to be unchanged. The differences are small: the look-around
+starts afresh when hunting hands over to Threat or back; waiting for the
+health or mana a pull needs is Rest, so its time bound says "health did not
+recover in time" instead of the search timeout; combat that lingers after a
+kill is bounded by Threat's 45 seconds instead of Rest's 30; the Recover phase
+is gone and its log line comes from the engagement. The trial runner shows
+the activity and step, such as `Engage/Fight`, `Threat` or `Task/Hunt here`.
+Offline, `--logic-test` has 207 checks: the old phase checks ported to the
+activities, which activity the facts pick in every case above, a loot round
+ending itself after its last body, and the trial agendas. Not yet verified
+live.
+
+Next, per the plan: a `TravelTo` task (navmesh walking with upstream's unstick
+ladder redone for held keys and the mouse), a `RoamArea` task (an area given
+in map coordinates, hunted until a number of kills, minutes or a level), and
+route files that chain them. Quests come later as more step kinds and
+conditions on the same agenda.

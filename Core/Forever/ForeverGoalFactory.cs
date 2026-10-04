@@ -57,6 +57,15 @@ public static class ForeverGoalFactory
             services.AddScoped<IForeverCombatRoutine, ForeverRotation>();
             services.AddScoped<ForeverCorpses>();
             services.AddScoped<IForeverLootRoutine, ForeverLoot>();
+
+            // The activities the controller's selector picks from, and the
+            // agenda whose tasks run when none of the others wants to.
+            services.AddScoped<ForeverEngageActivity>();
+            services.AddScoped<ForeverThreatActivity>();
+            services.AddScoped<ForeverLootActivity>();
+            services.AddScoped<ForeverRestActivity>();
+            services.AddScoped<ForeverTaskActivity>();
+            services.AddScoped(scope => ForeverAgenda.For(scope.GetRequiredService<ForeverRunOptions>()));
             services.AddScoped<GoapGoal, ForeverAutonomousGoal>();
         }
         else
