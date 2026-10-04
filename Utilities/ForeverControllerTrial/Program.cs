@@ -24,6 +24,9 @@ using System.Threading;
 // constructs the normal controller for a bounded trial only.
 bool run = args.Contains("--run");
 bool sweep = args.Contains("--sweep");
+// --listen: the host that started this run (the web UI) stops it with a
+// "stop" line on standard input, and its input closing stops it too.
+bool listen = args.Contains("--listen");
 // --travel X Y: walk to that point of the current zone's map (0 to 100), then stop.
 // --roam X1 Y1 X2 Y2 KILLS: roam that rectangle of the current zone's map until KILLS kills.
 // --route FILE: run a route file from Json/path/_forever (or a path), steps in order.
@@ -64,7 +67,7 @@ bool auto = args.Contains("--auto-check") || args.Contains("--auto-run") || swee
 run |= args.Contains("--auto-run") || sweep || task;
 if (args.Where((_, i) => !values.Contains(i))
         .Any(a => a is not ("--check" or "--run" or "--auto-check" or "--auto-run" or "--sweep" or "--travel" or
-            "--roam" or "--route" or "--minutes" or "--pid") && !int.TryParse(a, out _)) ||
+            "--roam" or "--route" or "--minutes" or "--pid" or "--listen") && !int.TryParse(a, out _)) ||
     (run && (args.Contains("--check") || args.Contains("--auto-check"))) ||
     (auto && (args.Contains("--check") || args.Contains("--run"))) ||
     (minutes is not null && !run) ||
@@ -152,6 +155,26 @@ Console.CancelKeyPress += (_, e) =>
     e.Cancel = true;
     cts.Cancel();
 };
+if (listen)
+{
+    new Thread(() =>
+    {
+        try
+        {
+            string? line;
+            while ((line = Console.In.ReadLine()) is not null &&
+                   !line.Trim().Equals("stop", StringComparison.OrdinalIgnoreCase))
+            {
+            }
+            Console.WriteLine(line is null ? "The host went away; stopping." : "Stop requested; stopping.");
+            cts.Cancel();
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        {
+        }
+    })
+    { IsBackground = true, Name = "Forever run listener" }.Start();
+}
 
 try
 {
