@@ -46,7 +46,7 @@ internal static partial class LogicTest
         // A straight leg with a point every 2 yards.
         List<Vector2> straight = [.. Enumerable.Range(0, 51).Select(i => new Vector2(i * 2, 0))];
         int next = 0;
-        Vector2 carrot = ForeverTravel.Follow(straight, ref next, new(0, 0), out float remaining);
+        Vector2 carrot = ForeverWalker.Follow(straight, ref next, new(0, 0), out float remaining);
         check("travel: the walk heads 20 yards along the path, with the whole leg left",
             Vector2.Distance(carrot, new(20, 0)) < 0.01f && Math.Abs(remaining - 100) < 0.01f, $"{carrot}, {remaining:0.0}");
         bool ahead = true, shrinking = true, forward = true;
@@ -55,14 +55,14 @@ internal static partial class LogicTest
         for (float x = 1; x <= 90; x += 1.5f)
         {
             Vector2 here = new(x, 0.8f);
-            carrot = ForeverTravel.Follow(straight, ref next, here, out remaining);
+            carrot = ForeverWalker.Follow(straight, ref next, here, out remaining);
             ahead &= carrot.X > here.X;
             shrinking &= remaining < before;
             forward &= next >= lastNext;
             before = remaining;
             lastNext = next;
         }
-        carrot = ForeverTravel.Follow(straight, ref next, new(99.5f, 0), out remaining);
+        carrot = ForeverWalker.Follow(straight, ref next, new(99.5f, 0), out remaining);
         check("travel: walking the leg, the point headed for stays ahead, what is left shrinks, and the end is the last point",
             ahead && shrinking && forward && carrot == straight[^1] && remaining < 1, $"ahead={ahead}, shrinking={shrinking}, forward={forward}, {carrot}, {remaining:0.0}");
 
@@ -70,23 +70,23 @@ internal static partial class LogicTest
         List<Vector2> corner = [.. Enumerable.Range(0, 21).Select(i => new Vector2(i * 2, 0)),
             .. Enumerable.Range(1, 20).Select(i => new Vector2(40, i * 2))];
         next = 15;
-        ForeverTravel.Follow(corner, ref next, new(38.5f, 4), out remaining);
+        ForeverWalker.Follow(corner, ref next, new(38.5f, 4), out remaining);
         check("travel: a walk that cut a corner is past the points before it",
             next >= 21 && remaining < 40, $"next={next}, remaining={remaining:0.0}");
 
         List<Vector2> segment = [new(0, 0), new(10, 0)];
         check("travel: off the path is the distance to the leg toward the next point",
-            Math.Abs(ForeverTravel.OffPath(segment, 1, new(5, 3)) - 3) < 0.01f &&
-            ForeverTravel.OffPath(segment, 1, new(5, 0)) < 0.01f &&
-            Math.Abs(ForeverTravel.OffPath(segment, 0, new(0, 4)) - 4) < 0.01f, "");
+            Math.Abs(ForeverWalker.OffPath(segment, 1, new(5, 3)) - 3) < 0.01f &&
+            ForeverWalker.OffPath(segment, 1, new(5, 0)) < 0.01f &&
+            Math.Abs(ForeverWalker.OffPath(segment, 0, new(0, 4)) - 4) < 0.01f, "");
 
-        ForeverUnstick[] ladder = [.. Enumerable.Range(1, 6).Select(rung => ForeverTravel.RungFor(rung, canBackOut: true, canSkipVia: true))];
+        ForeverUnstick[] ladder = [.. Enumerable.Range(1, 6).Select(rung => ForeverWalker.RungFor(rung, canBackOut: true, canSkipVia: true))];
         check("travel: the unstick ladder steps aside, backs out, skips the point on the way, then steps and backs out in turn",
             ladder.SequenceEqual([ForeverUnstick.Sidestep, ForeverUnstick.BackOut, ForeverUnstick.SkipVia,
                 ForeverUnstick.BackOut, ForeverUnstick.Sidestep, ForeverUnstick.BackOut]), string.Join(", ", ladder));
         check("travel: without a move-backward key it steps aside, and with no point on the way left it does not skip",
-            Enumerable.Range(1, 6).All(rung => ForeverTravel.RungFor(rung, canBackOut: false, canSkipVia: false) == ForeverUnstick.Sidestep) &&
-            ForeverTravel.RungFor(3, canBackOut: true, canSkipVia: false) == ForeverUnstick.Sidestep, "");
+            Enumerable.Range(1, 6).All(rung => ForeverWalker.RungFor(rung, canBackOut: false, canSkipVia: false) == ForeverUnstick.Sidestep) &&
+            ForeverWalker.RungFor(3, canBackOut: true, canSkipVia: false) == ForeverUnstick.Sidestep, "");
 
         long t0 = Stopwatch.GetTimestamp();
         long At(double seconds) => t0 + (long)(seconds * Stopwatch.Frequency);
@@ -125,7 +125,7 @@ internal static partial class LogicTest
         bool onMesh = true;
         while (steps < 400 && Vector2.Distance(walker, end) > ForeverTravel.ArriveYards && real.Count >= 2)
         {
-            Vector2 toward = ForeverTravel.Follow(real, ref next, walker, out _);
+            Vector2 toward = ForeverWalker.Follow(real, ref next, walker, out _);
             onMesh &= nav.TryGetHeight(toward.X, toward.Y, out _);
             Vector2 step = toward - walker;
             walker = step.Length() <= 1.5f ? toward : walker + Vector2.Normalize(step) * 1.5f;

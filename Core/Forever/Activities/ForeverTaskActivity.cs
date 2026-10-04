@@ -4,6 +4,8 @@ using SharedLib;
 
 using System;
 
+using static System.Diagnostics.Stopwatch;
+
 namespace Core.Forever;
 
 /// <summary>
@@ -77,7 +79,7 @@ public sealed class ForeverTaskActivity : IForeverActivity
         if (runnerTask != agenda.Current)
             StartCurrent(bars, facts);
         // A task already done by a condition the agenda tracks is passed by.
-        while (agenda.Current is { } done && done.Until.IsMet(agenda.Progress))
+        while (agenda.Current is { } done && done.Until.IsMet(agenda.Progress, bars))
             Finish(done, bars, facts);
         if (runner is null)
             return ForeverActivityResult.Done;
@@ -86,7 +88,7 @@ public sealed class ForeverTaskActivity : IForeverActivity
         if (result.Status == ForeverActivityStatus.Failed)
             return result;
         if (agenda.Current is { } task &&
-            (result.Status == ForeverActivityStatus.Done || task.Until.IsMet(agenda.Progress)))
+            (result.Status == ForeverActivityStatus.Done || task.Until.IsMet(agenda.Progress, bars)))
             Finish(task, bars, facts);
         return runner is null ? ForeverActivityResult.Done : ForeverActivityResult.Running;
     }
@@ -111,12 +113,14 @@ public sealed class ForeverTaskActivity : IForeverActivity
             null => null,
             ForeverHuntHereTask hunt => new ForeverHuntHere(logger, hunt, engage, navigator, combat, config),
             ForeverTravelTask travel => new ForeverTravel(logger, travel, engage, navigator, combat, config, maps),
+            ForeverRoamAreaTask roam => new ForeverRoamArea(logger, roam, engage, navigator, combat, config, maps),
             _ => throw new NotSupportedException($"Forever has no runner for the task '{runnerTask.Name}'"),
         };
         if (runner is null)
             return;
         if (logger.IsEnabled(LogLevel.Information))
             logger.LogInformation("Forever task: {Task}", runnerTask!.Name);
+        agenda.Progress.Start(GetTimestamp());
         runner.Enter(bars, facts);
     }
 }

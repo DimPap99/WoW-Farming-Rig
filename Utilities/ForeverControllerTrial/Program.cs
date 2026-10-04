@@ -13,6 +13,7 @@ using PPather.Navmesh;
 using SharedLib;
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -24,33 +25,53 @@ using System.Threading;
 bool run = args.Contains("--run");
 bool sweep = args.Contains("--sweep");
 // --travel X Y: walk to that point of the current zone's map (0 to 100), then stop.
-int travelIndex = Array.IndexOf(args, "--travel");
-(double X, double Y)? travel = null;
-if (travelIndex >= 0)
+// --roam X1 Y1 X2 Y2 KILLS: roam that rectangle of the current zone's map until KILLS kills.
+HashSet<int> values = [];
+double[]? travel = NumbersAfter("--travel", 2);
+double[]? roam = NumbersAfter("--roam", 5);
+if (travel is [] || travel is not null && travel.Any(OffMap))
 {
-    if (travelIndex + 2 >= args.Length ||
-        !double.TryParse(args[travelIndex + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double travelX) ||
-        !double.TryParse(args[travelIndex + 2], NumberStyles.Float, CultureInfo.InvariantCulture, out double travelY) ||
-        travelX is < 0 or > ForeverMapPoint.MapSize || travelY is < 0 or > ForeverMapPoint.MapSize)
-    {
-        Console.Error.WriteLine("Use --travel <x> <y> with map coordinates of the current zone, 0 to 100.");
-        return 1;
-    }
-    travel = (travelX, travelY);
+    Console.Error.WriteLine("Use --travel <x> <y> with map coordinates of the current zone, 0 to 100.");
+    return 1;
 }
-bool auto = args.Contains("--auto-check") || args.Contains("--auto-run") || sweep || travel is not null;
-run |= args.Contains("--auto-run") || sweep || travel is not null;
-// The two numbers after --travel are its point, not flags.
-if (args.Where((_, i) => travelIndex < 0 || (i != travelIndex + 1 && i != travelIndex + 2))
-        .Any(a => a is not ("--check" or "--run" or "--auto-check" or "--auto-run" or "--sweep" or "--travel" or "--pid") &&
+if (roam is [] || roam is not null && (roam[..4].Any(OffMap) || roam[4] < 1 || roam[4] != Math.Floor(roam[4])))
+{
+    Console.Error.WriteLine("Use --roam <x1> <y1> <x2> <y2> <kills>: opposite corners on the current zone's map, 0 to 100, and a number of kills.");
+    return 1;
+}
+bool task = travel is not null || roam is not null;
+bool auto = args.Contains("--auto-check") || args.Contains("--auto-run") || sweep || task;
+run |= args.Contains("--auto-run") || sweep || task;
+if (args.Where((_, i) => !values.Contains(i))
+        .Any(a => a is not ("--check" or "--run" or "--auto-check" or "--auto-run" or "--sweep" or "--travel" or "--roam" or "--pid") &&
             !int.TryParse(a, out _)) ||
     (run && (args.Contains("--check") || args.Contains("--auto-check"))) ||
     (auto && (args.Contains("--check") || args.Contains("--run"))) ||
-    (travel is not null && (args.Contains("--auto-run") || sweep)))
+    new[] { args.Contains("--auto-run"), sweep, travel is not null, roam is not null }.Count(mode => mode) > 1)
 {
-    Console.Error.WriteLine("Use --check, --run, --auto-check, --auto-run, --sweep or --travel <x> <y> [--pid <WowB process ID>].");
+    Console.Error.WriteLine("Use --check, --run, --auto-check, --auto-run, --sweep, --travel <x> <y> " +
+        "or --roam <x1> <y1> <x2> <y2> <kills> [--pid <WowB process ID>].");
     return 1;
 }
+
+// The numbers after a flag: null without the flag, empty when they do not parse.
+double[]? NumbersAfter(string flag, int count)
+{
+    int index = Array.IndexOf(args, flag);
+    if (index < 0)
+        return null;
+    double[] numbers = new double[count];
+    for (int i = 0; i < count; i++)
+    {
+        if (index + 1 + i >= args.Length ||
+            !double.TryParse(args[index + 1 + i], NumberStyles.Float, CultureInfo.InvariantCulture, out numbers[i]))
+            return [];
+        values.Add(index + 1 + i);
+    }
+    return numbers;
+}
+
+static bool OffMap(double coordinate) => coordinate is < 0 or > ForeverMapPoint.MapSize || !double.IsFinite(coordinate);
 
 int pidIndex = Array.IndexOf(args, "--pid");
 int? requestedPid = null;
@@ -155,11 +176,17 @@ try
         Console.Error.WriteLine("No complete fresh Forever trial frame; no input sent.");
         return 2;
     }
-    if (travel is { } point)
+    if (travel is [double travelX, double travelY])
     {
-        ForeverMapPoint destination = new(uiMapId, point.X, point.Y);
+        ForeverMapPoint destination = new(uiMapId, travelX, travelY);
         runOptions = runOptions with { Tasks = [ForeverTasks.TravelTo(destination)] };
         Console.WriteLine($"Travelling to {destination}.");
+    }
+    if (roam is [double x1, double y1, double x2, double y2, double kills])
+    {
+        ForeverArea area = ForeverArea.Rectangle(uiMapId, (x1, y1), (x2, y2));
+        runOptions = runOptions with { Tasks = [ForeverTasks.RoamArea(area, ForeverUntil.AfterKills((int)kills))] };
+        Console.WriteLine($"Roaming the {area} until {kills} kills.");
     }
 
     // The autonomous run uses the profile verified for the logged-in class;
@@ -228,7 +255,7 @@ try
             return 2;
         }
         controller.ToggleBotStatus();
-        DateTime autoDeadline = DateTime.UtcNow.AddSeconds(sweep ? 600 : travel is not null ? 300 : 170);
+        DateTime autoDeadline = DateTime.UtcNow.AddSeconds(roam is not null ? 900 : sweep ? 600 : travel is not null ? 300 : 170);
         DateTime nextSnapshot = DateTime.MinValue;
         string autoLastStatus = string.Empty;
         while (!cts.IsCancellationRequested && DateTime.UtcNow < autoDeadline &&

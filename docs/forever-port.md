@@ -1619,10 +1619,9 @@ activities, which activity the facts pick in every case above, a loot round
 ending itself after its last body, and the trial agendas. Not yet verified
 live.
 
-Next, per the plan: `TravelTo` (see "Travelling" below), a `RoamArea` task (an
-area given in map coordinates, hunted until a number of kills, minutes or a
-level), and route files that chain them. Quests come later as more step kinds
-and conditions on the same agenda.
+Built on it since: `TravelTo` and `RoamArea` (see "Travelling" and "Roaming
+an area" below). Next, per the plan: route files that chain them. Quests come
+later as more step kinds and conditions on the same agenda.
 
 ### Travelling (2026-10-04)
 
@@ -1665,3 +1664,39 @@ current zone, within a 5-minute bound; its snapshot lines now show the map
 position. Offline, `--logic-test` has 218 checks, among them a walker that
 follows a real 190-yard Durotar path from Razor Hill to its end. Not yet
 verified live.
+
+### Roaming an area (2026-10-04)
+
+`ForeverTasks.RoamArea(area, until, pulls)` hunts inside an area until its
+condition holds: a number of kills, minutes since it began, or a level,
+whichever comes first.
+
+- **The area.** `ForeverArea` is a polygon on one zone map in the coordinates
+  a player reads, or a rectangle from two opposite corners, converted to world
+  yards as travel points are.
+- **Spots.** Chosen the way upstream's generated Wander routes pick their
+  stops: a seeded random point of the area, snapped onto the ground under it
+  (the height comes from the column under the point and the snap stays tight
+  around it, so a roof or a canopy is not taken), kept only while inside the
+  area and reachable from where the player stands, and at least 25 yards from
+  the spot before it (40% of the narrower side in a small area). The seed is
+  logged, and a task can pin it.
+- **The roam.** From outside it walks in to the nearest reachable spot inside;
+  inside it looks round in a calm full circle, walks to the next spot and
+  looks round again. Units in view are taken while walking and looking
+  (`ForeverPulls.Any`, the default) and fought by Engage; afterwards the roam
+  goes on toward the same spot, back into the area if the fight led out of it.
+  There is no leash yet: a pursuit may follow a unit outside the area.
+- **Walking.** Travel's walking engine is now `ForeverWalker`, shared by both:
+  the whole path every few seconds, the point 20 yards along it, the unstick
+  ladder and the 20-second rule. For a roam, the ladder's third step gives the
+  spot up and draws another; four spots given up in a row, or three draws that
+  find no spot, stop the run with why.
+
+Trial: `ForeverControllerTrial --roam <x1> <y1> <x2> <y2> <kills>` roams that
+rectangle of the current zone until that many kills, within a 15-minute bound.
+Offline, `--logic-test` has 225 checks, among them the picker drawing ten
+spots around Razor Hill on the baked mesh, every one inside the area, on the
+mesh and reachable from its middle. Not yet verified live.
+
+Next: route files that chain travelling and roaming into one data-driven route.

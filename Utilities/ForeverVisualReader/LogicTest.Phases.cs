@@ -159,10 +159,10 @@ internal static partial class LogicTest
             autoRun.Current is ForeverHuntHereTask { Until: { Kills: 1, NothingInView: false } } &&
             sweep.Current is ForeverHuntHereTask { Until: { Kills: null, NothingInView: true } },
             $"{autoRun.Current} / {sweep.Current}");
-        bool before = autoRun.Current!.Until.IsMet(autoRun.Progress);
+        bool before = autoRun.Current!.Until.IsMet(autoRun.Progress, default);
         autoRun.CountKill();
         check("until: a kill counts toward the current task, which then is done",
-            !before && autoRun.Current!.Until.IsMet(autoRun.Progress), autoRun.Progress.ToString());
+            !before && autoRun.Current!.Until.IsMet(autoRun.Progress, default), autoRun.Progress.ToString());
         ForeverAgenda two = new([ForeverTasks.HuntHere(ForeverUntil.AfterKills(1)), ForeverTasks.HuntHere(ForeverUntil.Never)]);
         two.CountKill();
         two.Advance();
