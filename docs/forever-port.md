@@ -1559,6 +1559,12 @@ protected pet target and a failing pet query. Not yet verified live.
 
 ### Activities and the agenda (2026-10-04)
 
+Reference: [forever-activities.md](forever-activities.md) (the selector and
+the activities), [forever-tasks.md](forever-tasks.md) (the agenda and the
+task API), [forever-movement.md](forever-movement.md) (walking, travelling,
+roaming) and [forever-routes.md](forever-routes.md) (route files). This
+section and the next ones record how they came about.
+
 The controller had grown into one state machine that wired every edge by
 hand: Search alone decided about loot, aggro, health and mana, attackers,
 looking around and roaming. Adding travel, food, death or quests there would
