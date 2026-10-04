@@ -1,0 +1,42 @@
+@* A terminal window for log-like output: a title bar with optional tools on
+   the right, and a dark monospace body. The lines are the caller's; site.css
+   styles the rig-line classes they use. With StickToBottom the body keeps its
+   newest line in view, for output written oldest first. *@
+<div class="rig-terminal @Class">
+    <div class="rig-terminal-bar">
+        <span class="rig-terminal-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="rig-terminal-title">@Title</span>
+        @if (Tools is not null)
+        {
+            <span class="rig-terminal-tools">@Tools</span>
+        }
+    </div>
+    <div class="rig-terminal-body @(StickToBottom ? "rig-terminal-tail" : null)"
+         style="@(MaxHeight > 0 ? $"max-height: {MaxHeight}px" : null)">
+        <div>
+            @ChildContent
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>Controls for the title bar's right end.</summary>
+    [Parameter]
+    public RenderFragment? Tools { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>The body's height limit in pixels; 0 lets it grow.</summary>
+    [Parameter]
+    public int MaxHeight { get; set; }
+
+    [Parameter]
+    public bool StickToBottom { get; set; }
+
+    [Parameter]
+    public string? Class { get; set; }
+}

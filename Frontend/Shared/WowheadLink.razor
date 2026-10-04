@@ -1,0 +1,34 @@
+@inject WApi api
+
+@* A link to the running client's Wowhead page for an item, a spell or an NPC.
+   power.js shows Wowhead's tooltip on hover, and data-wowhead names the entry
+   for it. Class, style and other attributes pass through to the link. *@
+<a href="@(Prefix + Id)" target="_blank" data-wowhead="@($"{Type}={Id}")" @attributes="AdditionalAttributes">@ChildContent</a>
+
+@code {
+    [Parameter, EditorRequired]
+    public WowheadKind Kind { get; set; }
+
+    [Parameter, EditorRequired]
+    public int Id { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    [Parameter(CaptureUnmatchedValues = true)]
+    public IReadOnlyDictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private string Prefix => Kind switch
+    {
+        WowheadKind.Item => api.ItemId,
+        WowheadKind.Spell => api.SpellId,
+        _ => api.NpcId
+    };
+
+    private string Type => Kind switch
+    {
+        WowheadKind.Item => "item",
+        WowheadKind.Spell => "spell",
+        _ => "npc"
+    };
+}
