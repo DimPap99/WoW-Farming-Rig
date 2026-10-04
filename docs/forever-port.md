@@ -1619,8 +1619,49 @@ activities, which activity the facts pick in every case above, a loot round
 ending itself after its last body, and the trial agendas. Not yet verified
 live.
 
-Next, per the plan: a `TravelTo` task (navmesh walking with upstream's unstick
-ladder redone for held keys and the mouse), a `RoamArea` task (an area given
-in map coordinates, hunted until a number of kills, minutes or a level), and
-route files that chain them. Quests come later as more step kinds and
-conditions on the same agenda.
+Next, per the plan: `TravelTo` (see "Travelling" below), a `RoamArea` task (an
+area given in map coordinates, hunted until a number of kills, minutes or a
+level), and route files that chain them. Quests come later as more step kinds
+and conditions on the same agenda.
+
+### Travelling (2026-10-04)
+
+`ForeverTasks.TravelTo(point, via, pulls)` walks to a point on a zone map,
+given in the coordinates a player reads (0 to 100, as upstream's recorded
+routes store them), through optional points on the way, and is done on
+arrival: within 3 yards of the destination, and within 6 of a point on the
+way, so the walk flows through it.
+
+- **Where to.** `ForeverMapPoint` converts map percent to world yards through
+  the conversion the live preflight checks against the client's own world
+  position. A point on a map not verified, on another continent or outside
+  the baked mesh is refused when the task starts, with why.
+- **The way.** A full path over the baked Durotar mesh costs 0.15 to 2 ms up
+  to 400 yards but 20 to 26 ms around 1,000 yards (measured offline), too much
+  for every frame. The travel asks for a leg's whole path every 5 seconds, or
+  when it strays 8 yards off it, as after a fight or an unstick step, and on
+  each frame walks toward the point 20 yards along it with the existing
+  held-forward, mouse-steered walk.
+- **Stalls.** Upstream's StuckDetector ladder, redone for held keys and the
+  mouse. The walk's own hop when held movement stalls comes first. Then, each
+  time the walk stalls (no progress with forward held, or no way from here),
+  the next step: step aside with a held strafe to whichever side is walkable,
+  back out with move-backward held while the camera turns, skip the point on
+  the way, then step aside and back out in turn. Each step lasts about a
+  second; then the way is asked for afresh. As upstream, only a new closest
+  approach counts as progress (a yard closer along the path) and resets the
+  ladder; without one for 20 seconds the travel stops with why. Move-backward
+  is the client's binding (grid index 3); without one the ladder only steps
+  aside.
+- **Fights on the way.** Units that attack are always fought (Threat), and
+  the travel resumes from wherever the fight left the character.
+  `ForeverPulls.Any` also takes eligible units in view, as hunting does,
+  checking first that every attack is usable.
+- **Hops.** The walk may hop when snagged and now and then for no reason, as
+  when hunting; the unstick steps only step and turn.
+
+Trial: `ForeverControllerTrial --travel <x> <y>` walks to that point of the
+current zone, within a 5-minute bound; its snapshot lines now show the map
+position. Offline, `--logic-test` has 218 checks, among them a walker that
+follows a real 190-yard Durotar path from Razor Hill to its end. Not yet
+verified live.

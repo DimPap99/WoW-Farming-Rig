@@ -82,15 +82,13 @@ public sealed class ForeverHuntHere : IForeverTaskRunner
     {
         // Before the next pull: an attack the client cannot use, such as a
         // shot without ammo, stops the run with why.
-        if (!combat.TryAttacksUsable(bars, out string unusable))
+        switch (ForeverPulling.TryPull(bars, combat, config, engage, out string unusable))
         {
-            machine.Fail(unusable);
-            return;
-        }
-        if (ForeverTargetPolicy.TryChoose(bars, config, combat, engage.Exclusions, out VisualNameplate chosen))
-        {
-            engage.Offer(chosen);
-            return;
+            case ForeverPull.Unusable:
+                machine.Fail(unusable);
+                return;
+            case ForeverPull.Offered:
+                return;
         }
         if (!lookAround.Turned(bars))
         {

@@ -46,10 +46,12 @@ public sealed class ForeverAgenda
     public void CountKill() => Progress.Kills++;
 
     /// <summary>
-    /// The agenda the bounded trials ask for: hunt here until the given
-    /// number of kills, or until a full look-around finds nothing, or,
-    /// with neither, until the search runs out of time.
+    /// The run's tasks when the options name them. Otherwise what the bounded
+    /// trials ask for: hunt here until the given number of kills, or until a
+    /// full look-around finds nothing, or, with neither, until the search
+    /// runs out of time.
     /// </summary>
-    public static ForeverAgenda For(ForeverRunOptions options) =>
-        new([ForeverTasks.HuntHere(new ForeverUntil(options.MaxCompletedCycles, options.StopWhenNoTargets))]);
+    public static ForeverAgenda For(ForeverRunOptions options) => options.Tasks.Count > 0
+        ? new(options.Tasks)
+        : new([ForeverTasks.HuntHere(new ForeverUntil(options.MaxCompletedCycles, options.StopWhenNoTargets))]);
 }
