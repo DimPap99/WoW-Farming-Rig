@@ -14,8 +14,11 @@ local actionKindCodes = { spell = 1, item = 2, macro = 3, flyout = 4 }
 local visual
 
 -- Version of the nameplate roster rows; the reader refuses any other.
--- 2 added each plate's duel-distance flag.
-local ROSTER_VERSION = 2
+-- 2 added each plate's duel-distance flag, 3 its follow distance and the
+-- unit's classification, 4 whether the unit targets the player's pet.
+local ROSTER_VERSION = 4
+-- Version of the pet block; the reader refuses any other.
+local PET_VERSION = 1
 -- Version of the attack-state block; the reader refuses any other.
 local ATTACK_VERSION = 1
 -- Version of the soft-interact block; the reader refuses any other.
@@ -25,6 +28,11 @@ local ATTACK_SPELL = 6603
 -- CheckInteractDistance's duel distance. On this client it turns true as a
 -- unit crosses a ranged weapon's 8-yard minimum range.
 local DUEL_DISTANCE = 3
+-- CheckInteractDistance's follow distance, 28 yards; it answers in combat.
+local FOLLOW_DISTANCE = 4
+-- The client's unit classifications as the roster codes them; 0 is unknown.
+local CLASSIFICATION_CODES = { normal = 1, trivial = 2, minus = 3, rare = 4,
+    elite = 5, rareelite = 6, worldboss = 7 }
 
 local isCurrentAction = (C_ActionBar and C_ActionBar.IsCurrentAction) or IsCurrentAction
 local isAutoRepeatAction = (C_ActionBar and C_ActionBar.IsAutoRepeatAction) or IsAutoRepeatAction
@@ -121,11 +129,15 @@ local function createVisual()
     frame.auraStatePixel = addPixel(28, 190)
     frame.auraStateValidPixel = addPixel(29, 190)
 
-    frame.deathPixels, frame.lootPixels = {}, {}
+    frame.deathPixels, frame.lootPixels, frame.errorPixels = {}, {}, {}
     for i = 1, 4 do frame.deathPixels[i] = addPixel(16 + i, 205) end
     for i = 1, 9 do frame.lootPixels[i] = addPixel(16 + i, 225) end
+    for i = 1, 3 do frame.errorPixels[i] = addPixel(25 + i, 225) end
     frame.interactPixels = {}
     for i = 1, 5 do frame.interactPixels[i] = addPixel(21 + i, 205) end
+    -- The player's pet, beside the roster header.
+    frame.petPixels = {}
+    for i = 1, 4 do frame.petPixels[i] = addPixel(21 + i, 245) end
 
     -- The nameplate roster: a header with the plate counts and settings,
     -- then one checksummed row of seven values per slot.
@@ -134,7 +146,7 @@ local function createVisual()
     frame.rosterRows = {}
     for slot = 1, nameplates.SlotCount do
         local row = {}
-        for i = 1, 7 do row[i] = addPixel(16 + i, 260 + (slot - 1) * 15) end
+        for i = 1, 8 do row[i] = addPixel(16 + i, 260 + (slot - 1) * 15) end
         frame.rosterRows[slot] = row
     end
 
@@ -480,11 +492,19 @@ local function createVisual()
         return value and 2 or 1
     end
 
-    -- Within duel distance as a tri-state. An error leaves only this flag
-    -- unknown rather than the row or block it belongs to.
-    local function closeTri(unit)
-        local ok, value = pcall(CheckInteractDistance, unit, DUEL_DISTANCE)
+    -- Within one of CheckInteractDistance's distances as a tri-state. An
+    -- error leaves only this flag unknown rather than the row or block it
+    -- belongs to.
+    local function distanceTri(unit, distance)
+        local ok, value = pcall(CheckInteractDistance, unit, distance)
         return ok and tri(value) or 0
+    end
+
+    -- The unit's classification code, 0 when unknown, the same way.
+    local function classificationCode(unit)
+        local ok, value = pcall(UnitClassification, unit)
+        if not ok or isSecret(value) then return 0 end
+        return CLASSIFICATION_CODES[value] or 0
     end
 
     -- "nameplate3" -> "nameplate3target", built once per token.
@@ -501,19 +521,20 @@ local function createVisual()
     local rangeWeights = {}
     for slot = 1, 12 do rangeWeights[slot] = 4 ^ (slot - 1) end
 
-    local plateValues = { 0, 0, 0, 0, 0, 0 }
+    local plateValues = { 0, 0, 0, 0, 0, 0, 0 }
 
     -- One roster slot: incarnation, GUID hashes (0 while identity is
     -- protected), level and eight tri-state flags, then targets-player,
-    -- reaction, threat, the plate's alpha and whether the unit is within duel
-    -- distance, then the main-bar ranges with the action-state codes
-    -- (0 unknown, 1 in range, 2 out of range). The
+    -- reaction, threat, the plate's alpha, whether the unit is within duel
+    -- and follow distance and its classification, then the main-bar ranges
+    -- with the action-state codes (0 unknown, 1 in range, 2 out of range),
+    -- then whether the unit targets the player's pet. The
     -- checksum names the slot and, for the target, the checked target hashes,
     -- so a row cannot describe another slot or another target.
     local function renderPlate(slot)
         local row = frame.rosterRows[slot]
         local v = plateValues
-        v[1], v[2], v[3], v[4], v[5], v[6] = 0, 0, 0, 0, 0, 0
+        v[1], v[2], v[3], v[4], v[5], v[6], v[7] = 0, 0, 0, 0, 0, 0, 0
         local token = nameplates.tokens[slot]
         local isTarget = 0
         if token then
@@ -567,7 +588,10 @@ local function createVisual()
                 end
             end
             v[5] = tri(UnitIsUnit(targetOfToken[token], "player")) +
-                reaction * 4 + threat * 64 + alpha * 512 + closeTri(token) * 131072
+                reaction * 4 + threat * 64 + alpha * 512 +
+                distanceTri(token, DUEL_DISTANCE) * 131072 +
+                distanceTri(token, FOLLOW_DISTANCE) * 524288 +
+                classificationCode(token) * 2097152
 
             local ranges = 0
             for action = 1, 12 do
@@ -583,19 +607,43 @@ local function createVisual()
                 end
             end
             v[6] = ranges
+            -- A unit fighting the player's pet: a Hunter defends it.
+            v[7] = tri(UnitIsUnit(targetOfToken[token], "pet"))
             -- A plate behind the camera is not drawn; its marker would be stale.
             nameplates.ShowMarker(slot, behind ~= 2)
         end
 
         local checksum = 0xA5C311 - slot
-        for i = 1, 6 do
+        for i = 1, 7 do
             setIntPixel(row[i], v[i])
             checksum = checksum - v[i]
         end
         if isTarget == 2 then
             checksum = checksum - checkedTargetHash1 - checkedTargetHash2
         end
-        setIntPixel(row[7], checksum % 16777216)
+        setIntPixel(row[8], checksum % 16777216)
+    end
+
+    -- The player's pet: whether it is there, dead and fighting, then the
+    -- unit it attacks as identity hashes (0 with none), and the checksum.
+    local function renderPet()
+        local exists = tri(UnitExists("pet"))
+        local dead, combat, hash1, hash2 = 0, 0, 0, 0
+        if exists == 2 then
+            dead = tri(UnitIsDead("pet"))
+            combat = tri(UnitAffectingCombat("pet"))
+            local guid = UnitGUID("pettarget")
+            if not isSecret(guid) and type(guid) == "string" and #guid > 0 then
+                local first, second = events.Hashes(guid)
+                if first then hash1, hash2 = first, second end
+            end
+        end
+        local flags = exists + dead * 4 + combat * 16 + PET_VERSION * 64
+        local pixels = frame.petPixels
+        setIntPixel(pixels[1], flags)
+        setIntPixel(pixels[2], hash1)
+        setIntPixel(pixels[3], hash2)
+        setIntPixel(pixels[4], (0xA5E411 - flags - hash1 - hash2) % 16777216)
     end
 
     -- How many plates the client shows (all, attackable, friendly players)
@@ -622,7 +670,7 @@ local function createVisual()
         pcall(renderRosterHeader)
         for slot = 1, nameplates.SlotCount do
             local row = frame.rosterRows[slot]
-            for i = 1, 7 do setBlack(row[i]) end
+            for i = 1, 8 do setBlack(row[i]) end
             -- Any failure leaves the row black and the marker hidden.
             nameplates.ShowMarker(slot, false)
             pcall(renderPlate, slot)
@@ -655,7 +703,7 @@ local function createVisual()
         end
         local close = 0
         if checkedTargetGuid and isCheckedTarget() then
-            close = closeTri("target")
+            close = distanceTri("target", DUEL_DISTANCE)
         end
         local state = tri(isCurrentSpell(ATTACK_SPELL)) + close * 4 +
             ATTACK_VERSION * 16
@@ -944,6 +992,8 @@ local function createVisual()
         for i = 1, #death do setIntPixel(frame.deathPixels[i], death[i]) end
         local loot = events.LootPixels()
         for i = 1, #loot do setIntPixel(frame.lootPixels[i], loot[i]) end
+        local errors = events.ErrorPixels()
+        for i = 1, #errors do setIntPixel(frame.errorPixels[i], errors[i]) end
         local cast = events.CastPixels()
         if cast then
             setIntPixel(frame.castSequencePixel, cast[1])
@@ -1019,6 +1069,8 @@ local function createVisual()
         pcall(renderAttackState)
         for i = 1, 5 do setBlack(frame.interactPixels[i]) end
         pcall(renderSoftInteract)
+        for i = 1, 4 do setBlack(frame.petPixels[i]) end
+        pcall(renderPet)
 
         setBlack(frame.castValidPixel)
         renderEvents()

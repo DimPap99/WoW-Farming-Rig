@@ -62,6 +62,7 @@ bool trialMove = args.Length == 1 && args[0] == "--trial-move";
 bool trialHeal = args.Length == 1 && args[0] == "--trial-heal";
 bool trialJudgement = args.Length == 1 && args[0] == "--trial-judgement";
 bool trialJudgementArmed = args.Length == 1 && args[0] == "--trial-judgement-armed";
+bool bagsView = args.Length == 1 && args[0] == "--bags";
 
 if (args.Length == 2 && args[0] == "--read")
 {
@@ -131,6 +132,54 @@ try
 
     if (trialJudgementArmed)
         return await RunArmedJudgement(screen, tracker, process, cts);
+
+    // Read-only: every occupied bag slot's item and count, and each main-bar
+    // action's usable state, from one fresh complete frame.
+    if (bagsView)
+    {
+        for (int i = 0; i < 50; i++)
+        {
+            screen.Update();
+            tracker.Update();
+            if (i >= 20 && tracker.TryGetLatest(out VisualBarSample frame) && frame.Bags is { } bags &&
+                frame.ActionBar is { } bar && frame.ActionStates is { } states)
+            {
+                Console.WriteLine($"bag grid: {bags.ReadableHeaders}/5 headers, {bags.ReadableSlots}/200 slots readable");
+                for (int bag = 0; bag < VisualBagSnapshot.BagCount; bag++)
+                {
+                    if (bags.GetBag(bag) is not { } header)
+                    {
+                        Console.WriteLine($"bag {bag}: unreadable");
+                        continue;
+                    }
+                    Console.WriteLine($"bag {bag}: {header.SlotCount} slots, {header.FreeSlots} free, family {header.Family}");
+                    for (int slot = 1; slot <= header.SlotCount; slot++)
+                    {
+                        if (bags.GetSlot(bag, slot) is not { } item)
+                            Console.WriteLine($"  slot {slot}: unreadable");
+                        else if (item.ItemId > 0)
+                            Console.WriteLine($"  slot {slot}: item {item.ItemId} x{item.Count}");
+                    }
+                }
+                for (int slot = 1; slot <= 12; slot++)
+                {
+                    if (bar.GetSlot(slot) is { Kind: not VisualActionKind.Empty } action)
+                        Console.WriteLine($"action {slot}: {action.Kind} {action.Id} {states.GetSlot(slot)}");
+                }
+                // The client's keys for the commands the runtime may press, by binding-grid index.
+                for (int index = 1; index <= 20; index++)
+                {
+                    if (frame.Bindings?.GetCode(index) is > 0 and int code && KeyReader.DecodeBinding(code) is { } bound)
+                        Console.WriteLine($"binding {index}: {bound.bindingId} = {bound.mod1} {bound.key1}" +
+                            (bound.key2 != ConsoleKey.NoName ? $" / {bound.mod2} {bound.key2}" : ""));
+                }
+                return 0;
+            }
+            await Task.Delay(100);
+        }
+        Console.Error.WriteLine("No complete bag grid in a fresh frame.");
+        return 2;
+    }
 
     if (monitor)
     {

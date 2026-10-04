@@ -36,6 +36,8 @@ public sealed class ForeverCorpses
 {
     /// <summary>A unit within duel distance lies at most this far away.</summary>
     public const float CloseYards = 8;
+    /// <summary>A unit within follow distance lies at most this far away.</summary>
+    public const float FollowYards = 28;
     /// <summary>The farthest a plate is drawn when the roster does not say.</summary>
     public const float PlateYards = 45;
     // A sighting older than this says nothing about where a unit fell.
@@ -72,13 +74,14 @@ public sealed class ForeverCorpses
             Vector2 here = new((float)world.X, (float)world.Y);
             float farthest = bars.Nameplates is { MaxDistance: > 0 } shown ? shown.MaxDistance : PlateYards;
             if (bars.TargetIdentity is { Present: true } target && bars.TargetScreenPosition is { } marker)
-                See(target.GuidHash1, target.GuidHash2, here, map, marker, bars.Attack?.TargetClose, farthest, now);
+                See(target.GuidHash1, target.GuidHash2, here, map, marker, bars.Attack?.TargetClose, null, farthest, now);
             if (bars.Nameplates is { } roster)
             {
                 for (int slot = 1; slot <= VisualNameplateRoster.SlotCount; slot++)
                 {
                     if (roster.GetSlot(slot) is { IsEmpty: false, HasIdentity: true, Screen: { } plateMarker } plate)
-                        See(plate.GuidHash1, plate.GuidHash2, here, map, plateMarker, plate.Close, farthest, now);
+                        See(plate.GuidHash1, plate.GuidHash2, here, map, plateMarker, plate.Close,
+                            plate.WithinFollowDistance, farthest, now);
                 }
             }
         }
@@ -114,16 +117,15 @@ public sealed class ForeverCorpses
 
     public void Clear() => corpses.Clear();
 
+    // Within duel distance a unit lies within 8 yards; beyond it but within
+    // follow distance, 8 to 28; beyond that, out to the farthest plate.
     private void See(int hash1, int hash2, Vector2 here, VisualPositionSample map,
-        VisualScreenPointSample marker, bool? close, float farthest, long now)
+        VisualScreenPointSample marker, bool? close, bool? follow, float farthest, long now)
     {
-        (float near, float far) = close switch
-        {
-            true => (0f, CloseYards),
-            false => (CloseYards, farthest),
-            null => (0f, farthest),
-        };
-        sightings[(hash1, hash2)] = new(here, ForeverNavigator.BearingOf(map, marker), near, far, now);
+        float far = close == true ? CloseYards : follow == true ? FollowYards : farthest;
+        float near = close == true ? 0 : follow == false ? FollowYards : close == false ? CloseYards : 0;
+        sightings[(hash1, hash2)] = new(here, ForeverNavigator.BearingOf(map, marker),
+            System.Math.Min(near, far), far, now);
     }
 
     private void Died(int hash1, int hash2, long now)

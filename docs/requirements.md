@@ -1123,8 +1123,9 @@ bound to its key, usable with enough mana, and off cooldown. Forever runs only t
 * `Pull` holds openers. Each runs once per target, and only while every buff is up.
 * `Combat` is the priority list. `"AutoAttack"` presses Start Attack once per target.
 
-`"MacroText"` is typed as a command instead of pressing the key, for example
-`"/cast [@player] Holy Light(Rank 1)"`. `"Cooldown"` (milliseconds) limits how often
+Every action is its key pressed: a profile with `"MacroText"` is refused, since a macro
+would be typed into chat. A self heal such as Holy Light is its key and lands on the
+player through the client's Auto Self Cast. `"Cooldown"` (milliseconds) limits how often
 an action is pressed, e.g. a 15-second sting. An action with `"AfterCastWaitSwing": true`
 resolves on the next melee swing, like Raptor Strike, and gets a longer wait for its
 success event.

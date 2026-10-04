@@ -38,8 +38,9 @@ public static partial class ForeverProfileRules
     /// <summary>
     /// Why the Forever runtime cannot execute <paramref name="config"/>, or
     /// null. It runs only the Pull, Combat and Adhoc lists, presses spells on
-    /// main-bar slots, starts melee through <c>AutoAttack</c>, and evaluates
-    /// only requirements with a Forever source.
+    /// main-bar slots by their keys (never a macro typed into chat), starts
+    /// melee through <c>AutoAttack</c>, and evaluates only requirements with a
+    /// Forever source.
     /// </summary>
     public static string? FindUnsupportedProfile(ClassConfiguration config)
     {
@@ -65,6 +66,9 @@ public static partial class ForeverProfileRules
                 }
                 if (action.Slot is < 1 or > VisualCooldownGridSnapshot.SlotCount)
                     return $"Forever {list} action '{action.Name}' must be on main-bar slots 1 to {VisualCooldownGridSnapshot.SlotCount}.";
+                // A person presses the key; nothing is typed into chat.
+                if (!string.IsNullOrEmpty(action.MacroText))
+                    return $"Forever {list} action '{action.Name}' uses MacroText, which would be typed into chat; Forever only presses keys.";
                 if (action.Interrupts.Count > 0)
                     return $"Forever {list} action '{action.Name}' uses interrupts, which Forever does not evaluate.";
                 foreach (string requirement in action.Requirements)

@@ -113,6 +113,10 @@ local plateCVars = {
     "nameplateShowFriendlyPlayers", "nameplateMaxDistance", "nameplateMotion",
     "nameplateOccludedAlphaMult", "SoftTargetEnemy", "SoftTargetFriend",
     "SoftTargetInteract", "deselectOnClick", "autoInteract", "cameraFov",
+    -- How far and how wide the Interact Key looks for a body.
+    "SoftTargetInteractArc", "SoftTargetInteractRange",
+    -- A heal pressed with its key lands on the player only with this on.
+    "autoSelfCast",
     -- A plate's alpha and scale may follow distance or occlusion.
     "nameplateMinAlpha", "nameplateMaxAlpha", "nameplateMinAlphaDistance",
     "nameplateMaxAlphaDistance", "nameplateSelectedAlpha",

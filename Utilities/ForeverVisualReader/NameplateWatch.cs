@@ -35,7 +35,8 @@ internal static class NameplateWatch
             string line;
             if (tracker.TryGetLatest(out VisualBarSample bars) && bars.Nameplates is { } roster)
             {
-                line = Describe(roster);
+                line = Describe(roster) + $" | error={bars.LastError?.ToString() ?? "unreadable"}" +
+                    $" | pet={Pet(bars)}";
                 bool missing = false;
                 for (int slot = 1; slot <= VisualNameplateRoster.SlotCount; slot++)
                 {
@@ -91,18 +92,40 @@ internal static class NameplateWatch
         return text.ToString();
     }
 
+    // The pet as the runtime sees it: none, dead, idle, or on the target or another unit.
+    private static string Pet(VisualBarSample bars) => bars.Pet switch
+    {
+        null => "unreadable",
+        { Exists: false } => "none",
+        { Dead: true } => "dead",
+        { TargetHash1: 0, TargetHash2: 0 } pet => pet.InCombat == true ? "fighting, no target" : "idle",
+        { } pet when bars.TargetIdentity is { } target && pet.Attacks(target) => "on the target",
+        _ => "on another unit",
+    };
+
     private static string Label(VisualNameplate plate)
     {
         StringBuilder text = new($"#{plate.Incarnation} L{plate.Level}");
         if (plate.IsTarget == true) text.Append(" target");
         if (plate.IsMouseover == true) text.Append(" hover");
         if (plate.Attacks) text.Append(" attacker");
+        if (plate.TargetsPet == true) text.Append(" on-pet");
         if (plate.IsPlayer == true) text.Append(" player");
         if (plate.Attackable == false) text.Append(" passive");
         if (plate.TapDenied == true) text.Append(" tapped");
         if (plate.BehindCamera == true) text.Append(" behind");
         if (plate.Occluded == true) text.Append(" occluded");
         if (!plate.HasIdentity) text.Append(" no-guid");
+        text.Append(plate.Close == true ? " <8yd" : plate.WithinFollowDistance switch
+        {
+            true => " 8-28yd",
+            false => " >28yd",
+            null => " ?yd",
+        });
+        if (plate.Classification is { } kind && kind != UnitClassification.Normal)
+            text.Append(' ').Append(kind.ToString().ToLowerInvariant());
+        else if (plate.Classification is null)
+            text.Append(" kind?");
         text.Append(" in:");
         for (int slot = 1; slot <= 12; slot++)
         {

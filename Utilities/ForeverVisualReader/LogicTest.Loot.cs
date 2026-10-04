@@ -56,6 +56,17 @@ internal static partial class LogicTest
             ranged.Pending is [{ } far] && Points(far) == "(108.0,200.0)-(145.0,200.0)",
             ranged.Pending.Count == 1 ? Points(ranged.Pending[0]) : $"{ranged.Pending.Count}");
 
+        ForeverCorpses banded = new();
+        VisualNameplate mid = Plate(2, hash: 44, screenX: 0.5) with { Close = false, WithinFollowDistance = true };
+        VisualNameplate distant = Plate(3, hash: 66, screenX: 0.5) with { Close = false, WithinFollowDistance = false };
+        banded.Observe(Seen(plates: Roster(mid, distant)), At(0));
+        banded.Observe(Seen(death: new(6, 44, 45), plates: Roster(distant)), At(0.1));
+        banded.Observe(Seen(death: new(7, 66, 67), plates: Roster()), At(0.2));
+        check("corpses: within follow distance a body lies 8 to 28 yards ahead, beyond it 28 to the plate distance",
+            banded.Pending is [{ } within, { } beyond] &&
+            Points(within) == "(108.0,200.0)-(128.0,200.0)" && Points(beyond) == "(128.0,200.0)-(145.0,200.0)",
+            string.Join(" ", System.Linq.Enumerable.Select(banded.Pending, Points)));
+
         ForeverCorpses aside = new();
         aside.Observe(Seen(mob, markerX: 1.0, close: true), At(0));
         aside.Observe(Seen(mob, markerX: 1.0, close: true, death: new(6, 11, 22)), At(0.1));
@@ -99,20 +110,22 @@ internal static partial class LogicTest
         one.Observe(Seen(mob, close: false), At(0));
         one.Observe(Seen(death: new(6, 11, 22)), At(0.1));
         ForeverLoot loot = Round(one);
-        check("loot: combat ends the round for now", loot.Plan(Frame(combat: true)).Step == ForeverLootStep.InCombat, "");
+        check("loot: an attack ends the round for now", loot.Plan(Frame(combat: true), inDanger: true).Step == ForeverLootStep.Attacked, "");
+        check("loot: combat that only lingers goes on looting",
+            loot.Plan(Frame(combat: true), inDanger: false).Step == ForeverLootStep.Walk, $"{loot.Plan(Frame(combat: true), inDanger: false).Step}");
         check("loot: a selected unit is cleared, so the key acts on the soft target",
-            loot.Plan(Frame(target: true)).Step == ForeverLootStep.ClearTarget, "");
-        ForeverLootPlan plan = loot.Plan(Frame(soft: body));
+            loot.Plan(Frame(target: true), inDanger: false).Step == ForeverLootStep.ClearTarget, "");
+        ForeverLootPlan plan = loot.Plan(Frame(soft: body), inDanger: false);
         check("loot: a lootable body under the Interact Key is looted", plan is { Step: ForeverLootStep.Interact, Body: (11, 22) },
             $"{plan.Step}");
-        plan = loot.Plan(Frame(soft: body with { Lootable = false }));
+        plan = loot.Plan(Frame(soft: body with { Lootable = false }), inDanger: false);
         check("loot: otherwise walk to the near end of the body's line",
             plan.Step == ForeverLootStep.Walk && plan.Point == new Vector2(108, 200), $"{plan.Step} {plan.Point}");
-        plan = loot.Plan(Frame(x: 108));
+        plan = loot.Plan(Frame(x: 108), inDanger: false);
         check("loot: at the near end, on to the far end", plan.Step == ForeverLootStep.Walk && plan.Point == new Vector2(145, 200),
             $"{plan.Step} {plan.Point}");
-        loot.Plan(Frame(x: 145));
-        plan = loot.Plan(Frame(x: 145));
+        loot.Plan(Frame(x: 145), inDanger: false);
+        plan = loot.Plan(Frame(x: 145), inDanger: false);
         check("loot: the far end reached with nothing found, the body is given up and the round is done",
             plan.Step == ForeverLootStep.Done && !one.Any, $"{plan.Step} pending={one.Pending.Count}");
 
@@ -130,18 +143,19 @@ internal static partial class LogicTest
             type.GetField("lastInteract", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(round, Stopwatch.GetTimestamp());
         }
         Pressed(pressed);
-        check("loot: no second press while the first settles", pressed.Plan(Frame(soft: body)).Step == ForeverLootStep.Wait, "");
+        check("loot: no second press while the first settles", pressed.Plan(Frame(soft: body), inDanger: false).Step == ForeverLootStep.Wait, "");
         check("loot: an open window is waited for",
-            pressed.Plan(Frame(soft: body, loot: lootIdle with { OpenSequence = 5, IsOpen = true })).Step == ForeverLootStep.Wait, "");
-        plan = pressed.Plan(Frame(soft: body, loot: lootIdle with { OpenSequence = 5, CloseSequence = 9, ClearedSequence = 7 }));
+            pressed.Plan(Frame(soft: body, loot: lootIdle with { OpenSequence = 5, IsOpen = true }), inDanger: false).Step == ForeverLootStep.Wait, "");
+        plan = pressed.Plan(Frame(soft: body, loot: lootIdle with { OpenSequence = 5, CloseSequence = 9, ClearedSequence = 7 }), inDanger: false);
         check("loot: the window emptied and closed: collected, and the body leaves the ledger",
             plan is { Step: ForeverLootStep.Collected, Body: (11, 22) } && !two.Any, $"{plan.Step} pending={two.Pending.Count}");
         check("loot: a looted body is not pressed again",
-            pressed.Plan(Frame(soft: body)).Step == ForeverLootStep.Done, $"{pressed.Plan(Frame(soft: body)).Step}");
+            pressed.Plan(Frame(soft: body), inDanger: false).Step == ForeverLootStep.Done,
+            $"{pressed.Plan(Frame(soft: body), inDanger: false).Step}");
 
         ForeverLoot full = Round(new ForeverCorpses());
         Pressed(full);
-        plan = full.Plan(Frame(loot: lootIdle with { OpenSequence = 5, CloseSequence = 9, RemainingSlots = 1 }));
+        plan = full.Plan(Frame(loot: lootIdle with { OpenSequence = 5, CloseSequence = 9, RemainingSlots = 1 }), inDanger: false);
         check("loot: a window closed with items left stops the run", plan.Step == ForeverLootStep.Failed, $"{plan.Step} {plan.Reason}");
     }
 }

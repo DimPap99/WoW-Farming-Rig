@@ -58,6 +58,8 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     // Within this angle of the bearing a target was last seen at, the turn
     // toward it is done.
     private const double BearingReached = 0.15;
+    // Idle hops come only while the walk is going well: the last progress is this recent.
+    private const double WalkingWellSeconds = 0.5;
 
     private readonly ILogger<ForeverNavigator> logger;
     private readonly ConfigurableInput input;
@@ -79,6 +81,8 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     private ConsoleKey? pursuitStrafeKey;
     private Vector2 pursuitProgressPoint;
     private long pursuitProgressAt;
+    // When to hop; what the current state allows decides whether.
+    private readonly ForeverHops hops = new(Random.Shared);
     private long markerMissingAt;
     private string? navCache;
     private Vector2? detourWaypoint;
@@ -104,6 +108,12 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         this.maps = maps;
         this.data = data;
     }
+
+    /// <summary>
+    /// What the automaton's current state allows besides walking, such as
+    /// hops. The goal sets it on every frame; until then nothing is allowed.
+    /// </summary>
+    public ForeverAllowed Allowed { get; set; }
 
     public bool TryReadOnlyPreflight(VisualBarSample bars, out string reason)
     {
@@ -353,7 +363,10 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
             StopPursuit();
             return ForeverNavigationResult.Blocked;
         }
-        return Steer(bars, here, (float)world.Z, Bearing(here, waypoint), 3, out reason);
+        // The way ahead is checked only as far as the waypoint: past it the
+        // path bends, and a destination by an edge would stop the walk short.
+        return Steer(bars, here, (float)world.Z, Bearing(here, waypoint),
+            Math.Min(3, Vector2.Distance(here, waypoint)), out reason);
     }
 
     public ForeverNavigationResult SearchForTarget(VisualBarSample bars,
@@ -417,7 +430,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         }
 
         if ((pursuitForwardHeld || pursuitStrafeKey is not null) &&
-            !MovementProgressed(here, out reason))
+            !MovementProgressed(bars, here, out reason))
         {
             StopPursuit();
             return ForeverNavigationResult.Stuck;
@@ -567,7 +580,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
             reason = "forward binding changed";
             return ForeverNavigationResult.Failed;
         }
-        if (pursuitForwardHeld && !MovementProgressed(here, out reason))
+        if (pursuitForwardHeld && !MovementProgressed(bars, here, out reason))
         {
             StopPursuit();
             return ForeverNavigationResult.Stuck;
@@ -583,24 +596,49 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         }
         bool starting = !pursuitForwardHeld;
         SetPursuitMovement(here, true, null);
+        // Where the state allows it, a hop or a few now and then while the
+        // walk is going well, as a person does for no reason.
+        if (!starting && Allowed.HasFlag(ForeverAllowed.IdleHops) &&
+            GetElapsedTime(pursuitProgressAt).TotalSeconds < WalkingWellSeconds &&
+            hops.Idle(GetTimestamp()))
+            Hop(bars, "idle");
         return starting ? ForeverNavigationResult.StepSent : ForeverNavigationResult.StepVerified;
     }
 
     // Held movement must cover 0.2 yards every 3 seconds; anything less means
-    // the character is stuck, or the key never reached the game.
-    private bool MovementProgressed(Vector2 here, out string reason)
+    // the character is stuck, or the key never reached the game. Where the
+    // state allows it, a stall hops once on the way, which clears a fence or
+    // a rock the mesh lacks.
+    private bool MovementProgressed(VisualBarSample bars, Vector2 here, out string reason)
     {
         reason = string.Empty;
         if (Vector2.Distance(here, pursuitProgressPoint) >= 0.20f)
         {
             pursuitProgressPoint = here;
             pursuitProgressAt = GetTimestamp();
+            hops.Progressed();
             return true;
         }
-        if (GetElapsedTime(pursuitProgressAt).TotalSeconds <= 3)
+        double stalled = GetElapsedTime(pursuitProgressAt).TotalSeconds;
+        if (Allowed.HasFlag(ForeverAllowed.SnagHop) && hops.Snag(stalled))
+            Hop(bars, "held movement stalled");
+        if (stalled <= 3)
             return true;
         reason = "held forward movement was not verified";
         return false;
+    }
+
+    // One tap of the client's jump key, unless the navigator was halted.
+    private void Hop(VisualBarSample bars, string why)
+    {
+        lock (inputLock)
+        {
+            if (halted || !ForeverBindings.Jump.TryGetKeyAction(bars, "Forever Jump", out KeyAction jump))
+                return;
+            if (logger.IsEnabled(LogLevel.Information))
+                logger.LogInformation("Forever hop: {Why}", why);
+            input.PressRandom(jump);
+        }
     }
 
     // A new hold presses the right button on empty ground, away from every
@@ -648,15 +686,22 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
             if (pursuitStrafeKey is { } oldStrafe)
                 input.SetKeyState(oldStrafe, false, true);
             if (pursuitForwardHeld && !forward)
+            {
                 input.StopForward(true);
+                hops.Stopped();
+            }
             if (forward && !pursuitForwardHeld)
+            {
                 input.StartForward(false);
+                hops.Started(GetTimestamp());
+            }
             if (strafe is { } newStrafe)
                 input.SetKeyState(newStrafe, true, false);
             pursuitForwardHeld = forward;
             pursuitStrafeKey = strafe;
             pursuitProgressPoint = here;
             pursuitProgressAt = GetTimestamp();
+            hops.Progressed();
         }
     }
 
@@ -692,6 +737,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
                 input.SetKeyState(strafe, false, true);
             pursuitForwardHeld = false;
             pursuitStrafeKey = null;
+            hops.Stopped();
         }
     }
 
