@@ -1,0 +1,74 @@
+@using System.Collections.Concurrent
+@using System.Reflection
+
+@* The rows of a two-column settings table, one per string, int and bool
+   property of Target (an enum counts as its int), in declaration order. A
+   property named in Editable that has a public setter can be edited; the rest
+   are shown disabled. Place it inside a <tbody>. *@
+@foreach (PropertyInfo property in Shown())
+{
+    object? value = property.GetValue(Target);
+    bool disabled = !CanEdit(property);
+    <tr>
+        <td class="align-middle">@property.Name</td>
+        <td class="align-middle">
+            @if (property.PropertyType == typeof(bool))
+            {
+                <div class="form-check form-switch m-0">
+                    <input type="checkbox" role="switch" class="form-check-input" disabled="@disabled" checked="@(value is true)"
+                           @onchange="e => Set(property, e.Value)" />
+                </div>
+            }
+            else
+            {
+                <input value="@value" class="form-control form-control-sm" disabled="@disabled"
+                       @onchange="e => Set(property, e.Value)" />
+            }
+        </td>
+    </tr>
+}
+
+@code {
+    private static readonly ConcurrentDictionary<Type, PropertyInfo[]> shownByType = new();
+
+    [Parameter, EditorRequired]
+    public object Target { get; set; } = null!;
+
+    /// <summary>The properties that can be edited.</summary>
+    [Parameter]
+    public IReadOnlySet<string> Editable { get; set; } = new HashSet<string>();
+
+    /// <summary>The properties left out.</summary>
+    [Parameter]
+    public IReadOnlySet<string> Hidden { get; set; } = new HashSet<string>();
+
+    /// <summary>A value was set on <see cref="Target"/>.</summary>
+    [Parameter]
+    public EventCallback Changed { get; set; }
+
+    private IEnumerable<PropertyInfo> Shown() =>
+        shownByType.GetOrAdd(Target.GetType(), type => [.. type.GetProperties().Where(IsScalar)])
+            .Where(property => !Hidden.Contains(property.Name));
+
+    private static bool IsScalar(PropertyInfo property) =>
+        Type.GetTypeCode(property.PropertyType) is TypeCode.String or TypeCode.Int32 or TypeCode.Boolean;
+
+    // An enum shows as its name, which does not parse back as an int.
+    private bool CanEdit(PropertyInfo property) =>
+        Editable.Contains(property.Name)
+        && property.SetMethod is { IsPublic: true }
+        && !property.PropertyType.IsEnum;
+
+    private async Task Set(PropertyInfo property, object? value)
+    {
+        if (property.PropertyType == typeof(int))
+        {
+            if (!int.TryParse(value?.ToString(), out int number))
+                return;
+            value = number;
+        }
+
+        property.SetValue(Target, value);
+        await Changed.InvokeAsync();
+    }
+}
