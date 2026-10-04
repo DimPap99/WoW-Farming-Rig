@@ -47,7 +47,7 @@
                 <div class="card">
                     <div class="card-header">WoW: Forever beta compatibility</div>
                     <div class="card-body">
-                        <p>Read-only diagnostic mode. The bot cannot start yet: its gameplay data and navigation are not ported to Forever.</p>
+                        <p>Read-only view of what the add-on's bars read. Routes are started, watched and stopped on <a href="ForeverRuns">Forever runs</a>.</p>
                         @if (visualBars.TryGetLatest(out var bars))
                         {
                             <p>Player health: @bars.PlayerHealth.ToString("P0")<br />

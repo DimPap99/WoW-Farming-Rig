@@ -226,7 +226,9 @@ Where Forever still touches upstream code:
   skip the Classic usable/current-action requirements.
 - PPather: the `IGameFileSource`/`ILiquidMetadataSource` CASC seam, the numeric
   WMO and MH2O formats, and the opt-in `NavmeshQueryOptions.PreferGroundUnderPoint`.
-- Frontend: the Forever status page and navigation, and the hidden `BotHeader`.
+- Frontend: the Forever status page and navigation, the hidden `BotHeader`, and the
+  Forever runs page (`ForeverRuns.razor`, `ForeverRunHost`), which starts the trial
+  runner as a child process; `BlazorServer/Program.cs` registers the host on Forever.
 
 A Forever-owned controller loop would let `BotController`, `GoapAgent`,
 `PlayerReader`, `KeyReader` and `RequirementFactory` return to upstream as well.

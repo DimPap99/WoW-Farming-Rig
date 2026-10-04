@@ -1,0 +1,206 @@
+@page "/ForeverRuns"
+
+@inject IServiceProvider services
+
+@implements IDisposable
+
+@* Starts, watches and stops WoW: Forever runs. The server itself stays
+   read-only: a run is the trial runner, started by ForeverRunHost. *@
+
+<style>
+    .forever-output {
+        max-height: 480px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column-reverse;
+        background: #111;
+        color: #ddd;
+        padding: 8px;
+        border-radius: 4px;
+    }
+
+    .forever-output pre {
+        margin: 0;
+        font-size: 12px;
+        white-space: pre-wrap;
+        color: inherit;
+    }
+</style>
+
+<div class="container-fluid">
+    @if (host is null)
+    {
+        <p>Runs can be started only by the bot's own server on WoW: Forever.</p>
+    }
+    else
+    {
+        <div class="row">
+            <div class="col-lg-5">
+                <div class="card" style="margin-bottom: 10px">
+                    <div class="card-header">Start a route</div>
+                    <div class="card-body">
+                        @if (routes.Count == 0)
+                        {
+                            <p>No route files in <code>Json/path/_forever</code>.</p>
+                        }
+                        else
+                        {
+                            <label class="form-label">Route</label>
+                            <select class="form-select" @bind="selected" disabled="@host.IsRunning">
+                                @foreach (ForeverRouteChoice route in routes)
+                                {
+                                    <option value="@route.File">@route.Name (@route.File)</option>
+                                }
+                            </select>
+                            @if (Chosen is { } chosen)
+                            {
+                                @if (chosen.Error.Length > 0)
+                                {
+                                    <p class="text-danger" style="margin-top: 8px">Refused: @chosen.Error</p>
+                                }
+                                else
+                                {
+                                    <ol style="margin-top: 8px">
+                                        @foreach (string step in chosen.Steps)
+                                        {
+                                            <li>@step</li>
+                                        }
+                                    </ol>
+                                    @if (chosen.Repeat)
+                                    {
+                                        <p class="text-muted">Repeats until the time bound.</p>
+                                    }
+                                }
+                            }
+                            <label class="form-label">Time bound (minutes)</label>
+                            <input class="form-control" type="number" min="1" max="600" @bind="minutes" disabled="@host.IsRunning" />
+                            <div style="margin-top: 10px">
+                                <button class="btn btn-success" disabled="@(host.IsRunning || Chosen is not { Error.Length: 0 })" @onclick="Start">Start</button>
+                                <button class="btn btn-outline-secondary" disabled="@host.IsRunning" @onclick="LoadRoutes">Reload routes</button>
+                            </div>
+                            @if (error.Length > 0)
+                            {
+                                <p class="text-danger" style="margin-top: 8px">@error</p>
+                            }
+                        }
+                        <p class="text-muted" style="margin-top: 10px">
+                            After Start, click into the game window within 60 seconds; the run begins
+                            once you are out of combat with enough health and mana. The bot steers with
+                            the mouse, so the game must stay the active window: clicking anywhere else
+                            on this PC stops the run, as does Stop. Watch from another screen or device
+                            without clicking here.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-7">
+                <div class="card" style="margin-bottom: 10px">
+                    <div class="card-header">Run</div>
+                    <div class="card-body">
+                        <p><b>@StateText</b></p>
+                        @if (host.Route.Length > 0)
+                        {
+                            <p>
+                                Route: @host.Route<br />
+                                Started: @host.StartedAt?.ToString("HH:mm:ss"), @Elapsed
+                                @if (host.LogFile.Length > 0)
+                                {
+                                    <br /><span class="text-muted">Log: @host.LogFile</span>
+                                }
+                            </p>
+                        }
+                        @if (host.Phase.Length > 0)
+                        {
+                            <p>Now: @host.Phase</p>
+                        }
+                        @if (host.Summary.Length > 0)
+                        {
+                            <p>@host.Summary</p>
+                        }
+                        <button class="btn btn-danger" disabled="@(!host.IsRunning || host.StopRequested)" @onclick="host.Stop">Stop</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        Output
+                        <label class="float-end" style="font-weight: normal">
+                            <input type="checkbox" @bind="showFrames" /> frame snapshots
+                        </label>
+                    </div>
+                    <div class="card-body">
+                        <div class="forever-output">
+                            <pre>@string.Join('\n', host.Lines.Where(line => showFrames || !line.StartsWith("  map=", StringComparison.Ordinal)))</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private ForeverRunHost? host;
+    private IReadOnlyList<ForeverRouteChoice> routes = [];
+    private string selected = string.Empty;
+    private int minutes = 20;
+    private string error = string.Empty;
+    private bool showFrames;
+    private System.Threading.Timer? refresh;
+
+    private ForeverRouteChoice? Chosen => routes.FirstOrDefault(route => route.File == selected);
+
+    private string StateText => host switch
+    {
+        null => string.Empty,
+        { IsRunning: true, StopRequested: true } => "Stopping",
+        { IsRunning: true, WaitingForClick: true } => "Waiting for your click into the game window (60 seconds)",
+        { IsRunning: true, Phase.Length: 0 } => "Starting: reading the game and checking the route",
+        { IsRunning: true } => "Running",
+        { ExitCode: 0 } => "Done: the route completed (or a repeating route reached its time bound)",
+        { ExitCode: 2 } => "Refused before anything moved (exit 2): see the output",
+        { ExitCode: 1 } => "Refused: the route or the options (exit 1): see the output",
+        { ExitCode: { } code } => $"Ended (exit {code}): see the run's last lines",
+        _ => "No run yet",
+    };
+
+    private string Elapsed => host?.StartedAt is { } started
+        ? $"{((host.EndedAt ?? DateTime.Now) - started):mm\\:ss} {(host.IsRunning ? "so far" : "in all")}"
+        : string.Empty;
+
+    protected override void OnInitialized()
+    {
+        host = services.GetService(typeof(ForeverRunHost)) as ForeverRunHost;
+        if (host is null)
+            return;
+        LoadRoutes();
+        refresh = new(_ => InvokeAsync(StateHasChanged), null, 500, 500);
+    }
+
+    private void LoadRoutes()
+    {
+        routes = host!.Routes();
+        if (routes.Count > 0 && Chosen is null)
+            selected = (routes.FirstOrDefault(route => route.Error.Length == 0) ?? routes[0]).File;
+    }
+
+    private void Start()
+    {
+        error = string.Empty;
+        if (host is null || Chosen is not { Error.Length: 0 } route)
+        {
+            error = "Choose a route that loads.";
+            return;
+        }
+        if (minutes is < 1 or > 600)
+        {
+            error = "The time bound is 1 to 600 minutes.";
+            return;
+        }
+        if (!host.TryStart(route.File, minutes, out string why))
+            error = $"Not started: {why}.";
+    }
+
+    public void Dispose() => refresh?.Dispose();
+}

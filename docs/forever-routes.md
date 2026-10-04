@@ -84,6 +84,20 @@ with walkable ground inside.
 
 ## Running a route
 
+From the web UI: start BlazorServer (`BlazorServer\build.bat`, then
+`BlazorServer\run.bat`) and open **Forever runs** at `http://localhost:5000`.
+It lists the route files with their steps (or why one is refused), starts one
+with a time bound, shows the run's activity, progress and output as it goes,
+and stops it. The server itself stays read-only: `ForeverRunHost` starts the
+same trial runner as below, as a child process with `--listen` (a "stop" line
+on its input stops it as Ctrl+C does), and keeps its output in
+`local/logs/web-<route>-<time>.log` when that folder exists. After Start, click
+into the game; since the bot steers with the mouse, clicking anywhere else on
+the PC stops the run, so watch from another screen or device. Build
+`Utilities/ForeverControllerTrial` first: the page runs its newest build.
+
+From a terminal:
+
 ```powershell
 dotnet run --project Utilities/ForeverControllerTrial -- --route durotar_example.json
 dotnet run --project Utilities/ForeverControllerTrial -- --route my_loop.json --minutes 30
