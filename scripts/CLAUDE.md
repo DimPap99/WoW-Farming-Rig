@@ -16,6 +16,7 @@ dependency-free by design (users double-click the `.bat` wrappers in `.bat/`).
 | `extract-tele-sqldump.py` | merge a dump's `game_tele` (the `.tele` GM command) into `teleport_locations.txt` |
 | `build-stormlib-unix.sh` | build `libstorm.dylib`/`.so` for macOS/Linux bakes |
 | `migrate-json-era.{ps1,sh}` | move a pre-era `Json/` layout into `<era>/` subdirs |
+| `leaflet-pieces.mjs` | join the map's script pieces into upstream's one `leaflet-watch.js` and split it back, for merges (Node, no packages) |
 
 ## Credentials
 

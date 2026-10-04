@@ -5,8 +5,6 @@
 @using System.Text.RegularExpressions
 @using SharedLib
 
-@inject WApi api
-
 @inject IBotController botController
 
 @inject ActionBarCooldownReader ActionBarCooldownReader
@@ -214,12 +212,12 @@
         return $"_content/Frontend/img/form/small/{i.ToString().ToLower()}.jpg";
     }
 
-    public MarkupString GoalName(GoapGoal goal)
+    private RenderFragment GoalName(GoapGoal goal)
     {
         if (goal.Keys.Length == 1)
             return KeyActionSpellName(goal.Keys[0]);
 
-        return new MarkupString(goal.DisplayName);
+        return builder => builder.AddContent(0, goal.DisplayName);
     }
 
     private string GetKeyDisplay(KeyAction keyAction)
@@ -245,14 +243,18 @@
         return "";
     }
 
-    public MarkupString KeyActionSpellName(KeyAction keyAction)
+    private RenderFragment KeyActionSpellName(KeyAction keyAction) => __builder =>
     {
         string keyDisplay = GetKeyDisplay(keyAction);
-        string keyPart = !string.IsNullOrEmpty(keyDisplay) ? $" [{keyDisplay}]" : "";
+        string label = !string.IsNullOrEmpty(keyDisplay) ? $"{keyAction.Name} [{keyDisplay}]" : keyAction.Name;
 
         if (keyAction.SpellId == 0)
-            return new MarkupString($"{keyAction.Name}{keyPart}");
-
-        return new($"<a href=\"{api.SpellId}{keyAction.SpellId}\" target=\"_blank\" data-wowhead=\"spell={keyAction.SpellId}\" style=\"text-decoration:none;color:inherit\">{keyAction.Name}{keyPart}</a>");
-    }
+        {
+            @label
+        }
+        else
+        {
+            <WowheadLink Kind="WowheadKind.Spell" Id="keyAction.SpellId" style="color:inherit">@label</WowheadLink>
+        }
+    };
 }

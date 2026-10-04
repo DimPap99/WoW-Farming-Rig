@@ -3,7 +3,6 @@
 @inject IBotController botController
 @inject IMailSettingsService mailSettings
 @inject IJSRuntime JSRuntime
-@inject WApi api
 @inject BagReader bagReader
 @inject ItemDB itemDB
 @inject DataConfig dataConfig
@@ -176,10 +175,9 @@ else
                             {
                                 <img src="@iconUrl" class="me-1" />
                             }
-                            <a href="@($"{api.ItemId}{item.Entry}")" target="_blank" data-wowhead="item=@item.Entry"
-                               class="@ItemQualityCss.For(item.Quality)" style="text-decoration: none;">
+                            <WowheadLink Kind="WowheadKind.Item" Id="item.Entry" class="@ItemQualityCss.For(item.Quality)">
                                 @item.Name
-                            </a>
+                            </WowheadLink>
                             <Button Color="ButtonColor.Danger" Size="ButtonSize.ExtraSmall" class="ms-2"
                                     @onclick="() => RemoveExclusion(item.Entry)">
                                 <Icon Name="IconName.X" />

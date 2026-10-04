@@ -3,7 +3,7 @@
 
     Shapes are stored in WORLD coordinates - the same space PPather's CostZones
     rasterizes onto the MCNK grid - so latLngToWorld/worldTolatLng from
-    leaflet-watch.js convert straight to and from the on-disk format.
+    leaflet-coords.js convert straight to and from the on-disk format.
 
     Files are keyed by UIMapId, one per zone, so a shape is filed under whichever
     WorldMapArea contains its anchor point. Saving rewrites that whole file, then

@@ -11,21 +11,174 @@
    read-only: a run is the trial runner, started by ForeverRunHost. *@
 
 <style>
-    .forever-output {
-        max-height: 480px;
-        overflow-y: auto;
-        display: flex;
-        flex-direction: column-reverse;
-        background: #111;
-        color: #ddd;
-        padding: 8px;
-        border-radius: 4px;
-        font-family: monospace;
-        font-size: 12px;
+    /* The run's state as a dot: pulsing while the run is live or waits for you. */
+    .run-state {
+        display: inline-flex;
+        align-items: center;
+        gap: .55rem;
+        font-weight: 600;
     }
 
-    .forever-output .line {
-        white-space: pre-wrap;
+    .run-dot {
+        flex: none;
+        width: .7rem;
+        height: .7rem;
+        border-radius: 50%;
+        background: var(--bs-secondary-color);
+    }
+
+        .run-dot.live {
+            background: var(--rig-term-green);
+            animation: run-pulse-live 1.6s infinite;
+        }
+
+        .run-dot.waiting {
+            background: var(--rig-term-yellow);
+            animation: run-pulse-waiting 1.6s infinite;
+        }
+
+        .run-dot.done {
+            background: var(--rig-term-green);
+        }
+
+        .run-dot.failed {
+            background: var(--rig-term-red);
+        }
+
+    @@keyframes run-pulse-live {
+        0% { box-shadow: 0 0 0 0 rgba(63, 185, 80, .6); }
+        70% { box-shadow: 0 0 0 .5rem rgba(63, 185, 80, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+    }
+
+    @@keyframes run-pulse-waiting {
+        0% { box-shadow: 0 0 0 0 rgba(210, 153, 34, .6); }
+        70% { box-shadow: 0 0 0 .5rem rgba(210, 153, 34, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(210, 153, 34, 0); }
+    }
+
+    .run-clock {
+        font-family: var(--rig-mono);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .run-facts {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: .2rem 1rem;
+        margin: 0;
+    }
+
+        .run-facts dt {
+            font-weight: normal;
+            color: var(--bs-secondary-color);
+        }
+
+        .run-facts dd {
+            margin: 0;
+            overflow-wrap: anywhere;
+        }
+
+    .run-now {
+        padding: .5rem .75rem;
+        border-left: 3px solid var(--rig-term-violet);
+        border-radius: .25rem;
+        background: var(--bs-tertiary-bg);
+        font-family: var(--rig-mono);
+        font-size: .85rem;
+    }
+
+    .run-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .5rem;
+    }
+
+    .run-chip {
+        padding: .15rem .65rem;
+        border: 1px solid var(--bs-border-color);
+        border-radius: 1rem;
+        font-size: .85rem;
+    }
+
+        .run-chip b {
+            font-variant-numeric: tabular-nums;
+        }
+
+    /* The route's steps: settled ones ticked, the one under way marked. */
+    .run-steps {
+        margin: .75rem 0 1rem;
+        padding: 0;
+        list-style: none;
+        counter-reset: step;
+    }
+
+        .run-steps li {
+            display: flex;
+            align-items: baseline;
+            gap: .6rem;
+            padding: .2rem 0;
+            counter-increment: step;
+        }
+
+            .run-steps li::before {
+                content: counter(step);
+                flex: none;
+                width: 1.4rem;
+                height: 1.4rem;
+                border: 1px solid var(--bs-border-color);
+                border-radius: 50%;
+                font-size: .75rem;
+                line-height: 1.3rem;
+                text-align: center;
+            }
+
+            .run-steps li.done {
+                color: var(--bs-secondary-color);
+            }
+
+                .run-steps li.done::before {
+                    content: "\2713";
+                }
+
+            .run-steps li.current {
+                font-weight: 600;
+            }
+
+                .run-steps li.current::before {
+                    border-color: var(--rig-term-green);
+                    background: var(--rig-term-green);
+                    color: #fff;
+                }
+
+    /* The run's output, by line: see ForeverRunLineKind. */
+    .run-number {
+        min-width: 3ch;
+        color: #484f58;
+        text-align: right;
+        user-select: none;
+    }
+
+    .run-phase .rig-msg {
+        color: var(--rig-term-violet);
+        font-weight: 600;
+    }
+
+    .run-summary .rig-msg {
+        color: var(--rig-term-green);
+        font-weight: 600;
+    }
+
+    .run-prompt .rig-msg {
+        color: var(--rig-term-yellow);
+    }
+
+    .run-snapshot .rig-msg {
+        color: var(--rig-term-dim);
+    }
+
+    .run-problem .rig-msg {
+        color: var(--rig-term-red);
     }
 </style>
 
@@ -36,10 +189,11 @@
     }
     else
     {
-        <div class="row">
+        (string stateText, string stateCss) = State;
+        <div class="row g-3">
             <div class="col-lg-5">
-                <div class="card" style="margin-bottom: 10px">
-                    <div class="card-header">Start a route</div>
+                <div class="card">
+                    <div class="card-header"><i class="bi bi-signpost-split me-2"></i>Start a route</div>
                     <div class="card-body">
                         @if (routes.Count == 0)
                         {
@@ -58,90 +212,119 @@
                             {
                                 @if (chosen.Error.Length > 0)
                                 {
-                                    <p class="text-danger" style="margin-top: 8px">Refused: @chosen.Error</p>
+                                    <p class="text-danger mt-2"><i class="bi bi-x-octagon me-1"></i>Refused: @chosen.Error</p>
                                 }
                                 else
                                 {
-                                    <ol style="margin-top: 8px">
-                                        @foreach (string step in chosen.Steps)
+                                    <ol class="run-steps">
+                                        @for (int i = 0; i < chosen.Steps.Count; i++)
                                         {
-                                            <li>@step</li>
+                                            <li class="@StepCss(chosen, i)">@chosen.Steps[i]</li>
                                         }
                                     </ol>
                                     @if (chosen.Repeat)
                                     {
-                                        <p class="text-muted">Repeats until the time bound.</p>
+                                        <p class="text-muted"><i class="bi bi-repeat me-1"></i>Repeats until the time bound.</p>
                                     }
                                 }
                             }
                             <label class="form-label">Time bound (minutes)</label>
                             <input class="form-control" type="number" min="@MinMinutes" max="@MaxMinutes" @bind="minutes" disabled="@host.IsRunning" />
-                            <div style="margin-top: 10px">
-                                <button class="btn btn-success" disabled="@(host.IsRunning || Chosen is not { Error.Length: 0 })" @onclick="Start">Start</button>
-                                <button class="btn btn-outline-secondary" disabled="@host.IsRunning" @onclick="LoadRoutes">Reload routes</button>
+                            <div class="d-flex gap-2 mt-3">
+                                <button class="btn btn-success" disabled="@(host.IsRunning || Chosen is not { Error.Length: 0 })" @onclick="Start">
+                                    <i class="bi bi-play-fill me-1"></i>Start
+                                </button>
+                                <button class="btn btn-outline-secondary" disabled="@host.IsRunning" @onclick="LoadRoutes">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Reload routes
+                                </button>
                             </div>
                             @if (error.Length > 0)
                             {
-                                <p class="text-danger" style="margin-top: 8px">@error</p>
+                                <p class="text-danger mt-2">@error</p>
                             }
                         }
-                        <p class="text-muted" style="margin-top: 10px">
-                            After Start, click into the game window within 60 seconds; the run begins
-                            once you are out of combat with enough health and mana. The bot steers with
-                            the mouse, so the game must stay the active window: clicking anywhere else
-                            on this PC stops the run, as does Stop. Watch from another screen or device
-                            without clicking here.
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-lg-7">
-                <div class="card" style="margin-bottom: 10px">
-                    <div class="card-header">Run</div>
-                    <div class="card-body">
-                        <p><b>@StateText</b></p>
-                        @if (host.Route.Length > 0)
-                        {
-                            <p>
-                                Route: @host.Route<br />
-                                Started: @host.StartedAtUtc?.ToLocalTime().ToString("HH:mm:ss"), @Elapsed
-                                @if (host.LogFile.Length > 0)
-                                {
-                                    <br /><span class="text-muted">Log: @host.LogFile</span>
-                                }
-                            </p>
-                        }
-                        @if (host.Phase.Length > 0)
-                        {
-                            <p>Now: @host.Phase</p>
-                        }
-                        @if (host.Summary.Length > 0)
-                        {
-                            <p>@host.Summary</p>
-                        }
-                        <button class="btn btn-danger" disabled="@(!host.IsRunning || host.StopRequested)" @onclick="host.Stop">Stop</button>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        Output
-                        <label class="float-end" style="font-weight: normal">
-                            <input type="checkbox" @bind="showSnapshots" /> frame snapshots
-                        </label>
-                    </div>
-                    <div class="card-body">
-                        <div class="forever-output">
+                        <div class="alert alert-secondary d-flex gap-2 small mt-3 mb-0">
+                            <i class="bi bi-info-circle"></i>
                             <div>
-                                @foreach (ForeverRunLine line in host.Output(showSnapshots))
-                                {
-                                    <div class="line" @key="line.Number">@line.Text</div>
-                                }
+                                After Start, click into the game window within 60 seconds; the run begins
+                                once you are out of combat with enough health and mana. The bot steers with
+                                the mouse, so the game must stay the active window: clicking anywhere else
+                                on this PC stops the run, as does Stop. Watch from another screen or device
+                                without clicking here.
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div class="col-lg-7 d-flex flex-column gap-3">
+                <div class="card">
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <span class="run-state"><span class="run-dot @stateCss"></span>@stateText</span>
+                        @if (Elapsed is { } elapsed)
+                        {
+                            <span class="ms-auto run-clock" title="@(host.IsRunning ? "So far" : "In all")"><i class="bi bi-stopwatch me-1"></i>@elapsed</span>
+                        }
+                    </div>
+                    <div class="card-body">
+                        @if (host.Route.Length > 0)
+                        {
+                            <dl class="run-facts">
+                                <dt>Route</dt>
+                                <dd>@host.Route</dd>
+                                <dt>Started</dt>
+                                <dd class="run-clock">@host.StartedAtUtc?.ToLocalTime().ToString("HH:mm:ss")</dd>
+                                @if (host.LogFile.Length > 0)
+                                {
+                                    <dt>Log</dt>
+                                    <dd class="text-muted small">@host.LogFile</dd>
+                                }
+                            </dl>
+                        }
+                        @if (host.Phase.Length > 0)
+                        {
+                            <div class="run-now mt-3" title="Now">@host.Phase</div>
+                        }
+                        @if (host.Summary.Length > 0)
+                        {
+                            <div class="run-chips mt-3">
+                                @foreach ((string name, string value) in ForeverRunOutput.SummaryFields(host.Summary))
+                                {
+                                    <span class="run-chip">@name <b>@value</b></span>
+                                }
+                            </div>
+                        }
+                        <button class="btn btn-danger mt-3" disabled="@(!host.IsRunning || host.StopRequested)" @onclick="host.Stop">
+                            <i class="bi bi-stop-fill me-1"></i>Stop
+                        </button>
+                    </div>
+                </div>
+
+                <Terminal Title="@(host.Route.Length > 0 ? $"run output: {host.Route}" : "run output")" MaxHeight="480" StickToBottom="true">
+                    <Tools>
+                        <label><input type="checkbox" @bind="showSnapshots" /> frame snapshots</label>
+                    </Tools>
+                    <ChildContent>
+                        @{
+                            IReadOnlyList<ForeverRunLine> output = host.Output(showSnapshots);
+                        }
+                        @if (output.Count == 0)
+                        {
+                            <div class="rig-empty">No output yet: start a route.</div>
+                        }
+                        @foreach (ForeverRunLine line in output)
+                        {
+                            <div class="rig-line @lineCss[(int)line.Kind]" @key="line.Number">
+                                <span class="run-number">@line.Number</span>
+                                @if (line.Source.Length > 0)
+                                {
+                                    <span class="rig-source">@line.Source</span>
+                                }
+                                <span class="rig-msg">@line.Message</span>
+                            </div>
+                        }
+                    </ChildContent>
+                </Terminal>
             </div>
         </div>
     }
@@ -163,35 +346,52 @@
     private int ticks;
     private const int RefreshMs = 500;
 
+    // By ForeverRunLineKind: Text, Log, Phase, Summary, Snapshot, Prompt, Problem.
+    private static readonly string[] lineCss = ["", "", "run-phase", "run-summary", "run-snapshot", "run-prompt", "run-problem"];
+
     private ForeverRouteChoice? Chosen => routes.FirstOrDefault(route => route.File == selected);
 
-    private string StateText => host switch
+    // What the run is doing, and the state dot's class for it.
+    private (string Text, string Css) State => host switch
     {
-        null => string.Empty,
-        { IsRunning: true, StopRequested: true } => "Stopping: the run lets go of the keys and the mouse",
-        { IsRunning: true, WaitingForClick: true } => "Waiting for your click into the game window (60 seconds)",
-        { IsRunning: true, Phase.Length: 0 } => "Starting: reading the game and checking the route",
-        { IsRunning: true } => "Running",
-        { Route.Length: 0 } => "No run yet",
-        { StopRequested: true, ExitCode: ForeverRunProtocol.ExitRefused } => "Stopped before anything moved",
-        { StopRequested: true } => "Stopped",
-        { ExitCode: ForeverRunProtocol.ExitComplete } => "Done: the route completed (or a repeating route reached its time bound)",
-        { ExitCode: ForeverRunProtocol.ExitRefused } => "Refused before anything moved: see the output",
-        { ExitCode: ForeverRunProtocol.ExitUsage } => "Refused: the route or the options; see the output",
-        { ExitCode: ForeverRunProtocol.ExitFailed } => "Ended: it failed, or ran out of time; see the run's last lines",
-        { ExitCode: { } code } => $"Ended (exit {code}): see the run's last lines",
-        _ => "Ended",
+        null => (string.Empty, string.Empty),
+        { IsRunning: true, StopRequested: true } => ("Stopping: the run lets go of the keys and the mouse", "waiting"),
+        { IsRunning: true, WaitingForClick: true } => ("Waiting for your click into the game window (60 seconds)", "waiting"),
+        { IsRunning: true, Phase.Length: 0 } => ("Starting: reading the game and checking the route", "waiting"),
+        { IsRunning: true } => ("Running", "live"),
+        { Route.Length: 0 } => ("No run yet", string.Empty),
+        { StopRequested: true, ExitCode: ForeverRunProtocol.ExitRefused } => ("Stopped before anything moved", string.Empty),
+        { StopRequested: true } => ("Stopped", string.Empty),
+        { ExitCode: ForeverRunProtocol.ExitComplete } => ("Done: the route completed (or a repeating route reached its time bound)", "done"),
+        { ExitCode: ForeverRunProtocol.ExitRefused } => ("Refused before anything moved: see the output", "failed"),
+        { ExitCode: ForeverRunProtocol.ExitUsage } => ("Refused: the route or the options; see the output", "failed"),
+        { ExitCode: ForeverRunProtocol.ExitFailed } => ("Ended: it failed, or ran out of time; see the run's last lines", "failed"),
+        { ExitCode: { } code } => ($"Ended (exit {code}): see the run's last lines", "failed"),
+        _ => ("Ended", string.Empty),
     };
 
-    private string Elapsed
+    private string? Elapsed
     {
         get
         {
             if (host?.StartedAtUtc is not { } started)
-                return string.Empty;
+                return null;
             TimeSpan elapsed = (host.EndedAtUtc ?? DateTime.UtcNow) - started;
-            return $"{(int)elapsed.TotalHours}:{elapsed:mm\\:ss} {(host.IsRunning ? "so far" : "in all")}";
+            return $"{(int)elapsed.TotalHours}:{elapsed:mm\\:ss}";
         }
+    }
+
+    // While the chosen route runs: the steps before its current one are done.
+    private string StepCss(ForeverRouteChoice route, int index)
+    {
+        if (host is not { IsRunning: true, CurrentTask: > 0 } || host.Route != route.File)
+            return string.Empty;
+        return (index + 1).CompareTo(host.CurrentTask) switch
+        {
+            < 0 => "done",
+            0 => "current",
+            _ => string.Empty
+        };
     }
 
     protected override void OnInitialized()

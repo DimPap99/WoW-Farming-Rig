@@ -4,27 +4,28 @@
 
 @inject TextReader reader
 
-<div class="col-sm" style="@(MaxHeight > 0 ? $"overflow: auto; max-height: {MaxHeight}px;" : string.Empty)">
+<Terminal Title="chat" MaxHeight="MaxHeight">
     @foreach (var cme in reader.Messages.Reverse())
     {
-        <p style="color:@(typeColor[(int)cme.Type])" class="mb-0">
-            <span>@cme.Time.ToString("HH:mm:ss")</span>
-            <span>@cme.Author:</span>
-            <span>@cme.Message</span>
-        </p>
+        <div class="rig-line @channelCss[(int)cme.Type]">
+            <span class="rig-time">@cme.Time.ToString("HH:mm:ss")</span>
+            <span class="rig-author">@cme.Author:</span>
+            <span class="rig-msg">@cme.Message</span>
+        </div>
     }
-</div>
+</Terminal>
 
 @code {
     [Parameter]
     public int MaxHeight { get; set; } = 400;
 
-    private static readonly string[] typeColor = {
-        "#FF80FF",   // ChatMessageType.Whisper
-        "",         // ChatMessageType.Say
-        "red",      // ChatMessageType.Yell
-        "orange",   // ChatMessageType.Emote
-        "cyan",    // ChatMessageType.Party
+    // By ChatMessageType: whisper, say, yell, emote, party; site.css colours them.
+    private static readonly string[] channelCss = {
+        "rig-chat-whisper",
+        "rig-chat-say",
+        "rig-chat-yell",
+        "rig-chat-emote",
+        "rig-chat-party",
     };
 
     protected override void OnInitialized()

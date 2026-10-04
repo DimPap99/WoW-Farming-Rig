@@ -1,9 +1,5 @@
-@using Core.Goals
-@using Core.Database
-@using System.Linq
 @using System.Numerics
 @using System.Timers
-@using System.Buffers
 @using System.Text.Json
 
 @using static System.Text.Json.JsonSerializer
@@ -11,12 +7,8 @@
 @inject IAddonReader addonReader
 @inject IBotController botController
 
-@inject DataConfig dataConfig
-@inject CombatLog combatLog
 @inject PlayerReader PlayerReader
-@inject AddonBits Bits
 @inject IJSRuntime jsRuntime
-@inject WorldMapAreaDB worldmapAreaDB
 @inject AreaDB areaDB
 
 @inject JsonSerializerOptions options
@@ -152,33 +144,20 @@
 
     protected override void OnInitialized()
     {
-        botController.ProfileLoaded += OnProfileLoaded;
         addonReader.AddonDataChanged += OnAddonDataChanged;
         areaDB.Changed += OnZoneChanged;
-        //combatLog.PlayerDeath += OnPlayerDeath;
 
         UpdateZoneName();
-        //UpdateDeaths();
-        //UpdateSymbol();
 
-        //botController.RouteInfo?.SetRouteSource(null);
-
-        if (!refreshTimer.Enabled)
-        {
-            refreshTimer.Interval = 100;
-            refreshTimer.Enabled = true;
-
-            refreshTimer.Elapsed += OnTimerTick;
-
-            refreshTimer.Start();
-        }
+        refreshTimer.Interval = 100;
+        refreshTimer.Elapsed += OnTimerTick;
+        refreshTimer.Start();
     }
 
     public async ValueTask DisposeAsync()
     {
         refreshTimer.Dispose();
 
-        botController.ProfileLoaded -= OnProfileLoaded;
         addonReader.AddonDataChanged -= OnAddonDataChanged;
         areaDB.Changed -= OnZoneChanged;
 
@@ -203,17 +182,6 @@
     private void OnZoneChanged()
     {
         base.InvokeAsync(ActionZoneChangedAction);
-    }
-
-    private void OnProfileLoaded()
-    {
-        if (botController.ClassConfig == null) return;
-
-        foreach (var pathSettings in botController.ClassConfig.Paths)
-        {
-            //var pathName = Path.GetFileNameWithoutExtension(pathSettings.FileName);
-            //jsRuntime.InvokeVoidAsync("loadMapPathByFilter", pathName).ConfigureAwait(false);
-        }
     }
 
     private void ActionZoneChangedAction()

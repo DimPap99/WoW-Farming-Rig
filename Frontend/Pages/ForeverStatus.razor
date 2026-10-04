@@ -1,45 +1,191 @@
+@using System.Globalization
+
 @inherits SubscribingComponentBase
 
 @inject ForeverVisualBarTracker visualBars
 
 @* WoW: Forever's home page card: what the add-on's diagnostic bars read. *@
 
+<style>
+    .fv-meters {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+        gap: 1rem 1.5rem;
+    }
+
+    .fv-meter-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: .3rem;
+        font-size: .85rem;
+    }
+
+        .fv-meter-label b {
+            font-family: var(--rig-mono);
+            font-variant-numeric: tabular-nums;
+        }
+
+    .fv-meter-bar {
+        height: .55rem;
+        border-radius: .3rem;
+        background: var(--bs-tertiary-bg);
+        overflow: hidden;
+    }
+
+    .fv-meter-fill {
+        height: 100%;
+        border-radius: .3rem;
+        transition: width .25s ease;
+    }
+
+    .fv-health { background: linear-gradient(90deg, #238636, #3fb950); }
+    .fv-power { background: linear-gradient(90deg, #1f6feb, #58a6ff); }
+    .fv-target { background: linear-gradient(90deg, #b62324, #f85149); }
+    .fv-calibration { background: linear-gradient(90deg, #9e6a03, #d29922); }
+
+    .fv-section {
+        margin: 1.5rem 0 .6rem;
+        font-size: .8rem;
+        font-weight: 600;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        color: var(--bs-secondary-color);
+    }
+
+    /* The main bar's slots, each with the game's cooldown sweep behind its text. */
+    .fv-slots {
+        --fv-sweep: rgba(33, 37, 41, .3);
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: .4rem;
+        max-width: 48rem;
+    }
+
+    [data-bs-theme="dark"] .fv-slots {
+        --fv-sweep: rgba(0, 0, 0, .6);
+    }
+
+    .fv-slot {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        aspect-ratio: 1;
+        overflow: hidden;
+        border: 1px solid var(--bs-border-color);
+        border-radius: .4rem;
+        background: var(--bs-tertiary-bg);
+        font-size: .65rem;
+    }
+
+        .fv-slot.ready { border-color: var(--rig-term-green); }
+        .fv-slot.unknown { border-style: dashed; }
+        .fv-slot.empty { border-style: dashed; opacity: .4; }
+        .fv-slot i { font-size: 1.05rem; line-height: 1.2; }
+
+        .fv-slot i,
+        .fv-slot-id {
+            position: relative;
+            z-index: 1;
+        }
+
+    .fv-slot-number {
+        position: absolute;
+        z-index: 1;
+        top: .1rem;
+        left: .3rem;
+        color: var(--bs-secondary-color);
+    }
+
+    .fv-slot-id {
+        font-family: var(--rig-mono);
+    }
+
+    .fv-slot-sweep {
+        position: absolute;
+        z-index: 0;
+        inset: 0;
+        pointer-events: none;
+    }
+
+    .fv-facing {
+        display: inline-block;
+        transition: transform .25s ease;
+    }
+</style>
+
 <div class="col-sm">
     <div class="card">
-        <div class="card-header">WoW: Forever beta compatibility</div>
+        <div class="card-header d-flex align-items-center gap-2">
+            <i class="bi bi-activity"></i>
+            <span>WoW: Forever beta compatibility</span>
+            @if (visualBars.TryGetLatest(out _))
+            {
+                <span class="badge text-bg-success ms-auto">live</span>
+            }
+            else
+            {
+                <span class="badge text-bg-secondary ms-auto">no data</span>
+            }
+        </div>
         <div class="card-body">
-            <p>Read-only view of what the add-on's bars read. Routes are started, watched and stopped on <a href="ForeverRuns">Forever runs</a>.</p>
+            <p class="text-muted">Read-only view of what the add-on's bars read. Routes are started, watched and stopped on <a href="ForeverRuns">Forever runs</a>.</p>
             @if (visualBars.TryGetLatest(out var bars))
             {
-                <p>Player health: @bars.PlayerHealth.ToString("P0")<br />
-                   Player power: @bars.PlayerPower.ToString("P0")<br />
-                   Target bar fill: @bars.TargetHealth.ToString("P0")<br />
-                   Target presence: @TargetPresenceText(bars.TargetPresent)</p>
-                <p class="text-muted">Target health is usable only when target presence is confirmed.</p>
+                <div class="fv-meters">
+                    @Meter("Player health", bars.PlayerHealth, "fv-health")
+                    @Meter("Player power", bars.PlayerPower, "fv-power")
+                    <div>
+                        @Meter("Target bar fill", bars.TargetHealth, "fv-target")
+                        <div class="form-text">Target presence: @TargetPresenceText(bars.TargetPresent). The fill is usable only when presence is confirmed.</div>
+                    </div>
+                    <div>
+                        @Meter("Visual calibration", bars.Calibration, "fv-calibration")
+                        <div class="form-text">Data expires if screen capture stops.</div>
+                    </div>
+                </div>
+
                 @if (bars.ActionBar is { } actionBar)
                 {
-                    <p>Action bar: @actionBar.OccupiedCount occupied, @actionBar.ReadableCount / @VisualActionBarSnapshot.SlotCount readable slots</p>
-                    <p>Main bar: @MainBarText(bars)</p>
-                    <p class="text-muted">Cooldown is the remaining fraction of the spell's cooldown, not seconds.</p>
+                    <div class="fv-section">Main bar <span class="text-lowercase fw-normal">· @actionBar.OccupiedCount occupied, @actionBar.ReadableCount / @VisualActionBarSnapshot.SlotCount readable slots</span></div>
+                    <div class="fv-slots">
+                        @for (int slot = 1; slot <= VisualCooldownGridSnapshot.SlotCount; slot++)
+                        {
+                            @Slot(slot, actionBar.GetSlot(slot), bars.Cooldowns?.GetSlot(slot))
+                        }
+                    </div>
+                    <div class="form-text">Cooldown is the remaining fraction of the spell's cooldown, not seconds.</div>
                 }
                 else
                 {
-                    <p class="text-muted">No valid full action-bar snapshot yet.</p>
+                    <p class="text-muted mt-4">No valid full action-bar snapshot yet.</p>
                 }
+
+                <div class="fv-section">Position</div>
                 @if (bars.Position is { } position)
                 {
-                    <p>Map @position.UIMapId: @position.MapX.ToString("F5"), @position.MapY.ToString("F5")<br />
-                       Facing: @position.Direction.ToString("F2") radians</p>
+                    <div title="@($"{position.MapX:F5}, {position.MapY:F5}")">
+                        <i class="bi bi-geo-alt me-1"></i>Map @position.UIMapId:
+                        <span class="font-monospace">@Coordinate(position.MapX), @Coordinate(position.MapY)</span>
+                        <span class="ms-3">
+                            <span class="fv-facing" style="transform: rotate(@(Angle(-position.Direction))rad)"><i class="bi bi-arrow-up-circle"></i></span>
+                            facing @position.Direction.ToString("F2") radians
+                        </span>
+                    </div>
                 }
                 else
                 {
                     <p class="text-muted">No valid position marker yet.</p>
                 }
-                <p class="text-muted">Visual calibration: @bars.Calibration.ToString("P0"). Data expires if screen capture stops.</p>
             }
             else
             {
-                <p>No fresh visual data. In the game, type <code>/forevervisual</code> to show the diagnostic bars.</p>
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-eye-slash fs-2 d-block mb-2"></i>
+                    No fresh visual data. In the game, type <code>/forevervisual</code> to show the diagnostic bars.
+                </div>
             }
         </div>
     </div>
@@ -62,25 +208,58 @@
         null => "unknown"
     };
 
-    // The main-bar slots the Forever runtime can press: what each holds and
-    // how much of its cooldown remains, from the add-on's checked grids.
-    private static string MainBarText(VisualBarSample bars)
+    // A labelled bar for a 0-1 reading.
+    private static RenderFragment Meter(string label, double fill, string css) => __builder =>
     {
-        if (bars.ActionBar is not { } bar)
-            return "unavailable";
-        List<string> parts = [];
-        for (int slot = 1; slot <= VisualCooldownGridSnapshot.SlotCount; slot++)
+        <div>
+            <div class="fv-meter-label"><span>@label</span><b>@fill.ToString("P0")</b></div>
+            <div class="fv-meter-bar">
+                <div class="fv-meter-fill @css" style="width: @Percent(fill)"></div>
+            </div>
+        </div>
+    };
+
+    // A main-bar slot the Forever runtime can press: what it holds, and how
+    // much of its cooldown remains, swept as the game does.
+    private static RenderFragment Slot(int slot, VisualActionSample? action, double? cooldown) => __builder =>
+    {
+        if (action is not { Kind: not VisualActionKind.Empty } held)
         {
-            if (bar.GetSlot(slot) is not { } action || action.Kind == VisualActionKind.Empty)
-                continue;
-            string cooldown = bars.Cooldowns?.GetSlot(slot) switch
-            {
-                null => "cooldown unknown",
-                0 => "ready",
-                double fill => $"{fill:P0} cooldown"
-            };
-            parts.Add($"{slot}: {action.Kind} {action.Id}, {cooldown}");
+            <div class="fv-slot empty" title="@slot: empty"><span class="fv-slot-number">@slot</span></div>
+            return;
         }
-        return parts.Count == 0 ? "empty" : string.Join("; ", parts);
-    }
+
+        string state = cooldown switch
+        {
+            null => "cooldown unknown",
+            0 => "ready",
+            double remaining => $"{remaining:P0} cooldown"
+        };
+        <div class="fv-slot @(cooldown switch { null => "unknown", 0 => "ready", _ => "" })" title="@slot: @held.Kind @held.Id, @state">
+            <span class="fv-slot-number">@slot</span>
+            <i class="bi @KindIcon(held.Kind)"></i>
+            <span class="fv-slot-id">@held.Id</span>
+            @if (cooldown is double fill && fill > 0)
+            {
+                <div class="fv-slot-sweep" style="background: conic-gradient(var(--fv-sweep) 0 @Angle(fill * 360)deg, transparent 0)"></div>
+            }
+        </div>
+    };
+
+    private static string KindIcon(VisualActionKind kind) => kind switch
+    {
+        VisualActionKind.Spell => "bi-stars",
+        VisualActionKind.Item => "bi-bag",
+        VisualActionKind.Macro => "bi-code-slash",
+        VisualActionKind.Flyout => "bi-chevron-double-right",
+        _ => "bi-question"
+    };
+
+    // A map fraction as the route files and the game's map write it: 0.519 is 51.9.
+    private static string Coordinate(double fraction) => (fraction * 100).ToString("F2", CultureInfo.InvariantCulture);
+
+    // CSS wants a dot for the decimal, whatever the server's culture.
+    private static string Percent(double fill) => (Math.Clamp(fill, 0, 1) * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+
+    private static string Angle(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 }

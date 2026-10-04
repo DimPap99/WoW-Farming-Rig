@@ -9,15 +9,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Text;
 using System.Threading;
 
 namespace Frontend;
-
-/// <summary>A route file as the runs page lists it: where it is, its name and steps, or why it is refused.</summary>
-public sealed record ForeverRouteChoice(string FullPath, string File, string Name, IReadOnlyList<string> Steps,
-    bool Repeat, string Error);
 
 /// <summary>
 /// Starts and stops WoW: Forever runs for the web UI, which itself stays read-only.
@@ -32,14 +27,11 @@ public sealed class ForeverRunHost : IDisposable
 {
     /// <summary>How long a stopped run gets to release what it holds and exit before it is ended.</summary>
     public const int StopGraceMs = 10000;
-    private const string RunnerName = "ForeverControllerTrial";
-    private const string SolutionFile = "WoWFarmingRig.sln";
 
     private readonly object sync = new();
     private readonly WorldMapAreaDB maps;
     private readonly WowProcess wow;
-    private readonly string repositoryRoot;
-    private readonly string routesFolder;
+    private readonly ForeverRunFiles files;
     private readonly ForeverRunOutput output = new();
     private Process? process;
     private StreamWriter? log;
@@ -49,9 +41,7 @@ public sealed class ForeverRunHost : IDisposable
     {
         this.maps = maps;
         this.wow = wow;
-        repositoryRoot = FindRepositoryRoot() ?? Path.GetFullPath(Path.Combine(data.Root, ".."));
-        // The runner reads routes from Json under its working directory, the repository.
-        routesFolder = Path.Combine(repositoryRoot, "Json", "path", ForeverRouteFile.Folder);
+        files = ForeverRunFiles.Locate(data);
     }
 
     /// <summary>Something the page shows changed: a line, the state.</summary>
@@ -65,6 +55,8 @@ public sealed class ForeverRunHost : IDisposable
     public int? ExitCode { get; private set; }
     /// <inheritdoc cref="ForeverRunOutput.Phase"/>
     public string Phase => output.Phase;
+    /// <inheritdoc cref="ForeverRunOutput.CurrentTask"/>
+    public int CurrentTask => output.CurrentTask;
     /// <inheritdoc cref="ForeverRunOutput.Summary"/>
     public string Summary => output.Summary;
     /// <summary>The runner asks for a click into the game before it moves anything.</summary>
@@ -81,20 +73,7 @@ public sealed class ForeverRunHost : IDisposable
     }
 
     /// <summary>The route files the runner can run, each loaded and checked as a run would.</summary>
-    public IReadOnlyList<ForeverRouteChoice> Routes()
-    {
-        if (!Directory.Exists(routesFolder))
-            return [];
-        List<ForeverRouteChoice> routes = [];
-        foreach (string path in Directory.EnumerateFiles(routesFolder, "*.json").OrderBy(Path.GetFileName))
-        {
-            string file = Path.GetFileName(path);
-            routes.Add(ForeverRouteFile.TryLoad(path, maps, out ForeverRoute route, out string error)
-                ? new(path, file, route.Name, [.. route.Tasks.Select(task => task.Name)], route.Repeat, string.Empty)
-                : new(path, file, file, [], false, error));
-        }
-        return routes;
-    }
+    public IReadOnlyList<ForeverRouteChoice> Routes() => ForeverRouteCatalog.Load(files.RoutesFolder, maps);
 
     /// <summary>Starts <paramref name="route"/> for at most <paramref name="minutes"/>; false with why when it cannot.</summary>
     public bool TryStart(ForeverRouteChoice route, int minutes, out string error)
@@ -106,15 +85,15 @@ public sealed class ForeverRunHost : IDisposable
                 error = "a run is already under way";
                 return false;
             }
-            if (FindRunner() is not { } runner)
+            if (files.FindRunner() is not { } runner)
             {
-                error = $"the {RunnerName} build was not found; build it with: dotnet build Utilities/{RunnerName}";
+                error = $"the {ForeverRunFiles.RunnerName} build was not found; build it with: dotnet build Utilities/{ForeverRunFiles.RunnerName}";
                 return false;
             }
 
             ProcessStartInfo start = new(runner)
             {
-                WorkingDirectory = repositoryRoot,
+                WorkingDirectory = files.RepositoryRoot,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardInput = true,
@@ -282,41 +261,12 @@ public sealed class ForeverRunHost : IDisposable
         }
     }
 
-    // The repository the server runs from: the folder with the solution, above its build output.
-    private static string? FindRepositoryRoot()
-    {
-        for (DirectoryInfo? folder = new(AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
-        {
-            if (File.Exists(Path.Combine(folder.FullName, SolutionFile)))
-                return folder.FullName;
-        }
-        return null;
-    }
-
-    // The runner's build output written last, its own files and the Core it
-    // carries alike, so a rebuild that only changed Core counts.
-    private string? FindRunner()
-    {
-        string bin = Path.Combine(repositoryRoot, "Utilities", RunnerName, "bin");
-        if (!Directory.Exists(bin))
-            return null;
-        return Directory.EnumerateFiles(bin, RunnerName + ".exe", SearchOption.AllDirectories)
-            .OrderByDescending(exe => Directory.EnumerateFiles(Path.GetDirectoryName(exe)!, "*.dll")
-                .Append(exe).Max(File.GetLastWriteTimeUtc))
-            .FirstOrDefault();
-    }
-
     // Beside the live tests' logs, when the repository keeps them.
     private StreamWriter? OpenLog(string routeFile)
     {
-        string folder = Path.Combine(repositoryRoot, "local", "logs");
-        if (!Directory.Exists(folder))
-        {
-            LogFile = string.Empty;
+        LogFile = files.NewLogFile(routeFile);
+        if (LogFile.Length == 0)
             return null;
-        }
-        LogFile = Path.Combine(folder,
-            $"web-{Path.GetFileNameWithoutExtension(routeFile)}-{DateTime.Now:yyyyMMdd-HHmmss}.log");
         try
         {
             return new StreamWriter(LogFile, append: false, Encoding.UTF8) { AutoFlush = true };

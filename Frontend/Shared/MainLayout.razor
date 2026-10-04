@@ -20,7 +20,7 @@
                       @ref="sidebar"
                       Title="Puppet"
                       DataProvider="Sidebar2DataProvider"
-                      Width="146"
+                      Width="180"
                       WidthUnit="Unit.Px">
             </Sidebar2>
         </div>
@@ -150,50 +150,50 @@
     {
         navItems = new List<NavItem>
         {
-            new() { Id = "0", Href = "/", Text = "Dashboard", Match=NavLinkMatch.All},
-            new() { Id = "1", Href = "/ChangeTheme", Text = "Theme"},
+            new() { Id = "0", Href = "/", Text = "Dashboard", IconName = IconName.Speedometer2, Match=NavLinkMatch.All},
+            new() { Id = "1", Href = "/ChangeTheme", Text = "Theme", IconName = IconName.Palette},
 
-            new() { Id = "3", Href = "/Screenshot", Text = "Screenshot"},
-            new() { Id = "4", Href = "/Swag", Text = "Swag"},
-            new() { Id = "5", Href = "/Talents", Text = "Talents"},
+            new() { Id = "3", Href = "/Screenshot", Text = "Screenshot", IconName = IconName.Camera},
+            new() { Id = "4", Href = "/Swag", Text = "Swag", IconName = IconName.Bag},
+            new() { Id = "5", Href = "/Talents", Text = "Talents", IconName = IconName.Diagram3},
 
-            new() { Id = "6", Href = "/History", Text = "History"},
+            new() { Id = "6", Href = "/History", Text = "History", IconName = IconName.ClockHistory},
 
-            new() { Id = "9", Href = "/AddonConfiguration", Text = "Addon Config"},
-            new() { Id = "10", Href = "/FrameConfiguration", Text = "Frame Config"},
-            new() { Id = "11", Href = "/KeyBindings", Text = "Key Bindings"},
-            new() { Id = "15", Href = "/SpellBook", Text = "Spell Book"},
-            new() { Id = "12", Href = "/Chat", Text = "Chat"},
-            new() { Id = "13", Href = "/Log", Text = "Log"},
-            new() { Id = "14", Href = "/Settings", Text = "Settings"},
-            new() { Id = "20", Href = "/RestartServer", Text = "Restart"},
-            
+            new() { Id = "9", Href = "/AddonConfiguration", Text = "Addon Config", IconName = IconName.Plug},
+            new() { Id = "10", Href = "/FrameConfiguration", Text = "Frame Config", IconName = IconName.BoundingBox},
+            new() { Id = "11", Href = "/KeyBindings", Text = "Key Bindings", IconName = IconName.Keyboard},
+            new() { Id = "15", Href = "/SpellBook", Text = "Spell Book", IconName = IconName.Book},
+            new() { Id = "12", Href = "/Chat", Text = "Chat", IconName = IconName.ChatDots},
+            new() { Id = "13", Href = "/Log", Text = "Log", IconName = IconName.Terminal},
+            new() { Id = "14", Href = "/Settings", Text = "Settings", IconName = IconName.Gear},
+            new() { Id = "20", Href = "/RestartServer", Text = "Restart", IconName = IconName.ArrowClockwise},
+
         };
 
         if (DataConfig.HasLeaflet(client.Version.ToString()))
         {
-            navItems.Insert(5, new() { Id = "6", Href = "/Leaflet", Text = "Leaflet" });
+            navItems.Insert(5, new() { Id = "6", Href = "/Leaflet", Text = "Leaflet", IconName = IconName.Map });
 
             // Route generation previews on the leaflet map, so it is only reachable where
             // that map exists.
-            navItems.Insert(6, new() { Id = "21", Href = "/RouteGen", Text = "Route Gen" });
+            navItems.Insert(6, new() { Id = "21", Href = "/RouteGen", Text = "Route Gen", IconName = IconName.Signpost2 });
         }
 
         if (!HideClassConfig)
         {
-            navItems.Insert(2, new() { Id = "2", Href = "/ClassConfigPage", Text = "Class Config" });
-            navItems.Insert(5, new() { Id = "5", Href = "/RecordPath", Text = "Path Editor" });
-            navItems.Insert(7, new() { Id = "7", Href = "/RawPlayerReader", Text = "Raw Values" });
+            navItems.Insert(2, new() { Id = "2", Href = "/ClassConfigPage", Text = "Class Config", IconName = IconName.Sliders });
+            navItems.Insert(5, new() { Id = "5", Href = "/RecordPath", Text = "Path Editor", IconName = IconName.PencilSquare });
+            navItems.Insert(7, new() { Id = "7", Href = "/RawPlayerReader", Text = "Raw Values", IconName = IconName.Table });
         }
 
         if (botController.ClassConfig == null || botController.ClassConfig.GatheringMode)
         {
-            navItems.Insert(8, new() { Id = "8", Href = "/Gather", Text = "Gather" });
+            navItems.Insert(8, new() { Id = "8", Href = "/Gather", Text = "Gather", IconName = IconName.Flower1 });
         }
 
         if (this.botController.ClassConfig?.Mail == true)
         {
-            navItems.Insert(4, new() { Id = "5", Href = "/Mail", Text = "Mail" });
+            navItems.Insert(4, new() { Id = "5", Href = "/Mail", Text = "Mail", IconName = IconName.Envelope });
         }
 
         return navItems;

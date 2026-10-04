@@ -6,7 +6,6 @@
 @inject ActionBarCastTimeReader castTimeReader
 @inject ActionBarTextureReader textureReader
 @inject IconDB iconDB
-@inject WApi api
 @inject IAddonReader addonReader
 @inject IBotController botController
 @inject PlayerReader playerReader
@@ -301,14 +300,11 @@
         }
     };
 
-    private RenderFragment SpellLink(int spellId, string name) => __builder =>
+    private static RenderFragment SpellLink(int spellId, string name) => __builder =>
     {
-        <a href="@($"{api.SpellId}{spellId}")"
-           target="_blank"
-           data-wowhead="spell=@spellId"
-           style="text-decoration: none;">
+        <WowheadLink Kind="WowheadKind.Spell" Id="spellId">
             @name
-        </a>
+        </WowheadLink>
     };
 
     // Null: the spell is on no action bar slot, which is where cast times come from.

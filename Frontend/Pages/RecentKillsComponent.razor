@@ -3,7 +3,6 @@
 @using SharedLib
 
 @inject CorpseTracker CorpseTracker
-@inject WApi Api
 
 @inherits SubscribingComponentBase
 
@@ -28,12 +27,9 @@
                     <span class="text-muted" style="width: 70px;">
                         @kill.KillTimeUtc.ToLocalTime().ToString("HH:mm:ss")
                     </span>
-                    <a href="@($"{Api.NpcId}{kill.NpcId}")"
-                       target="_blank"
-                       data-wowhead="npc=@kill.NpcId"
-                       style="text-decoration:none">
+                    <WowheadLink Kind="WowheadKind.Npc" Id="kill.NpcId">
                         @kill.NpcName
-                    </a>
+                    </WowheadLink>
                 </div>
             }
         }

@@ -7,14 +7,17 @@
 @using SixLabors.ImageSharp.PixelFormats
 @using SixLabors.ImageSharp.Formats.Jpeg
 
-<div class="card" @onclick="Toggle">
+<div class="card" @onclick="Toggle" style="cursor: pointer" title="Click to toggle the live preview">
     @if (screen.EnablePostProcess)
     {
         <img class="@(Stretch ? "img-filled" : "img-filled-half")" src="@provider.ScreenImage.ToBase64String(JpegFormat.Instance)" alt="Toggle preview!" />
     }
     else
     {
-        <label class="oi oi-fullscreen-enter">  Toggle preview!</label>
+        <div class="card-body text-center text-muted py-5">
+            <i class="bi bi-display fs-1 d-block mb-2"></i>
+            The live preview is off: click to show the game screen.
+        </div>
     }
 </div>
 

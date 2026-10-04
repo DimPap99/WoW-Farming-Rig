@@ -4,31 +4,54 @@
 
 @inject LoggerSink sink
 
-<div class="col-sm" style="@(MaxHeight > 0 ? $"overflow: auto; max-height: {MaxHeight}px;" : string.Empty)">
+<Terminal Title="log" MaxHeight="MaxHeight">
     @foreach (LogEvent evt in sink.NewestFirst())
     {
-        <p class="@logLevelColor[(int)evt.Level] mb-0">
-            <span class="font-monospace">@evt.Timestamp.ToString("HH:mm:ss")</span>
-            <span class="font-monospace">@evt.RenderMessage()</span>
-        </p>
+        LevelStyle style = levelStyles[(int)evt.Level];
+        <div class="rig-line @style.Css" @key="evt">
+            <span class="rig-time">@evt.Timestamp.ToString("HH:mm:ss")</span>
+            <span class="rig-level">@style.Tag</span>
+            @if (ShortSource(evt) is string source)
+            {
+                <span class="rig-source">@source</span>
+            }
+            <span class="rig-msg">@evt.RenderMessage()</span>
+            @if (evt.Exception is { } exception)
+            {
+                <details class="rig-exception">
+                    <summary>@exception.GetType().Name: @exception.Message</summary>
+                    <pre>@exception</pre>
+                </details>
+            }
+        </div>
     }
-</div>
+</Terminal>
 
 @code {
     [Parameter]
     public int MaxHeight { get; set; } = 400;
 
-    private static readonly string[] logLevelColor = {
-        string.Empty,   // LogEventLevel.Verbose
-        "text-success",      // LogEventLevel.Debug
-        string.Empty,   // LogEventLevel.Information
-        "text-warning",      // LogEventLevel.Warning
-        "text-danger",       // LogEventLevel.Error
-        "text-danger"        // LogEventLevel.Fatal
-    };
+    private readonly record struct LevelStyle(string Tag, string Css);
+
+    // By LogEventLevel, Verbose to Fatal: the console's level letters, spelled out.
+    private static readonly LevelStyle[] levelStyles =
+    [
+        new("VRB", "rig-vrb"),
+        new("DBG", "rig-dbg"),
+        new("INF", "rig-inf"),
+        new("WRN", "rig-wrn"),
+        new("ERR", "rig-err"),
+        new("FTL", "rig-ftl"),
+    ];
 
     protected override void OnInitialized()
     {
         Subscribe(() => sink.OnLogChanged += Redraw, () => sink.OnLogChanged -= Redraw);
     }
+
+    private static string? ShortSource(LogEvent evt) =>
+        evt.Properties.TryGetValue(ShortSourceContextEnricher.PropertyName, out LogEventPropertyValue? value)
+        && value is ScalarValue { Value: string source }
+            ? source
+            : null;
 }

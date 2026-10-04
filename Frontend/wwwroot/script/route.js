@@ -4,7 +4,7 @@ var gridNode = null;
 var prect = null;
 
 // Named routeInit/routeDispose/routeDraw, not init/dispose/draw: every script in
-// App.razor shares one global scope, and leaflet-watch.js also defines init().
+// App.razor shares one global scope, and leaflet-map.js also defines init().
 // It loads after this file, so a bare init() here is silently overwritten.
 function routeInit(obj) {
     routeDotNetRef = obj;
