@@ -11,7 +11,7 @@
 @using Core.Database
 @using System.IO
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 <BotHeader ShowActiveGoal="false" />
 
@@ -67,9 +67,9 @@ else
                                 {
                                     <option value="@file">@file</option>
                                 }
-                                <option value="__new__">+ Create new file...</option>
+                                <option value="@NewFileOption">+ Create new file...</option>
                             </select>
-                            @if (!string.IsNullOrEmpty(selectedMailFile) && selectedMailFile != "__new__")
+                            @if (!string.IsNullOrEmpty(selectedMailFile) && selectedMailFile != NewFileOption)
                             {
                                 <Button Color="ButtonColor.Danger" Size="ButtonSize.Small" @onclick="DeleteSelectedMailFile" title="Delete this mail config file">
                                     <Icon Name="IconName.Trash" />
@@ -77,7 +77,7 @@ else
                             }
                         </div>
                     </div>
-                    @if (selectedMailFile == "__new__")
+                    @if (selectedMailFile == NewFileOption)
                     {
                         <div class="col-md-3">
                             <div class="input-group">
@@ -106,10 +106,10 @@ else
             <div class="row g-3">
                 <div class="col-md-3">
                     <label class="form-label">Minimum Item Quality</label>
-                    <select class="form-select @qualityClasses[selectedQuality]" @bind="selectedQuality">
+                    <select class="form-select @ItemQualityCss.For(selectedQuality)" @bind="selectedQuality">
                         @for (int i = 0; i < qualityNames.Length; i++)
                         {
-                            <option value="@i" class="@qualityClasses[i]">@qualityNames[i]</option>
+                            <option value="@i" class="@ItemQualityCss.For(i)">@qualityNames[i]</option>
                         }
                     </select>
                 </div>
@@ -177,7 +177,7 @@ else
                                 <img src="@iconUrl" class="me-1" />
                             }
                             <a href="@($"{api.ItemId}{item.Entry}")" target="_blank" data-wowhead="item=@item.Entry"
-                               class="@GetQualityClass(item.Quality)" style="text-decoration: none;">
+                               class="@ItemQualityCss.For(item.Quality)" style="text-decoration: none;">
                                 @item.Name
                             </a>
                             <Button Color="ButtonColor.Danger" Size="ButtonSize.ExtraSmall" class="ms-2"
@@ -201,77 +201,31 @@ else
         <CardBody style="padding-bottom: 0">
             @* Desktop: Grid layout (visible on md and up) *@
             <div class="d-none d-md-block">
-                <table class="table table-sm table-striped table-no-border">
-                    <thead>
-                        <tr>
-                            @for (int i = bagReader.Bags.Length - 1; i >= 0; i--)
-                            {
-                                var bag = bagReader.Bags[i];
-                                <th>
-                                    <ItemComponent Item="bag.Item" />
-                                </th>
-                            }
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @for (int slot = 0; slot <= bagReader.BagMaxSlot(); slot++)
+                <BagGrid Context="bagItem">
+                    <div class="mail-item @MailStateClass(bagItem)"
+                         @onclick="() => ToggleIfMailable(bagItem)"
+                         style="@MailStateStyle(bagItem)">
+                        @MailItem(bagItem)
+                        @if (IsExcluded(bagItem.Item.Entry))
                         {
-                            <tr>
-                                @for (int bag = bagReader.Bags.Length - 1; bag >= 0; bag--)
-                                {
-                                    <td width="20%">
-                                        @{
-                                            var bagItem = bagReader.BagItems.FirstOrDefault(Exists);
-                                            bool Exists(BagItem b) => b.Bag == bag && b.Slot == slot;
-                                        }
-                                        @if (bagItem != null)
-                                        {
-                                            bool isExcluded = IsExcluded(bagItem.Item.Entry);
-                                            bool canToggle = bagItem.IsMailable;
-                                            bool willBeMailed = sendItems && bagItem.IsMailable && bagItem.Item.Quality >= selectedQuality && !isExcluded;
-                                            <div class="mail-item @(willBeMailed ? "will-mail" : "") @(isExcluded ? "excluded" : "") @(!canToggle ? "disabled" : "")"
-                                                 @onclick="async () => { if (canToggle) await ToggleExclusion(bagItem.Item); }"
-                                                 style="cursor: @(canToggle ? "pointer" : "default"); @(isExcluded ? "opacity: 0.5;" : "")">
-                                                <ItemComponent Item="bagItem.Item"
-                                                               Count="bagItem.Count"
-                                                               LastCount="bagItem.LastCount"
-                                                               LastChange="bagItem.LastChange"
-                                                               LastUpdated="bagItem.LastUpdated"
-                                                               IsMailable="bagItem.IsMailable" />
-                                                @if (isExcluded)
-                                                {
-                                                    <Badge Color="BadgeColor.Secondary" class="ms-1">Excluded</Badge>
-                                                }
-                                            </div>
-                                        }
-                                    </td>
-                                }
-                            </tr>
+                            <Badge Color="BadgeColor.Secondary" class="ms-1">Excluded</Badge>
                         }
-                    </tbody>
-                </table>
+                    </div>
+                </BagGrid>
             </div>
 
             @* Mobile: List layout (visible below md) *@
             <div class="d-md-none">
                 @foreach (var bagItem in bagReader.BagItems.OrderBy(b => b.Bag).ThenBy(b => b.Slot))
                 {
-                    bool isExcluded = IsExcluded(bagItem.Item.Entry);
-                    bool canToggle = bagItem.IsMailable;
-                    bool willBeMailed = sendItems && bagItem.IsMailable && bagItem.Item.Quality >= selectedQuality && !isExcluded;
-                    <div class="mail-item-mobile d-flex align-items-center mb-1 @(willBeMailed ? "will-mail" : "") @(isExcluded ? "excluded" : "") @(!canToggle ? "disabled" : "")"
-                         @onclick="async () => { if (canToggle) await ToggleExclusion(bagItem.Item); }"
-                         style="cursor: @(canToggle ? "pointer" : "default"); @(isExcluded ? "opacity: 0.5;" : "")">
+                    <div class="mail-item-mobile d-flex align-items-center mb-1 @MailStateClass(bagItem)"
+                         @onclick="() => ToggleIfMailable(bagItem)"
+                         style="@MailStateStyle(bagItem)">
                         <Badge Color="BadgeColor.Light" class="me-2 bag-badge">B@(bagItem.Bag)</Badge>
                         <div class="flex-grow-1">
-                            <ItemComponent Item="bagItem.Item"
-                                           Count="bagItem.Count"
-                                           LastCount="bagItem.LastCount"
-                                           LastChange="bagItem.LastChange"
-                                           LastUpdated="bagItem.LastUpdated"
-                                           IsMailable="bagItem.IsMailable" />
+                            @MailItem(bagItem)
                         </div>
-                        @if (isExcluded)
+                        @if (IsExcluded(bagItem.Item.Entry))
                         {
                             <Badge Color="BadgeColor.Secondary" class="ms-1">Excluded</Badge>
                         }
@@ -366,43 +320,36 @@ else
     private string selectedMailFile = string.Empty;
     private string newMailFilename = string.Empty;
     private List<string> availableMailFiles = [];
-    private FileSystemWatcher? mailFileWatcher;
+
+    // The mail file choice that asks for a new file's name.
+    private const string NewFileOption = "__new__";
 
     // Excluded items
     private HashSet<int> excludedItemIds = [];
     private List<Item> excludedItems = [];
 
-    private static readonly string[] qualityClasses = ["poor", "common", "uncommon", "rare", "epic", "legendary", "artifact", "heirloom"];
     private static readonly string[] qualityNames = ["Grey (Poor)", "White (Common)", "Green (Uncommon)", "Blue (Rare)", "Epic", "Legendary", "Artifact", "Heirloom"];
 
     protected override void OnInitialized()
     {
         classConfig = botController.ClassConfig;
-        bagReader.DataChanged += OnBagReaderDataChanged;
-        botController.ProfileLoaded += OnProfileLoaded;
+        Subscribe(() => bagReader.DataChanged += Redraw, () => bagReader.DataChanged -= Redraw);
+        Subscribe(() => botController.ProfileLoaded += OnProfileLoaded, () => botController.ProfileLoaded -= OnProfileLoaded);
 
         LoadConfigValues();
-        InitializeMailFileWatcher();
+
+        FileSystemWatcher watcher = JsonFolderWatcher.Watch(dataConfig.Mail, includeSubdirectories: false, OnMailFilesChanged);
+        OnDispose(watcher.Dispose);
     }
 
-    private void InitializeMailFileWatcher()
+    // On the renderer's thread: a render may be reading the list.
+    private void OnMailFilesChanged()
     {
-        mailFileWatcher = new FileSystemWatcher(dataConfig.Mail)
+        InvokeAsync(() =>
         {
-            Filter = "*.json",
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
-            EnableRaisingEvents = true
-        };
-
-        mailFileWatcher.Created += OnMailFileChanged;
-        mailFileWatcher.Deleted += OnMailFileChanged;
-        mailFileWatcher.Renamed += OnMailFileChanged;
-    }
-
-    private void OnMailFileChanged(object sender, FileSystemEventArgs e)
-    {
-        RefreshMailFiles();
-        InvokeAsync(StateHasChanged);
+            RefreshMailFiles();
+            StateHasChanged();
+        });
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -412,13 +359,6 @@ else
             await LoadExclusionsFromStorage();
             StateHasChanged();
         }
-    }
-
-    public void Dispose()
-    {
-        bagReader.DataChanged -= OnBagReaderDataChanged;
-        botController.ProfileLoaded -= OnProfileLoaded;
-        mailFileWatcher?.Dispose();
     }
 
     private void LoadConfigValues()
@@ -435,14 +375,29 @@ else
 
             if (classConfig.MailConfig != null)
             {
-                MailConfiguration effectiveConfig = classConfig.GetEffectiveMailConfig();
-                selectedQuality = effectiveConfig.MinimumItemQuality;
-                minimumGoldToKeep = effectiveConfig.MinimumGoldToKeep / 10000; // Convert copper to gold
-                sendGold = effectiveConfig.SendGold;
-                sendItems = effectiveConfig.SendItems;
+                ShowSettings(classConfig.GetEffectiveMailConfig());
                 mailRecipient = classConfig.GetEffectiveRecipientName();
             }
         }
+    }
+
+    // The form fields a mail configuration sets, the recipient and the
+    // exclusions apart: those come from more places than the configuration.
+    private void ShowSettings(MailConfiguration config)
+    {
+        selectedQuality = config.MinimumItemQuality;
+        minimumGoldToKeep = config.MinimumGoldToKeep / Currency.CopperPerGold;
+        sendGold = config.SendGold;
+        sendItems = config.SendItems;
+    }
+
+    // Everything a mail configuration sets, its recipient and exclusions included.
+    private async Task ShowConfig(MailConfiguration config)
+    {
+        ShowSettings(config);
+        mailRecipient = config.RecipientName ?? string.Empty;
+        excludedItemIds = [.. config.ExcludedItemIds];
+        await UpdateExcludedItemsList();
     }
 
     private void RefreshMailFiles()
@@ -474,24 +429,14 @@ else
             // Reload values from inline MailConfig
             if (classConfig?.MailConfig != null)
             {
-                selectedQuality = classConfig.MailConfig.MinimumItemQuality;
-                minimumGoldToKeep = classConfig.MailConfig.MinimumGoldToKeep / 10000;
-                sendGold = classConfig.MailConfig.SendGold;
-                sendItems = classConfig.MailConfig.SendItems;
-                mailRecipient = classConfig.MailConfig.RecipientName ?? string.Empty;
-
-                // Reload exclusions from inline config
-                excludedItemIds = classConfig.MailConfig.ExcludedItemIds.Length > 0
-                    ? [.. classConfig.MailConfig.ExcludedItemIds]
-                    : [];
-                await UpdateExcludedItemsList();
+                await ShowConfig(classConfig.MailConfig);
             }
         }
     }
 
     private async Task OnSelectedMailFileChanged()
     {
-        if (string.IsNullOrEmpty(selectedMailFile) || selectedMailFile == "__new__")
+        if (string.IsNullOrEmpty(selectedMailFile) || selectedMailFile == NewFileOption)
             return;
 
         string filePath = Path.Join(dataConfig.Mail, selectedMailFile);
@@ -505,18 +450,7 @@ else
 
             if (mailConfig != null)
             {
-                // Update UI fields
-                selectedQuality = mailConfig.MinimumItemQuality;
-                minimumGoldToKeep = mailConfig.MinimumGoldToKeep / 10000; // Convert copper to gold
-                sendGold = mailConfig.SendGold;
-                sendItems = mailConfig.SendItems;
-                mailRecipient = mailConfig.RecipientName ?? string.Empty;
-
-                    // Update exclusions
-                excludedItemIds = mailConfig.ExcludedItemIds.Length > 0
-                    ? [.. mailConfig.ExcludedItemIds]
-                    : [];
-                await UpdateExcludedItemsList();
+                await ShowConfig(mailConfig);
             }
         }
         catch
@@ -527,7 +461,7 @@ else
 
     private async Task DeleteSelectedMailFile()
     {
-        if (string.IsNullOrEmpty(selectedMailFile) || selectedMailFile == "__new__")
+        if (string.IsNullOrEmpty(selectedMailFile) || selectedMailFile == NewFileOption)
             return;
 
         bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Delete '{selectedMailFile}'? This cannot be undone.");
@@ -554,11 +488,6 @@ else
             await LoadExclusionsFromStorage();
             StateHasChanged();
         });
-    }
-
-    private void OnBagReaderDataChanged()
-    {
-        base.InvokeAsync(StateHasChanged);
     }
 
     private async Task LoadExclusionsFromStorage()
@@ -628,6 +557,32 @@ else
 
     private bool IsExcluded(int itemId) => excludedItemIds.Contains(itemId);
 
+    // Whether the settings as the form shows them would mail this item.
+    private bool WillBeMailed(BagItem bagItem) =>
+        sendItems && bagItem.IsMailable && bagItem.Item.Quality >= selectedQuality && !IsExcluded(bagItem.Item.Entry);
+
+    private string MailStateClass(BagItem bagItem) =>
+        $"{(WillBeMailed(bagItem) ? "will-mail" : "")} {(IsExcluded(bagItem.Item.Entry) ? "excluded" : "")} {(bagItem.IsMailable ? "" : "disabled")}";
+
+    private string MailStateStyle(BagItem bagItem) =>
+        $"cursor: {(bagItem.IsMailable ? "pointer" : "default")}; {(IsExcluded(bagItem.Item.Entry) ? "opacity: 0.5;" : "")}";
+
+    private RenderFragment MailItem(BagItem bagItem) => __builder =>
+    {
+        <ItemComponent Item="bagItem.Item"
+                       Count="bagItem.Count"
+                       LastCount="bagItem.LastCount"
+                       LastChange="bagItem.LastChange"
+                       LastUpdated="bagItem.LastUpdated"
+                       IsMailable="bagItem.IsMailable" />
+    };
+
+    private async Task ToggleIfMailable(BagItem bagItem)
+    {
+        if (bagItem.IsMailable)
+            await ToggleExclusion(bagItem.Item);
+    }
+
     private async Task ToggleExclusion(Item item)
     {
         if (excludedItemIds.Contains(item.Entry))
@@ -673,7 +628,7 @@ else
         if (useExternalFile)
         {
             // Determine filename from selection or new input
-            string filename = selectedMailFile == "__new__" ? newMailFilename : selectedMailFile;
+            string filename = selectedMailFile == NewFileOption ? newMailFilename : selectedMailFile;
 
             // Ensure filename has .json extension
             if (!string.IsNullOrEmpty(filename) && !filename.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
@@ -697,7 +652,7 @@ else
 
         // Sync UI values to ClassConfig
         classConfig.MailConfig.MinimumItemQuality = selectedQuality;
-        classConfig.MailConfig.MinimumGoldToKeep = minimumGoldToKeep * 10000; // Convert gold to copper
+        classConfig.MailConfig.MinimumGoldToKeep = minimumGoldToKeep * Currency.CopperPerGold;
         classConfig.MailConfig.SendGold = sendGold;
         classConfig.MailConfig.SendItems = sendItems;
 
@@ -751,21 +706,9 @@ else
         searchText = string.Empty;
     }
 
-    private string GetQualityClass(int quality)
-    {
-        if (quality >= 0 && quality < qualityClasses.Length)
-            return qualityClasses[quality];
-        return "common";
-    }
-
     private int GetMailableItemCount()
     {
-        if (!sendItems) return 0;
-
-        return bagReader.BagItems.Count(b =>
-            b.IsMailable &&
-            b.Item.Quality >= selectedQuality &&
-            !excludedItemIds.Contains(b.Item.Entry));
+        return bagReader.BagItems.Count(WillBeMailed);
     }
 
     public sealed class ItemSearchResult

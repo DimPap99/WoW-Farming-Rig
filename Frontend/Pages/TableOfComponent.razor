@@ -4,25 +4,7 @@
 {
     <table class="table table-bordered">
         <tbody>
-            @foreach (var property in GetPropertyValues(Obj))
-            {
-                <tr>
-                    <td>@(property.Name)</td>
-                    <td>
-                        <input value="@property.Value" class="form-control" Disabled="true" />
-                    </td>
-                </tr>
-            }
-            @foreach (var property in GetFunctionValues(Obj, typeof(bool)))
-            {
-                <tr>
-                    <td>@(property.Name)</td>
-                    <td>
-                        <input value="@property.Value" class="form-control" Disabled="true" />
-                    </td>
-                </tr>
-            }
-            @foreach (var property in GetFunctionValues(Obj, typeof(int)))
+            @foreach (var property in GetFields(Obj))
             {
                 <tr>
                     <td>@(property.Name)</td>
@@ -45,6 +27,12 @@
         public string Name { get; init; } = string.Empty;
         public string Value { get; init; } = string.Empty;
     }
+
+    // The properties, then what the parameterless bool and int methods return.
+    static IEnumerable<ObjectField> GetFields(object obj) =>
+        GetPropertyValues(obj)
+            .Concat(GetFunctionValues(obj, typeof(bool)))
+            .Concat(GetFunctionValues(obj, typeof(int)));
 
     static List<ObjectField> GetPropertyValues(object obj)
     {

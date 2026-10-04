@@ -5,7 +5,7 @@
 
 @inject IServiceProvider services
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 @* Starts, watches and stops WoW: Forever runs. The server itself stays
    read-only: a run is the trial runner, started by ForeverRunHost. *@
@@ -75,7 +75,7 @@
                                 }
                             }
                             <label class="form-label">Time bound (minutes)</label>
-                            <input class="form-control" type="number" min="1" max="600" @bind="minutes" disabled="@host.IsRunning" />
+                            <input class="form-control" type="number" min="@MinMinutes" max="@MaxMinutes" @bind="minutes" disabled="@host.IsRunning" />
                             <div style="margin-top: 10px">
                                 <button class="btn btn-success" disabled="@(host.IsRunning || Chosen is not { Error.Length: 0 })" @onclick="Start">Start</button>
                                 <button class="btn btn-outline-secondary" disabled="@host.IsRunning" @onclick="LoadRoutes">Reload routes</button>
@@ -151,14 +151,17 @@
     private ForeverRunHost? host;
     private IReadOnlyList<ForeverRouteChoice> routes = [];
     private string selected = string.Empty;
+    // The run's time bound, in minutes.
+    private const int MinMinutes = 1;
+    private const int MaxMinutes = 600;
     private int minutes = 20;
     private string error = string.Empty;
     private bool showSnapshots;
-    private System.Threading.Timer? refresh;
     // Set when the host reports a change; the timer draws the page then, and
     // every second while a run is live, for its elapsed time.
     private int changed;
     private int ticks;
+    private const int RefreshMs = 500;
 
     private ForeverRouteChoice? Chosen => routes.FirstOrDefault(route => route.File == selected);
 
@@ -193,12 +196,13 @@
 
     protected override void OnInitialized()
     {
-        host = services.GetService(typeof(ForeverRunHost)) as ForeverRunHost;
-        if (host is null)
+        if (services.GetService(typeof(ForeverRunHost)) is not ForeverRunHost runs)
             return;
+        host = runs;
         LoadRoutes();
-        host.Changed += OnChanged;
-        refresh = new(_ => Refresh(), null, 500, 500);
+        Subscribe(() => runs.Changed += OnChanged, () => runs.Changed -= OnChanged);
+        System.Threading.Timer refresh = new(_ => Refresh(), null, RefreshMs, RefreshMs);
+        OnDispose(refresh.Dispose);
     }
 
     private void OnChanged()
@@ -210,7 +214,7 @@
     {
         bool live = host is { IsRunning: true } && ++ticks % 2 == 0;
         if (Interlocked.Exchange(ref changed, 0) == 1 || live)
-            _ = InvokeAsync(StateHasChanged);
+            Redraw();
     }
 
     private void LoadRoutes()
@@ -228,19 +232,12 @@
             error = "Choose a route that loads.";
             return;
         }
-        if (minutes is < 1 or > 600)
+        if (minutes is < MinMinutes or > MaxMinutes)
         {
-            error = "The time bound is 1 to 600 minutes.";
+            error = $"The time bound is {MinMinutes} to {MaxMinutes} minutes.";
             return;
         }
         if (!host.TryStart(route, minutes, out string why))
             error = $"Not started: {why}.";
-    }
-
-    public void Dispose()
-    {
-        if (host is not null)
-            host.Changed -= OnChanged;
-        refresh?.Dispose();
     }
 }

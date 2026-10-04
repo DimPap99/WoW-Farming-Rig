@@ -12,7 +12,7 @@
 @inject PlayerReader playerReader
 @inject SpellDB spellDB
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 @* ===================== Action Bar (per-slot, includes items) ===================== *@
 <div class="card mt-1">
@@ -52,17 +52,7 @@
                         {
                             <tr>
                                 <td class="align-middle text-muted">@entry.Slot</td>
-                                <td class="align-middle">
-                                    @if (!string.IsNullOrEmpty(entry.IconUrl))
-                                    {
-                                        <img src="@entry.IconUrl" alt=""
-                                             style="width: 24px; height: 24px; border-radius: 4px;" />
-                                    }
-                                    else
-                                    {
-                                        <div style="width: 24px; height: 24px; background: #333; border-radius: 4px;"></div>
-                                    }
-                                </td>
+                                <td class="align-middle">@Icon(entry.IconUrl, string.Empty)</td>
                                 <td class="align-middle">
                                     @entry.Name
                                     @if (entry.TextureId > 0)
@@ -70,17 +60,7 @@
                                         <span class="text-muted ms-2" style="font-size: 0.75rem;">tex:@entry.TextureId</span>
                                     }
                                 </td>
-                                <td class="align-middle">
-                                    @if (entry.CastTimeMs == 0)
-                                    {
-                                        <span class="text-muted">— instant</span>
-                                    }
-                                    else
-                                    {
-                                        <span>@(entry.CastTimeMs)ms</span>
-                                        <span class="text-muted ms-1">(@((entry.CastTimeMs / 1000f).ToString("0.0"))s)</span>
-                                    }
-                                </td>
+                                <td class="align-middle">@CastTime(entry.CastTimeMs)</td>
                                 <td class="align-middle">
                                     @if (entry.CastTimeMs > 0)
                                     {
@@ -129,41 +109,9 @@
                         @foreach (var spellEntry in cachedSpells)
                         {
                             <tr>
-                                <td class="align-middle">
-                                    @if (!string.IsNullOrEmpty(spellEntry.IconUrl))
-                                    {
-                                        <img src="@spellEntry.IconUrl"
-                                             alt="@spellEntry.Spell.Name"
-                                             style="width: 24px; height: 24px; border-radius: 4px;" />
-                                    }
-                                    else
-                                    {
-                                        <div style="width: 24px; height: 24px; background: #333; border-radius: 4px;"></div>
-                                    }
-                                </td>
-                                <td class="align-middle">
-                                    <a href="@($"{api.SpellId}{spellEntry.Spell.Id}")"
-                                       target="_blank"
-                                       data-wowhead="spell=@spellEntry.Spell.Id"
-                                       style="text-decoration: none;">
-                                        @spellEntry.Spell.Name
-                                    </a>
-                                </td>
-                                <td class="align-middle">
-                                    @if (spellEntry.CastTimeMs is int ct && ct > 0)
-                                    {
-                                        <span>@(ct)ms</span>
-                                        <span class="text-muted ms-1">(@((ct / 1000f).ToString("0.0"))s)</span>
-                                    }
-                                    else if (spellEntry.CastTimeMs == 0)
-                                    {
-                                        <span class="text-muted">— instant</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted" title="Spell is not bound to an action bar slot — cast time unknown">—</span>
-                                    }
-                                </td>
+                                <td class="align-middle">@Icon(spellEntry.IconUrl, spellEntry.Spell.Name)</td>
+                                <td class="align-middle">@SpellLink(spellEntry.Spell.Id, spellEntry.Spell.Name)</td>
+                                <td class="align-middle">@CastTime(spellEntry.CastTimeMs)</td>
                                 <td class="align-middle text-muted">@spellEntry.Spell.Level</td>
                                 <td class="align-middle text-muted">@spellEntry.Spell.Id</td>
                             </tr>
@@ -243,25 +191,8 @@
                             @foreach (TrainerEntry entry in VisibleEntries(group))
                             {
                                 <tr>
-                                    <td class="align-middle">
-                                        @if (!string.IsNullOrEmpty(entry.IconUrl))
-                                        {
-                                            <img src="@entry.IconUrl" alt="@entry.Name"
-                                                 style="width: 24px; height: 24px; border-radius: 4px;" />
-                                        }
-                                        else
-                                        {
-                                            <div style="width: 24px; height: 24px; background: #333; border-radius: 4px;"></div>
-                                        }
-                                    </td>
-                                    <td class="align-middle">
-                                        <a href="@($"{api.SpellId}{entry.SpellId}")"
-                                           target="_blank"
-                                           data-wowhead="spell=@entry.SpellId"
-                                           style="text-decoration: none;">
-                                            @entry.Name
-                                        </a>
-                                    </td>
+                                    <td class="align-middle">@Icon(entry.IconUrl, entry.Name)</td>
+                                    <td class="align-middle">@SpellLink(entry.SpellId, entry.Name)</td>
                                     <td class="align-middle text-muted" style="font-size: 0.8rem;">@group.Variable</td>
                                     <td class="align-middle text-muted">
                                         @(entry.RequiredLevel > 0 ? entry.RequiredLevel.ToString() : "—")
@@ -350,19 +281,53 @@
 
     protected override void OnInitialized()
     {
-        addonReader.AddonDataChanged += OnAddonDataChanged;
-        textureReader.TextureChanged += OnTextureChanged;
+        Subscribe(() => addonReader.AddonDataChanged += OnAddonDataChanged, () => addonReader.AddonDataChanged -= OnAddonDataChanged);
+        Subscribe(() => textureReader.TextureChanged += OnTextureChanged, () => textureReader.TextureChanged -= OnTextureChanged);
 
         RebuildActionBar();
         RebuildSpellbook();
         RebuildTrainer();
     }
 
-    public void Dispose()
+    private static RenderFragment Icon(string? url, string alt) => __builder =>
     {
-        addonReader.AddonDataChanged -= OnAddonDataChanged;
-        textureReader.TextureChanged -= OnTextureChanged;
-    }
+        if (!string.IsNullOrEmpty(url))
+        {
+            <img src="@url" alt="@alt" style="width: 24px; height: 24px; border-radius: 4px;" />
+        }
+        else
+        {
+            <div style="width: 24px; height: 24px; background: #333; border-radius: 4px;"></div>
+        }
+    };
+
+    private RenderFragment SpellLink(int spellId, string name) => __builder =>
+    {
+        <a href="@($"{api.SpellId}{spellId}")"
+           target="_blank"
+           data-wowhead="spell=@spellId"
+           style="text-decoration: none;">
+            @name
+        </a>
+    };
+
+    // Null: the spell is on no action bar slot, which is where cast times come from.
+    private static RenderFragment CastTime(int? castTimeMs) => __builder =>
+    {
+        if (castTimeMs is int ms && ms > 0)
+        {
+            <span>@(ms)ms</span>
+            <span class="text-muted ms-1">(@((ms / 1000f).ToString("0.0"))s)</span>
+        }
+        else if (castTimeMs == 0)
+        {
+            <span class="text-muted">— instant</span>
+        }
+        else
+        {
+            <span class="text-muted" title="Spell is not bound to an action bar slot — cast time unknown">—</span>
+        }
+    };
 
     private void OnAddonDataChanged()
     {

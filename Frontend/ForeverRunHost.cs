@@ -19,9 +19,6 @@ namespace Frontend;
 public sealed record ForeverRouteChoice(string FullPath, string File, string Name, IReadOnlyList<string> Steps,
     bool Repeat, string Error);
 
-/// <summary>One line of a run's output, numbered in the order it came.</summary>
-public readonly record struct ForeverRunLine(long Number, string Text);
-
 /// <summary>
 /// Starts and stops WoW: Forever runs for the web UI, which itself stays read-only.
 /// A run is the same trial runner the live tests use (<c>ForeverControllerTrial
@@ -33,10 +30,6 @@ public readonly record struct ForeverRunLine(long Number, string Text);
 /// </summary>
 public sealed class ForeverRunHost : IDisposable
 {
-    /// <summary>Output lines kept for the page, frame snapshots apart.</summary>
-    public const int KeptLines = 400;
-    /// <summary>Frame snapshots kept: one comes every two seconds, and an old one says little.</summary>
-    public const int KeptSnapshots = 30;
     /// <summary>How long a stopped run gets to release what it holds and exit before it is ended.</summary>
     public const int StopGraceMs = 10000;
     private const string RunnerName = "ForeverControllerTrial";
@@ -47,9 +40,7 @@ public sealed class ForeverRunHost : IDisposable
     private readonly WowProcess wow;
     private readonly string repositoryRoot;
     private readonly string routesFolder;
-    private readonly Queue<ForeverRunLine> lines = new();
-    private readonly Queue<ForeverRunLine> snapshots = new();
-    private long lineNumber;
+    private readonly ForeverRunOutput output = new();
     private Process? process;
     private StreamWriter? log;
     private Timer? killTimer;
@@ -72,12 +63,12 @@ public sealed class ForeverRunHost : IDisposable
     public DateTime? StartedAtUtc { get; private set; }
     public DateTime? EndedAtUtc { get; private set; }
     public int? ExitCode { get; private set; }
-    /// <summary>The latest phase line: the activity, its step and the route's progress.</summary>
-    public string Phase { get; private set; } = string.Empty;
-    /// <summary>The run's closing line: kills, loot and its status.</summary>
-    public string Summary { get; private set; } = string.Empty;
+    /// <inheritdoc cref="ForeverRunOutput.Phase"/>
+    public string Phase => output.Phase;
+    /// <inheritdoc cref="ForeverRunOutput.Summary"/>
+    public string Summary => output.Summary;
     /// <summary>The runner asks for a click into the game before it moves anything.</summary>
-    public bool WaitingForClick { get; private set; }
+    public bool WaitingForClick => IsRunning && output.ClickPrompted;
     public string LogFile { get; private set; } = string.Empty;
 
     /// <summary>The run's output in order, with the frame snapshots when <paramref name="withSnapshots"/>.</summary>
@@ -85,7 +76,7 @@ public sealed class ForeverRunHost : IDisposable
     {
         lock (sync)
         {
-            return withSnapshots ? [.. lines.Concat(snapshots).OrderBy(line => line.Number)] : [.. lines];
+            return output.Lines(withSnapshots);
         }
     }
 
@@ -159,14 +150,12 @@ public sealed class ForeverRunHost : IDisposable
 
             process?.Dispose();
             process = child;
-            lines.Clear();
-            snapshots.Clear();
+            output.Clear();
             Route = route.File;
-            Phase = Summary = string.Empty;
             StartedAtUtc = DateTime.UtcNow;
             EndedAtUtc = null;
             ExitCode = null;
-            StopRequested = WaitingForClick = false;
+            StopRequested = false;
             log = OpenLog(route.File);
             IsRunning = true;
             child.BeginOutputReadLine();
@@ -244,26 +233,8 @@ public sealed class ForeverRunHost : IDisposable
         {
             if (child != process)
                 return;
-            ForeverRunLine numbered = new(++lineNumber, line);
-            Queue<ForeverRunLine> kept = line.StartsWith(ForeverRunProtocol.SnapshotPrefix, StringComparison.Ordinal)
-                ? snapshots : lines;
-            kept.Enqueue(numbered);
-            while (kept.Count > (kept == snapshots ? KeptSnapshots : KeptLines))
-                kept.Dequeue();
+            output.Add(line);
             log?.WriteLine(line);
-            if (line.StartsWith(ForeverRunProtocol.PhasePrefix, StringComparison.Ordinal))
-            {
-                Phase = line[ForeverRunProtocol.PhasePrefix.Length..].Trim();
-                WaitingForClick = false;
-            }
-            else if (line.StartsWith(ForeverRunProtocol.SummaryPrefix, StringComparison.Ordinal))
-            {
-                Summary = line;
-            }
-            else if (line.StartsWith(ForeverRunProtocol.ClickPrompt, StringComparison.Ordinal))
-            {
-                WaitingForClick = true;
-            }
         }
         Changed?.Invoke();
     }
@@ -290,7 +261,6 @@ public sealed class ForeverRunHost : IDisposable
             ExitCode = code;
             EndedAtUtc = DateTime.UtcNow;
             IsRunning = false;
-            WaitingForClick = false;
             killTimer?.Dispose();
             killTimer = null;
             log?.WriteLine($"exit={code}");

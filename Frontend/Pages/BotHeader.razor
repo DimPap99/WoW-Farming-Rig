@@ -17,7 +17,7 @@
 @inject LevelTracker levelTracker
 @inject WApi api
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 <Card class="@(Hide ? "hide" : string.Empty)">
     <CardHeader>
@@ -122,17 +122,7 @@
 
     protected override void OnInitialized()
     {
-        addonReader.AddonDataChanged += OnAddonDataChanged;
-    }
-
-    public void Dispose()
-    {
-        addonReader.AddonDataChanged -= OnAddonDataChanged;
-    }
-
-    private void OnAddonDataChanged()
-    {
-        base.InvokeAsync(StateHasChanged);
+        Subscribe(() => addonReader.AddonDataChanged += Redraw, () => addonReader.AddonDataChanged -= Redraw);
     }
 
     private string DisplayTimeToLevel()

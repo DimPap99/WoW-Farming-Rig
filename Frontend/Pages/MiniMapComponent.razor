@@ -1,4 +1,4 @@
-﻿@implements IDisposable
+﻿@inherits SubscribingComponentBase
 
 @inject IBotController botController
 @inject IMinimapImageProvider provider
@@ -82,7 +82,7 @@
     {
         if (firstRender)
         {
-            screen.OnChanged += this.ImageChanged;
+            Subscribe(() => screen.OnChanged += ImageChanged, () => screen.OnChanged -= ImageChanged);
         }
     }
 
@@ -90,26 +90,15 @@
     {
         if (OnNodeFound.HasDelegate)
         {
-            minimapNodeFinder.NodeEvent += NodeFound;
+            Subscribe(() => minimapNodeFinder.NodeEvent += NodeFound, () => minimapNodeFinder.NodeEvent -= NodeFound);
         }
     }
 
-    public void Dispose()
-    {
-        screen.OnChanged -= this.ImageChanged;
-
-
-        if (OnNodeFound.HasDelegate)
-        {
-            minimapNodeFinder.NodeEvent -= NodeFound;
-        }
-    }
-
-    private async void ImageChanged()
+    private void ImageChanged()
     {
         if (previewEnabled)
         {
-            await base.InvokeAsync(StateHasChanged);
+            Redraw();
         }
     }
 
@@ -130,7 +119,7 @@
 
         if (previewEnabled)
         {
-            base.InvokeAsync(StateHasChanged);
+            Redraw();
         }
     }
 

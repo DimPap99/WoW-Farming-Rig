@@ -1,8 +1,6 @@
-﻿@inject IJSRuntime JSRuntime
+﻿@inject BagReader bagReader
 
-@inject BagReader bagReader
-
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 @if (NewItems.Count() > 0)
 {
@@ -49,20 +47,15 @@
         NewItems = bagReader.BagItems
             .Where(WasRecentlyUpdated).Take(MaxItemToShow);
 
-        bagReader.DataChanged += OnBagReaderDataChanged;
-
         timer = new Timer(TimerTick);
-    }
+        OnDispose(timer.Dispose);
 
-    public void Dispose()
-    {
-        bagReader.DataChanged -= OnBagReaderDataChanged;
-        timer.Dispose();
+        Subscribe(() => bagReader.DataChanged += OnBagReaderDataChanged, () => bagReader.DataChanged -= OnBagReaderDataChanged);
     }
 
     private void TimerTick(object? sender)
     {
-        base.InvokeAsync(StateHasChanged);
+        Redraw();
 
         CalculateNextTimerTick();
     }
@@ -100,7 +93,7 @@
         CalculateNextTimerTick();
 
         TotalMoneyChange = ItemPrice.ToSellPrice(NewItems.Sum(ItemValue));
-        base.InvokeAsync(StateHasChanged);
+        Redraw();
     }
 
     private void CalculateNextTimerTick()

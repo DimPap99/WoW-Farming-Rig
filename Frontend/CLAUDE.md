@@ -11,7 +11,11 @@ API.
 DependencyInjection.cs   static file routes (/path, /tiles, /dbc, /area, ...)
 Pages/                   Leaflet, RecordPath, ClassConfig, ... (routable)
 Shared/MainLayout.razor  nav menu, incl. which items a client version gets
+Shared/SubscribingComponentBase.cs   event subscriptions + thread-safe redraw
+Shared/BagGrid.razor     the bag table (Swag, Mail), slot content templatable
+Helper/                  Currency, ItemQualityCss, JsonFolderWatcher, JS teardown
 Controllers/             Road / DangerZone / Path authoring endpoints
+Forever*.cs, Pages/Forever*.razor   WoW: Forever only (see docs/forever-port.md)
 wwwroot/script/
   leaflet-watch.js       the map: eras, tile bases, zone/subzone resolution, POIs
   leaflet-navmesh.js     navmesh tile overlay
@@ -21,6 +25,19 @@ wwwroot/script/
 ```
 
 ## Things that will bite you
+
+**Subscribe through `SubscribingComponentBase`.** Reader and service events fire on
+their own threads. Inherit it, pair each `+=` with its `-=` in `Subscribe(add, remove)`,
+hand timers and watchers to `OnDispose`, and redraw with `Redraw()`. A hand-written
+`Dispose` without `@implements IDisposable` is never called; `LogComponent`,
+`ScreenshotComponent` and `RecordPath` each leaked a handler per page visit that way.
+The exception is a component that awaits JS teardown (`LeafletComponent`, `RecordPath`):
+it implements `IAsyncDisposable` itself, because Blazor calls only `DisposeAsync` on a
+component that has both. Its JS cleanup goes through `InvokeTeardownAsync`.
+
+**`Shared/` components do not see `Pages/` ones.** Pages live in `Frontend.Pages`,
+which `_Imports.razor` does not import. Without `@using Frontend.Pages`, a tag like
+`<ItemComponent>` renders as an unknown HTML element, and the build only warns (RZ10012).
 
 **Static file routes are order-sensitive.** `DependencyInjection` registers
 `/tiles/<continent>` for shared-art continents *before* the general `/tiles`. Reversing

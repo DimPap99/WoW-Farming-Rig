@@ -1,4 +1,4 @@
-@implements IDisposable
+@inherits SubscribingComponentBase
 @inject KeyBindingsReader keyBindingsReader
 @inject ActionBarTextureReader actionBarTextureReader
 @inject ActionBarSlotValidator actionBarSlotValidator
@@ -12,7 +12,6 @@
 @inject ExecGameCommand exec
 @inject AddonConfigurator addonConfigurator
 @inject WowProcessInput wowInput
-@inject IAddonReader addonReader
 @inject ActionBarCostReader actionBarCostReader
 @inject ActionBarCooldownReader actionBarCooldownReader
 @inject ActionBarBits<IUsableAction> usableAction
@@ -63,9 +62,7 @@ else
             <button class="btn btn-sm btn-primary me-1" @onclick="SyncActionBar" disabled="@(actionBarPopulator == null)">
                 <span>Sync Actionbar</span>
             </button>
-            <button class="btn btn-sm btn-primary" @onclick="InitState">
-                <span>Init State</span>
-            </button>
+            <InitButton Size="ButtonSize.Small" />
         </div>
     </div>
     <div class="card-body">
@@ -111,28 +108,7 @@ else
                 <div class="key key-sm">Esc</div>
                 @for (int i = 1; i <= 12; i++)
                 {
-                    var fKey = GetConsoleKey($"F{i}");
-                    int slot = 60 + i;
-                    var action = GetActionForSlot(slot);
-                    var iconUrl = GetIconUrl(slot);
-                    <div class="key key-sm @GetKeyClass(fKey) @GetActionClass(action, slot)" title="@GetCombinedTooltip(fKey, slot, action)">
-                        @if (iconUrl != null)
-                        {
-                            <img src="@iconUrl" class="key-icon" alt="" />
-                        }
-                        else
-                        {
-                            <span>F@(i)</span>
-                            @if (action != null)
-                            {
-                                <div class="key-spell">@TruncateName(action.Name, 6)</div>
-                            }
-                            else if (GetBindingLabel(fKey) is string label)
-                            {
-                                <div class="key-binding">@label</div>
-                            }
-                        }
-                    </div>
+                    @SlotKey(GetConsoleKey($"F{i}"), $"F{i}", 60 + i, "key-sm", 6)
                 }
             </div>
 
@@ -141,28 +117,7 @@ else
                 <div class="key">`</div>
                 @foreach (var key in numberRowKeys)
                 {
-                    var consoleKey = GetConsoleKey(key);
-                    int slot = GetMainBarSlot(key);
-                    var action = GetActionForSlot(slot);
-                    var iconUrl = GetIconUrl(slot);
-                    <div class="key @GetKeyClass(consoleKey) @GetActionClass(action, slot)" title="@GetCombinedTooltip(consoleKey, slot, action)">
-                        @if (iconUrl != null)
-                        {
-                            <img src="@iconUrl" class="key-icon" alt="" />
-                        }
-                        else
-                        {
-                            <span>@key</span>
-                            @if (action != null)
-                            {
-                                <div class="key-spell">@TruncateName(action.Name, 6)</div>
-                            }
-                            else if (GetBindingLabel(consoleKey) is string label)
-                            {
-                                <div class="key-binding">@label</div>
-                            }
-                        }
-                    </div>
+                    @SlotKey(GetConsoleKey(key), key, GetMainBarSlot(key), string.Empty, 6)
                 }
                 <div class="key key-wide">Bksp</div>
             </div>
@@ -172,14 +127,7 @@ else
                 <div class="key key-tab">Tab</div>
                 @foreach (var key in qwertyRowKeys)
                 {
-                    var consoleKey = GetConsoleKey(key);
-                    <div class="key @GetKeyClass(consoleKey)" title="@GetKeyTooltip(consoleKey)">
-                        @key
-                        @if (GetBindingLabel(consoleKey) is string label)
-                        {
-                            <div class="key-binding">@label</div>
-                        }
-                    </div>
+                    @PlainKey(GetConsoleKey(key), key, string.Empty)
                 }
             </div>
 
@@ -188,14 +136,7 @@ else
                 <div class="key key-caps">Caps</div>
                 @foreach (var key in asdfRowKeys)
                 {
-                    var consoleKey = GetConsoleKey(key);
-                    <div class="key @GetKeyClass(consoleKey)" title="@GetKeyTooltip(consoleKey)">
-                        @key
-                        @if (GetBindingLabel(consoleKey) is string label)
-                        {
-                            <div class="key-binding">@label</div>
-                        }
-                    </div>
+                    @PlainKey(GetConsoleKey(key), key, string.Empty)
                 }
                 <div class="key key-enter">Enter</div>
             </div>
@@ -205,14 +146,7 @@ else
                 <div class="key key-shift">Shift</div>
                 @foreach (var key in zxcvRowKeys)
                 {
-                    var consoleKey = GetConsoleKey(key);
-                    <div class="key @GetKeyClass(consoleKey)" title="@GetKeyTooltip(consoleKey)">
-                        @key
-                        @if (GetBindingLabel(consoleKey) is string label)
-                        {
-                            <div class="key-binding">@label</div>
-                        }
-                    </div>
+                    @PlainKey(GetConsoleKey(key), key, string.Empty)
                 }
                 <div class="key key-shift">Shift</div>
             </div>
@@ -222,16 +156,7 @@ else
                 <div class="key key-ctrl">Ctrl</div>
                 <div class="key key-sm">Win</div>
                 <div class="key key-sm">Alt</div>
-                @{
-                    var spaceKey = ConsoleKey.Spacebar;
-                }
-                <div class="key key-space @GetKeyClass(spaceKey)" title="@GetKeyTooltip(spaceKey)">
-                    Space
-                    @if (GetBindingLabel(spaceKey) is string spaceLabel)
-                    {
-                        <div class="key-binding">@spaceLabel</div>
-                    }
-                </div>
+                @PlainKey(ConsoleKey.Spacebar, "Space", "key-space")
                 <div class="key key-sm">Alt</div>
                 <div class="key key-sm">Win</div>
                 <div class="key key-ctrl">Ctrl</div>
@@ -241,60 +166,14 @@ else
         @* Navigation Keys *@
         <div class="keyboard-container mt-2">
             <div class="keyboard-row">
-                @{
-                    var insertKey = ConsoleKey.Insert;
-                    var homeKey = ConsoleKey.Home;
-                    var pageUpKey = ConsoleKey.PageUp;
-                }
-                <div class="key key-nav @GetKeyClass(insertKey)" title="@GetKeyTooltip(insertKey)">
-                    Ins
-                    @if (GetBindingLabel(insertKey) is string insLabel)
-                    {
-                        <div class="key-binding">@insLabel</div>
-                    }
-                </div>
-                <div class="key key-nav @GetKeyClass(homeKey)" title="@GetKeyTooltip(homeKey)">
-                    Home
-                    @if (GetBindingLabel(homeKey) is string homeLabel)
-                    {
-                        <div class="key-binding">@homeLabel</div>
-                    }
-                </div>
-                <div class="key key-nav @GetKeyClass(pageUpKey)" title="@GetKeyTooltip(pageUpKey)">
-                    PgUp
-                    @if (GetBindingLabel(pageUpKey) is string pgUpLabel)
-                    {
-                        <div class="key-binding">@pgUpLabel</div>
-                    }
-                </div>
+                @PlainKey(ConsoleKey.Insert, "Ins", "key-nav")
+                @PlainKey(ConsoleKey.Home, "Home", "key-nav")
+                @PlainKey(ConsoleKey.PageUp, "PgUp", "key-nav")
             </div>
             <div class="keyboard-row">
-                @{
-                    var deleteKey = ConsoleKey.Delete;
-                    var endKey = ConsoleKey.End;
-                    var pageDownKey = ConsoleKey.PageDown;
-                }
-                <div class="key key-nav @GetKeyClass(deleteKey)" title="@GetKeyTooltip(deleteKey)">
-                    Del
-                    @if (GetBindingLabel(deleteKey) is string delLabel)
-                    {
-                        <div class="key-binding">@delLabel</div>
-                    }
-                </div>
-                <div class="key key-nav @GetKeyClass(endKey)" title="@GetKeyTooltip(endKey)">
-                    End
-                    @if (GetBindingLabel(endKey) is string endLabel)
-                    {
-                        <div class="key-binding">@endLabel</div>
-                    }
-                </div>
-                <div class="key key-nav @GetKeyClass(pageDownKey)" title="@GetKeyTooltip(pageDownKey)">
-                    PgDn
-                    @if (GetBindingLabel(pageDownKey) is string pgDnLabel)
-                    {
-                        <div class="key-binding">@pgDnLabel</div>
-                    }
-                </div>
+                @PlainKey(ConsoleKey.Delete, "Del", "key-nav")
+                @PlainKey(ConsoleKey.End, "End", "key-nav")
+                @PlainKey(ConsoleKey.PageDown, "PgDn", "key-nav")
             </div>
         </div>
 
@@ -303,147 +182,27 @@ else
             <div class="keyboard-row">
                 @for (int i = 7; i <= 9; i++)
                 {
-                    var numKey = GetNumpadKey(i);
-                    int slot = GetNumpadSlot(i);
-                    var action = GetActionForSlot(slot);
-                    var iconUrl = GetIconUrl(slot);
-                    <div class="key key-num @GetKeyClass(numKey) @GetActionClass(action, slot)" title="@GetCombinedTooltip(numKey, slot, action)">
-                        @if (iconUrl != null)
-                        {
-                            <img src="@iconUrl" class="key-icon" alt="" />
-                        }
-                        else
-                        {
-                            <span>@i</span>
-                            @if (action != null)
-                            {
-                                <div class="key-spell">@TruncateName(action.Name, 5)</div>
-                            }
-                            else if (GetBindingLabel(numKey) is string label)
-                            {
-                                <div class="key-binding">@label</div>
-                            }
-                        }
-                    </div>
+                    @SlotKey(GetNumpadKey(i), i.ToString(), GetNumpadSlot(i), "key-num", 5)
                 }
-                @{
-                    var addKey = ConsoleKey.Add;
-                }
-                <div class="key key-num @GetKeyClass(addKey)" title="@GetKeyTooltip(addKey)">
-                    +
-                    @if (GetBindingLabel(addKey) is string addLabel)
-                    {
-                        <div class="key-binding">@addLabel</div>
-                    }
-                </div>
+                @PlainKey(ConsoleKey.Add, "+", "key-num")
             </div>
             <div class="keyboard-row">
                 @for (int i = 4; i <= 6; i++)
                 {
-                    var numKey = GetNumpadKey(i);
-                    int slot = GetNumpadSlot(i);
-                    var action = GetActionForSlot(slot);
-                    var iconUrl = GetIconUrl(slot);
-                    <div class="key key-num @GetKeyClass(numKey) @GetActionClass(action, slot)" title="@GetCombinedTooltip(numKey, slot, action)">
-                        @if (iconUrl != null)
-                        {
-                            <img src="@iconUrl" class="key-icon" alt="" />
-                        }
-                        else
-                        {
-                            <span>@i</span>
-                            @if (action != null)
-                            {
-                                <div class="key-spell">@TruncateName(action.Name, 5)</div>
-                            }
-                            else if (GetBindingLabel(numKey) is string label)
-                            {
-                                <div class="key-binding">@label</div>
-                            }
-                        }
-                    </div>
+                    @SlotKey(GetNumpadKey(i), i.ToString(), GetNumpadSlot(i), "key-num", 5)
                 }
-                @{
-                    var subKey = ConsoleKey.Subtract;
-                }
-                <div class="key key-num @GetKeyClass(subKey)" title="@GetKeyTooltip(subKey)">
-                    -
-                    @if (GetBindingLabel(subKey) is string subLabel)
-                    {
-                        <div class="key-binding">@subLabel</div>
-                    }
-                </div>
+                @PlainKey(ConsoleKey.Subtract, "-", "key-num")
             </div>
             <div class="keyboard-row">
                 @for (int i = 1; i <= 3; i++)
                 {
-                    var numKey = GetNumpadKey(i);
-                    int slot = GetNumpadSlot(i);
-                    var action = GetActionForSlot(slot);
-                    var iconUrl = GetIconUrl(slot);
-                    <div class="key key-num @GetKeyClass(numKey) @GetActionClass(action, slot)" title="@GetCombinedTooltip(numKey, slot, action)">
-                        @if (iconUrl != null)
-                        {
-                            <img src="@iconUrl" class="key-icon" alt="" />
-                        }
-                        else
-                        {
-                            <span>@i</span>
-                            @if (action != null)
-                            {
-                                <div class="key-spell">@TruncateName(action.Name, 5)</div>
-                            }
-                            else if (GetBindingLabel(numKey) is string label)
-                            {
-                                <div class="key-binding">@label</div>
-                            }
-                        }
-                    </div>
+                    @SlotKey(GetNumpadKey(i), i.ToString(), GetNumpadSlot(i), "key-num", 5)
                 }
-                @{
-                    var mulKey = ConsoleKey.Multiply;
-                }
-                <div class="key key-num @GetKeyClass(mulKey)" title="@GetKeyTooltip(mulKey)">
-                    *
-                    @if (GetBindingLabel(mulKey) is string mulLabel)
-                    {
-                        <div class="key-binding">@mulLabel</div>
-                    }
-                </div>
+                @PlainKey(ConsoleKey.Multiply, "*", "key-num")
             </div>
             <div class="keyboard-row">
-                @{
-                    var num0Key = ConsoleKey.NumPad0;
-                    var divKey = ConsoleKey.Divide;
-                    int num0Slot = GetNumpadSlot(0);
-                    var num0Action = GetActionForSlot(num0Slot);
-                    var num0IconUrl = GetIconUrl(num0Slot);
-                }
-                <div class="key key-num key-num0 @GetKeyClass(num0Key) @GetActionClass(num0Action, num0Slot)" title="@GetCombinedTooltip(num0Key, num0Slot, num0Action)">
-                    @if (num0IconUrl != null)
-                    {
-                        <img src="@num0IconUrl" class="key-icon" alt="" />
-                    }
-                    else
-                    {
-                        <span>0</span>
-                        @if (num0Action != null)
-                        {
-                            <div class="key-spell">@TruncateName(num0Action.Name, 8)</div>
-                        }
-                        else if (GetBindingLabel(num0Key) is string num0Label)
-                        {
-                            <div class="key-binding">@num0Label</div>
-                        }
-                    }
-                </div>
-                <div class="key key-num @GetKeyClass(divKey)" title="@GetKeyTooltip(divKey)">
-                    /
-                    @if (GetBindingLabel(divKey) is string divLabel)
-                    {
-                        <div class="key-binding">@divLabel</div>
-                    }
-                </div>
+                @SlotKey(ConsoleKey.NumPad0, "0", GetNumpadSlot(0), "key-num key-num0", 8)
+                @PlainKey(ConsoleKey.Divide, "/", "key-num")
             </div>
         </div>
         </div> @* keyboard-layout *@
@@ -936,8 +695,8 @@ else
 
     protected override void OnInitialized()
     {
-        keyBindingsReader.BindingChanged += OnBindingChanged;
-        actionBarTextureReader.TextureChanged += OnTextureChanged;
+        Subscribe(() => keyBindingsReader.BindingChanged += OnBindingChanged, () => keyBindingsReader.BindingChanged -= OnBindingChanged);
+        Subscribe(() => actionBarTextureReader.TextureChanged += OnTextureChanged, () => actionBarTextureReader.TextureChanged -= OnTextureChanged);
 
         if (botController.ClassConfig == null)
             return;
@@ -966,12 +725,6 @@ else
     private void SyncActionBar()
     {
         actionBarPopulator?.Execute();
-    }
-
-    private void InitState()
-    {
-        addonReader.FullReset();
-        wowInput.PressFlushKey();
     }
 
     private void SetupBindings()
@@ -1019,13 +772,7 @@ else
     private void OnTextureChanged(int slot, int textureId)
     {
         // Re-render when action bar texture changes
-        InvokeAsync(StateHasChanged);
-    }
-
-    public void Dispose()
-    {
-        keyBindingsReader.BindingChanged -= OnBindingChanged;
-        actionBarTextureReader.TextureChanged -= OnTextureChanged;
+        Redraw();
     }
 
     // Maps spell names to their known Form (inferred from actions that have Form specified)
@@ -1150,6 +897,44 @@ else
     {
         return slotToAction.TryGetValue(slot, out var action) ? action : null;
     }
+
+    // A key that presses an action bar slot: the slot's icon, else the key's
+    // label and the configured spell (cut to spellLength) or its in-game binding.
+    private RenderFragment SlotKey(ConsoleKey key, string label, int slot, string sizeClass, int spellLength) => __builder =>
+    {
+        KeyAction? action = GetActionForSlot(slot);
+        string? iconUrl = GetIconUrl(slot);
+        <div class="key @sizeClass @GetKeyClass(key) @GetActionClass(action, slot)" title="@GetCombinedTooltip(key, slot, action)">
+            @if (iconUrl != null)
+            {
+                <img src="@iconUrl" class="key-icon" alt="" />
+            }
+            else
+            {
+                <span>@label</span>
+                @if (action != null)
+                {
+                    <div class="key-spell">@TruncateName(action.Name, spellLength)</div>
+                }
+                else if (GetBindingLabel(key) is string binding)
+                {
+                    <div class="key-binding">@binding</div>
+                }
+            }
+        </div>
+    };
+
+    // A key with no action bar slot: its label and its in-game binding.
+    private RenderFragment PlainKey(ConsoleKey key, string label, string sizeClass) => __builder =>
+    {
+        <div class="key @sizeClass @GetKeyClass(key)" title="@GetKeyTooltip(key)">
+            @label
+            @if (GetBindingLabel(key) is string binding)
+            {
+                <div class="key-binding">@binding</div>
+            }
+        </div>
+    };
 
     private string GetActionClass(KeyAction? action, int slot = 0)
     {

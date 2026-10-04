@@ -4,7 +4,7 @@
 @inject PlayerReader PlayerReader
 @inject TimeToKill ttk
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 <Card style="margin-top: 10px">
     <CardHeader>
@@ -99,17 +99,7 @@
 
     protected override void OnInitialized()
     {
-        addonReader.AddonDataChanged += OnAddonDataChanged;
-    }
-
-    public void Dispose()
-    {
-        addonReader.AddonDataChanged -= OnAddonDataChanged;
-    }
-
-    private void OnAddonDataChanged()
-    {
-        base.InvokeAsync(StateHasChanged);
+        Subscribe(() => addonReader.AddonDataChanged += Redraw, () => addonReader.AddonDataChanged -= Redraw);
     }
 
     private string LabelCurrent(bool val)

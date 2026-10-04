@@ -5,7 +5,6 @@
 @using SharedLib
 
 @inject IAddonReader addonReader
-@inject WowProcessInput wowInput
 @inject WApi api
 @inject TalentReader talentReader
 @inject TalentDB talentDB
@@ -13,7 +12,7 @@
 @inject PlayerReader playerReader
 @inject SpellDB spellDB
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 <Card>
     <CardHeader>
@@ -21,9 +20,7 @@
             <span>Talents</span>
             <div class="d-flex align-items-center gap-3">
                 <Badge Color="BadgeColor.Info">Points Spent: @talentReader.Count</Badge>
-                <Button Color="ButtonColor.Primary" Size="ButtonSize.Small" @onpointerup="InitState">
-                    Init State
-                </Button>
+                <InitButton Size="ButtonSize.Small" />
             </div>
         </div>
     </CardHeader>
@@ -147,7 +144,7 @@
             LoadTalentTrees();
         }
 
-        addonReader.AddonDataChanged += OnDataChanged;
+        Subscribe(() => addonReader.AddonDataChanged += OnDataChanged, () => addonReader.AddonDataChanged -= OnDataChanged);
     }
 
     private void LoadTalentTrees()
@@ -170,24 +167,13 @@
         }
     }
 
-    public void Dispose()
-    {
-        addonReader.AddonDataChanged -= OnDataChanged;
-    }
-
     private void OnDataChanged()
     {
         if (talentTrees.Length == 0 && playerReader.Class != UnitClass.None)
         {
             LoadTalentTrees();
         }
-        InvokeAsync(StateHasChanged);
-    }
-
-    private void InitState()
-    {
-        addonReader.FullReset();
-        wowInput.PressFlushKey();
+        Redraw();
     }
 
     private int GetSpentRank(int tab, int tier, int column)

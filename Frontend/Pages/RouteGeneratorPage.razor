@@ -1,5 +1,5 @@
 @page "/RouteGen"
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 @using System.IO
 @using System.Numerics
@@ -214,12 +214,7 @@
         settings.Zone = PlayerReader.WorldMapArea.AreaName;
 
         RefreshProfilePaths();
-        botController.ProfileLoaded += OnProfileLoaded;
-    }
-
-    public void Dispose()
-    {
-        botController.ProfileLoaded -= OnProfileLoaded;
+        Subscribe(() => botController.ProfileLoaded += OnProfileLoaded, () => botController.ProfileLoaded -= OnProfileLoaded);
     }
 
     private void OnProfileLoaded()

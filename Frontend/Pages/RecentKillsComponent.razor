@@ -5,7 +5,7 @@
 @inject CorpseTracker CorpseTracker
 @inject WApi Api
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 <Card>
     <CardHeader>
@@ -45,19 +45,14 @@
 
     protected override void OnInitialized()
     {
-        CorpseTracker.OnCorpseAdded += OnCorpseAdded;
+        Subscribe(() => CorpseTracker.OnCorpseAdded += OnCorpseAdded, () => CorpseTracker.OnCorpseAdded -= OnCorpseAdded);
         RefreshKills();
-    }
-
-    public void Dispose()
-    {
-        CorpseTracker.OnCorpseAdded -= OnCorpseAdded;
     }
 
     private void OnCorpseAdded()
     {
         RefreshKills();
-        InvokeAsync(StateHasChanged);
+        Redraw();
     }
 
     private void RefreshKills()

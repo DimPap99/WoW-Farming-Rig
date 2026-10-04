@@ -15,7 +15,7 @@
 @inject WorldMapAreaDB worldmapAreaDB
 @inject AreaDB areaDB
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 <Card>
     <CardHeader>
@@ -142,26 +142,17 @@
 
     protected override void OnInitialized()
     {
-        botController.ProfileLoaded += OnProfileLoaded;
-        addonReader.AddonDataChanged += OnAddonDataChanged;
-        areaDB.Changed += OnZoneChanged;
-        combatLog.PlayerDeath += OnPlayerDeath;
+        Subscribe(() => botController.ProfileLoaded += OnProfileLoaded, () => botController.ProfileLoaded -= OnProfileLoaded);
+        Subscribe(() => addonReader.AddonDataChanged += OnAddonDataChanged, () => addonReader.AddonDataChanged -= OnAddonDataChanged);
+        Subscribe(() => areaDB.Changed += OnZoneChanged, () => areaDB.Changed -= OnZoneChanged);
+        Subscribe(() => combatLog.PlayerDeath += OnPlayerDeath, () => combatLog.PlayerDeath -= OnPlayerDeath);
+        OnDispose(refreshTimer.Dispose);
 
         UpdateZoneName();
         UpdateDeaths();
         UpdateSymbol();
 
         botController.RouteInfo?.SetRouteSource(null);
-    }
-
-    public void Dispose()
-    {
-        refreshTimer.Dispose();
-
-        botController.ProfileLoaded -= OnProfileLoaded;
-        addonReader.AddonDataChanged -= OnAddonDataChanged;
-        areaDB.Changed -= OnZoneChanged;
-        combatLog.PlayerDeath -= OnPlayerDeath;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

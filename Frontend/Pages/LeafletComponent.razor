@@ -182,18 +182,7 @@
         addonReader.AddonDataChanged -= OnAddonDataChanged;
         areaDB.Changed -= OnZoneChanged;
 
-        try
-        {
-            await jsRuntime.InvokeVoidAsync("disposeMap");
-        }
-        catch (JSDisconnectedException)
-        {
-            // Circuit disconnected, JS cleanup not possible
-        }
-        catch (InvalidOperationException)
-        {
-            // Component disposed during prerendering, JS interop unavailable
-        }
+        await jsRuntime.InvokeTeardownAsync("disposeMap");
     }
 
     private void OnAddonDataChanged()

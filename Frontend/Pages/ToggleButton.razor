@@ -1,6 +1,6 @@
 ﻿@inject IBotController botController
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 <Button Color="ButtonColor.Primary" @onclick="ToggleBot" disabled="@(Disable || DisableButton)">
     @(botController.IsBotActive ? "Stop Bot" : "Start Bot")
@@ -16,19 +16,8 @@
     {
         ValidateButton();
 
-        botController.ProfileLoaded += OnProfileLoaded;
-        botController.StatusChanged += OnStatusChanged;
-    }
-
-    public void Dispose()
-    {
-        botController.StatusChanged -= OnStatusChanged;
-        botController.ProfileLoaded -= OnProfileLoaded;
-    }
-
-    private void OnStatusChanged()
-    {
-        base.InvokeAsync(StateHasChanged);
+        Subscribe(() => botController.ProfileLoaded += OnProfileLoaded, () => botController.ProfileLoaded -= OnProfileLoaded);
+        Subscribe(() => botController.StatusChanged += Redraw, () => botController.StatusChanged -= Redraw);
     }
 
     private void ToggleBot()
@@ -39,7 +28,7 @@
     private void OnProfileLoaded()
     {
         ValidateButton();
-        OnStatusChanged();
+        Redraw();
     }
 
     private void ValidateButton()

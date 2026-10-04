@@ -1,4 +1,6 @@
-﻿@inject IWowScreen screen
+﻿@inherits SubscribingComponentBase
+
+@inject IWowScreen screen
 @inject IScreenImageProvider provider
 
 @using SixLabors.ImageSharp
@@ -25,22 +27,12 @@
     {
         if (firstRender)
         {
-            screen.OnChanged += this.ImageChanged;
+            Subscribe(() => screen.OnChanged += Redraw, () => screen.OnChanged -= Redraw);
         }
-    }
-
-    public void Dispose()
-    {
-        screen.OnChanged -= this.ImageChanged;
     }
 
     protected void Toggle()
     {
         screen.EnablePostProcess = !screen.EnablePostProcess;
-    }
-
-    private async void ImageChanged()
-    {
-        await base.InvokeAsync(StateHasChanged);
     }
 }

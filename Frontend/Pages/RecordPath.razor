@@ -15,6 +15,8 @@
 @inject AreaDB areaDB
 @inject WApi wapi
 
+@implements IAsyncDisposable
+
 <div class="row">
     <div class="col-sm">
         <h3>Path Editor/Recorder</h3>
@@ -259,6 +261,9 @@
 
     private RouteInfo routeInfo = null!;
 
+    // Lets route.js report point clicks; disposed with the page.
+    private DotNetObjectReference<RecordPath>? dotNetReference;
+
     private List<Vector3> editPath { get; set; } = new();
 
     private string loadedPathFile =>
@@ -283,7 +288,7 @@
     {
         if (firstRender)
         {
-            var dotNetReference = DotNetObjectReference.Create(this);
+            dotNetReference = DotNetObjectReference.Create(this);
             await JSRuntime.InvokeVoidAsync("routeInit", dotNetReference);
             await JSRuntime.InvokeVoidAsync("routeDraw", Color3, Color4);
 
@@ -291,13 +296,16 @@
         }
     }
 
-    protected async ValueTask DisposeAsync()
+    // Awaited JS teardown, so this implements IAsyncDisposable itself rather
+    // than inheriting SubscribingComponentBase.
+    public async ValueTask DisposeAsync()
     {
         addonReader.AddonDataChanged -= OnAddonDataChanged;
 
         areaDB.Changed -= OnZoneChanged;
 
-        await JSRuntime.InvokeVoidAsync("routeDispose");
+        await JSRuntime.InvokeTeardownAsync("routeDispose");
+        dotNetReference?.Dispose();
     }
 
 

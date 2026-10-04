@@ -2,6 +2,9 @@
 
 public readonly struct Currency
 {
+    public const int CopperPerSilver = 100;
+    public const int CopperPerGold = 100 * CopperPerSilver;
+
     public static readonly Currency Empty = new(0);
 
     public int Gold { get; }
@@ -16,16 +19,16 @@ public readonly struct Currency
         Silver = 0;
         Copper = Math.Abs(amount);
 
-        if (Copper >= 10000)
+        if (Copper >= CopperPerGold)
         {
-            Gold = Copper / 10000 * sign;
-            Copper %= 10000;
+            Gold = Copper / CopperPerGold * sign;
+            Copper %= CopperPerGold;
         }
 
-        if (Copper >= 100)
+        if (Copper >= CopperPerSilver)
         {
-            Silver = Copper / 100 * sign;
-            Copper %= 100;
+            Silver = Copper / CopperPerSilver * sign;
+            Copper %= CopperPerSilver;
         }
 
         Copper *= sign;

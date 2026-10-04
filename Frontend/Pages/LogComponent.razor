@@ -1,16 +1,12 @@
-﻿@using System.Linq
-@using Serilog.Events
+﻿@using Serilog.Events
+
+@inherits SubscribingComponentBase
 
 @inject LoggerSink sink
 
 <div class="col-sm" style="@(MaxHeight > 0 ? $"overflow: auto; max-height: {MaxHeight}px;" : string.Empty)">
-    @{
-        int head = Math.Max(sink.Head - 1, 0);
-    }
-    @for (int i = LoggerSink.SIZE; i >= 0; i--)
+    @foreach (LogEvent evt in sink.NewestFirst())
     {
-        var evt = sink.Log[(head + i) % LoggerSink.SIZE];
-        if (evt == null) continue;
         <p class="@logLevelColor[(int)evt.Level] mb-0">
             <span class="font-monospace">@evt.Timestamp.ToString("HH:mm:ss")</span>
             <span class="font-monospace">@evt.RenderMessage()</span>
@@ -33,16 +29,6 @@
 
     protected override void OnInitialized()
     {
-        sink.OnLogChanged += LogChanged;
-    }
-
-    public void Dispose()
-    {
-        sink.OnLogChanged -= LogChanged;
-    }
-
-    private void LogChanged()
-    {
-        base.InvokeAsync(StateHasChanged);
+        Subscribe(() => sink.OnLogChanged += Redraw, () => sink.OnLogChanged -= Redraw);
     }
 }
