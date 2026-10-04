@@ -54,20 +54,21 @@ and `RoamArea` are described in detail in [forever-movement.md](forever-movement
 
 Coordinates are a zone map's, 0 to 100, as the game shows them and as
 upstream's recorded routes store them. `UIMapId` names the map (1411 is
-Durotar, 1420 Tirisfal Glades).
+Durotar, 1413 The Barrens, 1420 Tirisfal Glades).
 
 - `ForeverMapPoint(UIMapId, X, Y)`. `TryToWorld(maps, out world, out
   instanceMapId, out reason)` converts it to world yards through the same
   conversion the live preflight checks against the client's own position. A
-  point off the map or on a map not verified is refused with why.
+  point off the map or on a map the map data does not have is refused with why.
 - `ForeverArea(UIMapId, Corners)`: a polygon of three or more corners in
   order. `ForeverArea.Rectangle(uiMapId, a, b)` builds one from two opposite
   corners; `ForeverArea.FromCorners` takes two corners as a rectangle and
   three or more as a polygon, as route files give them. `TryToWorld` gives a
   `ForeverWorldArea` (`Contains`, `RandomPoint`, `Centre`, `Width`, `Height`).
 
-Only verified maps can be used (`ForeverVerifiedSetup`), and a task's points
-must be on the player's continent and on the baked mesh.
+Any zone in the map data can be used, and a task's points must be on the
+player's continent and on the baked mesh. They may lie in another zone than
+the player's: the mesh is one per continent, so a task crosses zone borders.
 
 ## When a task is done: `ForeverUntil`
 

@@ -85,7 +85,10 @@ public static class ForeverBindings
     public static readonly ForeverBinding StartAttack = new(15, BindingID.STARTATTACK);
     public static readonly ForeverBinding PetAttack = new(17, BindingID.PETATTACK);
     public static readonly ForeverBinding InteractTarget = new(18, BindingID.INTERACTTARGET);
-    /// <summary>Upstream's clear-target button; bound only when its add-on is installed.</summary>
+    /// <summary>
+    /// A /cleartarget button: upstream's BindPad one when that add-on is
+    /// installed, otherwise ForeverProbe's own, which it binds to a free key.
+    /// </summary>
     public static readonly ForeverBinding ClearTarget = new(58, BindingID.CUSTOM_CLEARTARGET);
 
     /// <summary>Main action bar button <paramref name="slot"/>, 1 to 12.</summary>

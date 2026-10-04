@@ -27,6 +27,7 @@ public sealed class ForeverVisualBarTracker
     private Bgra32[] searchPixels = [];
     private Bgra32[] pixels = [];
     private Bgra32[] framePixels = [];
+    private Bgra32[] minimapPixels = [];
     // The last screen frame decoded, so one capture is never decoded twice.
     private long decodedFrameId;
     private Snapshot? current;
@@ -78,7 +79,32 @@ public sealed class ForeverVisualBarTracker
             Copy(image, ref framePixels, image.Width, image.Height);
             bars = VisualBarReader.LocateMarkers(framePixels, image.Width, image.Height, bars);
         }
+        // The tracked units' dots, from the minimap's own small square of the frame.
+        if (bars.Minimap is { } minimap && bars.WorldPosition is { } world && bars.Position is { } map &&
+            VisualMinimapReader.Region(minimap, image.Width, image.Height) is { Size: > 0 } square)
+        {
+            CopyRegion(image, ref minimapPixels, square.Left, square.Top, square.Size);
+            bars = bars with
+            {
+                TrackedBlips = VisualMinimapReader.FindBlips(minimapPixels, square.Left, square.Top,
+                    square.Size, minimap, image.Width, image.Height,
+                    new((float)world.X, (float)world.Y), map.Direction)
+            };
+        }
         return true;
+    }
+
+    private static void CopyRegion(Image<Bgra32> image, ref Bgra32[] buffer, int left, int top, int size)
+    {
+        if (buffer.Length != size * size)
+            buffer = new Bgra32[size * size];
+
+        Bgra32[] target = buffer;
+        image.ProcessPixelRows(source =>
+        {
+            for (int y = 0; y < size; y++)
+                source.GetRowSpan(top + y).Slice(left, size).CopyTo(target.AsSpan(y * size, size));
+        });
     }
 
     private static void Copy(Image<Bgra32> image, ref Bgra32[] buffer, int width, int height)

@@ -58,7 +58,7 @@ internal static partial class LogicTest
                 ($"{{ {head}, \"Steps\": [ {{ \"Roam\": {{ \"Area\": [[51, 44]], \"Until\": {{ \"Kills\": 3 }} }} }} ] }}", "step 1: a Roam needs an Area"),
                 ($"{{ {head}, \"Steps\": [ {{ \"Roam\": {{ \"Area\": [[51, 44], [53, 46]], \"Until\": {{ \"Kills\": 0 }} }} }} ] }}",
                     "step 1: Until needs Kills"),
-                ("{ \"UIMapId\": 1429, \"Steps\": [ { \"Travel\": { \"To\": [50, 50] } } ] }", "not verified"),
+                ("{ \"UIMapId\": 9999, \"Steps\": [ { \"Travel\": { \"To\": [50, 50] } } ] }", "not in the map data"),
                 ($"{{ {head}, \"Steps\": [ {{ \"Travel\": {{ \"Too\": [52, 44] }} }} ] }}", "Too"),
             ];
             List<string> wrong = [];
@@ -108,5 +108,11 @@ internal static partial class LogicTest
         check("route: the start-up check finds the example's points and area on the baked mesh, and refuses a point on another continent",
             examplePasses && elsewhereRefused && elsewhere.Contains("another continent"),
             $"example: {examplePasses} '{exampleReason}'; elsewhere: '{elsewhere}'");
+        // Another zone of the same continent: the Crossroads in The Barrens,
+        // where the player stood on 2026-10-04.
+        const int barrens = 1413;
+        bool nextZonePasses = Preflight([ForeverTasks.TravelTo(new(barrens, 51.8, 32.2))], out string nextZone);
+        check("route: a point in the next zone over passes the start-up check from Razor Hill",
+            nextZonePasses, nextZone);
     }
 }

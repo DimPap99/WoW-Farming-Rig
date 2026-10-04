@@ -1,14 +1,14 @@
 using System;
-using System.Collections.Frozen;
-using System.Collections.Generic;
 
 namespace Core.Forever;
 
 /// <summary>
 /// What the guarded Forever runtime has been verified against live: these
-/// profiles, on these maps, for these classes. The runtime reads every spell,
-/// slot and threshold from the profile; a class or map joins these lists after
-/// a bounded live sweep passes there.
+/// profiles, for these classes. The runtime reads every spell, slot and
+/// threshold from the profile; a class joins these lists after a bounded live
+/// sweep passes with it. Maps are not listed: the runtime walks any zone the
+/// map data places on a continent with a baked navmesh, once the client's map
+/// position agrees with its world position there (<see cref="ForeverNavigator"/>).
 /// </summary>
 public static class ForeverVerifiedSetup
 {
@@ -16,22 +16,9 @@ public static class ForeverVerifiedSetup
     public const string PaladinAutoProfile = "Paladin_Forever_Auto.json";
     public const string HunterAutoProfile = "Hunter_Forever_Auto.json";
 
+    // Zones the live runs so far took place in.
     public const int TirisfalGlades = 1420;
     public const int Durotar = 1411;
-
-    /// <summary>
-    /// UI maps with verified positions and a baked navmesh, each with the
-    /// instance map its world positions report (0 Azeroth, 1 Kalimdor).
-    /// </summary>
-    private static readonly FrozenDictionary<int, int> Maps =
-        new Dictionary<int, int>
-        {
-            [TirisfalGlades] = 0,
-            [Durotar] = 1,
-        }.ToFrozenDictionary();
-
-    public static bool IsVerifiedMap(int uiMapId, int instanceMapId) =>
-        Maps.TryGetValue(uiMapId, out int instance) && instance == instanceMapId;
 
     /// <summary>The autonomous profile verified for <paramref name="classId"/>, or null.</summary>
     public static string? AutoProfileFor(int classId) => classId switch

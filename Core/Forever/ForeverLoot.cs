@@ -58,6 +58,10 @@ public sealed class ForeverLoot : IForeverLootRoutine
     private const int ClearTargetRetryMs = 1000;
     // A point on a body's line within this many yards is reached.
     private const float ReachedYards = 1.5f;
+    // The line is estimated from a bearing and may cross ground the mesh
+    // cannot reach exactly: the walk gets this close, and the Interact Key's
+    // soft target finds the body from there.
+    private const float BodySlackYards = 5;
 
     private readonly ILogger<ForeverLoot> logger;
     private readonly ForeverCorpses corpses;
@@ -195,7 +199,7 @@ public sealed class ForeverLoot : IForeverLootRoutine
                 lastInteract = GetTimestamp();
                 return ForeverLootResult.Waiting;
             case ForeverLootStep.Walk:
-                switch (navigator.WalkToward(bars, plan.Point, out string walkReason))
+                switch (navigator.WalkToward(bars, plan.Point, out string walkReason, BodySlackYards))
                 {
                     case ForeverNavigationResult.Blocked or ForeverNavigationResult.Stuck:
                         // No way to this point: try the line's far point, then give up.

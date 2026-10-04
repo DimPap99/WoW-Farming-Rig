@@ -37,11 +37,15 @@ internal static partial class LogicTest
             $"{world} vs {checkedWorld}, instance {instance}, {reason}");
         bool offMapRefused = !new ForeverMapPoint(ForeverVerifiedSetup.Durotar, 101, 50)
             .TryToWorld(maps, out _, out _, out string offMap);
-        bool unverifiedRefused = !new ForeverMapPoint(1429, 50, 50)
-            .TryToWorld(maps, out _, out _, out string unverified);
-        check("travel: points off the map or on a map not verified are refused, with why",
-            offMapRefused && offMap.Contains("outside") && unverifiedRefused && unverified.Contains("not verified"),
-            $"'{offMap}' / '{unverified}'");
+        bool unknownRefused = !new ForeverMapPoint(9999, 50, 50)
+            .TryToWorld(maps, out _, out _, out string unknown);
+        // Elwynn Forest: any zone in the map data converts, on its own continent.
+        bool otherZoneConverts = new ForeverMapPoint(1429, 50, 50)
+            .TryToWorld(maps, out _, out int elwynnInstance, out _);
+        check("travel: points off the map or on a map the data lacks are refused, with why; any other zone converts",
+            offMapRefused && offMap.Contains("outside") && unknownRefused && unknown.Contains("not in the map data") &&
+            otherZoneConverts && elwynnInstance == 0,
+            $"'{offMap}' / '{unknown}' / Elwynn on instance {elwynnInstance}");
 
         // A straight leg with a point every 2 yards.
         List<Vector2> straight = [.. Enumerable.Range(0, 51).Select(i => new Vector2(i * 2, 0))];

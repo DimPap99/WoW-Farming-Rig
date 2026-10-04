@@ -31,11 +31,14 @@ commented example.
 | Field | Meaning |
 |---|---|
 | `Name` | shown in logs; the file name when left out |
-| `UIMapId` | the map the coordinates are on (1411 Durotar, 1420 Tirisfal Glades) |
+| `UIMapId` | the map the coordinates are on (1411 Durotar, 1413 The Barrens, 1420 Tirisfal Glades; `--where` prints it) |
 | `Steps` | the steps, in order; at least one |
 | `Repeat` | `true` starts over after the last step, a farming loop that runs until the time bound |
 
-A point is `[x, y]`, each from 0 to 100.
+A point is `[x, y]`, each from 0 to 100. Any zone in the map data will do, and
+a route may cross into the next zone of the same continent: give the steps
+there that zone's `UIMapId`. Another continent needs a boat or a zeppelin,
+which no step takes yet, so its points are refused at start-up.
 
 ### Travel
 
@@ -64,7 +67,7 @@ How travelling and roaming behave is in [forever-movement.md](forever-movement.m
 
 - a step with both kinds or neither;
 - a point that is not `[x, y]`, or off the map;
-- a map that is not verified;
+- a map the map data does not have;
 - a roam without an `Area` of two or more corners, or without an `Until`
   (it would never end), or with `Kills` or `Level` below 1 or `Minutes` not
   above 0;

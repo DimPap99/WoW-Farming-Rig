@@ -48,8 +48,12 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     // so the camera does not twitch at the edge of the band.
     private const double FacedMarkerError = 0.10;
     private const double FacedMarkerRelease = 0.14;
-    // Out of view, the target is looked for at full steering speed.
-    private const double LookForTargetRate = 1.0;
+    // A person turns standing at a steady, unhurried pace: no standing turn
+    // goes faster than this share of full steering, however far it has to go.
+    private const double StandingTurnRate = 0.6;
+    // Out of view, the target is looked for further round as calmly as a
+    // person scans for something they lost.
+    private const double LookForTargetRate = 0.35;
     // Turning leads a moving marker by its screen velocity over this many
     // seconds, so a mob running across the view is kept up with, not chased.
     private const double MarkerLeadSeconds = 0.15;
@@ -61,6 +65,15 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     private const double BearingReached = 0.15;
     // Idle hops come only while the walk is going well: the last progress is this recent.
     private const double WalkingWellSeconds = 0.5;
+
+    /// <summary>
+    /// <see cref="WalkToward"/>'s slack for a point that may not be reachable
+    /// at all: the walk goes as close as the mesh comes.
+    /// </summary>
+    public const float AsCloseAsReachable = float.PositiveInfinity;
+    // Walking as close as reachable, a path ending nearer than this to the
+    // player gets no closer.
+    private const float CloserYards = 1.5f;
 
     private readonly ILogger<ForeverNavigator> logger;
     private readonly ConfigurableInput input;
@@ -121,7 +134,6 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     {
         reason = string.Empty;
         if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
-            !ForeverVerifiedSetup.IsVerifiedMap(map.UIMapId, world.InstanceMapId) ||
             !ForeverBindings.MoveForward.IsBoundTo(bars, input.ForwardKey))
         {
             reason = "position or movement bindings are incomplete";
@@ -130,9 +142,9 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         if (!TryNav(map.UIMapId, out reason))
             return false;
         Vector2 here = new((float)world.X, (float)world.Y);
-        if (!PlayerMapAgrees(map, here))
+        if (!PlayerMapAgrees(map, here, world.InstanceMapId))
         {
-            reason = "map and world position disagree";
+            reason = $"the map position on map {map.UIMapId} and the world position disagree";
             return false;
         }
         return TrySafeHeading(here, (float)world.Z, map.Direction,
@@ -288,7 +300,8 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
                 {
                     SetFacingState("target out of view: turning to where it was last seen");
                     StopTranslation();
-                    turned = TurnTowardMarker(bars, Math.Clamp(-delta / (Math.PI / 2), -1, 1), out _);
+                    turned = TurnTowardMarker(bars,
+                        Math.Clamp(-delta / (Math.PI / 2), -StandingTurnRate, StandingTurnRate), out _);
                     return true;
                 }
                 bearingReached = true;
@@ -350,7 +363,17 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     /// The caller decides when the point is reached and stops with
     /// <see cref="StopPursuit"/>.
     /// </summary>
-    public ForeverNavigationResult WalkToward(VisualBarSample bars, Vector2 destination, out string reason)
+    /// <param name="endSlack">The path may end this far from the point: an
+    /// estimate, such as where a body fell or where a nameplate places a unit,
+    /// can land on ground the mesh cannot reach exactly.
+    /// <see cref="AsCloseAsReachable"/> walks to wherever the mesh comes
+    /// closest, and is <see cref="ForeverNavigationResult.Blocked"/> once it
+    /// comes no closer than where the player stands.</param>
+    /// <param name="destinationZ">The height of the destination's floor when
+    /// known, as for a point along a path; 0 lets the column scan choose.</param>
+    /// <param name="startZ">The same for the floor under the player.</param>
+    public ForeverNavigationResult WalkToward(VisualBarSample bars, Vector2 destination, out string reason,
+        float endSlack = 1, float destinationZ = 0, float startZ = 0)
     {
         reason = string.Empty;
         if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
@@ -360,7 +383,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
             return ForeverNavigationResult.Failed;
         }
         Vector2 here = new((float)world.X, (float)world.Y);
-        if (!TryPathWaypoint(here, destination, out Vector2 waypoint, out reason))
+        if (!TryPathWaypoint(here, startZ, destination, destinationZ, endSlack, out Vector2 waypoint, out reason))
         {
             StopPursuit();
             return ForeverNavigationResult.Blocked;
@@ -395,41 +418,42 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
 
     /// <summary>
     /// The whole way from the player to <paramref name="destination"/> along
-    /// the baked mesh, as world X/Y points, when a complete path exists over
-    /// tiles already on disk. A long way costs tens of milliseconds, so a
-    /// traveller asks for it now and then and walks toward a point along it.
+    /// the baked mesh, as world points with the height of the floor the way
+    /// runs on, when a complete path exists over tiles already on disk. A long
+    /// way costs tens of milliseconds, so a traveller asks for it now and then
+    /// and walks toward a point along it.
     /// </summary>
     public bool TryFindPath(VisualBarSample bars, Vector2 destination,
-        out List<Vector2> path, out string reason)
+        out List<Vector3> path, out string reason)
     {
         path = [];
-        if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
-            !TryNav(map.UIMapId, out reason))
+        if (bars.Position is not { } map || bars.WorldPosition is not { } world)
         {
-            reason = "position or baked mesh is unavailable";
+            reason = "the position is unreadable";
             return false;
         }
+        // Says why when a walk crosses into a zone without a baked mesh.
+        if (!TryNav(map.UIMapId, out reason))
+            return false;
         Vector2 here = new((float)world.X, (float)world.Y);
-        if (!nav!.TryGetHeight(here.X, here.Y, out float startZ))
+        if (!nav!.TryGetHeight(here.X, here.Y, out float nearestZ))
         {
             reason = "the player is outside the baked mesh";
             return false;
         }
-        if (!nav.TryGetHeight(destination.X, destination.Y, out float endZ))
+        if (!nav.TryGetHeight(destination.X, destination.Y, out _))
         {
             reason = "the destination is outside the baked mesh";
             return false;
         }
-        var found = nav.FindPath(new(here.X, here.Y, startZ),
-            new(destination.X, destination.Y, endZ), null);
-        if (found is not { locations.Count: >= 2 } || nav.LastStats.TilesBaked != 0 ||
-            Vector2.Distance(new(found.locations[^1].X, found.locations[^1].Y), destination) > 1)
+        var found = FindOnEitherFloor(here, 0, nearestZ, new(destination.X, destination.Y, 0),
+            path => Vector2.Distance(new(path.locations[^1].X, path.locations[^1].Y), destination) <= 1);
+        if (found is null)
         {
             reason = "no complete disk-only path to the destination";
             return false;
         }
-        foreach (Vector3 location in found.locations)
-            path.Add(new(location.X, location.Y));
+        path.AddRange(found.locations);
         reason = string.Empty;
         return true;
     }
@@ -712,7 +736,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
             !HasShortPath(here, z, here + Heading(direction) * lookAhead, out _))
         {
             StopTranslation();
-            return TurnTowardMarker(bars, steering, out reason);
+            return TurnTowardMarker(bars, Math.Clamp(steering, -StandingTurnRate, StandingTurnRate), out reason);
         }
         if (!ForeverBindings.MoveForward.IsBoundTo(bars, input.ForwardKey))
         {
@@ -917,26 +941,42 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         return false;
     }
 
-    private bool TryPathWaypoint(Vector2 here, Vector2 destination,
+    private bool TryPathWaypoint(Vector2 here, float startZ, Vector2 destination, float destinationZ, float endSlack,
         out Vector2 waypoint, out string reason)
     {
         waypoint = default;
         reason = string.Empty;
-        if (nav is null ||
-            !nav.TryGetHeight(here.X, here.Y, out float startZ) ||
-            !nav.TryGetHeight(destination.X, destination.Y, out float endZ))
+        bool asClose = float.IsPositiveInfinity(endSlack);
+        if (nav is null || !nav.TryGetHeight(here.X, here.Y, out float nearestZ))
         {
             reason = "player or target is outside the baked mesh";
             return false;
         }
-        var path = nav.FindPath(new(here.X, here.Y, startZ),
-            new(destination.X, destination.Y, endZ), null);
-        if (path is not { locations.Count: >= 2 } ||
-            nav.LastStats.TilesBaked != 0 ||
-            Vector2.Distance(new(path.locations[^1].X,
-                path.locations[^1].Y), destination) > 1)
+        // As close as reachable, a point over a hole in the mesh is drawn back
+        // toward the player until there is ground under it.
+        while (!nav.TryGetHeight(destination.X, destination.Y, out _))
+        {
+            float left = Vector2.Distance(here, destination);
+            if (!asClose || left < CloserYards)
+            {
+                reason = "player or target is outside the baked mesh";
+                return false;
+            }
+            destination = Vector2.Lerp(destination, here, Math.Min(1, 2 / left));
+        }
+        // As close as reachable, a path holds only if it gets the player closer.
+        var path = FindOnEitherFloor(here, startZ, nearestZ, new(destination.X, destination.Y, destinationZ),
+            found => Vector2.Distance(new(found.locations[^1].X, found.locations[^1].Y), destination) <= endSlack &&
+                (!asClose || Vector2.Distance(here, new(found.locations[^1].X, found.locations[^1].Y)) >= CloserYards));
+        if (path is null)
         {
             reason = "no complete disk-only path to target";
+            return false;
+        }
+        if (asClose &&
+            Vector2.Distance(here, new(path.locations[^1].X, path.locations[^1].Y)) < CloserYards)
+        {
+            reason = "the mesh comes no closer to it from here";
             return false;
         }
         foreach (Vector3 location in path.locations)
@@ -950,6 +990,28 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         }
         waypoint = destination;
         return true;
+    }
+
+    // The client reports no height for the player, so which floor of the
+    // column under them they stand on is a guess: with no height the column
+    // scan takes the highest surface (right on a mountain top) and keeps the
+    // player's floor from one request to the next; beside a rock its top can
+    // win instead. A path from that floor that does not hold is asked for
+    // again from the surface nearest height 0, the other likely floor. A
+    // height the caller knows, such as the route's, is used as it is.
+    private PPather.Graph.Path? FindOnEitherFloor(Vector2 here, float startZ, float nearestZ, Vector3 destination,
+        Func<PPather.Graph.Path, bool> holds)
+    {
+        var path = nav!.FindPath(new(here.X, here.Y, startZ), destination, null);
+        if (Holds(path))
+            return path;
+        if (startZ != 0 || nearestZ == 0)
+            return null;
+        path = nav.FindPath(new(here.X, here.Y, nearestZ), destination, null);
+        return Holds(path) ? path : null;
+
+        bool Holds(PPather.Graph.Path? found) =>
+            found is { locations.Count: >= 2 } && nav.LastStats.TilesBaked == 0 && holds(found);
     }
 
     private bool HasShortPath(Vector2 here, float playerZ, Vector2 ahead,
@@ -987,18 +1049,20 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         return false;
     }
 
+    // Any zone of a baked continent: the mesh is one per continent, so a walk
+    // that crosses into the next zone keeps it.
     private bool TryNav(int uiMapId, out string reason)
     {
         reason = string.Empty;
-        if (!ForeverNavmesh.TryGetVerifiedArea(maps, uiMapId, out WorldMapArea area))
+        if (!maps.TryGet(uiMapId, out WorldMapArea area))
         {
-            reason = $"Forever map {uiMapId} is not verified";
+            reason = $"map {uiMapId} is not in the map data";
             return false;
         }
         string cache = ForeverNavmesh.CacheDirectory(data, area.Continent);
         if (!Directory.Exists(cache))
         {
-            reason = "baked Forever navmesh is unavailable";
+            reason = $"{area.AreaName} is on {area.Continent}, which has no baked navmesh";
             return false;
         }
         if (nav is null || navCache != cache)
@@ -1010,9 +1074,11 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         return true;
     }
 
-    private bool PlayerMapAgrees(VisualPositionSample map, Vector2 here)
+    // The map data puts the zone on the continent the client reports, and its
+    // conversion lands where the client says the player stands.
+    private bool PlayerMapAgrees(VisualPositionSample map, Vector2 here, int instanceMapId)
     {
-        if (!maps.TryGet(map.UIMapId, out WorldMapArea area))
+        if (!maps.TryGet(map.UIMapId, out WorldMapArea area) || area.MapID != instanceMapId)
             return false;
         Vector3 mapped = map.ToWorld(area);
         return Vector2.Distance(here, new(mapped.X, mapped.Y)) <= 1;

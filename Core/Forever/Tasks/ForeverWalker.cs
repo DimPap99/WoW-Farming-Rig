@@ -67,6 +67,8 @@ public sealed class ForeverWalker
     private bool canSkip;
     private string label = string.Empty;
     private List<Vector2>? path;
+    // The height of the floor under each path point.
+    private List<float>? heights;
     private int next;
     private long pathedAt;
     private int rung;
@@ -169,13 +171,14 @@ public sealed class ForeverWalker
         if (path is null || GetElapsedTime(pathedAt).TotalMilliseconds > RepathMs ||
             OffPath(path, next, here) > OffPathYards)
         {
-            if (!navigator.TryFindPath(bars, target, out List<Vector2> found, out string pathReason))
+            if (!navigator.TryFindPath(bars, target, out List<Vector3> found, out string pathReason))
             {
                 if (!GiveUp(now))
                     Stall(bars, pathReason);
                 return;
             }
-            path = found;
+            path = found.ConvertAll(point => new Vector2(point.X, point.Y));
+            heights = found.ConvertAll(point => point.Z);
             next = 0;
             pathedAt = now;
         }
@@ -185,7 +188,10 @@ public sealed class ForeverWalker
         else if (GiveUp(now))
             return;
 
-        switch (navigator.WalkToward(bars, carrot, out string reason))
+        // The step keeps to the floor the whole way runs on, at both ends: the
+        // column under a point may also hold a ledge or a rock top beside the trail.
+        switch (navigator.WalkToward(bars, carrot, out string reason,
+            destinationZ: HeightAt(path, heights!, carrot), startZ: HeightAt(path, heights!, here)))
         {
             case ForeverNavigationResult.Stuck or ForeverNavigationResult.Blocked:
                 Stall(bars, reason);
@@ -194,6 +200,27 @@ public sealed class ForeverWalker
                 machine.Fail(reason);
                 break;
         }
+    }
+
+    /// <summary>The height of the path's floor at <paramref name="point"/>, which lies on or near the path.</summary>
+    public static float HeightAt(IReadOnlyList<Vector2> path, IReadOnlyList<float> heights, Vector2 point)
+    {
+        float z = heights[0];
+        float best = float.MaxValue;
+        for (int i = 1; i < path.Count; i++)
+        {
+            Vector2 a = path[i - 1];
+            Vector2 ab = path[i] - a;
+            float length = ab.LengthSquared();
+            float t = length == 0 ? 0 : Math.Clamp(Vector2.Dot(point - a, ab) / length, 0, 1);
+            float distance = Vector2.DistanceSquared(point, a + ab * t);
+            if (distance < best)
+            {
+                best = distance;
+                z = heights[i - 1] + (heights[i] - heights[i - 1]) * t;
+            }
+        }
+        return z;
     }
 
     // Past its limit without a new closest approach: the walk stops with why.

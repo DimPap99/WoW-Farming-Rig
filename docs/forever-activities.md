@@ -13,9 +13,11 @@ frame) and keeps an explicit state machine inside each part. Code lives in
 Forever. Its own state is `Start`, `Running`, `Complete` or `Failed`:
 
 - **Start** waits for the read-only preflight (`TryReadOnlyPreflight`): a
-  verified class on a verified map, out of combat, enough health and mana,
-  the add-on's telemetry, the client settings looting needs, the profile's
-  actions on their slots, the navigator's checks, and the agenda's start-up
+  verified class, out of combat, enough health and mana, the add-on's
+  telemetry, the client settings looting needs, the profile's actions on
+  their slots (each takes the rank its slot holds, see below), the
+  navigator's checks (any zone the map data has on a baked continent, with
+  the client's map and world positions agreeing), and the agenda's start-up
   check. It fails after 5 seconds of refusals.
 - **Running**, on every fresh frame, in this order:
   1. The frame must be a complete one from a verified setup; 5 seconds
@@ -28,6 +30,13 @@ Forever. Its own state is `Start`, `Running`, `Complete` or `Failed`:
   5. The facts are built, the selector picks the activity, the navigator is
      told what the activity's current step allows, and the activity runs.
 - **Complete** once the agenda is done; **Failed** with a reason otherwise.
+
+**Spell ranks.** A profile names each spell by one rank's `SpellId`, and the
+client puts every newly trained rank on the bar. The rotation's start-up check
+(`ForeverRotation.TryPreflight`) gives an action the ID of the rank on its
+slot whenever the spell data names the same spell there, and logs it once, so
+the slot checks, the cast gate and the cast confirmation follow the bar after
+training. Another spell on the slot is refused, naming the action.
 
 ## Facts
 
@@ -79,7 +88,9 @@ The costs keep the precedence explicit:
 
 ### Engage
 
-The fight with one unit, from the click on its plate to its death.
+The fight with one unit, from the click on its plate to its death: `Select`,
+`Approach`, `Fight`, and `Sight` when the unit goes out of the player's line
+of sight.
 
 - `Offer(plate)`: a nameplate to click; the click begins at once and the
   fight follows in `Select`. Used by Threat and by tasks that pull.
@@ -96,6 +107,29 @@ sets the unit aside and ends the engagement; the selector then moves on. In
 combat only a failed click may be recovered, and more than 5 setbacks without
 a kill stop the run (`ForeverRecovery`).
 
+**The pet goes first.** With a living pet and `AutoPetAttack`, the client's
+Pet Attack key sends it at the target, and on a pull the player's attacks
+wait until the mob has turned on the pet (its plate's `TargetsPet`) and stayed
+on it for `ForeverRotation.PetHoldsMobMs` (1.5 s), so the mob stays on the
+pet and the player at range. Nothing waits once the mob or anything else goes
+for the player or an auto attack already runs, nor past
+`ForeverRotation.PetEngageMs` (8 s) for a pet that cannot draw the mob. The log
+says `Forever pet holds the mob; the attacks begin`, or why the pull was not
+held.
+
+**Out of sight.** When the game refuses an attack with "out of line of
+sight", or Auto Shot reports it, in combat, the fight goes to `Sight`: the
+goal is to see the unit again. The game reports no position for the unit, so
+`ForeverCorpses.TryLocate` places it, from the bearing of its nameplate and how
+far it can be, or exactly where the minimap's tracking shows it. The player
+walks along the mesh toward that, as close as the mesh comes (round or up to
+whatever blocks the view), and steps aside where it comes no closer. The next
+instant attack is pressed on the move, without stopping, once the player has
+moved 3 yards since the last refusal or 4 seconds have passed; one that lands
+proves the unit is in sight, and the fight goes on from there, standing. In
+contact, at death or when the target changes, `Fight` takes over; after 20
+seconds without sight it is a setback.
+
 ### Threat
 
 In combat with nothing engaged. It adopts the selected unit if it fights in
@@ -108,7 +142,21 @@ turns round to look for an attacker out of view only while taking damage.
 A round goes from body to body (`IForeverLootRoutine`, `ForeverLoot`) with the
 client's Interact Key and Auto Loot. `Collected` counts the bodies looted;
 `RoundEnded` fires when a round finishes or runs out of time, and makes a rest
-due.
+due. A body lies where its unit was last placed: along its nameplate's
+bearing, as far as the plate allowed, or at one point when the minimap's
+tracking showed it (the log counts those). The walk to it gets as close as the
+mesh allows, within 5 yards, and the Interact Key's soft target finds the body
+from there.
+
+**Clearing the target.** Looting and resting deselect a dead target with a
+key, never with Escape, which opens the game menu whenever the target is
+already gone or a window is open. The key is the profile's `ClearTarget`
+macro key when the client binds it to a `/cleartarget` macro on the main bar,
+else the clear-target binding: ForeverProbe makes its own `/cleartarget`
+button and binds the first free key of Shift+Insert, Shift+F12, Shift+F11,
+Shift+Home and Shift+End to it for the session (an override binding, so the
+player's saved bindings do not change), and reports it in the binding grid.
+The start-up check refuses a run without either.
 
 ### Rest
 

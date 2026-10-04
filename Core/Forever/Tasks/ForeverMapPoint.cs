@@ -15,8 +15,9 @@ public readonly record struct ForeverMapPoint(int UIMapId, double X, double Y)
     public const double MapSize = 100;
 
     /// <summary>
-    /// The point in world yards on a verified map, with the instance map its
-    /// world positions report, or false with why.
+    /// The point in world yards, with the instance map its world positions
+    /// report, or false with why. Any zone in the map data converts; whether
+    /// the player can walk there is the start-up check's to say.
     /// </summary>
     public bool TryToWorld(WorldMapAreaDB maps, out Vector2 world, out int instanceMapId, out string reason)
     {
@@ -27,9 +28,9 @@ public readonly record struct ForeverMapPoint(int UIMapId, double X, double Y)
             reason = $"the map point {this} is outside 0 to {MapSize}";
             return false;
         }
-        if (!ForeverNavmesh.TryGetVerifiedArea(maps, UIMapId, out WorldMapArea area))
+        if (!maps.TryGet(UIMapId, out WorldMapArea area))
         {
-            reason = $"the map of {this} is not verified";
+            reason = $"map {UIMapId} of the point {this} is not in the map data";
             return false;
         }
         Vector3 point = WorldMapAreaDB.ToWorld_FlipXY(new Vector3((float)X, (float)Y, 0), area);
