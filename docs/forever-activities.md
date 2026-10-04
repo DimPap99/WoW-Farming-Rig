@@ -25,7 +25,7 @@ Forever. Its own state is `Start`, `Running`, `Complete` or `Failed`:
      (the add-on's bars not found at the top left, found but unreadable, no
      new screen capture, or which input did not read; the trial runner also
      saves that stretch's first unreadable capture in `local/logs`), resumes
-     when a frame reads, and stops after 60 seconds. A dead player fails the run.
+     when a frame reads, however long that takes (it says so once a minute). A dead player fails the run.
   2. Where every unit in view stands is noted (`ForeverCorpses`), and the
      health bar is read for damage (`ForeverDanger`).
   3. A kill is verified before anything else acts (`TryVerifyKill`).
@@ -63,18 +63,22 @@ low); Task gives the task up. The controller logs each one:
 Forever Task failed: walking to ... made no progress for 20 seconds; falling back: Travel to ... is given up; next: Hunt here (1 in a row without progress)
 ```
 
-Only what no fallback can make good stops the run (`ForeverAutonomousGoal.FallBack`):
-the game lost focus (a click elsewhere is how the player takes over), the
-client setup broke (the add-on's telemetry, the looting settings, a binding,
-an action off its slot or unusable, such as a shot without ammo, a map with
-no baked mesh: the same checks as the preflight, `TrySetup`; in a fight only
-whether the attacks can be used, as the slots' auras do not read there), the player
-died, the frame stayed unreadable for 60 seconds, or the code threw. And as a
-guard, ten failures in a row with no kill, no body looted and no task done
-between them (`ForeverSetbacks.MaxInARow`): whatever the run falls back to
-keeps failing, and it stops with the first reason. A cast whose success could
-not be proved still latches the caster closed (by design), so it now ends the
-run through that guard.
+A failure never ends the run; the user's rule: "it should never terminate
+unless its on the goal". Only what no fallback can change stops it
+(`ForeverAutonomousGoal.FallBack`): the game lost focus (a click elsewhere is
+how the player takes over), the client setup broke (the add-on's telemetry,
+the looting settings, a binding, an action off its slot or unusable, such as a
+shot without ammo, a map with no baked mesh: the same checks as the
+preflight, `TrySetup`; in a fight only whether the attacks can be used, as the
+slots' auras do not read there), the player died (until corpse runs exist), or
+the code threw.
+
+Every fallback opens casting again (`ForeverCaster.Release`): a press whose
+success could not be proved closes casting so it is never pressed blind
+again, and that would otherwise refuse every later fight. Every tenth failure
+in a row with no kill, no body looted and no task done between them
+(`ForeverSetbacks.MaxInARow`) gives the current task up as well, the next
+bigger goal: whatever the run falls back to keeps failing where it is.
 
 **Spell ranks.** A profile names each spell by one rank's `SpellId`, and the
 client puts every newly trained rank on the bar. The rotation's start-up check

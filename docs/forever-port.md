@@ -2063,11 +2063,20 @@ activities fall back as each knows how and start afresh, a failed task is
 given up for the next, a travel walks to its destination again before it
 fails, and the last task of a route is retried after hunting here a while.
 The run stops only when the game loses focus, the setup breaks, the player
-dies, the frame stays unreadable for 60 seconds (it pauses before that, says
-why, and the trial runner saves the first unreadable capture in `local/logs`),
-or ten failures come in a row with no kill, loot or task done between them.
+dies or the code throws. Without a readable frame it pauses, says why, and
+waits (the trial runner saves the first unreadable capture in `local/logs`).
 No generic goal tree was built: the user asked whether this was getting too
 complicated, and the existing layers are the tree.
+
+The next trip (`5-crossroads11`) read every frame with the magenta anchor and
+looted its first body on the second press, a step closer. In that first
+fight an Arcane Shot's success never showed (only Auto Shot events within
+3 seconds, the target unchanged), which closes casting for good by design; the
+fight fell back, but every press of the next fight was refused at once, and
+a first version stopped the run after ten such failures in a row. The user:
+"we got the fallbacks it should never terminate unless its on the goal". Every
+fallback now opens casting again, and every tenth failure in a row gives the
+current task up instead of stopping.
 
 Offline, `--logic-test` has 302 checks.
 

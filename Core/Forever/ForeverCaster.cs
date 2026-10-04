@@ -212,6 +212,13 @@ public sealed class ForeverCaster
         return ForeverCastResult.Failed;
     }
 
+    /// <summary>
+    /// The run fell back and starts afresh: casting closed by a press whose
+    /// outcome could not be proved opens again. Each such press costs the run
+    /// a fallback, so one never leads to presses without end.
+    /// </summary>
+    public void Release() => needsReset = false;
+
     // The action's key, as a person presses it; nothing is typed into chat
     // (the profile rules refuse a MacroText).
     private void Press(KeyAction item)

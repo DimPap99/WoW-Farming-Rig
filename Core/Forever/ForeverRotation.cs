@@ -126,6 +126,8 @@ public interface IForeverCombatRoutine
     /// </summary>
     ForeverCombatResult ShootOnTheMove(VisualBarSample bars, VisualTargetIdentity identity,
         Action<VisualBarSample> keepWalking, out string reason);
+    /// <summary>The run fell back: casting closed by an unproved press opens again (<see cref="ForeverCaster.Release"/>).</summary>
+    void ReleaseCasting();
 }
 
 public enum ForeverFightStep { Wait, NeedRange, StepBack, Pull, StartAttack, Combat, PetAttack }
@@ -507,6 +509,8 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         }
         return new(ForeverFightStep.Wait);
     }
+
+    public void ReleaseCasting() => caster.Release();
 
     public ForeverCombatResult ShootOnTheMove(VisualBarSample bars, VisualTargetIdentity identity,
         Action<VisualBarSample> keepWalking, out string reason)
