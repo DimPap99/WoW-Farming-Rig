@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Core.Forever;
 
 /// <summary>Session policy, separate from target, movement, combat and loot logic.</summary>
@@ -5,4 +7,6 @@ public sealed record ForeverRunOptions
 {
     public bool StopWhenNoTargets { get; init; }
     public int? MaxCompletedCycles { get; init; }
+    /// <summary>The run's agenda; when empty, the run hunts where it stands (see <see cref="ForeverAgenda.For"/>).</summary>
+    public IReadOnlyList<ForeverTask> Tasks { get; init; } = [];
 }

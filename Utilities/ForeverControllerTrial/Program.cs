@@ -14,6 +14,7 @@ using SharedLib;
 
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -22,14 +23,32 @@ using System.Threading;
 // constructs the normal controller for a bounded trial only.
 bool run = args.Contains("--run");
 bool sweep = args.Contains("--sweep");
-bool auto = args.Contains("--auto-check") || args.Contains("--auto-run") || sweep;
-run |= args.Contains("--auto-run") || sweep;
-if (args.Any(a => a is not ("--check" or "--run" or "--auto-check" or "--auto-run" or "--sweep" or "--pid") &&
-    !int.TryParse(a, out _)) ||
-    (run && (args.Contains("--check") || args.Contains("--auto-check"))) ||
-    (auto && (args.Contains("--check") || args.Contains("--run"))))
+// --travel X Y: walk to that point of the current zone's map (0 to 100), then stop.
+int travelIndex = Array.IndexOf(args, "--travel");
+(double X, double Y)? travel = null;
+if (travelIndex >= 0)
 {
-    Console.Error.WriteLine("Use --check, --run, --auto-check, --auto-run or --sweep [--pid <WowB process ID>].");
+    if (travelIndex + 2 >= args.Length ||
+        !double.TryParse(args[travelIndex + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double travelX) ||
+        !double.TryParse(args[travelIndex + 2], NumberStyles.Float, CultureInfo.InvariantCulture, out double travelY) ||
+        travelX is < 0 or > ForeverMapPoint.MapSize || travelY is < 0 or > ForeverMapPoint.MapSize)
+    {
+        Console.Error.WriteLine("Use --travel <x> <y> with map coordinates of the current zone, 0 to 100.");
+        return 1;
+    }
+    travel = (travelX, travelY);
+}
+bool auto = args.Contains("--auto-check") || args.Contains("--auto-run") || sweep || travel is not null;
+run |= args.Contains("--auto-run") || sweep || travel is not null;
+// The two numbers after --travel are its point, not flags.
+if (args.Where((_, i) => travelIndex < 0 || (i != travelIndex + 1 && i != travelIndex + 2))
+        .Any(a => a is not ("--check" or "--run" or "--auto-check" or "--auto-run" or "--sweep" or "--travel" or "--pid") &&
+            !int.TryParse(a, out _)) ||
+    (run && (args.Contains("--check") || args.Contains("--auto-check"))) ||
+    (auto && (args.Contains("--check") || args.Contains("--run"))) ||
+    (travel is not null && (args.Contains("--auto-run") || sweep)))
+{
+    Console.Error.WriteLine("Use --check, --run, --auto-check, --auto-run, --sweep or --travel <x> <y> [--pid <WowB process ID>].");
     return 1;
 }
 
@@ -81,11 +100,14 @@ try
     services.AddSingleton(cts);
     services.AddSingleton(process);
     services.AddSingleton(process.FileVersion);
-    services.AddSingleton(new ForeverRunOptions
+    // Resolved when the profile loads, after the first frame named the zone
+    // a --travel point lies in.
+    ForeverRunOptions runOptions = new()
     {
         StopWhenNoTargets = sweep,
         MaxCompletedCycles = sweep ? null : 1
-    });
+    };
+    services.AddSingleton(_ => runOptions);
     services.AddSingleton<AddonConfigurator>();
     services.AddSingleton<IOptions<StartupConfigReader>>(Options.Create(new StartupConfigReader()));
     services.AddSingleton<IOptions<StartupConfigDiagnostics>>(Options.Create(new StartupConfigDiagnostics()));
@@ -112,6 +134,7 @@ try
     ForeverVisualBarTracker tracker = provider.GetRequiredService<ForeverVisualBarTracker>();
     bool ready = false;
     int classId = 0;
+    int uiMapId = 0;
     // Only this thread captures until BotController starts its addon thread.
     for (int i = 0; i < 100 && !cts.IsCancellationRequested; i++)
     {
@@ -122,6 +145,7 @@ try
         {
             ready = true;
             classId = bars.PlayerIdentity?.ClassId ?? 0;
+            uiMapId = bars.Position?.UIMapId ?? 0;
             break;
         }
         Thread.Sleep(100);
@@ -130,6 +154,12 @@ try
     {
         Console.Error.WriteLine("No complete fresh Forever trial frame; no input sent.");
         return 2;
+    }
+    if (travel is { } point)
+    {
+        ForeverMapPoint destination = new(uiMapId, point.X, point.Y);
+        runOptions = runOptions with { Tasks = [ForeverTasks.TravelTo(destination)] };
+        Console.WriteLine($"Travelling to {destination}.");
     }
 
     // The autonomous run uses the profile verified for the logged-in class;
@@ -198,7 +228,7 @@ try
             return 2;
         }
         controller.ToggleBotStatus();
-        DateTime autoDeadline = DateTime.UtcNow.AddSeconds(sweep ? 600 : 170);
+        DateTime autoDeadline = DateTime.UtcNow.AddSeconds(sweep ? 600 : travel is not null ? 300 : 170);
         DateTime nextSnapshot = DateTime.MinValue;
         string autoLastStatus = string.Empty;
         while (!cts.IsCancellationRequested && DateTime.UtcNow < autoDeadline &&
@@ -213,7 +243,8 @@ try
             if (DateTime.UtcNow >= nextSnapshot)
             {
                 if (tracker.TryGetLatest(out VisualBarSample current))
-                    Console.WriteLine($"  health={current.PlayerHealth:P0}, mana={current.PlayerPower:P0}, " +
+                    Console.WriteLine($"  map={current.Position?.UIMapId} {current.Position?.MapX * 100:0.00},{current.Position?.MapY * 100:0.00}, " +
+                        $"health={current.PlayerHealth:P0}, mana={current.PlayerPower:P0}, " +
                         $"target={current.TargetHealth:P0}, flags={current.TargetFlags}, " +
                         $"auras={current.SlotAuras?.ToString() ?? "unreadable"}, marker={current.TargetScreenPosition}, " +
                         $"plates={current.Nameplates?.PlateCount.ToString() ?? "unreadable"}, " +
@@ -234,7 +265,7 @@ try
             $"corpses looted: {automatic.CompletedLoots}; " +
             $"status: {automatic.Status}; {automatic.LastFailure}");
         if (DateTime.UtcNow >= autoDeadline)
-            Console.Error.WriteLine("Trial time limit reached before the sweep completed.");
+            Console.Error.WriteLine("Trial time limit reached before the run completed.");
         return automatic.Status == "Complete" ? 0 : 3;
     }
 

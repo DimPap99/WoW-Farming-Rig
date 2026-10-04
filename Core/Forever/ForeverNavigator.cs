@@ -7,6 +7,7 @@ using PPather.Navmesh;
 using SharedLib;
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 
@@ -79,6 +80,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     private VisualTargetIdentity? pursuitTarget;
     private bool pursuitForwardHeld;
     private ConsoleKey? pursuitStrafeKey;
+    private ConsoleKey? backwardKey;
     private Vector2 pursuitProgressPoint;
     private long pursuitProgressAt;
     // When to hop; what the current state allows decides whether.
@@ -367,6 +369,127 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         // path bends, and a destination by an edge would stop the walk short.
         return Steer(bars, here, (float)world.Z, Bearing(here, waypoint),
             Math.Min(3, Vector2.Distance(here, waypoint)), out reason);
+    }
+
+    /// <summary>Whether the baked mesh covers the world point <paramref name="point"/> on the player's map.</summary>
+    public bool IsOnMesh(VisualBarSample bars, Vector2 point) =>
+        bars.Position is { } map && TryNav(map.UIMapId, out _) &&
+        nav!.TryGetHeight(point.X, point.Y, out _);
+
+    /// <summary>
+    /// The whole way from the player to <paramref name="destination"/> along
+    /// the baked mesh, as world X/Y points, when a complete path exists over
+    /// tiles already on disk. A long way costs tens of milliseconds, so a
+    /// traveller asks for it now and then and walks toward a point along it.
+    /// </summary>
+    public bool TryFindPath(VisualBarSample bars, Vector2 destination,
+        out List<Vector2> path, out string reason)
+    {
+        path = [];
+        if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
+            !TryNav(map.UIMapId, out reason))
+        {
+            reason = "position or baked mesh is unavailable";
+            return false;
+        }
+        Vector2 here = new((float)world.X, (float)world.Y);
+        if (!nav!.TryGetHeight(here.X, here.Y, out float startZ))
+        {
+            reason = "the player is outside the baked mesh";
+            return false;
+        }
+        if (!nav.TryGetHeight(destination.X, destination.Y, out float endZ))
+        {
+            reason = "the destination is outside the baked mesh";
+            return false;
+        }
+        var found = nav.FindPath(new(here.X, here.Y, startZ),
+            new(destination.X, destination.Y, endZ), null);
+        if (found is not { locations.Count: >= 2 } || nav.LastStats.TilesBaked != 0 ||
+            Vector2.Distance(new(found.locations[^1].X, found.locations[^1].Y), destination) > 1)
+        {
+            reason = "no complete disk-only path to the destination";
+            return false;
+        }
+        foreach (Vector3 location in found.locations)
+            path.Add(new(location.X, location.Y));
+        reason = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Steps sideways, strafe held without forward, to whichever side has a
+    /// walkable three yards, <paramref name="side"/> first (-1 left, +1
+    /// right), as a person slides off a post or a fence they ran into. The
+    /// caller decides how long and stops it with <see cref="StopPursuit"/>.
+    /// </summary>
+    public ForeverNavigationResult Sidestep(VisualBarSample bars, int side, out string reason)
+    {
+        reason = string.Empty;
+        if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
+            !TryNav(map.UIMapId, out reason))
+        {
+            StopPursuit();
+            return ForeverNavigationResult.Failed;
+        }
+        Vector2 here = new((float)world.X, (float)world.Y);
+        foreach (int way in new[] { side, -side })
+        {
+            ForeverBinding binding = way < 0 ? ForeverBindings.StrafeLeft : ForeverBindings.StrafeRight;
+            // A held strafe is a plain key-down: a modified binding cannot be held alone.
+            if (!binding.TryGetKey(bars, out ConsoleKey key, out ModifierKey modifier) ||
+                modifier != ModifierKey.None ||
+                !HasShortPath(here, (float)world.Z, here + Heading(map.Direction - way * Math.PI / 2) * 3, out _))
+                continue;
+            camera.StopTurning();
+            ReleaseBackward();
+            SetPursuitMovement(here, false, key);
+            return ForeverNavigationResult.StepSent;
+        }
+        reason = "no walkable side to step to";
+        return ForeverNavigationResult.Blocked;
+    }
+
+    /// <summary>
+    /// Backs away, move-backward held, while the camera turns at
+    /// <paramref name="rate"/> of full steering (positive to the right), as a
+    /// person backs off an obstacle and turns away from it. The caller decides
+    /// how long and stops it with <see cref="StopPursuit"/>.
+    /// </summary>
+    public ForeverNavigationResult BackOut(VisualBarSample bars, double rate, out string reason)
+    {
+        reason = string.Empty;
+        if (!ForeverBindings.MoveBackward.TryGetKey(bars, out ConsoleKey key, out ModifierKey modifier) ||
+            modifier != ModifierKey.None)
+        {
+            reason = "move backward is not bound to a plain key";
+            return ForeverNavigationResult.Blocked;
+        }
+        // Acquire foreground before key-down, as the walk does; a turn that has
+        // to wait for a clear place to start holds the step too.
+        ForeverNavigationResult turning = TurnTowardMarker(bars, rate, out reason);
+        if (turning is ForeverNavigationResult.Failed or ForeverNavigationResult.Waiting)
+        {
+            StopTranslation();
+            return turning;
+        }
+        lock (inputLock)
+        {
+            if (halted)
+            {
+                reason = "controller stopped";
+                return ForeverNavigationResult.Failed;
+            }
+            if (pursuitForwardHeld || pursuitStrafeKey is not null)
+                StopTranslation();
+            if (backwardKey != key)
+            {
+                ReleaseBackward();
+                input.SetKeyState(key, true, false);
+                backwardKey = key;
+            }
+        }
+        return ForeverNavigationResult.StepSent;
     }
 
     public ForeverNavigationResult SearchForTarget(VisualBarSample bars,
@@ -680,6 +803,9 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     {
         lock (inputLock)
         {
+            // Forward or a strafe never runs against a held move-backward.
+            if (!halted)
+                ReleaseBackward();
             if (halted ||
                 (pursuitForwardHeld == forward && pursuitStrafeKey == strafe))
                 return;
@@ -737,7 +863,18 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
                 input.SetKeyState(strafe, false, true);
             pursuitForwardHeld = false;
             pursuitStrafeKey = null;
+            ReleaseBackward();
             hops.Stopped();
+        }
+    }
+
+    private void ReleaseBackward()
+    {
+        lock (inputLock)
+        {
+            if (backwardKey is { } held)
+                input.SetKeyState(held, false, true);
+            backwardKey = null;
         }
     }
 

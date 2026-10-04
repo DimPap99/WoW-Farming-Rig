@@ -102,7 +102,7 @@ internal static partial class LogicTest
         ForeverRestActivity rest = new(NullLogger<ForeverRestActivity>.Instance, null!, chooser);
         ForeverSelector selector = new(NullLogger.Instance,
             new ForeverTaskActivity(NullLogger<ForeverTaskActivity>.Instance,
-                ForeverAgenda.For(new ForeverRunOptions()), engaged, chooser, null!, config),
+                ForeverAgenda.For(new ForeverRunOptions()), engaged, chooser, null!, config, null!),
             rest,
             new ForeverThreatActivity(NullLogger<ForeverThreatActivity>.Instance, engaged, chooser, null!, config),
             new ForeverLootActivity(NullLogger<ForeverLootActivity>.Instance, null!, new ForeverCorpses(), chooser, config),

@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging;
 
+using SharedLib;
+
 using System;
 
 namespace Core.Forever;
@@ -38,12 +40,13 @@ public sealed class ForeverTaskActivity : IForeverActivity
     private readonly ForeverNavigator navigator;
     private readonly IForeverCombatRoutine combat;
     private readonly ClassConfiguration config;
+    private readonly WorldMapAreaDB maps;
     private ForeverTask? runnerTask;
     private IForeverTaskRunner? runner;
 
     public ForeverTaskActivity(ILogger<ForeverTaskActivity> logger, ForeverAgenda agenda,
         ForeverEngageActivity engage, ForeverNavigator navigator, IForeverCombatRoutine combat,
-        ClassConfiguration config)
+        ClassConfiguration config, WorldMapAreaDB maps)
     {
         this.logger = logger;
         this.agenda = agenda;
@@ -51,6 +54,7 @@ public sealed class ForeverTaskActivity : IForeverActivity
         this.navigator = navigator;
         this.combat = combat;
         this.config = config;
+        this.maps = maps;
     }
 
     public string Name => "Task";
@@ -106,6 +110,7 @@ public sealed class ForeverTaskActivity : IForeverActivity
         {
             null => null,
             ForeverHuntHereTask hunt => new ForeverHuntHere(logger, hunt, engage, navigator, combat, config),
+            ForeverTravelTask travel => new ForeverTravel(logger, travel, engage, navigator, combat, config, maps),
             _ => throw new NotSupportedException($"Forever has no runner for the task '{runnerTask.Name}'"),
         };
         if (runner is null)

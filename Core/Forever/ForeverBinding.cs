@@ -79,6 +79,7 @@ public static class ForeverBindings
 {
     public static readonly ForeverBinding Jump = new(1, BindingID.JUMP);
     public static readonly ForeverBinding MoveForward = new(2, BindingID.MOVEFORWARD);
+    public static readonly ForeverBinding MoveBackward = new(3, BindingID.MOVEBACKWARD);
     public static readonly ForeverBinding StrafeLeft = new(4, BindingID.STRAFELEFT);
     public static readonly ForeverBinding StrafeRight = new(5, BindingID.STRAFERIGHT);
     public static readonly ForeverBinding StartAttack = new(15, BindingID.STARTATTACK);
