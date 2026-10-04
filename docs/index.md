@@ -12,7 +12,7 @@ Start with the [project README](../README.md) for the support matrix and quick s
 | Configure navigation | [Navigation](navigation.md) · [Recording a route](route-recording.md) · [Legacy pathing setup](legacy-pathing-setup.md) |
 | Other operations | [Macros](macros.md) · [Pathing API](pathing-api.md) · [Troubleshooting](troubleshooting.md) |
 | Upgrade settings | [Keybinding migration](keybinding-migration.md) · [Pathing configuration migration](config-migration.md) |
-| WoW: Forever | [Port status and diagnostics](forever-port.md) |
+| WoW: Forever | [Port status and diagnostics](forever-port.md) · [Activities and the selector](forever-activities.md) · [Agenda and tasks](forever-tasks.md) · [Movement](forever-movement.md) · [Route files](forever-routes.md) |
 
 ## Design and development
 
