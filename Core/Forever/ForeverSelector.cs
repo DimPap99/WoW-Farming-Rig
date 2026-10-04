@@ -6,7 +6,11 @@ namespace Core.Forever;
 
 public enum ForeverActivityStatus { Running, Done, Failed }
 
-/// <summary>How an activity's frame ended; <see cref="ForeverActivityStatus.Failed"/> stops the run with the reason.</summary>
+/// <summary>
+/// How an activity's frame ended. <see cref="ForeverActivityStatus.Failed"/>
+/// falls back to the goal above it with the reason (<see cref="IForeverActivity.FallBack"/>),
+/// or stops the run when no fallback can help (<see cref="Core.Goals.ForeverAutonomousGoal"/>).
+/// </summary>
 public readonly record struct ForeverActivityResult(ForeverActivityStatus Status, string Reason = "")
 {
     public static ForeverActivityResult Running { get; } = new(ForeverActivityStatus.Running);
@@ -31,6 +35,13 @@ public interface IForeverActivity
     ForeverActivityResult Update(VisualBarSample bars, in ForeverFacts facts);
     /// <summary>Runs when the selector switches away; releases whatever the activity holds.</summary>
     void Exit();
+    /// <summary>
+    /// The activity failed with <paramref name="reason"/> and the run carries
+    /// on: it lets go of what failed, as its own fallback says (set the unit
+    /// aside, leave the bodies, give the task up), and starts afresh; the
+    /// selector then picks again. Returns what it fell back to, for the log.
+    /// </summary>
+    string FallBack(string reason);
     /// <summary>What the activity's current step allows besides its work.</summary>
     ForeverAllowed Allowed { get; }
     /// <summary>The activity and its current step, for logs and the trial runner.</summary>
@@ -48,6 +59,7 @@ public sealed class ForeverSelector
 {
     private readonly ILogger logger;
     private readonly IForeverActivity[] activities;
+    private bool restart;
 
     public ForeverSelector(ILogger logger, params IForeverActivity[] activities)
     {
@@ -57,6 +69,12 @@ public sealed class ForeverSelector
 
     /// <summary>The activity that ran on the last frame.</summary>
     public IForeverActivity? Current { get; private set; }
+
+    /// <summary>
+    /// The current activity fell back and starts afresh: the next
+    /// <see cref="Switch"/> enters whichever activity it picks, the same one too.
+    /// </summary>
+    public void Restart() => restart = true;
 
     /// <summary>The cheapest activity that wants to run on <paramref name="facts"/>; it switches nothing.</summary>
     public IForeverActivity? Pick(in ForeverFacts facts)
@@ -73,8 +91,9 @@ public sealed class ForeverSelector
     public IForeverActivity? Switch(VisualBarSample bars, in ForeverFacts facts)
     {
         IForeverActivity? next = Pick(facts);
-        if (next == Current)
+        if (next == Current && !restart)
             return Current;
+        restart = false;
         Current?.Exit();
         if (logger.IsEnabled(LogLevel.Information))
             logger.LogInformation("Forever activity: {From} -> {To} ({Facts})",

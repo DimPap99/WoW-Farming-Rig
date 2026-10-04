@@ -43,13 +43,14 @@ public sealed class ForeverTaskActivity : IForeverActivity
     private readonly IForeverCombatRoutine combat;
     private readonly ClassConfiguration config;
     private readonly WorldMapAreaDB maps;
+    private readonly ForeverMobMemory memory;
     private ForeverTask? runnerTask;
     private IForeverTaskRunner? runner;
     private bool preflightPassed;
 
     public ForeverTaskActivity(ILogger<ForeverTaskActivity> logger, ForeverAgenda agenda,
         ForeverEngageActivity engage, ForeverNavigator navigator, IForeverCombatRoutine combat,
-        ClassConfiguration config, WorldMapAreaDB maps)
+        ClassConfiguration config, WorldMapAreaDB maps, ForeverMobMemory memory)
     {
         this.logger = logger;
         this.agenda = agenda;
@@ -58,6 +59,7 @@ public sealed class ForeverTaskActivity : IForeverActivity
         this.combat = combat;
         this.config = config;
         this.maps = maps;
+        this.memory = memory;
     }
 
     public string Name => "Task";
@@ -125,13 +127,28 @@ public sealed class ForeverTaskActivity : IForeverActivity
 
     public void Exit() => runner?.Exit();
 
+    /// <summary>
+    /// The task failed: it is given up and the agenda goes on with the next
+    /// one, the next bigger goal (<see cref="ForeverAgenda.GiveUp"/>), whose
+    /// runner starts on the next frame.
+    /// </summary>
+    public string FallBack(string reason)
+    {
+        runner?.Exit();
+        runner = null;
+        runnerTask = null;
+        string failed = agenda.Current?.Name ?? "the task";
+        agenda.GiveUp();
+        return $"{failed} is given up; next: {agenda.Current?.Name ?? "nothing"}";
+    }
+
     // Ends the current task, says what it did and starts the next one.
     private void Finish(ForeverTask task, VisualBarSample bars, in ForeverFacts facts)
     {
         if (logger.IsEnabled(LogLevel.Information))
             logger.LogInformation("Forever task done: {Task} ({Progress})", task.Name, agenda.Progress);
         int laps = agenda.Laps;
-        agenda.Advance();
+        agenda.Complete();
         if (agenda.Laps != laps && logger.IsEnabled(LogLevel.Information))
             logger.LogInformation("Forever agenda lap {Lap} done; starting over", agenda.Laps);
         StartCurrent(bars, facts);
@@ -146,7 +163,7 @@ public sealed class ForeverTaskActivity : IForeverActivity
             null => null,
             ForeverHuntHereTask hunt => new ForeverHuntHere(logger, hunt, engage, navigator, combat, config),
             ForeverTravelTask travel => new ForeverTravel(logger, travel, engage, navigator, combat, config, maps),
-            ForeverRoamAreaTask roam => new ForeverRoamArea(logger, roam, engage, navigator, combat, config, maps),
+            ForeverRoamAreaTask roam => new ForeverRoamArea(logger, roam, engage, navigator, combat, config, maps, memory),
             _ => throw new NotSupportedException($"Forever has no runner for the task '{runnerTask.Name}'"),
         };
         if (runner is null)

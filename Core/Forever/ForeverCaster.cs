@@ -17,7 +17,7 @@ namespace Core.Forever;
 /// <see cref="Refused"/>: the game answered with an error message
 /// (<see cref="ForeverCaster.LastRefusal"/>); nothing happened either.
 /// </summary>
-public enum ForeverCastResult { NotReady, Succeeded, Failed, Queued, NotTaken, Refused }
+public enum ForeverCastResult { NotReady, Succeeded, Failed, Queued, NotTaken, Refused, Voided }
 
 /// <summary>
 /// Presses one guarded Forever action and waits for the visual cast-success
@@ -30,6 +30,9 @@ public sealed class ForeverCaster
     // Action and cooldown rows refresh every 500ms. A cast event can arrive
     // before that row reflects its GCD; wait for the producer to refresh.
     private const int RowRefreshMs = 650;
+    // A target gone before its cast's success came gets this long for a late
+    // success or death event; then the press is void.
+    private const int TargetGoneMs = 500;
     private const int PollMs = 50;
     // A cast bar, or a self cast that may follow a cast bar, gets the longer wait.
     private const int LongCastTimeoutMs = 5000;
@@ -103,6 +106,7 @@ public sealed class ForeverCaster
         long start = GetTimestamp();
         long lastFrame = before.FrameId;
         long errorSeenAt = 0;
+        long targetGoneAt = 0;
         bool nextSwing = item.AfterCastWaitSwing;
         // A next-swing press without a readable attack state keeps the long
         // wait for the swing's own event, and fails closed after it.
@@ -146,6 +150,25 @@ public sealed class ForeverCaster
                     item.Name, targetIdentity, currentTarget);
                 return ForeverCastResult.Failed;
             }
+
+            // The target vanished before the success came: the press had
+            // nothing to land on, which voids it, not the run; the fight
+            // decides about the vanished target.
+            if (!selfCast && targetIdentity is { Present: true } && !flags.Present)
+            {
+                if (targetGoneAt == 0)
+                    targetGoneAt = GetTimestamp();
+                else if (GetElapsedTime(targetGoneAt).TotalMilliseconds >= TargetGoneMs)
+                {
+                    if (logger.IsEnabled(LogLevel.Information))
+                        logger.LogInformation("Forever press of {Spell} voided: the target vanished before it landed",
+                            item.Name);
+                    needsReset = false;
+                    return ForeverCastResult.Voided;
+                }
+            }
+            else
+                targetGoneAt = 0;
 
             if (nextSwing && current.Attack is { } attack)
             {

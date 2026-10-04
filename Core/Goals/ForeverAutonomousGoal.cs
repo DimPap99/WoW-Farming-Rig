@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using SharedLib;
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 
 using static System.Diagnostics.Stopwatch;
@@ -17,13 +18,18 @@ namespace Core.Goals;
 /// runs the cheapest activity that wants to run (<see cref="ForeverSelector"/>):
 /// the fight with a unit, finding what fights the player, looting, resting,
 /// and otherwise the agenda's current task. The profile's Adhoc heals and
-/// buffs run before them. The run completes once the agenda is done.
+/// buffs run before them. The run completes once the agenda is done. A
+/// failure falls back to the goal above it (<see cref="ForeverSetbacks"/>);
+/// only what no fallback can make good stops the run.
 /// </summary>
 public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
 {
     private enum RunState { Start, Running, Complete, Failed }
 
-    private const int InvalidFrameMs = 5000;
+    // Without a readable frame the run pauses, its keys released, and says
+    // why after this long; past FrameLostMs it stops.
+    private const int FramePauseMs = 5000;
+    private const int FrameLostMs = 60000;
     private const int PreflightMs = 5000;
 
     private readonly ILogger<ForeverAutonomousGoal> logger;
@@ -31,6 +37,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private readonly ForeverNavigator navigator;
     private readonly IForeverCombatRoutine combat;
     private readonly ForeverCorpses corpses;
+    private readonly ForeverMobMemory memory;
     private readonly ClassConfiguration config;
     private readonly ForeverEngageActivity engage;
     private readonly ForeverLootActivity looting;
@@ -43,11 +50,16 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private readonly ForeverStateMachine<RunState> machine;
     // Something fights the player, as opposed to combat that merely lingers.
     private readonly ForeverDanger danger = new();
+    private readonly ForeverSetbacks setbacks = new();
     private volatile bool stopped;
     private volatile int completedKills;
     private volatile int observedDeaths;
     private long lastActionFrame;
     private long invalidFrameSince;
+    private bool framePaused;
+    // Bodies looted and tasks done when last seen: either is progress.
+    private int lootsSeen;
+    private int tasksSeen;
 
     public override float Cost => 1;
     public override bool CanRun() => machine.State != RunState.Failed && !stopped;
@@ -66,9 +78,19 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     public int ObservedDeaths => observedDeaths;
     public int CompletedLoots => looting.Collected;
 
+    /// <summary>The pulls the run would weigh on the latest frame, the best first. Read-only.</summary>
+    public IReadOnlyList<ForeverPullOption> PullOptions()
+    {
+        if (!tracker.TryGetLatest(out VisualBarSample bars))
+            return [];
+        List<ForeverPullOption> options = ForeverPullOptions.Of(bars, config, combat, engage.Exclusions);
+        options.Sort(ForeverPullOptions.Compare);
+        return options;
+    }
+
     public ForeverAutonomousGoal(ILogger<ForeverAutonomousGoal> logger,
         ForeverVisualBarTracker tracker, ForeverNavigator navigator,
-        IForeverCombatRoutine combat, ForeverCorpses corpses, ClassConfiguration config,
+        IForeverCombatRoutine combat, ForeverCorpses corpses, ForeverMobMemory memory, ClassConfiguration config,
         ForeverEngageActivity engage, ForeverThreatActivity threat, ForeverLootActivity looting,
         ForeverRestActivity resting, ForeverTaskActivity tasking, ForeverAgenda agenda,
         ForeverTargetSelector targets, CancellationTokenSource<GoapAgent> cts)
@@ -79,6 +101,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         this.navigator = navigator;
         this.combat = combat;
         this.corpses = corpses;
+        this.memory = memory;
         this.config = config;
         this.engage = engage;
         this.looting = looting;
@@ -118,6 +141,20 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             reason = $"health {bars.PlayerHealth:P0} or mana {bars.PlayerPower:P0} is below what opening a fight needs";
             return false;
         }
+        return TrySetup(bars, out reason) &&
+            navigator.TryReadOnlyPreflight(bars, out reason) &&
+            tasking.TryPreflight(bars, out reason);
+    }
+
+    /// <summary>
+    /// What the run needs from the client that no fallback can make good:
+    /// the add-on's telemetry, the client settings looting relies on, a
+    /// clear-target key, the profile's actions on their slots and usable (an
+    /// attack without its ammo stops the run), and walking on a baked map.
+    /// Read-only; asked before the run starts and whenever something fails.
+    /// </summary>
+    private bool TrySetup(VisualBarSample bars, out string reason)
+    {
         if (bars.LastDeathEvent is null ||
             config.Loot && (bars.Loot is null || !ForeverBindings.InteractTarget.IsBoundIn(bars)))
         {
@@ -165,9 +202,12 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 "or name the key of a /cleartarget macro on the main bar in the profile's ClearTarget";
             return false;
         }
-        return combat.TryPreflight(bars, out reason) &&
-            navigator.TryReadOnlyPreflight(bars, out reason) &&
-            tasking.TryPreflight(bars, out reason);
+        // The bar does not change in a fight, and some of what its check reads
+        // (the slots' auras) does not read in one: in combat only whether the
+        // attacks can be used is asked, as ammo can run out mid-fight.
+        bool fighting = bars.TargetFlags is { PlayerCombat: true };
+        return (fighting ? combat.TryAttacksUsable(bars, out reason) : combat.TryPreflight(bars, out reason)) &&
+            navigator.TrySetup(bars, out reason);
     }
 
     public void OnGoapEvent(GoapEventArgs e)
@@ -191,15 +231,34 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             return;
         try
         {
-            if (!tracker.TryGetLatest(out VisualBarSample bars) ||
-                !ForeverFrame.IsVerifiedSetup(bars))
+            bool latest = tracker.TryGetLatest(out VisualBarSample bars);
+            if (!latest || !ForeverFrame.IsVerifiedSetup(bars))
             {
+                // Nothing is pressed without a frame: the run pauses with its
+                // keys released, and resumes where it was once one reads.
                 navigator.StopPursuit();
                 if (invalidFrameSince == 0)
                     invalidFrameSince = GetTimestamp();
-                if (GetElapsedTime(invalidFrameSince).TotalMilliseconds > InvalidFrameMs)
-                    machine.Fail("visual controller frame unavailable for five continuous seconds");
+                double missingMs = GetElapsedTime(invalidFrameSince).TotalMilliseconds;
+                string why = !latest ? tracker.Problem
+                    : ForeverFrame.MissingTrialInput(bars) is { } missing ? $"{missing} did not read"
+                    : "the class is not a verified one";
+                if (missingMs > FrameLostMs)
+                    machine.Fail($"no readable frame for {FrameLostMs / 1000} seconds: {why}");
+                else if (missingMs > FramePauseMs && !framePaused)
+                {
+                    framePaused = true;
+                    logger.LogWarning("Forever paused: no readable frame for {Seconds} seconds ({Why}); waiting up to {Limit} seconds for one",
+                        FramePauseMs / 1000, why, FrameLostMs / 1000);
+                }
                 return;
+            }
+            if (framePaused)
+            {
+                framePaused = false;
+                if (logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation("Forever resumed after {Seconds:0} seconds without a readable frame",
+                        GetElapsedTime(invalidFrameSince).TotalSeconds);
             }
             invalidFrameSince = 0;
             if (bars.FrameId == lastActionFrame)
@@ -212,6 +271,8 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             }
             // Where every unit in view is, so a body can be found once the fight is over.
             corpses.Observe(bars);
+            // Every mob in view, kept a while, so a task can go back to it out of view.
+            memory.Observe(bars);
             danger.Observe(bars, GetTimestamp());
             machine.Tick(bars);
         }
@@ -238,6 +299,12 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         // A kill is verified before anything else acts on the frame.
         if (engage.TryVerifyKill(bars))
             return;
+        if (looting.Collected != lootsSeen || agenda.Completed != tasksSeen)
+        {
+            lootsSeen = looting.Collected;
+            tasksSeen = agenda.Completed;
+            setbacks.Progress();
+        }
         // The profile's Adhoc self heals and buffs, whatever the run does,
         // except while looting out of combat. A corpse selected out of combat
         // is looted or cleared first. A failed cast latches the caster closed;
@@ -249,7 +316,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         {
             navigator.StopPursuit();
             if (!string.IsNullOrEmpty(adhocReason))
-                machine.Fail(adhocReason);
+                FallBack(bars, null, adhocReason);
             return;
         }
 
@@ -260,9 +327,42 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         navigator.Allowed = activity.Allowed;
         ForeverActivityResult result = activity.Update(bars, facts);
         if (result.Status == ForeverActivityStatus.Failed)
-            machine.Fail(result.Reason);
+            FallBack(bars, activity, result.Reason);
         else if (result.Status == ForeverActivityStatus.Done && activity == tasking)
             machine.Go(RunState.Complete);
+    }
+
+    // A failure stops the run only when no fallback can make it good: the
+    // player took the game back (it lost focus), or the client lost
+    // something the run needs. Otherwise the failed activity falls back as
+    // it knows how and starts afresh, a failed task is given up for the
+    // next, and the selector picks again on the next frame. Too many
+    // failures in a row without progress stop the run all the same.
+    private void FallBack(VisualBarSample bars, IForeverActivity? activity, string reason)
+    {
+        if (!navigator.GameHasFocus)
+        {
+            machine.Fail($"{reason}; the game lost focus, so the player has it now");
+            return;
+        }
+        if (!TrySetup(bars, out string broken))
+        {
+            machine.Fail($"{reason}; {broken}");
+            return;
+        }
+        if (!setbacks.TryAbsorb(reason, out string refusal))
+        {
+            machine.Fail(refusal);
+            return;
+        }
+        string fallback = "the run goes on";
+        if (activity is not null)
+        {
+            fallback = activity.FallBack(reason);
+            selector.Restart();
+        }
+        logger.LogWarning("Forever {Activity} failed: {Reason}; falling back: {Fallback} ({Count} in a row without progress)",
+            activity?.Name ?? "Adhoc", reason, fallback, setbacks.InARow);
     }
 
     // A verified kill counts for the run and for the agenda's task. Out of
@@ -273,6 +373,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         observedDeaths++;
         completedKills++;
         agenda.CountKill();
+        setbacks.Progress();
         if (logger.IsEnabled(LogLevel.Information))
             logger.LogInformation("Forever autonomous kill {Count} verified", CompletedKills);
         if (bars.TargetFlags is not { PlayerCombat: true })

@@ -29,24 +29,23 @@ public static class ForeverFrame
     /// left out: the bounded trial does not read inventory, and the bottom of
     /// the overlay can be clipped.
     /// </summary>
-    public static bool HasTrialInputs(VisualBarSample bars) =>
-        bars.Position is { UIMapId: > 0 } &&
-        bars.WorldPosition is not null &&
-        bars.PlayerIdentity is { Level: > 0 } &&
-        bars.PlayerPowerType is not null &&
-        bars.PlayerHealthMax is > 0 && bars.PlayerPowerMax is > 0 &&
-        bars.TargetFlags is { } flags &&
-        bars.TargetPresent == flags.Present &&
-        bars.LastCastEvent is not null &&
-        bars.ActionBar is
-            { ReadableCount: VisualActionBarSnapshot.SlotCount } &&
-        bars.ActionStates is
-            { ReadableCount: VisualActionBarSnapshot.SlotCount } &&
-        bars.Cooldowns is
-            { ReadableCount: VisualCooldownGridSnapshot.SlotCount } &&
-        bars.SpellBook is { Count: > 0 } book &&
-        book.ReadableCount == book.Count &&
-        bars.Bindings is not null;
+    public static bool HasTrialInputs(VisualBarSample bars) => MissingTrialInput(bars) is null;
+
+    /// <summary>The first of the <see cref="HasTrialInputs"/> that the frame lacks, as the log names it; null with none.</summary>
+    public static string? MissingTrialInput(VisualBarSample bars) =>
+        bars.Position is not { UIMapId: > 0 } ? "the map position" :
+        bars.WorldPosition is null ? "the world position" :
+        bars.PlayerIdentity is not { Level: > 0 } ? "the player's identity" :
+        bars.PlayerPowerType is null ? "the power type" :
+        bars.PlayerHealthMax is not > 0 || bars.PlayerPowerMax is not > 0 ? "the health and power maximums" :
+        bars.TargetFlags is not { } flags || bars.TargetPresent != flags.Present ? "the target flags" :
+        bars.LastCastEvent is null ? "the cast latch" :
+        bars.ActionBar is not { ReadableCount: VisualActionBarSnapshot.SlotCount } ? "the action bar" :
+        bars.ActionStates is not { ReadableCount: VisualActionBarSnapshot.SlotCount } ? "the action states" :
+        bars.Cooldowns is not { ReadableCount: VisualCooldownGridSnapshot.SlotCount } ? "the cooldowns" :
+        bars.SpellBook is not { Count: > 0 } book || book.ReadableCount != book.Count ? "the spellbook" :
+        bars.Bindings is null ? "the key bindings" :
+        null;
 
     /// <summary>The trial inputs plus a complete bag grid.</summary>
     public static bool HasControllerInputs(VisualBarSample bars) =>

@@ -41,6 +41,16 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     // A person keeps running through a turn up to about a right angle; a
     // larger correction, or a way ahead that is not walkable, is turned standing.
     private const double MaxRunningTurn = Math.PI / 2;
+    // Turning standing this long because the way ahead is not walkable is a
+    // stall: turning has not found the way, as when the character stands
+    // where the mesh's edge runs across it. The walk's unstick ladder takes
+    // over. Shorter turns are left alone: on a narrow way a slightly better
+    // facing is all it needs.
+    private const int WayAheadTurnMs = 2000;
+    // The mesh keeps a character's width from walls and objects, so brushing
+    // past one can leave the character standing just off it: within this
+    // many yards, the way ahead is judged from the nearest walkable point.
+    private const float OffMeshYards = 2;
     // The steering marker may drift this far from screen center while running.
     private const double MaxRunningMarkerError = 0.35;
     // A target whose marker is this close to screen centre is in front; once
@@ -109,6 +119,8 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     private double? lastSeenBearing;
     private bool bearingReached;
     private bool inFront;
+    // Since when the walk has turned standing for a walkable way ahead; 0 while it walks.
+    private long wayAheadTurnSince;
     private double? lookFacing;
     private double lookTurned;
     private string facingState = string.Empty;
@@ -130,17 +142,31 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     /// </summary>
     public ForeverAllowed Allowed { get; set; }
 
-    public bool TryReadOnlyPreflight(VisualBarSample bars, out string reason)
+    /// <summary>The game is the active window; a click elsewhere is how the player takes over.</summary>
+    public bool GameHasFocus => camera.HasFocus;
+
+    /// <summary>
+    /// What walking needs that no fallback can make good: a readable
+    /// position, the move-forward binding and a baked mesh for the map.
+    /// </summary>
+    public bool TrySetup(VisualBarSample bars, out string reason)
     {
         reason = string.Empty;
-        if (bars.Position is not { } map || bars.WorldPosition is not { } world ||
+        if (bars.Position is not { } map || bars.WorldPosition is null ||
             !ForeverBindings.MoveForward.IsBoundTo(bars, input.ForwardKey))
         {
             reason = "position or movement bindings are incomplete";
             return false;
         }
-        if (!TryNav(map.UIMapId, out reason))
+        return TryNav(map.UIMapId, out reason);
+    }
+
+    public bool TryReadOnlyPreflight(VisualBarSample bars, out string reason)
+    {
+        if (!TrySetup(bars, out reason))
             return false;
+        VisualPositionSample map = bars.Position!.Value;
+        VisualWorldPositionSample world = bars.WorldPosition!.Value;
         Vector2 here = new((float)world.X, (float)world.Y);
         if (!PlayerMapAgrees(map, here, world.InstanceMapId))
         {
@@ -280,6 +306,30 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
 
     /// <summary>The world point <paramref name="yards"/> from <paramref name="from"/> along <paramref name="bearing"/>.</summary>
     public static Vector2 Along(Vector2 from, double bearing, float yards) => from + Heading(bearing) * yards;
+
+    /// <summary>
+    /// Turns standing toward a unit's marker on screen, as a person turns to
+    /// face a mob before clicking it: faster the farther it lies from the
+    /// middle, at most the standing turn's speed.
+    /// </summary>
+    public ForeverNavigationResult TurnToward(VisualBarSample bars, VisualScreenPointSample marker, out string reason) =>
+        TurnInPlace(bars, Math.Clamp(marker.X - 0.5, -StandingTurnRate, StandingTurnRate), out reason);
+
+    /// <summary>
+    /// The <see cref="TurnInPlace"/> rate that brings the facing round to
+    /// <paramref name="point"/>: at most <paramref name="maxRate"/>, easing in
+    /// over the last quarter turn; null once the point lies ahead or the
+    /// position is unknown.
+    /// </summary>
+    public static double? TurnRateToward(VisualBarSample bars, Vector2 point, double maxRate)
+    {
+        if (bars.Position is not { } map || bars.WorldPosition is not { } world)
+            return null;
+        double delta = SignedAngle(Bearing(new((float)world.X, (float)world.Y), point) - map.Direction);
+        return Math.Abs(delta) <= BearingReached
+            ? null
+            : Math.Clamp(-delta / (Math.PI / 2), -maxRate, maxRate);
+    }
 
     // How hard to turn for a marker this far from centre: the error plus a
     // lead for where the marker is heading, as a hand follows a moving mob.
@@ -533,6 +583,54 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         return ForeverNavigationResult.StepSent;
     }
 
+    /// <summary>
+    /// A step back while facing what is fought, as a hunter backs away to the
+    /// bow's range: move-backward held, the camera left to the fight's facing.
+    /// <see cref="ForeverNavigationResult.Blocked"/>, holding nothing, when the
+    /// ground behind is not walkable or no plain key moves backward.
+    /// <see cref="StopPursuit"/> ends it.
+    /// </summary>
+    public ForeverNavigationResult StepBack(VisualBarSample bars, out string reason)
+    {
+        reason = string.Empty;
+        if (bars.Position is not { } map || bars.WorldPosition is not { } world)
+        {
+            StopTranslation();
+            reason = "the player's position is unreadable";
+            return ForeverNavigationResult.Blocked;
+        }
+        if (!ForeverBindings.MoveBackward.TryGetKey(bars, out ConsoleKey key, out ModifierKey modifier) ||
+            modifier != ModifierKey.None)
+        {
+            reason = "move backward is not bound to a plain key";
+            return ForeverNavigationResult.Blocked;
+        }
+        if (!WayAheadWalkable(bars, new((float)world.X, (float)world.Y), (float)world.Z,
+                map.Direction + Math.PI, 3, out string behind))
+        {
+            StopTranslation();
+            reason = $"the ground behind is not walkable: {behind}";
+            return ForeverNavigationResult.Blocked;
+        }
+        lock (inputLock)
+        {
+            if (halted)
+            {
+                reason = "controller stopped";
+                return ForeverNavigationResult.Failed;
+            }
+            if (pursuitForwardHeld || pursuitStrafeKey is not null)
+                StopTranslation();
+            if (backwardKey != key)
+            {
+                ReleaseBackward();
+                input.SetKeyState(key, true, false);
+                backwardKey = key;
+            }
+        }
+        return ForeverNavigationResult.StepSent;
+    }
+
     public ForeverNavigationResult SearchForTarget(VisualBarSample bars,
         VisualTargetIdentity target, out string reason)
     {
@@ -732,8 +830,26 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         // The mouse turns right for a positive error; a positive bearing
         // change is to the left.
         double steering = -delta / Math.PI;
-        if (Math.Abs(delta) > MaxRunningTurn ||
-            !HasShortPath(here, z, here + Heading(direction) * lookAhead, out _))
+        bool turnFirst = Math.Abs(delta) > MaxRunningTurn;
+        if (!turnFirst && !WayAheadWalkable(bars, here, z, direction, lookAhead, out string ahead))
+        {
+            // Turned standing too long for a walkable way ahead: say so, so
+            // the walk's unstick ladder steps aside or backs out, rather than
+            // turn on the spot for as long as it lasts.
+            if (wayAheadTurnSince == 0)
+                wayAheadTurnSince = GetTimestamp();
+            else if (GetElapsedTime(wayAheadTurnSince).TotalMilliseconds >= WayAheadTurnMs)
+            {
+                wayAheadTurnSince = 0;
+                StopTranslation();
+                reason = $"the way ahead is not walkable: {ahead}";
+                return ForeverNavigationResult.Blocked;
+            }
+            turnFirst = true;
+        }
+        else if (!turnFirst)
+            wayAheadTurnSince = 0;
+        if (turnFirst)
         {
             StopTranslation();
             return TurnTowardMarker(bars, Math.Clamp(steering, -StandingTurnRate, StandingTurnRate), out reason);
@@ -878,6 +994,7 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         {
             StopTranslation();
             camera.Stop();
+            wayAheadTurnSince = 0;
         }
     }
 
@@ -1012,6 +1129,20 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
 
         bool Holds(PPather.Graph.Path? found) =>
             found is { locations.Count: >= 2 } && nav.LastStats.TilesBaked == 0 && holds(found);
+    }
+
+    // The next yards along the facing are walkable, judged from where the
+    // player stands or, standing just off the mesh, from the nearest
+    // walkable point. The second check costs a mesh query, so it comes only
+    // when the first fails.
+    private bool WayAheadWalkable(VisualBarSample bars, Vector2 here, float z, double direction, float lookAhead,
+        out string reason)
+    {
+        if (HasShortPath(here, z, here + Heading(direction) * lookAhead, out reason))
+            return true;
+        return TrySnapWalkable(bars, here, out Vector2 onMesh) &&
+            Vector2.Distance(here, onMesh) <= OffMeshYards &&
+            HasShortPath(onMesh, z, onMesh + Heading(direction) * lookAhead, out _);
     }
 
     private bool HasShortPath(Vector2 here, float playerZ, Vector2 ahead,

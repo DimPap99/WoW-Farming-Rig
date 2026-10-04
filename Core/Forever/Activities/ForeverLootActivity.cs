@@ -101,6 +101,19 @@ public sealed class ForeverLootActivity : IForeverActivity
             machine.Go(ForeverLootState.Idle);
     }
 
+    /// <summary>
+    /// The round failed: its bodies are left, so the same failure does not
+    /// start the next round, and the run goes on with what it was doing.
+    /// </summary>
+    public string FallBack(string reason)
+    {
+        navigator.StopPursuit();
+        int left = corpses.Pending.Count;
+        corpses.Clear();
+        machine.Reset();
+        return left == 0 ? "the round is over" : $"{left} bodies are left";
+    }
+
     // The round goes from body to body until none is left; an attack ends
     // the activity on the next frame, and the bodies wait for the next round.
     private void Round(VisualBarSample bars)

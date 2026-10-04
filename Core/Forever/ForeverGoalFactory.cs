@@ -56,6 +56,7 @@ public static class ForeverGoalFactory
                 scope.GetRequiredService<IWowScreen>()));
             services.AddScoped<IForeverCombatRoutine, ForeverRotation>();
             services.AddScoped<ForeverCorpses>();
+            services.AddScoped<ForeverMobMemory>();
             services.AddScoped<IForeverLootRoutine, ForeverLoot>();
 
             // The activities the controller's selector picks from, and the

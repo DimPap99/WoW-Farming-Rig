@@ -46,7 +46,7 @@ which no step takes yet, so its points are refused at start-up.
 |---|---|---|
 | `To` | where to go | required |
 | `Via` | points on the way, in order: `[[x, y], ...]` | none |
-| `Pulls` | `"Any"` takes units in view on the way; `"None"` fights only what attacks | `"None"` |
+| `Pulls` | `"OnTheWay"` takes the units standing on the way (within 20 yards of the path, over the next 80); `"Any"` takes any unit in view; `"None"` fights only what attacks | `"None"` |
 | `UIMapId` | this step's map, when not the route's | the route's |
 
 ### Roam
@@ -94,6 +94,10 @@ dotnet run --project Utilities/ForeverControllerTrial -- --route my_loop.json --
 - The run waits for the preflight, then for the game window to be active
   (click into it), then runs the steps in order. Fights, loot rounds and
   rests take over whenever needed, and the step resumes afterwards.
+- A step that fails is given up and the next one starts; the last step of a
+  route that does not repeat is tried again after three minutes of hunting
+  where the character stands, until the time bound ("When a task fails" in
+  [forever-tasks.md](forever-tasks.md)).
 - Each status change is printed with the agenda's progress:
   `Autonomous phase: Task/Roam the area around 52.5, 45 on map 1411/Look; ...; task 2 of 3: ... (1 kills in 2.3 minutes)`.
 - The time bound is 20 minutes, or `--minutes <n>` (1 to 600).

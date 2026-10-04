@@ -47,7 +47,7 @@ internal static partial class LogicTest
         ForeverEngageActivity engage = NewEngage(navigator, config);
         ForeverLootActivity looting = new(NullLogger<ForeverLootActivity>.Instance, null!, new ForeverCorpses(), navigator, config);
         ForeverRestActivity resting = new(NullLogger<ForeverRestActivity>.Instance, null!, navigator);
-        ForeverThreatActivity threat = new(NullLogger<ForeverThreatActivity>.Instance, engage, navigator, null!, config);
+        ForeverThreatActivity threat = new(NullLogger<ForeverThreatActivity>.Instance, engage, navigator, null!, config, new ForeverCorpses());
         ForeverHuntHere hunt = new(NullLogger.Instance, new ForeverHuntHereTask(ForeverUntil.Never), engage, navigator, null!, config);
         check("steps: snag hops when approaching and looting, idle hops only when hunting, none in Select, Fight, Threat or Rest",
             engage.AllowedIn(ForeverEngageState.Approach) == ForeverAllowed.SnagHop &&
@@ -79,7 +79,7 @@ internal static partial class LogicTest
         // has no process here, and throw.
         ForeverNavigator waitingNavigator = NewNavigator();
         ForeverThreatActivity waiting = new(NullLogger<ForeverThreatActivity>.Instance,
-            NewEngage(waitingNavigator, config), waitingNavigator, null!, config);
+            NewEngage(waitingNavigator, config), waitingNavigator, null!, config, new ForeverCorpses());
         waiting.Enter(vanished, fighting);
         waiting.Update(vanished, fighting);
         waiting.Update(vanished, fighting);
@@ -102,9 +102,9 @@ internal static partial class LogicTest
         ForeverRestActivity rest = new(NullLogger<ForeverRestActivity>.Instance, null!, chooser);
         ForeverSelector selector = new(NullLogger.Instance,
             new ForeverTaskActivity(NullLogger<ForeverTaskActivity>.Instance,
-                ForeverAgenda.For(new ForeverRunOptions()), engaged, chooser, null!, config, null!),
+                ForeverAgenda.For(new ForeverRunOptions()), engaged, chooser, null!, config, null!, new ForeverMobMemory()),
             rest,
-            new ForeverThreatActivity(NullLogger<ForeverThreatActivity>.Instance, engaged, chooser, null!, config),
+            new ForeverThreatActivity(NullLogger<ForeverThreatActivity>.Instance, engaged, chooser, null!, config, new ForeverCorpses()),
             new ForeverLootActivity(NullLogger<ForeverLootActivity>.Instance, null!, new ForeverCorpses(), chooser, config),
             engaged);
         string Picked(ForeverFacts facts) => selector.Pick(facts)?.Name ?? "none";
@@ -170,6 +170,105 @@ internal static partial class LogicTest
         two.Advance();
         check("agenda: the next task starts with fresh progress, and the agenda finishes after the last",
             fresh && two.Finished, $"fresh={fresh}, finished={two.Finished}");
+
+        // The fallback ladder: what fails falls back to the goal above it.
+        ForeverTask first = ForeverTasks.HuntHere(ForeverUntil.AfterKills(1));
+        ForeverTask last = ForeverTasks.HuntHere(ForeverUntil.AfterKills(2));
+        ForeverAgenda route = new([first, last]);
+        route.GiveUp();
+        bool movedOn = route.Current == last && route.GivenUp == 1;
+        route.GiveUp();
+        bool huntsHere = route.Current is ForeverHuntHereTask { Until.Minutes: ForeverAgenda.FallbackMinutes } && !route.Finished;
+        route.Complete();
+        check("agenda: a task given up makes way for the next; the last, given up, is tried again after hunting here a while",
+            movedOn && huntsHere && route.Current == last && route.Completed == 1 && route.GivenUp == 2, route.Describe());
+        ForeverAgenda lap = new([first, last], repeat: true);
+        lap.Advance();
+        lap.GiveUp();
+        check("agenda: a repeating agenda that gives its last task up starts its next lap",
+            lap.Current == first && lap.Laps == 1, lap.Describe());
+
+        ForeverTaskActivity tasks = new(NullLogger<ForeverTaskActivity>.Instance, new ForeverAgenda([first, last]),
+            NewEngage(NewNavigator(), config), NewNavigator(), null!, config, null!, new ForeverMobMemory());
+        string gaveUp = tasks.FallBack("no spot could be reached");
+        check("task: a task that fails is given up and the agenda goes on with the next",
+            gaveUp.Contains("given up") && gaveUp.EndsWith($"next: {last.Name}"), gaveUp);
+
+        ForeverNavigator fallbackNavigator = NewNavigator();
+        VisualTargetIdentity unit = new(30, 31, 5, false);
+        ForeverEngageActivity calm = NewEngage(fallbackNavigator, config);
+        calm.Adopt(vanished, unit);
+        calm.Enter(vanished, Facts());
+        calm.FallBack("the fight did not end within the combat bound");
+        ForeverEngageActivity pressed = NewEngage(fallbackNavigator, config);
+        pressed.Adopt(vanished, unit);
+        pressed.Enter(vanished, Facts(inCombat: true));
+        pressed.FallBack("target identity was lost during combat");
+        check("engage: a fight that fails starts afresh; out of combat its unit is set aside, in combat it stays a threat",
+            calm.State == ForeverEngageState.Idle && !calm.Engaged && calm.Exclusions.IsExcluded(Plate(1, hash: 30)) &&
+            pressed.State == ForeverEngageState.Idle && !pressed.Exclusions.IsExcluded(Plate(1, hash: 30)),
+            $"{calm.State} {pressed.State}");
+
+        // A body seen within duel distance, then its death.
+        ForeverCorpses leftBodies = new();
+        VisualBarSample sighted = new VisualBarSample(1, 1, 1, 0.5, 0, 0, 320) with
+        {
+            Position = new(ForeverVerifiedSetup.Durotar, 0.5, 0.5, 0),
+            WorldPosition = new(100, 200, 0, 1),
+            TargetFlags = new(true, true, false, false, false),
+            TargetIdentity = new(11, 22, 7, false),
+            TargetScreenPosition = new VisualScreenPointSample(0.5, 0.5),
+            Attack = new VisualAttackState(0, 0, false, true),
+            LastDeathEvent = new(5, 1, 2),
+        };
+        leftBodies.Observe(sighted, Stopwatch.GetTimestamp());
+        leftBodies.Observe(sighted with { LastDeathEvent = new(6, 11, 22) }, Stopwatch.GetTimestamp());
+        bool hadBody = leftBodies.Any;
+        ForeverLootActivity failedRound = new(NullLogger<ForeverLootActivity>.Instance, new ScriptedLoot(), leftBodies,
+            NewNavigator(), config);
+        failedRound.Enter(lootFrame, Facts(bodies: 1));
+        failedRound.FallBack("walking failed");
+        ForeverRestActivity failedRest = new(NullLogger<ForeverRestActivity>.Instance, null!, NewNavigator()) { Pending = true };
+        failedRest.Enter(vanished, Facts());
+        failedRest.FallBack("health did not recover in time");
+        check("loot and rest: a failed round leaves its bodies, a failed rest is over; both start afresh",
+            hadBody && failedRound.State == ForeverLootState.Idle && !leftBodies.Any &&
+            failedRest.State == ForeverRestState.Idle && !failedRest.Pending, $"{failedRound.State} {failedRest.State}");
+
+        // The selector enters an activity that fell back afresh, even when it picks the same one.
+        ForeverNavigator watchNavigator = NewNavigator();
+        ForeverThreatActivity watcher = new(NullLogger<ForeverThreatActivity>.Instance,
+            NewEngage(watchNavigator, config), watchNavigator, null!, config, new ForeverCorpses());
+        ForeverSelector restarting = new(NullLogger.Instance, watcher);
+        restarting.Switch(vanished, fighting);
+        bool watching = watcher.State == ForeverThreatState.Watch;
+        watcher.FallBack("no safe target found within acquisition time");
+        restarting.Switch(vanished, fighting);
+        bool idleWithoutRestart = watcher.State == ForeverThreatState.Idle;
+        restarting.Restart();
+        restarting.Switch(vanished, fighting);
+        check("selector: an activity that fell back is entered afresh when it is picked again",
+            watching && idleWithoutRestart && watcher.State == ForeverThreatState.Watch, $"{watcher.State}");
+
+        ForeverSetbacks setbacks = new();
+        bool absorbed = Enumerable.Range(1, ForeverSetbacks.MaxInARow - 1).All(i => setbacks.TryAbsorb($"failure {i}", out _));
+        setbacks.Progress();
+        bool cleared = setbacks.InARow == 0;
+        for (int i = 1; i < ForeverSetbacks.MaxInARow; i++)
+            setbacks.TryAbsorb($"again {i}", out _);
+        bool stops = !setbacks.TryAbsorb("one more", out string refusal);
+        check("setbacks: failures fall back until ten come in a row with no kill, loot or task done between them; then the run stops, naming the first",
+            absorbed && cleared && stops && refusal.StartsWith($"{ForeverSetbacks.MaxInARow} failures") && refusal.EndsWith("again 1"),
+            refusal);
+
+        // A frame that misses an input names it, for the pause's log line.
+        check("frame: an unreadable frame names what it misses",
+            ForeverFrame.MissingTrialInput(new VisualBarSample(1, 1, 1, 0.5, 0, 0, 320)) == "the map position" &&
+            ForeverFrame.MissingTrialInput(vanished with
+            {
+                Position = new(ForeverVerifiedSetup.Durotar, 0.5, 0.5, 0),
+                WorldPosition = new(1, 2, 0, 1),
+            }) == "the player's identity", "");
     }
 
     /// <summary>A loot round whose next result the check sets; it presses nothing.</summary>

@@ -22,7 +22,17 @@ namespace Core.Forever;
 /// <see cref="LostSight"/>: in the fight, the game says the target is out of
 /// the player's line of sight; the player walks to see it again.
 /// </summary>
-public enum ForeverCombatResult { Waiting, ActionSent, NeedRange, TargetDead, Failed, StepIn, Unreachable, LostSight }
+public enum ForeverCombatResult { Waiting, ActionSent, NeedRange, TargetDead, Failed, StepIn, StepBack, Unreachable, LostSight }
+
+/// <summary>
+/// How the fight stands to the unit. <see cref="Ranged"/>: it is not on the
+/// player (it is on the pet, or not pulled yet) and a ranged attack can be
+/// used, so the player keeps the range, stepping back to it when the unit
+/// comes too close. <see cref="Melee"/>: it goes for the player, or no ranged
+/// attack can be used (no ammo, or a class without one), so the player shoots
+/// while it comes and fights it in melee once it is there.
+/// </summary>
+public enum ForeverStance { Ranged, Melee }
 
 /// <summary>What the fight does about a press the game refused with an error message.</summary>
 public enum ForeverRefusal { Retry, StepIn, GiveUp, RegainSight }
@@ -118,7 +128,7 @@ public interface IForeverCombatRoutine
         Action<VisualBarSample> keepWalking, out string reason);
 }
 
-public enum ForeverFightStep { Wait, NeedRange, Pull, StartAttack, Combat, PetAttack }
+public enum ForeverFightStep { Wait, NeedRange, StepBack, Pull, StartAttack, Combat, PetAttack }
 
 /// <summary>What the fight does on one frame, and with which profile action.</summary>
 public readonly record struct ForeverFightPlan(ForeverFightStep Step, KeyAction? Action = null);
@@ -160,6 +170,14 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     public const int PetHoldsMobMs = 1500;
     /// <summary>A pet that has not drawn the mob after this long is not waited for.</summary>
     public const int PetEngageMs = 8000;
+    /// <summary>
+    /// <see cref="ForeverStance.Ranged"/> too close for every ranged attack:
+    /// the steps back last at most this long. Without the range back by then
+    /// (the mob follows, or the ground behind stops the steps) the fight goes
+    /// on where it stands for <see cref="StepBackRestMs"/>.
+    /// </summary>
+    public const int StepBackMs = 2500;
+    public const int StepBackRestMs = 4000;
 
     private readonly ILogger<ForeverRotation> logger;
     private readonly ForeverCaster caster;
@@ -190,6 +208,12 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     private long petPullSince;
     private long mobOnPetSince;
     private bool petPullOver;
+    // The target last pulled on its own with the pet held back, said once.
+    private VisualTargetIdentity? petHeldBackFor;
+    // Stepping back to range: since when, and until when it rests after
+    // stepping back did not bring the range back.
+    private long stepBackSince;
+    private long stepBackRestUntil;
 
     public ForeverRotation(ILogger<ForeverRotation> logger, ForeverCaster caster,
         ConfigurableInput input, IForeverFacing facing, ClassConfiguration config, SpellDB spells,
@@ -350,13 +374,17 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         // every frame of the fight, and an attack waits until it is in front.
         bool inFront = facing.FaceTarget(bars);
         ForeverFightPlan plan = Plan(bars, identity);
+        // Stepping back waits for the facing too: backing away from a mob
+        // behind the player would walk into it.
         if (!inFront && plan.Step is ForeverFightStep.Pull or
-                ForeverFightStep.StartAttack or ForeverFightStep.Combat)
+                ForeverFightStep.StartAttack or ForeverFightStep.Combat or ForeverFightStep.StepBack)
             return ForeverCombatResult.Waiting;
         switch (plan.Step)
         {
             case ForeverFightStep.NeedRange:
                 return ForeverCombatResult.NeedRange;
+            case ForeverFightStep.StepBack:
+                return ForeverCombatResult.StepBack;
             case ForeverFightStep.Pull:
                 ForeverCombatResult pulled = Cast(plan.Action!, bars, identity, out reason);
                 if (pulled == ForeverCombatResult.ActionSent)
@@ -444,6 +472,10 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     /// </summary>
     public ForeverFightPlan Plan(VisualBarSample bars, VisualTargetIdentity identity)
     {
+        // Ranged while the mob is not on the player: too close for every
+        // ranged attack, a hunter steps back to range rather than melee it.
+        if (StepsBack(bars))
+            return new(ForeverFightStep.StepBack);
         if (ReachRefused(bars, identity))
             return new(ForeverFightStep.NeedRange);
         ForeverSlotRanges ranges = ForeverSlotRanges.Target(bars);
@@ -543,7 +575,26 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         config.AutoPetAttack &&
         bars.Pet is { Active: true } pet && !pet.Attacks(identity) &&
         ForeverBindings.PetAttack.IsBoundIn(bars) &&
-        GetElapsedTime(lastPetAttack).TotalMilliseconds >= PetAttackRetryMs;
+        GetElapsedTime(lastPetAttack).TotalMilliseconds >= PetAttackRetryMs &&
+        !HoldsPetBack(bars, identity);
+
+    // A mob with another hostile unit standing near it is pulled on its own:
+    // the opener draws it to the player, and the pet stays back until it
+    // comes, since the pet's run in would draw the other one too. Out of
+    // combat only: once the mob fights, the pet goes in.
+    private bool HoldsPetBack(VisualBarSample bars, VisualTargetIdentity identity)
+    {
+        if (bars.TargetFlags is not { PlayerCombat: false } || bars.Nameplates?.Target is not { } plate ||
+            ForeverPullOptions.HostileNear(bars, plate) == 0)
+            return false;
+        if (petHeldBackFor != identity)
+        {
+            petHeldBackFor = identity;
+            logger.LogInformation("Forever pulling the mob on its own: another hostile unit stands near it, " +
+                "so the shot goes first and the pet once the mob comes");
+        }
+        return true;
+    }
 
     // A Hunter's pull: the pet goes in first and the player holds its attacks
     // until the mob has turned on the pet and stayed on it a moment, so the
@@ -564,6 +615,9 @@ public sealed class ForeverRotation : IForeverCombatRoutine
             petPullOver = false;
         }
         if (petPullOver)
+            return false;
+        // Pulled on its own, the shot goes first: nothing waits for the pet.
+        if (HoldsPetBack(bars, identity))
             return false;
         bool goesForPlayer = AnyGoesForPlayer(bars.Nameplates);
         if (goesForPlayer || bars.Attack is { AutoRepeat: true } or { Melee: true })
@@ -601,6 +655,88 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         }
         return false;
     }
+
+    /// <summary>
+    /// How the fight stands to the target (<see cref="ForeverStance"/>):
+    /// ranged only when its own plate says it targets someone other than the
+    /// player and a ranged attack can be used; melee otherwise, including when
+    /// the roster cannot tell.
+    /// </summary>
+    public ForeverStance Stance(VisualBarSample bars)
+    {
+        if (bars.Nameplates?.Target is not { TargetsPlayer: false })
+            return ForeverStance.Melee;
+        foreach (KeyAction action in RangedAttacks())
+        {
+            if (Placed(bars, action) && !Unusable(bars, action))
+                return ForeverStance.Ranged;
+        }
+        return ForeverStance.Melee;
+    }
+
+    // Ranged and too close for every ranged attack that can be used: inside
+    // a ranged weapon's minimum range, the client reports each such attack's
+    // slot out of range while the target is close. A Paladin's Judgement
+    // reaches a target in melee, so a Paladin never is. Steps back for at
+    // most StepBackMs, then rests StepBackRestMs, fighting where it stands.
+    private bool StepsBack(VisualBarSample bars)
+    {
+        long now = GetTimestamp();
+        if (now < stepBackRestUntil || Stance(bars) != ForeverStance.Ranged || !TooCloseForRanged(bars))
+        {
+            stepBackSince = 0;
+            return false;
+        }
+        if (stepBackSince == 0)
+        {
+            stepBackSince = now;
+            logger.LogInformation("Forever fight: the mob is not on the player and too close for the ranged attacks; stepping back to range");
+        }
+        if (GetElapsedTime(stepBackSince).TotalMilliseconds <= StepBackMs)
+            return true;
+        stepBackSince = 0;
+        stepBackRestUntil = now + (long)(StepBackRestMs * (Frequency / 1000.0));
+        logger.LogInformation("Forever fight: stepping back did not bring the range back; fighting where it stands for now");
+        return false;
+    }
+
+    private bool TooCloseForRanged(VisualBarSample bars)
+    {
+        ForeverSlotRanges ranges = ForeverSlotRanges.Target(bars);
+        if (ranges.Close != true)
+            return false;
+        bool any = false;
+        foreach (KeyAction action in RangedAttacks())
+        {
+            if (!Placed(bars, action) || Unusable(bars, action) || ranges.InRange(action.Slot) is not { } inRange)
+                continue;
+            if (inRange)
+                return false;
+            any = true;
+        }
+        return any;
+    }
+
+    // The profile's attacks other than the auto attack and next-swing melee
+    // abilities: the shots, and for a Paladin, Judgement.
+    private IEnumerable<KeyAction> RangedAttacks()
+    {
+        foreach (KeyAction action in config.Pull.Sequence)
+        {
+            if (!action.BaseAction && !action.AfterCastWaitSwing && !IsAutoAttack(action))
+                yield return action;
+        }
+        foreach (KeyAction action in config.Combat.Sequence)
+        {
+            if (!action.BaseAction && !action.AfterCastWaitSwing && !IsAutoAttack(action))
+                yield return action;
+        }
+    }
+
+    // The action's spell is on its slot, as the profile names it.
+    private static bool Placed(VisualBarSample bars, KeyAction action) =>
+        bars.ActionBar?.GetSlot(action.Slot) is { Kind: VisualActionKind.Spell, Id: var placed } &&
+        (action.SpellId == 0 || placed == action.SpellId);
 
     // A next-swing ability pressed and waiting for its swing shows as current
     // on its slot; pressing it again would only repeat the request.

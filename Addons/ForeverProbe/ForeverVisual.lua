@@ -111,6 +111,13 @@ local function createVisual()
     frame:SetFrameStrata("TOOLTIP")
     frame:SetScript("OnHide", nameplates.HideMarkers)
 
+    -- Black behind the five bars and a few pixels round them, so the scene
+    -- never touches a bar the reader measures, whatever the camera shows.
+    local backdrop = frame:CreateTexture(nil, "BACKGROUND")
+    backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", -4, 4)
+    backdrop:SetPoint("BOTTOMRIGHT", frame, "TOPLEFT", 324, -82)
+    backdrop:SetColorTexture(0, 0, 0, 1)
+
     local function addBar(row, red, green, blue)
         local bar = CreateFrame("StatusBar", nil, frame)
         bar:SetSize(320, 10)
@@ -127,7 +134,8 @@ local function createVisual()
     frame.power = addBar(1, 0, 0, 1)
     frame.target = addBar(2, 1, 0, 0)
     frame.half = addBar(3, 1, 1, 0)
-    frame.full = addBar(4, 1, 1, 1)
+    -- The reader's anchor: magenta, which a bright sky behind the corner never is.
+    frame.full = addBar(4, 1, 0, 1)
     frame.half:SetMinMaxValues(0, 1)
     frame.half:SetValue(0.5)
     frame.full:SetMinMaxValues(0, 1)

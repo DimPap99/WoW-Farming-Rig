@@ -159,19 +159,48 @@ public sealed class ForeverCorpses
 
     public void Clear() => corpses.Clear();
 
-    // Within duel distance a unit lies within 8 yards; beyond it but within
-    // follow distance, 8 to 28; beyond that, out to the farthest plate.
+    /// <summary>
+    /// Where a plate's unit stands on this frame, as a sighting places it: on
+    /// the segment from <paramref name="near"/> to <paramref name="far"/> along
+    /// its marker's bearing, or at the one point the minimap's tracking shows
+    /// there (<paramref name="near"/> equals <paramref name="far"/>). False
+    /// without a marker on screen or the player's position.
+    /// </summary>
+    public static bool TryPlace(VisualBarSample bars, VisualNameplate plate, out Vector2 near, out Vector2 far)
+    {
+        near = far = default;
+        if (plate.Screen is not { } marker || bars.WorldPosition is not { } world || bars.Position is not { } map)
+            return false;
+        Vector2 here = new((float)world.X, (float)world.Y);
+        float farthest = bars.Nameplates is { MaxDistance: > 0 } shown ? shown.MaxDistance : PlateYards;
+        Sighting seen = Sight(here, map, marker, plate.Close, plate.WithinFollowDistance, farthest,
+            bars.TrackedBlips, plate.IsTarget == true, 0);
+        if (seen.Tracked is { } point)
+        {
+            near = far = point;
+            return true;
+        }
+        near = ForeverNavigator.Along(here, seen.Bearing, seen.NearYards);
+        far = ForeverNavigator.Along(here, seen.Bearing, seen.FarYards);
+        return true;
+    }
+
     private void See(int hash1, int hash2, Vector2 here, VisualPositionSample map,
         VisualScreenPointSample marker, bool? close, bool? follow, float farthest,
-        IReadOnlyList<Vector2>? blips, bool isTarget, long now)
+        IReadOnlyList<Vector2>? blips, bool isTarget, long now) =>
+        sightings[(hash1, hash2)] = Sight(here, map, marker, close, follow, farthest, blips, isTarget, now);
+
+    // Within duel distance a unit lies within 8 yards; beyond it but within
+    // follow distance, 8 to 28; beyond that, out to the farthest plate.
+    private static Sighting Sight(Vector2 here, VisualPositionSample map, VisualScreenPointSample marker,
+        bool? close, bool? follow, float farthest, IReadOnlyList<Vector2>? blips, bool isTarget, long now)
     {
         float far = close == true ? CloseYards : follow == true ? FollowYards : farthest;
         float near = Math.Min(close == true ? 0 : follow == false ? FollowYards : close == false ? CloseYards : 0, far);
         double bearing = ForeverNavigator.BearingOf(map, marker);
         // Beyond follow distance the target may be past the plate distance too.
         float matchFar = isTarget && close != true && follow != true ? Math.Max(far, TargetTrackedYards) : far;
-        sightings[(hash1, hash2)] = new(here, bearing, near, far, now,
-            TrackedAlong(blips, here, bearing, near, matchFar));
+        return new(here, bearing, near, far, now, TrackedAlong(blips, here, bearing, near, matchFar));
     }
 
     /// <summary>

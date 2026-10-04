@@ -40,6 +40,7 @@ public sealed class ForeverStateMachine<TState> where TState : struct, Enum
 
     private readonly ILogger logger;
     private readonly string name;
+    private readonly TState initial;
     private readonly TState failed;
     private readonly HashSet<TState> terminal;
     private readonly Dictionary<TState, Definition> states = [];
@@ -58,6 +59,7 @@ public sealed class ForeverStateMachine<TState> where TState : struct, Enum
     {
         this.logger = logger;
         this.name = name;
+        this.initial = initial;
         this.failed = failed;
         this.terminal = [failed, .. terminal];
         current = new(initial, GetTimestamp());
@@ -145,6 +147,18 @@ public sealed class ForeverStateMachine<TState> where TState : struct, Enum
     {
         lock (sync)
             FailLocked(reason);
+    }
+
+    /// <summary>
+    /// Starts the machine afresh in its initial state, from any state, a
+    /// failed or finished one too: how a goal falls back after a failure the
+    /// goal above it absorbed. The current state's exit hook runs first; the
+    /// last failure is kept for the record.
+    /// </summary>
+    public void Reset()
+    {
+        lock (sync)
+            Move(states.GetValueOrDefault(current.State), initial);
     }
 
     private void FailLocked(string reason)

@@ -10,8 +10,9 @@
   // recorded routes give them; "UIMapId" names the map (1411 is Durotar),
   // and a step may name another with its own "UIMapId". Each step is one of:
   //   Travel: walk to "To", through the "Via" points on the way, in order.
-  //           "Pulls": "Any" also takes units in view on the way; "None",
-  //           the default, fights only what attacks.
+  //           "Pulls": "OnTheWay" also takes the units standing on the way,
+  //           "Any" any unit in view; "None", the default, fights only
+  //           what attacks.
   //   Roam:   hunt inside "Area" (two opposite corners, or three or more
   //           corners in order) until "Until" holds: "Kills", "Minutes" or
   //           "Level", whichever comes first. "Pulls": "None" roams without

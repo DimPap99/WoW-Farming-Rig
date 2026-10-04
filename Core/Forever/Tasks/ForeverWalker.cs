@@ -78,6 +78,7 @@ public sealed class ForeverWalker
     private string stallReason = string.Empty;
     private bool arrived;
     private bool skipped;
+    private bool noProgress;
 
     public ForeverWalker(ILogger logger, ForeverNavigator navigator)
     {
@@ -101,18 +102,29 @@ public sealed class ForeverWalker
     public ForeverWalkState State => machine.State;
     public ForeverAllowed Allowed => machine.Allowed;
 
+    /// <summary>
+    /// The walk failed for want of progress over <see cref="GiveUpMs"/>, its
+    /// unstick ladder spent: another walk from where the character stands may
+    /// get through. Any other failure, such as the game losing focus, is not this.
+    /// </summary>
+    public bool NoProgress => noProgress;
+
     /// <summary>What <paramref name="state"/> allows besides its work, as declared.</summary>
     public ForeverAllowed AllowedIn(ForeverWalkState state) => machine.AllowedIn(state);
 
     /// <summary>
     /// Sets off toward <paramref name="to"/>; a walk already under way turns
     /// toward it without stopping, so it flows through a point on the way.
+    /// A failed walk starts afresh.
     /// </summary>
     /// <param name="reach">Within this many yards the destination is reached.</param>
     /// <param name="mayGiveUp">A stall may give this destination up instead of climbing on.</param>
     /// <param name="name">Names the destination in logs and failures.</param>
     public void Begin(Vector2 to, float reach, bool mayGiveUp, string name)
     {
+        if (machine.State == ForeverWalkState.Failed)
+            machine.Reset();
+        noProgress = false;
         destination = to;
         arriveYards = reach;
         canSkip = mayGiveUp;
@@ -228,6 +240,7 @@ public sealed class ForeverWalker
     {
         if (!progress.GaveUp(now))
             return false;
+        noProgress = true;
         machine.Fail($"walking to {label} made no progress for {GiveUpMs / 1000} seconds" +
             (stallReason.Length > 0 ? $": {stallReason}" : string.Empty));
         return true;
@@ -355,6 +368,42 @@ public sealed class ForeverWalker
             budget -= segment;
         }
         return path[last];
+    }
+
+    /// <summary>
+    /// <paramref name="point"/> lies on the way ahead of this walk: within
+    /// <paramref name="yards"/> of the way still to walk over its next
+    /// <paramref name="ahead"/> yards, from where the player stands; before
+    /// the first path comes, of the straight line to the destination.
+    /// </summary>
+    public bool IsOnTheWay(Vector2 here, Vector2 point, float yards, float ahead)
+    {
+        if (path is { Count: > 0 } way)
+            return FromTheWayAhead(way, next, here, point, ahead) <= yards;
+        return destination is { } to && FromTheWayAhead([to], 0, here, point, ahead) <= yards;
+    }
+
+    /// <summary>
+    /// How far <paramref name="point"/> is from the way still to walk on
+    /// <paramref name="path"/>: the legs from <paramref name="here"/> through
+    /// point <paramref name="next"/> onward, over the first
+    /// <paramref name="ahead"/> yards of them.
+    /// </summary>
+    public static float FromTheWayAhead(IReadOnlyList<Vector2> path, int next, Vector2 here, Vector2 point, float ahead)
+    {
+        float best = float.MaxValue;
+        float walked = 0;
+        Vector2 from = here;
+        for (int i = Math.Clamp(next, 0, path.Count - 1); i < path.Count && walked < ahead; i++)
+        {
+            Vector2 leg = path[i] - from;
+            float lengthSquared = leg.LengthSquared();
+            float t = lengthSquared == 0 ? 0 : Math.Clamp(Vector2.Dot(point - from, leg) / lengthSquared, 0, 1);
+            best = Math.Min(best, Vector2.Distance(point, from + leg * t));
+            walked += MathF.Sqrt(lengthSquared);
+            from = path[i];
+        }
+        return best;
     }
 
     /// <summary>How far <paramref name="here"/> is from the path's leg leading to point <paramref name="next"/>.</summary>

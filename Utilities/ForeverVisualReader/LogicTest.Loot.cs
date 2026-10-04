@@ -98,10 +98,10 @@ internal static partial class LogicTest
         check("corpses: bodies are given up after three minutes", !attackers.Any, $"{attackers.Pending.Count}");
 
         // ---- The round ----
-        ForeverLoot Round(ForeverCorpses corpses)
+        ForeverLoot Round(ForeverCorpses corpses, bool skin = false)
         {
             ForeverLoot round = new(NullLogger<ForeverLoot>.Instance, corpses, null!, null!, null!,
-                new CancellationTokenSource<GoapAgent>());
+                new ClassConfiguration { Skin = skin }, new CancellationTokenSource<GoapAgent>());
             round.Begin();
             return round;
         }
@@ -125,31 +125,51 @@ internal static partial class LogicTest
         check("loot: a selected unit is cleared, so the key acts on the soft target",
             loot.Plan(Frame(target: true), inDanger: false).Step == ForeverLootStep.ClearTarget, "");
         ForeverLootPlan plan = loot.Plan(Frame(soft: body), inDanger: false);
-        check("loot: a lootable body under the Interact Key is looted", plan is { Step: ForeverLootStep.Interact, Body: (11, 22) },
+        check("loot: a body under the Interact Key that reads lootable is pressed at once", plan is { Step: ForeverLootStep.Interact, Body: (11, 22) },
             $"{plan.Step}");
-        plan = loot.Plan(Frame(soft: body with { Lootable = false }), inDanger: false);
-        check("loot: otherwise walk to the near end of the body's line",
+        ForeverLoot unread = Round(one);
+        ForeverLootPlan stepFirst = unread.Plan(Frame(soft: body with { Lootable = false }), inDanger: false);
+        typeof(ForeverLoot).GetField("closer", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(unread, false);
+        ForeverLootPlan thenPress = unread.Plan(Frame(soft: body with { Lootable = false }), inDanger: false);
+        check("loot: a body of the fight under the Interact Key that does not read lootable (out of reach, or empty) gets a step closer, then the press",
+            stepFirst is { Step: ForeverLootStep.Approach, Body: (11, 22) } && thenPress is { Step: ForeverLootStep.Interact, Body: (11, 22) },
+            $"{stepFirst.Step} {thenPress.Step}");
+        plan = loot.Plan(Frame(soft: new VisualSoftInteract(33, 44, true, false, 3, true)), inDanger: false);
+        check("loot: otherwise, as for another's body showing no loot, walk to the near end of the body's line",
             plan.Step == ForeverLootStep.Walk && plan.Point == new Vector2(108, 200), $"{plan.Step} {plan.Point}");
         plan = loot.Plan(Frame(x: 108), inDanger: false);
         check("loot: at the near end, on to the far end", plan.Step == ForeverLootStep.Walk && plan.Point == new Vector2(145, 200),
             $"{plan.Step} {plan.Point}");
-        loot.Plan(Frame(x: 145), inDanger: false);
-        plan = loot.Plan(Frame(x: 145), inDanger: false);
-        check("loot: the far end reached with nothing found, the body is given up and the round is done",
-            plan.Step == ForeverLootStep.Done && !one.Any, $"{plan.Step} pending={one.Pending.Count}");
+        // At the far end with nothing found it looks round there (the Interact
+        // Key's soft target takes only what is in front), then gives up.
+        VisualBarSample Facing(double angle) =>
+            Frame(x: 145) with { Position = new(ForeverVerifiedSetup.Durotar, 0.5, 0.5, angle) };
+        ForeverLootStep atEnd = loot.Plan(Frame(x: 145), inDanger: false).Step;
+        ForeverLootStep turning = loot.Plan(Facing(Math.PI / 2), inDanger: false).Step;
+        loot.Plan(Facing(Math.PI), inDanger: false);
+        loot.Plan(Facing(3 * Math.PI / 2), inDanger: false);
+        loot.Plan(Facing(0.01), inDanger: false);
+        plan = loot.Plan(Facing(0.01), inDanger: false);
+        check("loot: at the far end with nothing found it looks round there, then gives the body up and the round is done",
+            atEnd == ForeverLootStep.Search && turning == ForeverLootStep.Search &&
+            plan.Step == ForeverLootStep.Done && !one.Any, $"{atEnd} {turning} {plan.Step} pending={one.Pending.Count}");
+
 
         // After a press: the window opens, Auto Loot empties it, it closes.
         ForeverCorpses two = new();
         two.Observe(Seen(mob, close: true), At(0));
         two.Observe(Seen(death: new(6, 11, 22)), At(0.1));
         ForeverLoot pressed = Round(two);
-        void Pressed(ForeverLoot round)
+        void Pressed(ForeverLoot round, int attempts = 1, double secondsAgo = 0)
         {
             Type type = typeof(ForeverLoot);
             type.GetField("interacting", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(round, ((int, int)?)(11, 22));
             type.GetField("lootBefore", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(round, lootIdle);
-            type.GetField("interacts", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(round, 1);
-            type.GetField("lastInteract", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(round, Stopwatch.GetTimestamp());
+            type.GetField("attempts", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(round, attempts);
+            type.GetField("awaiting", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(round, true);
+            type.GetField("steppedToward", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(round, ((int, int)?)(11, 22));
+            type.GetField("lastInteract", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .SetValue(round, Stopwatch.GetTimestamp() - (long)(secondsAgo * Stopwatch.Frequency));
         }
         Pressed(pressed);
         check("loot: no second press while the first settles", pressed.Plan(Frame(soft: body), inDanger: false).Step == ForeverLootStep.Wait, "");
@@ -162,9 +182,146 @@ internal static partial class LogicTest
             pressed.Plan(Frame(soft: body), inDanger: false).Step == ForeverLootStep.Done,
             $"{pressed.Plan(Frame(soft: body), inDanger: false).Step}");
 
-        ForeverLoot full = Round(new ForeverCorpses());
+        // With the profile's "Skin": the emptied body is skinned before the
+        // round moves on. The press is what Update sends; here it is set.
+        VisualLootState looted = lootIdle with { OpenSequence = 5, CloseSequence = 9, ClearedSequence = 7 };
+        ForeverLoot Skinner()
+        {
+            ForeverCorpses killed = new();
+            killed.Observe(Seen(mob, close: true), At(0));
+            killed.Observe(Seen(death: new(6, 11, 22)), At(0.1));
+            ForeverLoot round = Round(killed, skin: true);
+            Pressed(round);
+            return round;
+        }
+        void SkinPressed(ForeverLoot round, double secondsAgo = 0)
+        {
+            Type type = typeof(ForeverLoot);
+            type.GetField("skinPressed", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(round, true);
+            type.GetField("skinSince", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .SetValue(round, Stopwatch.GetTimestamp() - (long)(secondsAgo * Stopwatch.Frequency));
+        }
+        VisualSoftInteract emptied = body with { Lootable = false };
+        ForeverLoot skinner = Skinner();
+        ForeverLootStep collected = skinner.Plan(Frame(soft: body, loot: looted), inDanger: false).Step;
+        ForeverLootPlan press = skinner.Plan(Frame(soft: emptied, loot: looted), inDanger: false);
+        SkinPressed(skinner);
+        ForeverLootStep casting = skinner.Plan(Frame(soft: emptied, loot: looted), inDanger: false).Step;
+        ForeverLootStep window = skinner.Plan(Frame(soft: emptied, loot: looted with { OpenSequence = 6, IsOpen = true }), inDanger: false).Step;
+        ForeverLootStep after = skinner.Plan(Frame(soft: emptied,
+            loot: looted with { OpenSequence = 6, CloseSequence = 10, ClearedSequence = 8 }), inDanger: false).Step;
+        check("skin: with Skin the emptied body under the Interact Key is pressed again, the cast and its window waited for, then the round goes on",
+            collected == ForeverLootStep.Collected && press is { Step: ForeverLootStep.Skin, Body: (11, 22) } &&
+            casting == ForeverLootStep.Wait && window == ForeverLootStep.Wait && after == ForeverLootStep.Done,
+            $"{collected} {press.Step} {casting} {window} {after}");
+
+        ForeverLoot unskinnable = Skinner();
+        unskinnable.Plan(Frame(soft: body, loot: looted), inDanger: false);
+        ForeverLootStep settling = unskinnable.Plan(Frame(loot: looted), inDanger: false).Step;
+        typeof(ForeverLoot).GetField("skinSince", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(unskinnable, Stopwatch.GetTimestamp() - 2 * Stopwatch.Frequency);
+        ForeverLootStep movedOn = unskinnable.Plan(Frame(loot: looted), inDanger: false).Step;
+        ForeverLoot unskilled = Skinner();
+        unskilled.Plan(Frame(soft: body, loot: looted), inDanger: false);
+        SkinPressed(unskilled, secondsAgo: 7);
+        ForeverLootStep leftAlone = unskilled.Plan(Frame(soft: emptied, loot: looted), inDanger: false).Step;
+        check("skin: a body the Interact Key does not settle on, or a press that starts no skinning, is left and the round goes on",
+            settling == ForeverLootStep.Wait && movedOn == ForeverLootStep.Done && leftAlone == ForeverLootStep.Done,
+            $"{settling} {movedOn} {leftAlone}");
+        check("skin: without the profile's Skin the round is done once the loot is taken",
+            pressed.Plan(Frame(soft: emptied), inDanger: false).Step == ForeverLootStep.Done, "");
+
+        // Trusting the key: a press is answered by a window or a message
+        // within 3 s. "Too far away", or nothing at all, is tried again a
+        // step closer, three presses in all; then the body is given up.
+        VisualSoftInteract outOfReach = body with { Lootable = false };
+        void Set(ForeverLoot round, string field, object value) =>
+            typeof(ForeverLoot).GetField(field, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(round, value);
+        ForeverLoot farRound = Skinner();
+        ForeverLootStep step = farRound.Plan(Frame(soft: outOfReach) with { LastError = new(1, VisualGameError.TooFarAway) },
+            inDanger: false).Step;
+        Set(farRound, "closer", false);
+        ForeverLootStep pressedAgain = farRound.Plan(Frame(soft: outOfReach) with { LastError = new(1, VisualGameError.TooFarAway) },
+            inDanger: false).Step;
+        check("loot: a press that draws \"too far away\" steps closer, then presses again",
+            step == ForeverLootStep.Approach && pressedAgain == ForeverLootStep.Interact, $"{step} {pressedAgain}");
+        ForeverLoot silent = Skinner();
+        Pressed(silent, secondsAgo: 2);
+        ForeverLootStep stillWaiting = silent.Plan(Frame(soft: outOfReach), inDanger: false).Step;
+        Pressed(silent, secondsAgo: 4);
+        ForeverLootStep retried = silent.Plan(Frame(soft: outOfReach), inDanger: false).Step;
+        check("loot: a press nothing answers waits for a Skinning cast's window, then is tried again a step closer",
+            stillWaiting == ForeverLootStep.Wait && retried == ForeverLootStep.Approach, $"{stillWaiting} {retried}");
+        ForeverCorpses Fallen()
+        {
+            ForeverCorpses killed = new();
+            killed.Observe(Seen(mob, close: true), At(0));
+            killed.Observe(Seen(death: new(6, 11, 22)), At(0.1));
+            return killed;
+        }
+        ForeverCorpses spentLedger = Fallen();
+        ForeverLoot spent = Round(spentLedger, skin: true);
+        Pressed(spent, attempts: ForeverLoot.MaxAttempts, secondsAgo: 4);
+        spent.Plan(Frame(soft: outOfReach), inDanger: false);
+        ForeverLootStep gaveUp = spent.Plan(Frame(soft: outOfReach), inDanger: false).Step;
+        check("loot: after three presses, each a step closer, that nothing answered, the body is given up",
+            gaveUp == ForeverLootStep.Done && !spentLedger.Any, $"{gaveUp} pending={spentLedger.Pending.Count}");
+
+        // The game says why: full bags leave every body, by its message or
+        // the bag grid; another's body, or an empty one the skill cannot
+        // skin, is left at once.
+        VisualBagSnapshot Bags(int backpackFree) => (VisualBagSnapshot)Activator.CreateInstance(typeof(VisualBagSnapshot),
+            BindingFlags.NonPublic | BindingFlags.Instance, null,
+            [new VisualBagHeader?[] { new(0, 16, backpackFree, 0), new(1, 8, 2, 1), new(2, 0, 0, 0), new(3, 0, 0, 0), new(4, 0, 0, 0) },
+                new VisualBagSlot?[VisualBagSnapshot.BagCount * VisualBagSnapshot.SlotsPerBag]], null)!;
+        check("loot: the bags are full with no free slot in a bag that takes any item; a quiver's room does not count, an unreadable grid is no proof",
+            ForeverLoot.BagsFull(Frame() with { Bags = Bags(0) }) && !ForeverLoot.BagsFull(Frame() with { Bags = Bags(3) }) &&
+            !ForeverLoot.BagsFull(Frame()), "");
+        ForeverCorpses messaged = Fallen();
+        ForeverLoot noRoom = Round(messaged, skin: true);
+        Pressed(noRoom);
+        noRoom.Plan(Frame(soft: outOfReach) with { LastError = new(1, VisualGameError.InventoryFull) }, inDanger: false);
+        ForeverLootStep afterMessage = noRoom.Plan(Frame(soft: outOfReach), inDanger: false).Step;
+        ForeverCorpses gridded = Fallen();
+        ForeverLootStep byGrid = Round(gridded, skin: true).Plan(Frame(soft: body) with { Bags = Bags(0) }, inDanger: false).Step;
+        check("loot: full bags, by the game's message or the bag grid, leave every body: the one reason to leave them unlooted",
+            afterMessage == ForeverLootStep.Done && !messaged.Any && byGrid == ForeverLootStep.Done && !gridded.Any,
+            $"{afterMessage} {byGrid}");
+        ForeverCorpses notOurs = Fallen();
+        ForeverLoot refused = Round(notOurs, skin: true);
+        Pressed(refused);
+        refused.Plan(Frame(soft: outOfReach) with { LastError = new(1, VisualGameError.LootRefused) }, inDanger: false);
+        ForeverCorpses tooHard = Fallen();
+        ForeverLoot unskilledHide = Round(tooHard, skin: true);
+        Pressed(unskilledHide);
+        unskilledHide.Plan(Frame(soft: outOfReach) with { LastError = new(1, VisualGameError.SkillTooLow) }, inDanger: false);
+        check("loot: a body the game says is not the player's to loot, or empty and beyond the skinning skill, is left at once",
+            !notOurs.Any && !tooHard.Any, $"{notOurs.Pending.Count} {tooHard.Pending.Count}");
+        ForeverCorpses leftOpen = Fallen();
+        ForeverLoot stuckOpen = Round(leftOpen, skin: true);
+        Pressed(stuckOpen);
+        VisualLootState open = lootIdle with { OpenSequence = 5, IsOpen = true, RemainingSlots = 2 };
+        stuckOpen.Plan(Frame(soft: outOfReach, loot: open), inDanger: false);
+        Set(stuckOpen, "windowOpenedAt", Stopwatch.GetTimestamp() - 6 * Stopwatch.Frequency);
+        ForeverLootStep afterOpen = stuckOpen.Plan(Frame(soft: outOfReach, loot: open), inDanger: false).Step;
+        check("loot: a window Auto Loot leaves items in gives that body up, and the round goes on",
+            afterOpen == ForeverLootStep.Wait && !leftOpen.Any, $"{afterOpen} pending={leftOpen.Pending.Count}");
+
+        // A cast between the press and the window: the press skinned a body
+        // with nothing to loot; no second press.
+        ForeverLoot skinnedAtOnce = Skinner();
+        ForeverLootStep took = skinnedAtOnce.Plan(Frame(soft: outOfReach, loot: looted) with { LastCastEvent = new(1, 8613) },
+            inDanger: false).Step;
+        ForeverLootStep afterHide = skinnedAtOnce.Plan(Frame(soft: outOfReach, loot: looted) with { LastCastEvent = new(1, 8613) },
+            inDanger: false).Step;
+        check("loot: a window that followed a cast held the hide: the body is done, with no second press",
+            took == ForeverLootStep.Collected && afterHide == ForeverLootStep.Done, $"{took} {afterHide}");
+
+        ForeverLoot full = Round(new ForeverCorpses(), skin: true);
         Pressed(full);
         plan = full.Plan(Frame(loot: lootIdle with { OpenSequence = 5, CloseSequence = 9, RemainingSlots = 1 }), inDanger: false);
-        check("loot: a window closed with items left stops the run", plan.Step == ForeverLootStep.Failed, $"{plan.Step} {plan.Reason}");
+        ForeverLootStep leftItems = full.Plan(Frame(soft: emptied), inDanger: false).Step;
+        check("loot: a window closed with items left: the round goes on, and the body is not skinned",
+            plan.Step == ForeverLootStep.Collected && leftItems == ForeverLootStep.Done, $"{plan.Step} {leftItems}");
     }
 }

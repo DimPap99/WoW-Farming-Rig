@@ -273,9 +273,14 @@ public readonly record struct VisualBarSample(
 /// </summary>
 public static class VisualBarReader
 {
-    private enum BarColor { White, Yellow, Green, Blue, Red, Cyan }
+    private enum BarColor { Magenta, Yellow, Green, Blue, Red, Cyan }
 
-    /// <summary>The white calibration row is searched for in this top-left window.</summary>
+    /// <summary>
+    /// The "white" row, the add-on's full anchor bar, is searched for in this
+    /// top-left window. It was white; it is drawn magenta since 2026-10-04, as a
+    /// bright sky behind the corner read as a longer white run than the bar.
+    /// The names below still say white.
+    /// </summary>
     public const int SearchWidth = 650;
     public const int SearchHeight = 250;
 
@@ -428,18 +433,22 @@ public static class VisualBarReader
             int x = 0;
             while (x < searchWidth)
             {
-                if (!Matches(pixels[y * width + x], BarColor.White))
+                if (!Matches(pixels[y * width + x], BarColor.Magenta))
                 {
                     x++;
                     continue;
                 }
 
                 int start = x;
-                while (x < searchWidth && Matches(pixels[y * width + x], BarColor.White))
+                while (x < searchWidth && Matches(pixels[y * width + x], BarColor.Magenta))
                     x++;
 
+                // A bright sky or window behind the corner can hold a longer
+                // white run than the bar: only a run with the half-filled
+                // yellow calibration row above it is the reference.
                 int length = x - start;
-                if (length > whiteWidth)
+                if (length > whiteWidth && length >= 100 &&
+                    HasCalibrationAbove(pixels, width, height, start, y, length))
                 {
                     whiteLeft = start;
                     whiteY = y;
@@ -449,6 +458,16 @@ public static class VisualBarReader
         }
 
         return whiteWidth >= 100 && whiteLeft >= 0;
+    }
+
+    // The yellow row a bar step above a white run is half filled, as above the white bar.
+    private static bool HasCalibrationAbove(Bgra32[] pixels, int width, int height,
+        int left, int whiteY, int whiteWidth)
+    {
+        double scale = whiteWidth / ReferenceWidth;
+        double half = RowFill(pixels, width, height, left, whiteY - (int)Math.Round(17 * scale), whiteWidth,
+            Math.Max(2, (int)Math.Round(3 * scale)), BarColor.Yellow);
+        return half is >= 0.45 and <= 0.55;
     }
 
     // Probe layout below the white row, in reference units. Value cells on a
@@ -912,7 +931,7 @@ public static class VisualBarReader
 
     private static bool Matches(Bgra32 pixel, BarColor color) => color switch
     {
-        BarColor.White => pixel.R >= 220 && pixel.G >= 220 && pixel.B >= 220,
+        BarColor.Magenta => pixel.R >= 220 && pixel.G <= 60 && pixel.B >= 220,
         BarColor.Yellow => pixel.R >= 190 && pixel.G >= 190 && pixel.B <= 110,
         BarColor.Green => pixel.G >= 170 && pixel.R <= 110 && pixel.B <= 110,
         BarColor.Blue => pixel.B >= 170 && pixel.R <= 110 && pixel.G <= 130,
