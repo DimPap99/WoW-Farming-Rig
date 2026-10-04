@@ -28,6 +28,10 @@ public sealed class ForeverRoamArea : IForeverTaskRunner
     // This many spots in a row given up, or picks that found none, stop the roam.
     private const int MaxSkipsInARow = 4;
     private const int MaxEmptyPicks = 3;
+    // The start-up check looks for walkable ground at the centre and at this
+    // many points in all, drawn from a fixed seed so the check repeats.
+    private const int GroundProbes = 16;
+    private const int GroundSeed = 1;
 
     private readonly ILogger logger;
     private readonly ForeverRoamAreaTask task;
@@ -119,20 +123,51 @@ public sealed class ForeverRoamArea : IForeverTaskRunner
         navigator.StopPursuit();
     }
 
-    private bool TryResolve(VisualBarSample bars, out string reason)
+    /// <summary>
+    /// Whether <paramref name="task"/> can begin: its area on a verified map of
+    /// the player's continent, with walkable ground inside. The run's start-up
+    /// check asks this before anything moves.
+    /// </summary>
+    public static bool TryCheck(ForeverRoamAreaTask task, VisualBarSample bars, ForeverNavigator navigator,
+        WorldMapAreaDB maps, out string reason)
     {
+        if (!TryResolveArea(task, bars, maps, out ForeverWorldArea area, out reason))
+            return false;
+        Random draws = new(GroundSeed);
+        for (int i = 0; i < GroundProbes; i++)
+        {
+            Vector2 probe = i == 0 ? area.Centre : area.RandomPoint(draws);
+            if (navigator.TrySnapWalkable(bars, probe, out Vector2 ground) && area.Contains(ground))
+                return true;
+        }
+        reason = $"no walkable ground was found inside the {task.Area}";
+        return false;
+    }
+
+    // The area in world yards, on the player's continent.
+    private static bool TryResolveArea(ForeverRoamAreaTask task, VisualBarSample bars, WorldMapAreaDB maps,
+        out ForeverWorldArea area, out string reason)
+    {
+        area = null!;
         if (bars.WorldPosition is not { } world)
         {
             reason = "the player's world position is unreadable";
             return false;
         }
-        if (!task.Area.TryToWorld(maps, out ForeverWorldArea resolved, out int instance, out reason))
+        if (!task.Area.TryToWorld(maps, out area, out int instance, out reason))
             return false;
         if (instance != world.InstanceMapId)
         {
             reason = $"the {task.Area} is on another continent";
             return false;
         }
+        return true;
+    }
+
+    private bool TryResolve(VisualBarSample bars, out string reason)
+    {
+        if (!TryResolveArea(task, bars, maps, out ForeverWorldArea resolved, out reason))
+            return false;
         int seed = task.Seed ?? Random.Shared.Next();
         area = resolved;
         picker = new(resolved, seed);

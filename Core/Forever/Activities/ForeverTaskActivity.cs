@@ -45,6 +45,7 @@ public sealed class ForeverTaskActivity : IForeverActivity
     private readonly WorldMapAreaDB maps;
     private ForeverTask? runnerTask;
     private IForeverTaskRunner? runner;
+    private bool preflightPassed;
 
     public ForeverTaskActivity(ILogger<ForeverTaskActivity> logger, ForeverAgenda agenda,
         ForeverEngageActivity engage, ForeverNavigator navigator, IForeverCombatRoutine combat,
@@ -65,6 +66,35 @@ public sealed class ForeverTaskActivity : IForeverActivity
     public string Status => runner is { } current ? $"{Name}/{current.Status}" : Name;
 
     public bool Wants(in ForeverFacts facts) => true;
+
+    /// <summary>
+    /// Every task the agenda names can begin from this frame: travel points on
+    /// verified maps of the player's continent and on the baked mesh, roam
+    /// areas with walkable ground inside. Checked until it passes once; the
+    /// agenda's tasks do not change.
+    /// </summary>
+    public bool TryPreflight(VisualBarSample bars, out string reason)
+    {
+        reason = string.Empty;
+        if (preflightPassed)
+            return true;
+        foreach (ForeverTask task in agenda.Tasks)
+        {
+            bool ready = task switch
+            {
+                ForeverTravelTask travel => ForeverTravel.TryResolve(travel, bars, navigator, maps, out _, out reason),
+                ForeverRoamAreaTask roam => ForeverRoamArea.TryCheck(roam, bars, navigator, maps, out reason),
+                _ => true,
+            };
+            if (!ready)
+            {
+                reason = $"{task.Name}: {reason}";
+                return false;
+            }
+        }
+        preflightPassed = true;
+        return true;
+    }
 
     public void Enter(VisualBarSample bars, in ForeverFacts facts)
     {
@@ -100,7 +130,10 @@ public sealed class ForeverTaskActivity : IForeverActivity
     {
         if (logger.IsEnabled(LogLevel.Information))
             logger.LogInformation("Forever task done: {Task} ({Progress})", task.Name, agenda.Progress);
+        int laps = agenda.Laps;
         agenda.Advance();
+        if (agenda.Laps != laps && logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("Forever agenda lap {Lap} done; starting over", agenda.Laps);
         StartCurrent(bars, facts);
     }
 

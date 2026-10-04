@@ -63,6 +63,7 @@ bool trialHeal = args.Length == 1 && args[0] == "--trial-heal";
 bool trialJudgement = args.Length == 1 && args[0] == "--trial-judgement";
 bool trialJudgementArmed = args.Length == 1 && args[0] == "--trial-judgement-armed";
 bool bagsView = args.Length == 1 && args[0] == "--bags";
+bool whereView = args.Length is 1 or 2 && args[0] == "--where";
 
 if (args.Length == 2 && args[0] == "--read")
 {
@@ -132,6 +133,37 @@ try
 
     if (trialJudgementArmed)
         return await RunArmedJudgement(screen, tracker, process, cts);
+
+    // Read-only: where the player stands, in the map coordinates route files
+    // use, printed whenever it changes; walk to a stop or a corner and copy it.
+    if (whereView)
+    {
+        int whereSeconds = args.Length == 2 && int.TryParse(args[1], out int askedSeconds)
+            ? Math.Clamp(askedSeconds, 5, 600)
+            : 60;
+        WorldMapAreaDB maps = new(new DataConfig { Root = Path.GetFullPath("Json"), Exp = "forever" });
+        Console.WriteLine($"Printing the player's map position for {whereSeconds} seconds; no game input is sent.");
+        (int Map, double X, double Y)? lastPrinted = null;
+        for (int i = 0; i < whereSeconds * 10; i++)
+        {
+            screen.Update();
+            tracker.Update();
+            if (i % 5 == 0 && tracker.TryGetLatest(out VisualBarSample frame) && frame.Position is { } map)
+            {
+                (int Map, double X, double Y) here = (map.UIMapId, Math.Round(map.MapX * 100, 2), Math.Round(map.MapY * 100, 2));
+                if (here != lastPrinted)
+                {
+                    string zone = maps.TryGet(map.UIMapId, out WorldMapArea area) ? area.AreaName : "an unknown zone";
+                    Console.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                        $"{DateTime.Now:HH:mm:ss}  {zone}, \"UIMapId\": {here.Map}, at [{here.X:0.00}, {here.Y:0.00}], " +
+                        $"facing {map.Direction * 180 / Math.PI:0} degrees"));
+                    lastPrinted = here;
+                }
+            }
+            await Task.Delay(100);
+        }
+        return 0;
+    }
 
     // Read-only: every occupied bag slot's item and count, and each main-bar
     // action's usable state, from one fresh complete frame.

@@ -1,0 +1,28 @@
+{
+  // An example route for the WoW: Forever runtime. Adjust the coordinates
+  // before running it: stand where a stop or a corner should be and read the
+  // position with
+  //   dotnet run --project Utilities/ForeverVisualReader -- --where
+  // then run the route with
+  //   dotnet run --project Utilities/ForeverControllerTrial -- --route durotar_example.json
+  //
+  // Coordinates are the zone map's, 0 to 100, as the game and upstream's
+  // recorded routes give them; "UIMapId" names the map (1411 is Durotar),
+  // and a step may name another with its own "UIMapId". Each step is one of:
+  //   Travel: walk to "To", through the "Via" points on the way, in order.
+  //           "Pulls": "Any" also takes units in view on the way; "None",
+  //           the default, fights only what attacks.
+  //   Roam:   hunt inside "Area" (two opposite corners, or three or more
+  //           corners in order) until "Until" holds: "Kills", "Minutes" or
+  //           "Level", whichever comes first. "Pulls": "None" roams without
+  //           taking units; "Seed" pins the spots it walks between.
+  // "Repeat": true starts over after the last step, until the time bound.
+  "Name": "Durotar example: south of Razor Hill",
+  "UIMapId": 1411,
+  "Steps": [
+    { "Travel": { "To": [52.5, 44.5] } },
+    { "Roam": { "Area": [[51.5, 44.0], [53.5, 46.0]], "Until": { "Kills": 3, "Minutes": 10 } } },
+    { "Travel": { "To": [52.5, 43.0] } }
+  ],
+  "Repeat": false
+}

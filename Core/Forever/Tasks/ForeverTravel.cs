@@ -56,7 +56,7 @@ public sealed class ForeverTravel : IForeverTaskRunner
             return;
         if (legs is null)
         {
-            if (!TryResolve(bars, out string reason))
+            if (!TryResolve(task, bars, navigator, maps, out legs, out string reason))
             {
                 failure = reason;
                 return;
@@ -114,16 +114,20 @@ public sealed class ForeverTravel : IForeverTaskRunner
         walker.Begin(legs[leg].World, final ? ArriveYards : ViaYards, mayGiveUp: !final, legs[leg].Map.ToString());
     }
 
-    // Every point to world yards, once: on a verified map, on the player's
-    // continent and covered by the baked mesh.
-    private bool TryResolve(VisualBarSample bars, out string reason)
+    /// <summary>
+    /// Every point of <paramref name="task"/> in world yards: on a verified
+    /// map, on the player's continent and covered by the baked mesh, or false
+    /// with why. The run's start-up check asks the same before anything moves.
+    /// </summary>
+    public static bool TryResolve(ForeverTravelTask task, VisualBarSample bars, ForeverNavigator navigator,
+        WorldMapAreaDB maps, out List<(Vector2 World, ForeverMapPoint Map)> legs, out string reason)
     {
+        legs = [];
         if (bars.WorldPosition is not { } world)
         {
             reason = "the player's world position is unreadable";
             return false;
         }
-        List<(Vector2, ForeverMapPoint)> resolved = [];
         List<ForeverMapPoint> points = [.. task.Via, task.To];
         foreach (ForeverMapPoint point in points)
         {
@@ -139,9 +143,8 @@ public sealed class ForeverTravel : IForeverTaskRunner
                 reason = $"{point} is outside the baked mesh";
                 return false;
             }
-            resolved.Add((at, point));
+            legs.Add((at, point));
         }
-        legs = resolved;
         reason = string.Empty;
         return true;
     }
