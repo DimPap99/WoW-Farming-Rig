@@ -4,7 +4,9 @@
   // is an action with AfterCastAuraExpected, tracked through its slot icon),
   // Pull holds the openers, used once per target once every buff is up, and
   // Combat is the priority list. Forever requirements may use Health%,
-  // Mana%, TargetHealth% comparisons and Spell:<id>.
+  // Mana%, TargetHealth% comparisons and Spell:<id>. Every action is its key
+  // pressed, never a macro typed into chat: Holy Light lands on the player
+  // through the client's Auto Self Cast, with no target or a hostile one.
   "Loot": true,
   "UseMount": false,
   "Paths": [],
@@ -17,8 +19,6 @@
         "Key": "1",
         "HasCastBar": true,
         "WhenUsable": true,
-        // Explicit self target, whatever the client's auto self-cast setting.
-        "MacroText": "/cast [@player] Holy Light(Rank 1)",
         "InCombat": "true",
         "Requirements": ["Spell:635", "Health% < 70", "Mana% >= 12"]
       },
@@ -29,7 +29,6 @@
         "Key": "1",
         "HasCastBar": true,
         "WhenUsable": true,
-        "MacroText": "/cast [@player] Holy Light(Rank 1)",
         "InCombat": "false",
         "Requirements": ["Spell:635", "Health% < 90", "Mana% >= 12"]
       },

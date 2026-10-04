@@ -180,12 +180,12 @@ Forever-owned code:
 
 - `Core/Forever/` - the guarded runtime: `ForeverGoalFactory` (the session's
   composition root), `ForeverStateMachine` (the declared states, exits, time
-  bounds and release hooks both Forever goals run on), `ForeverCaster` (one
+  bounds, release hooks and allowances both Forever goals run on), `ForeverCaster` (one
   checked keypress per cast),
   `ForeverRotation` (the class profile's Pull, Combat and Adhoc lists),
   `ForeverCorpses` (the bodies of a fight and where they fell), `ForeverLoot`
   (the loot round after it), `ForeverNavigator` (also `IForeverFacing`),
-  `ForeverDragPoint` (where a camera drag may begin),
+  `ForeverHops` (when walking hops), `ForeverDragPoint` (where a camera drag may begin),
   `ForeverTargetPolicy` (which units to fight, which plate next),
   `ForeverTargetSelector`, `ForeverPointAndClick` (aim, confirm, click,
   confirm), `ForeverExclusions` (units set aside for a while),
@@ -251,8 +251,10 @@ everything class-specific and the behaviour is shared:
   its slot and bound, the setup is verified, and a targeted action has a living,
   attackable, non-player target in range. Opening a fight out of combat needs
   70% health and, for mana users only, 60% mana; rage and energy are not gated.
-- A profile `MacroText` is typed as a command, as upstream does. This is how
-  `[@player]` self casts are expressed.
+- Every action is its key pressed. Upstream types a profile `MacroText` as a
+  command; since 2026-10-04 Forever refuses it, since that is typed into chat.
+  A self heal is its key, landing on the player through the client's Auto
+  Self Cast (`/foreverprobe` records `autoSelfCast`).
 - **Next-swing abilities.** An ability that resolves on the next melee swing
   (upstream `AfterCastWaitSwing`, e.g. Raptor Strike) gets its success event
   with the swing. The beta gives such an ability no usable range of its own:
@@ -269,7 +271,8 @@ everything class-specific and the behaviour is shared:
 `Paladin_Forever_Auto.json` encodes the thresholds the Paladin code used to
 hard-wire: Holy Light below 70% in combat and below 90% out of combat, Seal at
 70% health and 25% mana, Judgement as the opener, then melee and Holy Strike.
-`Hunter_Forever_Auto.json` (level 6, no pet) uses the same shared behaviour:
+`Hunter_Forever_Auto.json` (written at level 6 without a pet; the pet joined
+on 2026-10-04, below) uses the same shared behaviour:
 Serpent Sting (refreshed at most every 15 seconds through the upstream
 `Cooldown` field) and Auto Shot at range, then melee and Raptor Strike.
 
@@ -278,8 +281,8 @@ Azeroth and Durotar on Kalimdor (`IsVerifiedMap` pairs each UI map with the
 instance map its world positions report), and the Paladin and Hunter auto
 profiles (`AutoProfileFor`). The controller trial loads the profile verified for
 the logged-in class. A new class or map needs a profile, a live bounded sweep,
-and an entry here. Rogue finishers, DoTs, forms and pets still need channel work
-first; the profile rules refuse them.
+and an entry here. Rogue finishers, DoTs, forms and pet care (Mend Pet needs
+the pet's health) still need channel work first; the profile rules refuse them.
 
 Live results on 2026-10-03, level 6 Troll Hunter in Durotar: one `--auto-run`
 cycle and one `--sweep` each completed with a verified kill and status
@@ -918,8 +921,10 @@ The run is an explicit state machine (`ForeverStateMachine`, since
 then Complete or Failed. The goal's constructor declares every state once: its
 work on a frame, the states it may move to, its hard time bound (Search 45 s,
 Select 8 s, Approach 20 s, Fight 75 s; Select's and Approach's hand over to
-recovery instead of failing) and the hooks that release what it holds, such
-as held movement when pursuit ends. A move the declaration does not allow ends the run
+recovery instead of failing), the hooks that release what it holds, such
+as held movement when pursuit ends, and since 2026-10-04 what it allows besides
+its work (`ForeverAllowed`): a routine several states share, such as walking,
+does only what the current state allows. A move the declaration does not allow ends the run
 instead of acting on a bug; a bound is checked before the state's work on each
 frame. The bounded trial goal runs on the same class. Its checks, together
 with the rotation, preflight and key checks, run offline:
@@ -1168,11 +1173,13 @@ view and clicks one, as a person does:
 
 - **Search.** `ForeverTargetPolicy` decides which units may be fought (an
   attackable, living non-player not tapped by someone else, inside the
-  profile's `NPCMaxLevels_Above`/`NPCMaxLevels_Below` window; the selected
-  unit passes the same rules) and which plate to take: one whose marker is on
-  screen, not set aside, preferring an attacker, then the current target, a
+  profile's `NPCMaxLevels_Above`/`NPCMaxLevels_Below` window and, unless it
+  fights the player, of a kind the profile's `TargetMask` allows; the
+  selected unit passes the same rules) and which plate to take: one whose
+  marker is on screen, not set aside, preferring an attacker, then the current target, a
   unit the camera can see, one an opener reaches, one a Combat spell reaches,
-  then the lowest on screen. In combat only units that fight the player count.
+  then the lowest on screen. In combat only units that fight the player
+  count, set aside or not.
   The rotation's ranges come from one place: `ForeverSlotRanges` is either the
   target's action states or a plate's ranges, and `Reach` gives opener range,
   combat range and too-close-to-open for either. With nothing to take, the
@@ -1282,8 +1289,9 @@ runtime uses it in three places:
 
 The autonomous preflight refuses a panel without the attack state; reload the
 add-on together with the bot. A mob that stops inside the minimum range
-without coming into contact (it cannot reach the player) is not handled yet:
-the Hunter can neither shoot nor swing at it.
+without coming into contact (it cannot reach the player) was not handled
+then: the Hunter could neither shoot nor swing at it. The game's "You are too
+far away!" now makes the fight step in; see "Ported from upstream" below.
 
 Live (level 9 Hunter, Durotar): an `--auto-run` cycle opened with Serpent
 Sting, kept Auto Shot running with Arcane Shot at range and did not press
@@ -1331,8 +1339,9 @@ Looting is now its own phase after the fight, as a person plays:
   where the target and every plate with an identity and a marker are: the
   player's position, the bearing to the unit (`ForeverNavigator.BearingOf`,
   the facing turned by the marker's offset under the 90-degree field of view)
-  and how far it can be (0 to 8 yards when it reads close, else 8 yards to the
-  plate distance, 45). A new death event of a unit seen in the last 10
+  and how far it can be (0 to 8 yards when it reads close, 8 to 28 within the
+  client's follow distance, else 28 yards to the plate distance, 45; the
+  follow distance came with roster version 3, below). A new death event of a unit seen in the last 10
   seconds becomes a body on that line. A kill while something else still
   fights the player sends the run back to Search, which takes attackers only.
 - **Once combat is over, a loot round** (`ForeverLoot`) visits the bodies
@@ -1364,3 +1373,179 @@ closed, a window closed with items left). `--self-test` covers the new block
 at three UI scales, and a scratch run of the committed and working add-on on
 one mocked API kept all 1,838 existing telemetry entries identical. Not yet
 verified live.
+
+### Ported from upstream (2026-10-04)
+
+A comparison with upstream's Classic goals (`PullTargetGoal`,
+`ApproachTargetGoal`, `CombatGoal`, `LootGoal`, `Navigation`, `StuckDetector`,
+`ReactCastError`, `Blacklist`) found the looting design to be upstream's first
+choice already, and its movement and targeting less human than ours: it walks
+with Click-to-Move, turns with timed arrow keys and finds mobs with Tab. Six
+things upstream does were worth taking, and Forever's data allows each:
+
+- **The game's error messages.** `UI_ERROR_MESSAGE` text is readable on this
+  client (the range traces show "Target too close" and "Spell is not ready
+  yet."). `ForeverEvents.lua` latches the messages the runtime reacts to,
+  matched against the client's own global strings as upstream's add-on does,
+  as a sequence and a kind (`VisualGameError`), in three checksummed cells
+  after the loot latch (row 225, cells 26 to 28; `VisualErrorReader`). A new
+  message after a press, with no success event within half a second, ends
+  the wait at once as `ForeverCastResult.Refused`, which leaves casting open
+  and tries that action again after 1.5 seconds. Before, the press waited
+  three to five seconds and then stopped the run. The fight reacts as
+  `ReactCastError` does (`ForeverRotation.ReactionTo`): out of range or "You
+  are too far away!" steps in at once; out of sight before the fight began
+  sets the unit aside, in combat it steps in; anything else is tried again.
+  Melee that is on while the client says "too far away" steps in as well,
+  which handles the Hunter dead zone above. A step holds the fight back until
+  the character moved 3 yards or 3 seconds passed; four in a row on one
+  target give it up as out of reach.
+- **Attacked while approaching another unit.** In combat, when the selected
+  unit's row shows it neither has the player on its threat table nor targets
+  the player, and another eligible plate attacks
+  (`ForeverTargetPolicy.AttackedByAnother`), the approach drops it and Search
+  takes the attacker, as upstream's approach clears a target that is not in
+  combat. Search no longer fights such a passive selection as it is. A unit
+  set aside earlier is still taken once it attacks, as upstream never
+  blacklists what damages the player.
+- **Elites.** Roster version 3 adds each plate's classification, and plates
+  outside the profile's `TargetMask` (upstream's default: normal, trivial and
+  rare) are passed over unless they attack. An unknown classification passes.
+- **Where a body lies.** Version 3 also adds each plate's follow distance
+  (`CheckInteractDistance` 4, 28 yards, which answers in combat), so a ranged
+  kill lies 8 to 28 or 28 to 45 yards out instead of 8 to 45. Upstream places
+  a body at the middle of a range bracket from LibRangeCheck; Forever's
+  bearing is better than upstream's, its distance still coarser.
+- **Looking for an attacker.** In combat with no attacker in view, Search
+  turns at full speed instead of the calm look-around speed.
+- **Hops.** Held movement that made no progress for 1.5 seconds taps the
+  client's jump key once, the first rung of upstream's unstick ladder; three
+  seconds without progress is still a setback. Roaming also hops now and then
+  for no reason, as upstream jumps at random while it walks: every 4 seconds
+  of walking a roll with a one-in-four chance starts one to three hops in a
+  row, each 0.65 to 0.9 seconds after the last, as the character lands
+  (`ForeverHops`). A roaming stretch lasts 8 seconds, so about one in four
+  has a row. Each phase declares which hops it allows: Search snag and idle
+  hops, Approach and Loot snag hops only, the others none, so Fight never
+  hops.
+
+One fix came out of reading `Navigation`: `WalkToward` checked 3 yards
+straight ahead even when its waypoint was closer, so a loot walk whose end lay
+near an edge could stand still until the body's 30 seconds ran out. It now
+checks only as far as the waypoint, as `FollowDetour` already did. Checking
+every move against the declaration found one undeclared: Select went back to
+Search when it had no chosen unit, which cannot happen; it now stops the run
+with that reason.
+
+**No chat commands.** The runtime no longer types anything into chat. A
+target that vanished during a fight was restored with `/targetlasttarget`
+for a death check; the death latch makes that check, so the fight now waits
+1.5 seconds for it and then goes back to Search, which takes whatever fights
+the player by its plate, the same unit included. A profile `MacroText` is
+refused, and the Paladin's Holy Light is its key with Auto Self Cast.
+
+The add-on and the bot must be reloaded together: the reader refuses roster
+version 2. `/foreverprobe` also records `SoftTargetInteractArc` and
+`SoftTargetInteractRange`, how far and how wide the Interact Key looks for a
+body.
+
+Offline, `--logic-test` has 183 checks (the reactions, the step-in window and
+its count, the attacker during approach, elites, the follow-distance band, the
+hops and which phases allow them) and
+`--self-test` covers the error latch and the version 3 rows at three UI
+scales. A scratch run of the committed and working add-on on one mocked API
+kept all 1,825 other telemetry entries identical and decoded the new cells end
+to end, including a protected and a failing classification. None of it is
+verified live yet: whether this client sends "You are too far away!" for melee
+out of reach, and the exact text of its line-of-sight message, show in the
+range trace's `UI_ERROR_MESSAGE` rows.
+
+Not ported:
+
+- Click-to-Move approach and looting, and `/targetlasttarget`: the
+  straight-line movement and chat commands Forever leaves out on purpose.
+- Food and drink between fights: `ForeverCastGate` refuses item slots, and
+  what eating reports on this client (its success event, its buff icon) needs a
+  live probe first.
+- Walking a route and scanning while walking: upstream's generated routes
+  need spawn data Forever does not have.
+- The rest of the unstick ladder (sidestep, back out), a corpse search with
+  the mouse, and preferring mobs that stand alone: worth doing if live runs
+  show the need.
+- LibRangeCheck brackets: DataToColor does not activate the library on
+  Forever, and whether item ranges answer for enemies in combat is unprobed.
+
+### First live run of the ports (2026-10-04)
+
+Level 9 Troll Hunter in Durotar, add-on and bot reloaded together. The
+start-up check passed with roster version 3; the plate rows read live (distance
+bands, classifications) and so did the error latch. One `--auto-run` cycle
+verified a kill, then stopped on "game lost focus during mouse steering": a
+click outside the game while the camera turned, which stops a run by design.
+
+What went wrong, from the range trace:
+
+- **The Hunter never shot.** Auto Shot, Serpent Sting, Arcane Shot and
+  Concussive Shot read unusable for the whole fight while Hunter's Mark and
+  Raptor Strike were usable, though the quiver held 1,400 Sharp Arrows: the
+  ammo slot was empty or the bow missing. The rotation, finding nothing to
+  press at 35 yards, pressed Start Attack, which without a usable shot starts
+  melee, and crept in as the range flickered. Now a spell the client reports
+  unusable for a reason other than mana reaches nothing, so the fight closes in
+  to what it can use, and the start-up check and every new pull stop the run
+  naming the action (`IForeverCombatRoutine.TryAttacksUsable`).
+- **It spun after the kill.** Combat lingered about 17 seconds with nothing
+  attacking, and Search looked round at full speed. Danger is now losing health
+  or an attacker in view while in combat (`ForeverDanger`, upstream's
+  dangercombat from the health bar). Without it, Search stands still and the
+  loot round runs while combat lingers; with damage and no attacker in view it
+  turns round at half speed. Rest goes back to Search when attacked, counting
+  only damage taken since the rest began.
+- **A dead unit was locked again.** The death latch arrived a frame before the
+  target's flags, and Search fought the corpse "as it is". A unit the death
+  latch reported is never taken again (`ForeverTargetPolicy.ReportedDead`).
+
+The client sent "Spell is not ready yet." (61) when Raptor Strike was pressed
+right after its swing, and "You are facing the wrong way!" (282) once; both are
+now refusals tried again. It sent no "You are too far away!" while melee was on
+out of reach, so the melee step-in from that message has not been seen to fire.
+`ForeverVisualReader --bags` prints the bag contents and each main-bar action's
+usable state.
+
+### The Hunter's pet (2026-10-04)
+
+The runtime did not know about the Hunter's pet. The lingering combat in the
+first run was most likely the pet fighting another mob, and nothing sent the
+pet in. A person sends the pet first, shoots, and turns on whatever goes for
+the pet.
+
+- **What the add-on reports.** A checksummed pet block after the roster
+  header (row 245, cells 22 to 25; `VisualPetReader`, `VisualBarSample.Pet`)
+  holds whether the pet exists, is dead and is in combat, the identity hashes
+  of the unit it attacks (`pettarget`; 0 with none or while protected), and its
+  version. Roster version 4 adds an eighth cell to each slot row: whether the
+  plate's unit targets the pet (`VisualNameplate.TargetsPet`).
+- **Defending it.** A unit that targets the pet counts as an attacker
+  (`VisualNameplate.Attacks`). Search takes it in combat, danger counts it,
+  Rest gets up for it, and an approach to a passive unit is dropped for it.
+- **Sending it in.** When the fight can act on its target and a living pet
+  attacks nothing or something else, the client's Pet Attack key
+  (`PETATTACK`, binding grid index 17) is pressed before the opener, then
+  again only while the pet is on another unit, at most every 1.5 seconds. No
+  facing is needed. The press waits while the fight hands the target back for
+  range, so it cannot hold that hand-back off. Upstream's `AutoPetAttack`
+  (default true) turns it off; the start-up check refuses a living pet
+  without a Pet Attack binding.
+
+The Hunter profile follows the live bar: Arcane Shot moved to slot 4 (Hunter's
+Mark is 5 and Concussive Shot 6, neither in the profile). Not done yet: the
+pet's health (Mend Pet), Revive Pet and Call Pet, which wait for a pet health
+channel and those spells on the main bar.
+
+The add-on and the bot must be reloaded together: the reader refuses roster
+version 3. Offline, `--logic-test` has 193 checks (when the pet is sent and
+when not, and the start-up check) and `--self-test` covers the pet block and
+the version 4 rows at three UI scales. A scratch run of the committed and
+working add-on on one mocked API kept all 1,825 other telemetry entries
+identical and decoded the pet and the new cells end to end, including a
+protected pet target and a failing pet query. Not yet verified live.

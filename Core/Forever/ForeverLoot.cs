@@ -14,19 +14,21 @@ namespace Core.Forever;
 
 /// <summary>
 /// How one frame of a loot round ended. <see cref="Collected"/>: a body's
-/// loot was taken and the round goes on. <see cref="InCombat"/>: something
-/// attacks; the bodies stay pending for the next round.
+/// loot was taken and the round goes on. <see cref="Attacked"/>: something
+/// fights the player; the bodies stay pending for the next round.
 /// </summary>
-public enum ForeverLootResult { Waiting, Collected, Done, InCombat, Failed }
+public enum ForeverLootResult { Waiting, Collected, Done, Attacked, Failed }
 
 public interface IForeverLootRoutine
 {
     /// <summary>Starts a round over every body <see cref="ForeverCorpses"/> holds.</summary>
     void Begin();
-    ForeverLootResult Update(VisualBarSample bars, out string reason);
+    /// <param name="inDanger">Something fights the player (<see cref="ForeverDanger"/>);
+    /// combat that merely lingers does not stop the round.</param>
+    ForeverLootResult Update(VisualBarSample bars, bool inDanger, out string reason);
 }
 
-public enum ForeverLootStep { Wait, InCombat, ClearTarget, Interact, Walk, Collected, Done, Failed }
+public enum ForeverLootStep { Wait, Attacked, ClearTarget, Interact, Walk, Collected, Done, Failed }
 
 /// <summary>
 /// What the round does on one frame: the step, the body it is about (its
@@ -100,15 +102,16 @@ public sealed class ForeverLoot : IForeverLootRoutine
     }
 
     /// <summary>The round's next step on <paramref name="bars"/>; it presses nothing.</summary>
-    public ForeverLootPlan Plan(VisualBarSample bars)
+    /// <param name="inDanger">Something fights the player; lingering combat alone goes on looting.</param>
+    public ForeverLootPlan Plan(VisualBarSample bars, bool inDanger)
     {
         if (bars.TargetFlags is not { } flags || bars.Loot is not { } loot ||
             bars.WorldPosition is not { } world)
             return new(ForeverLootStep.Wait);
-        if (flags.PlayerCombat)
+        if (inDanger)
         {
             interacting = null;
-            return new(ForeverLootStep.InCombat);
+            return new(ForeverLootStep.Attacked);
         }
         if (interacting is { } pressed && Window(pressed, loot) is { } window)
             return window;
@@ -158,15 +161,15 @@ public sealed class ForeverLoot : IForeverLootRoutine
             pastNear ? next.Far : next.Near);
     }
 
-    public ForeverLootResult Update(VisualBarSample bars, out string reason)
+    public ForeverLootResult Update(VisualBarSample bars, bool inDanger, out string reason)
     {
         reason = string.Empty;
-        ForeverLootPlan plan = Plan(bars);
+        ForeverLootPlan plan = Plan(bars, inDanger);
         switch (plan.Step)
         {
-            case ForeverLootStep.InCombat:
+            case ForeverLootStep.Attacked:
                 navigator.StopPursuit();
-                return ForeverLootResult.InCombat;
+                return ForeverLootResult.Attacked;
             case ForeverLootStep.ClearTarget:
                 navigator.StopPursuit();
                 selector.ClearTarget(bars);

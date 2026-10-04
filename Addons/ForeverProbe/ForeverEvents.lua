@@ -5,6 +5,7 @@ local E = {
     opened = 0, closed = 0, cleared = 0, initialSlots = 0,
     remaining = 0, isOpen = false, pending = {}, supported = {},
     castSequence = 0, castSpellId = 0, castReadable = true,
+    errorSequence = 0, errorCode = 0,
 }
 ForeverProbeEvents = E
 
@@ -99,10 +100,44 @@ local function castSucceeded(unitFiltered, unit, ...)
     E.castReadable = true
 end
 
+-- The game's error messages the runtime reacts to, by the client's own
+-- global strings, so a message matches in any client language. The codes
+-- are VisualGameError's in the C# reader; several messages share one.
+local ERROR_CODES = {
+    SPELL_FAILED_LINE_OF_SIGHT = 1,
+    ERR_BADATTACKPOS = 2,                       -- "You are too far away!"
+    SPELL_FAILED_OUT_OF_RANGE = 3, ERR_OUT_OF_RANGE = 3,
+    SPELL_FAILED_TOO_CLOSE = 4,
+    ERR_BADATTACKFACING = 5, SPELL_FAILED_UNIT_NOT_INFRONT = 5,
+    SPELL_FAILED_MOVING = 6,
+    ERR_SPELL_COOLDOWN = 7, SPELL_FAILED_NOT_READY = 7, SPELL_FAILED_ITEM_NOT_READY = 7,
+    ERR_SPELL_FAILED_ANOTHER_IN_PROGRESS = 8, SPELL_FAILED_SPELL_IN_PROGRESS = 8,
+    SPELL_FAILED_STUNNED = 9, ERR_ATTACK_STUNNED = 9, ERR_ATTACK_PACIFIED = 9,
+    SPELL_FAILED_PACIFIED = 9, SPELL_FAILED_INTERRUPTED = 9,
+    SPELL_FAILED_TARGETS_DEAD = 10, ERR_INVALID_ATTACK_TARGET = 10, SPELL_FAILED_BAD_TARGETS = 10,
+}
+local errorCodes = {}
+for name, code in pairs(ERROR_CODES) do
+    local text = _G[name]
+    if type(text) == "string" and readable(text) then errorCodes[text] = code end
+end
+
+-- The message is the last argument on every client's event layout.
+local function errorMessage(...)
+    local count = select("#", ...)
+    if count == 0 then return end
+    local message = select(count, ...)
+    if not readable(message) or type(message) ~= "string" then return end
+    local code = errorCodes[message]
+    if not code then return end
+    E.errorSequence = E.errorSequence % 65535 + 1
+    E.errorCode = code
+end
+
 local frame = CreateFrame("Frame")
 for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_TARGET_CHANGED",
     "PLAYER_TARGET_DIED", "PARTY_KILL", "LOOT_OPENED", "LOOT_CLOSED",
-    "LOOT_SLOT_CLEARED" }) do
+    "LOOT_SLOT_CLEARED", "UI_ERROR_MESSAGE" }) do
     E.supported[event] = pcall(frame.RegisterEvent, frame, event)
 end
 local castUnitFiltered = pcall(frame.RegisterUnitEvent, frame,
@@ -114,6 +149,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
     local ok, err = pcall(function(...)
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
             castSucceeded(castUnitFiltered, ...)
+        elseif event == "UI_ERROR_MESSAGE" then
+            errorMessage(...)
         elseif event == "PLAYER_ENTERING_WORLD" then
             ForeverProbeResults = ForeverProbeResults or {}
             ForeverProbeResults.lifecycle = E
@@ -164,6 +201,7 @@ end)
 local castPixels = { 0, 0, 0 }
 local deathPixels = { 0, 0, 0, 0 }
 local lootPixels = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+local errorPixels = { 0, 0, 0 }
 
 -- Sequence, spell ID and checksum, or nil while the latch is unreadable.
 function E.CastPixels()
@@ -172,6 +210,14 @@ function E.CastPixels()
     castPixels[1], castPixels[2] = a, b
     castPixels[3] = (0xA5CC11 - a - b) % 16777216
     return castPixels
+end
+
+-- Sequence and code of the last error message the runtime reacts to, and checksum.
+function E.ErrorPixels()
+    local a, b = E.errorSequence, E.errorCode
+    errorPixels[1], errorPixels[2] = a, b
+    errorPixels[3] = (0xA5E311 - a - b) % 16777216
+    return errorPixels
 end
 
 function E.DeathPixels()

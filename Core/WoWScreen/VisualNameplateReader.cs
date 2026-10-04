@@ -49,14 +49,30 @@ public readonly record struct VisualNameplate(
     public bool? Close { get; init; }
 
     /// <summary>
+    /// The unit is within the client's follow distance
+    /// (<c>CheckInteractDistance</c> 4), 28 yards; null when unknown.
+    /// </summary>
+    public bool? WithinFollowDistance { get; init; }
+
+    /// <summary>The unit's classification, such as normal, rare or elite; null when unknown.</summary>
+    public UnitClassification? Classification { get; init; }
+
+    /// <summary>
     /// The camera cannot see the unit, read from the plate's fade. Unknown for
     /// the target and in combat, whose plates the client keeps opaque.
     /// </summary>
     public bool? Occluded => IsTarget == false && InCombat == false && Alpha is { } alpha
         ? alpha < OccludedAlpha : null;
 
-    /// <summary>The unit fights the player: the player is on its threat table or its target.</summary>
-    public bool Attacks => OnThreatTable == true || TargetsPlayer == true;
+    /// <summary>The unit targets the player's pet, false without a pet; null when unknown.</summary>
+    public bool? TargetsPet { get; init; }
+
+    /// <summary>
+    /// The unit fights the player or the player's pet: the player is on its
+    /// threat table or its target, or the pet is its target. A Hunter defends
+    /// the pet, so a unit fighting it is an attacker like any other.
+    /// </summary>
+    public bool Attacks => OnThreatTable == true || TargetsPlayer == true || TargetsPet == true;
 
     /// <summary>The same unit as <paramref name="identity"/>, by GUID hashes.</summary>
     public bool Is(VisualTargetIdentity identity) =>
@@ -149,14 +165,29 @@ public sealed class VisualNameplateRoster
 /// <summary>
 /// Decodes the add-on's nameplate roster (ForeverNameplates.lua): a header,
 /// then one checksummed row of seven values per slot beside the event latches.
+/// The fifth value packs, from bit 0: targets-player, reaction, threat, alpha,
+/// duel and follow distance, and the classification code; the seventh whether
+/// the unit targets the player's pet.
 /// </summary>
 public static class VisualNameplateReader
 {
     /// <summary>
     /// The roster layout this reader accepts; the add-on writes it in the
-    /// header. 2 added each plate's duel-distance flag.
+    /// header. 2 added each plate's duel-distance flag, 3 its follow
+    /// distance and the unit's classification, 4 whether it targets the pet.
     /// </summary>
-    public const int ProtocolVersion = 2;
+    public const int ProtocolVersion = 4;
+
+    // Values in a slot row before its checksum.
+    private const int RowValues = 7;
+
+    // The add-on's classification codes, 1 to 7; 0 is unknown.
+    private static readonly UnitClassification[] Classifications =
+    [
+        UnitClassification.Normal, UnitClassification.Trivial, UnitClassification.Minus,
+        UnitClassification.Rare, UnitClassification.Elite, UnitClassification.RareElite,
+        UnitClassification.WorldBoss,
+    ];
 
     // Probe rows below the white row, and the first value cell of each row.
     internal const int HeaderRow = 182;
@@ -194,14 +225,14 @@ public static class VisualNameplateReader
         VisualTargetIdentity? target)
     {
         double row = FirstSlotRow + (slot - 1) * SlotRowStep;
-        Span<int> v = stackalloc int[7];
+        Span<int> v = stackalloc int[RowValues + 1];
         int sum = 0;
         for (int i = 0; i < v.Length; i++)
         {
             v[i] = probe.Cell(row, FirstCell + i);
             if (v[i] < 0)
                 return null;
-            if (i < 6)
+            if (i < RowValues)
                 sum += v[i];
         }
 
@@ -214,12 +245,12 @@ public static class VisualNameplateReader
                 return null;
             checksum -= checkedTarget.GuidHash1 + checkedTarget.GuidHash2;
         }
-        if (v[6] != (checksum & 0xFFFFFF))
+        if (v[RowValues] != (checksum & 0xFFFFFF))
             return null;
 
         if (v[0] == 0)
         {
-            return v[1] == 0 && v[2] == 0 && v[3] == 0 && v[4] == 0 && v[5] == 0
+            return v[1] == 0 && v[2] == 0 && v[3] == 0 && v[4] == 0 && v[5] == 0 && v[6] == 0
                 ? Empty(slot) : null;
         }
 
@@ -227,8 +258,9 @@ public static class VisualNameplateReader
         int reaction = (more >> 2) & 15;
         int threat = (more >> 6) & 7;
         int alpha = (more >> 9) & 255;
-        if (v[0] > 65535 || reaction > 8 || threat > 5 || (more >> 19) != 0 ||
-            !ValidTris(flags >> 8, 8) || !ValidTris(more, 1) || !ValidTris(more >> 17, 1) ||
+        int classification = (more >> 21) & 7;
+        if (v[0] > 65535 || reaction > 8 || threat > 5 || v[6] > 2 ||
+            !ValidTris(flags >> 8, 8) || !ValidTris(more, 1) || !ValidTris(more >> 17, 2) ||
             !ValidTris(v[5], 12))
             return null;
 
@@ -243,7 +275,10 @@ public static class VisualNameplateReader
             Alpha: alpha == 0 ? null : (alpha - 1) / 254.0,
             Ranges: new(v[5]))
         {
-            Close = Tri(more >> 17)
+            Close = Tri(more >> 17),
+            WithinFollowDistance = Tri(more >> 19),
+            Classification = classification == 0 ? null : Classifications[classification - 1],
+            TargetsPet = Tri(v[6])
         };
     }
 

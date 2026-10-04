@@ -25,6 +25,8 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private const int ClearTargetRetryMs = 1000;
     // Looking around is a calm scan: this share of full steering speed.
     private const double LookAroundRate = 0.25;
+    // Hit by something out of view, a person turns round briskly to find it.
+    private const double CombatLookAroundRate = 0.5;
     // After a full look-around with nothing to take, walk on this long first.
     private const int RoamMs = 8000;
     // Reach flickers at its edges: the action rows refresh every 0.5 s and
@@ -35,6 +37,9 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     // Combat lingers a moment after the last kill; with no attacker in view
     // the character stands this long before looking for one out of view.
     private const int CombatLingersMs = 3000;
+    // A target that vanished gets this long for its death latch to arrive
+    // before the run searches again.
+    private const int TargetLostMs = 1500;
 
     private readonly ILogger<ForeverAutonomousGoal> logger;
     private readonly ForeverVisualBarTracker tracker;
@@ -49,6 +54,8 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private readonly ForeverStateMachine<Phase> machine;
     private readonly ForeverExclusions exclusions = new();
     private readonly ForeverRecovery recovery = new();
+    // Something fights the player, as opposed to combat that merely lingers.
+    private readonly ForeverDanger danger = new();
     private volatile bool stopped;
     private volatile int completedKills;
     private long lastClearTarget;
@@ -64,9 +71,10 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private VisualTargetIdentity? target;
     private long targetSelectedAt;
     private long targetUnreadableAt;
-    private long targetRestoreAt;
+    private long targetLostAt;
     private long reachLostAt;
     private long lastKillAt;
+    private long restSince;
     private int deathSequenceBefore;
     private volatile int observedDeaths;
     private volatile int completedLoots;
@@ -98,15 +106,17 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         this.config = config;
         token = cts.Token;
 
-        // The whole run: each phase, where it may go next, its hard bound and
-        // what it releases. Bounds that depend on what the phase sees stay in
-        // the phase itself.
+        // The whole run: each phase, where it may go next, its hard bound,
+        // what it releases and what it allows besides its work. Bounds that
+        // depend on what the phase sees stay in the phase itself. Walking hops
+        // when snagged wherever it walks; only roaming hops for no reason.
         machine = new ForeverStateMachine<Phase>(logger, "Forever controller",
                 Phase.Start, Phase.Failed, Phase.Complete)
             .On(Phase.Start, Start, exits: [Phase.Search])
             .On(Phase.Search, Search, exits: [Phase.Select, Phase.Fight, Phase.Loot, Phase.Complete],
                 timeoutMs: 45000, onTimeout: "no safe target found within acquisition time",
-                enter: ResetLookAround, exit: navigator.StopPursuit)
+                enter: ResetLookAround, exit: navigator.StopPursuit,
+                allows: ForeverAllowed.SnagHop | ForeverAllowed.IdleHops)
             .On(Phase.Select, Select, exits: [Phase.Approach, Phase.Recover],
                 timeoutMs: 8000, onTimeout: "selecting the chosen unit did not finish",
                 timedOut: reason => SetBack(ForeverSetback.SelectFailed, reason),
@@ -114,21 +124,21 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             .On(Phase.Approach, Approach, exits: [Phase.Fight, Phase.Search, Phase.Loot, Phase.Rest, Phase.Recover],
                 timeoutMs: 20000, onTimeout: "target did not enter spell range within local pursuit bound",
                 timedOut: reason => SetBack(ForeverSetback.OutOfReach, reason),
-                exit: navigator.StopPursuit)
-            .On(Phase.Fight, Fight, exits: [Phase.Approach, Phase.Search, Phase.Loot, Phase.Rest],
+                exit: navigator.StopPursuit, allows: ForeverAllowed.SnagHop)
+            .On(Phase.Fight, Fight, exits: [Phase.Approach, Phase.Search, Phase.Loot, Phase.Rest, Phase.Recover],
                 timeoutMs: 75000, onTimeout: "fight did not end within the combat bound",
                 // Both entries, from pursuit and from aggro, start with no
-                // pending restore, unreadable-identity or lost-reach window from earlier.
+                // lost-target, unreadable-identity or lost-reach window from earlier.
                 enter: () =>
                 {
-                    targetRestoreAt = 0;
+                    targetLostAt = 0;
                     targetUnreadableAt = 0;
                     reachLostAt = 0;
                 })
             .On(Phase.Loot, Loot, exits: [Phase.Rest, Phase.Search],
                 timeoutMs: 120000, onTimeout: "the loot round did not finish",
-                timedOut: LootTimedOut, exit: navigator.StopPursuit)
-            .On(Phase.Rest, Rest, exits: [Phase.Search, Phase.Complete])
+                timedOut: LootTimedOut, exit: navigator.StopPursuit, allows: ForeverAllowed.SnagHop)
+            .On(Phase.Rest, Rest, exits: [Phase.Search, Phase.Complete], enter: () => restSince = GetTimestamp())
             .On(Phase.Recover, Recover, exits: [Phase.Search], enter: navigator.StopPursuit)
             .On(Phase.Failed, enter: navigator.StopPursuit);
     }
@@ -239,6 +249,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             frameInCombat = flags.PlayerCombat;
             // Where every unit in view is, so a body can be found once the fight is over.
             corpses.Observe(bars);
+            danger.Observe(bars, GetTimestamp());
             Phase phase = machine.State;
             if (phase is Phase.Approach or Phase.Fight && target is { } killed &&
                 (bars.LastDeathEvent is { } death && death.Confirms(killed, deathSequenceBefore) ||
@@ -262,6 +273,8 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 return;
             }
 
+            // Shared routines such as walking do only what this phase allows.
+            navigator.Allowed = machine.Allowed;
             machine.Tick(bars);
         }
         catch (Exception ex)
@@ -288,16 +301,26 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private void Search(VisualBarSample bars)
     {
         bool inCombat = bars.TargetFlags!.Value.PlayerCombat;
-        // The fight is over: its bodies are looted before the next one.
-        if (!inCombat && config.Loot && corpses.Any)
+        long now = GetTimestamp();
+        // The fight is over, or nothing fights the player while combat
+        // lingers: its bodies are looted before the next one.
+        if (!danger.InDanger(bars, now) && config.Loot && corpses.Any)
         {
             BeginLoot(bars);
             return;
         }
+        // Before the next pull: an attack the client cannot use, such as a
+        // shot without ammo, stops the run with why.
+        if (!inCombat && !combat.TryAttacksUsable(bars, out string unusable))
+        {
+            machine.Fail(unusable);
+            return;
+        }
         // Aggro can begin before our first cast: a selected unit in reach is
-        // fought as it is, without a click.
+        // fought as it is, without a click, unless something else attacks
+        // while it does not.
         if (inCombat && ForeverTargetPolicy.TryEligibleTarget(bars, config, out VisualTargetIdentity selected) &&
-            combat.InRange(bars, selected))
+            combat.InRange(bars, selected) && !ForeverTargetPolicy.AttackedByAnother(bars, config))
         {
             Lock(bars, selected);
             machine.Go(Phase.Fight);
@@ -320,10 +343,19 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             navigator.StopPursuit();
             return;
         }
+        // Combat lingers but nothing hits the player: a person waits for it to
+        // drop rather than spin round for an attacker that is not there.
+        if (inCombat && !danger.TakingDamage(now))
+        {
+            navigator.StopPursuit();
+            ResetLookAround();
+            return;
+        }
 
         if (!LookedAround(bars))
         {
-            if (navigator.TurnInPlace(bars, LookAroundRate, out string turnReason) == ForeverNavigationResult.Failed)
+            if (navigator.TurnInPlace(bars, inCombat ? CombatLookAroundRate : LookAroundRate,
+                    out string turnReason) == ForeverNavigationResult.Failed)
                 machine.Fail(turnReason);
             return;
         }
@@ -361,9 +393,10 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
 
     private void Select(VisualBarSample bars)
     {
+        // Search always names the candidate before it moves here.
         if (candidate is not { } chosen)
         {
-            machine.Go(Phase.Search);
+            machine.Fail("selecting without a chosen unit");
             return;
         }
         string reason;
@@ -406,6 +439,16 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             }
             return;
         }
+        // Hit by another unit on the way: take the attacker, as a person
+        // turns on what hits them instead of pulling a second mob.
+        if (ForeverTargetPolicy.AttackedByAnother(bars, config))
+        {
+            if (logger.IsEnabled(LogLevel.Information))
+                logger.LogInformation("Forever attacked while approaching another unit; taking the attacker");
+            target = null;
+            machine.Go(Phase.Search);
+            return;
+        }
         if (combat.InRange(bars, selected))
         {
             machine.Go(Phase.Fight);
@@ -441,20 +484,26 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private void Fight(VisualBarSample bars)
     {
         VisualTargetFlags flags = bars.TargetFlags!.Value;
+        // The target vanished: the client cleared it or the unit left. Its
+        // death latch may still be on its way (Update handles a death); past
+        // that a person looks for whatever fights them, and Search takes the
+        // attackers by their plates, this unit too if it still fights.
         if (!flags.Present)
         {
             navigator.StopPursuit();
-            if (targetRestoreAt == 0)
+            if (targetLostAt == 0)
+                targetLostAt = GetTimestamp();
+            else if (GetElapsedTime(targetLostAt).TotalMilliseconds > TargetLostMs)
             {
-                targetRestoreAt = GetTimestamp();
-                selector.RestoreLastTarget();
+                if (logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation("Forever target vanished without a death; searching again");
+                target = null;
+                machine.Go(Phase.Search);
             }
-            else if (GetElapsedTime(targetRestoreAt).TotalMilliseconds > 3000)
-                machine.Fail("selected target disappeared and could not be restored for the death check");
             return;
         }
         // The target is back; the next disappearance gets a fresh window.
-        targetRestoreAt = 0;
+        targetLostAt = 0;
         if (bars.TargetIdentity is null)
         {
             targetUnreadableAt = targetUnreadableAt == 0 ? GetTimestamp() : targetUnreadableAt;
@@ -481,6 +530,14 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 if (GetElapsedTime(reachLostAt).TotalMilliseconds >= ReachLostMs)
                     machine.Go(Phase.Approach);
                 return;
+            // The game refused the target's reach: a refusal is no flickering
+            // range edge, so close in at once.
+            case ForeverCombatResult.StepIn:
+                machine.Go(Phase.Approach);
+                return;
+            case ForeverCombatResult.Unreachable:
+                SetBack(ForeverSetback.OutOfReach, reason);
+                return;
             case ForeverCombatResult.TargetDead:
                 TargetDied(bars);
                 return;
@@ -494,7 +551,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     // the run back to fighting, and the bodies wait for the next round.
     private void Loot(VisualBarSample bars)
     {
-        switch (loot.Update(bars, out string reason))
+        switch (loot.Update(bars, danger.InDanger(bars, GetTimestamp()), out string reason))
         {
             case ForeverLootResult.Collected:
                 completedLoots++;
@@ -504,7 +561,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             case ForeverLootResult.Done:
                 machine.Go(Phase.Rest);
                 break;
-            case ForeverLootResult.InCombat:
+            case ForeverLootResult.Attacked:
                 machine.Go(Phase.Search);
                 break;
             case ForeverLootResult.Failed:
@@ -543,6 +600,13 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private void Rest(VisualBarSample bars)
     {
         VisualTargetFlags flags = bars.TargetFlags!.Value;
+        // Attacked while resting: back to fighting, where Search takes the
+        // attacker. Damage from before the rest began does not count.
+        if (flags.PlayerCombat && (ForeverDanger.AttackerInView(bars) || danger.DamagedSince(restSince)))
+        {
+            machine.Go(Phase.Search);
+            return;
+        }
         if (flags.Present)
         {
             if (!flags.Dead)

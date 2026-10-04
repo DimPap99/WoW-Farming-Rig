@@ -8,13 +8,22 @@ using SharedLib;
 
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using System.Threading;
 
 using static System.Diagnostics.Stopwatch;
 
 namespace Core.Forever;
 
-public enum ForeverCombatResult { Waiting, ActionSent, NeedRange, TargetDead, Failed }
+/// <summary>
+/// One frame of the fight. <see cref="StepIn"/>: the game refused the
+/// target's reach; close in now. <see cref="Unreachable"/>: refused again and
+/// again, or out of sight before the fight began; the unit is given up.
+/// </summary>
+public enum ForeverCombatResult { Waiting, ActionSent, NeedRange, TargetDead, Failed, StepIn, Unreachable }
+
+/// <summary>What the fight does about a press the game refused with an error message.</summary>
+public enum ForeverRefusal { Retry, StepIn, GiveUp }
 
 /// <summary>
 /// Each main-bar slot's range to one unit: the current target's action states,
@@ -76,6 +85,11 @@ public interface IForeverCombatRoutine
 {
     /// <summary>Every profile action is on its slot and bound, so the routine can run.</summary>
     bool TryPreflight(VisualBarSample bars, out string reason);
+    /// <summary>
+    /// The profile's attacks are usable, or lack only mana; false, with
+    /// which and why, when the client reports one unusable for another reason.
+    /// </summary>
+    bool TryAttacksUsable(VisualBarSample bars, out string reason);
     /// <summary>Whether the fight can act on <paramref name="identity"/> from here.</summary>
     bool InRange(VisualBarSample bars, VisualTargetIdentity identity);
     /// <summary>How the profile's spells reach the unit whose slot ranges are <paramref name="ranges"/>.</summary>
@@ -91,7 +105,7 @@ public interface IForeverCombatRoutine
         VisualTargetIdentity identity, out string reason);
 }
 
-public enum ForeverFightStep { Wait, NeedRange, Pull, StartAttack, Combat }
+public enum ForeverFightStep { Wait, NeedRange, Pull, StartAttack, Combat, PetAttack }
 
 /// <summary>What the fight does on one frame, and with which profile action.</summary>
 public readonly record struct ForeverFightPlan(ForeverFightStep Step, KeyAction? Action = null);
@@ -118,6 +132,14 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     private const int MissingBuffMs = 60000;
     // Start attack waits this long between presses, for the attack state to follow.
     private const int StartAttackRetryMs = 1000;
+    // Pet Attack waits this long between presses, for the pet's target to follow.
+    private const int PetAttackRetryMs = 1500;
+    // A refused reach holds the fight back until the character has stepped
+    // this far toward the target, or this long has passed.
+    private const float StepInYards = 3;
+    private const int StepInMs = 3000;
+    // Refused this many times in a row, the target counts as unreachable.
+    private const int MaxReachRefusals = 4;
 
     private readonly ILogger<ForeverRotation> logger;
     private readonly ForeverCaster caster;
@@ -131,9 +153,17 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     private readonly HashSet<KeyAction> usedPulls = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<string> unreadableRequirements = [];
     private long lastStartAttack;
+    private long lastPetAttack;
     private long auraUnreadableSince;
     private long buffMissingSince;
     private VisualTargetIdentity? target;
+    // The last refused reach: the unit, where the player stood, when.
+    private VisualTargetIdentity? refusedTarget;
+    private Vector2? refusedFrom;
+    private long refusedAt;
+    private int reachRefusals;
+    // The last error message the fight has seen.
+    private int seenErrorSequence;
 
     public ForeverRotation(ILogger<ForeverRotation> logger, ForeverCaster caster,
         ConfigurableInput input, IForeverFacing facing, ClassConfiguration config, SpellDB spells,
@@ -177,9 +207,57 @@ public sealed class ForeverRotation : IForeverCombatRoutine
                 return false;
             }
         }
+        if (config.AutoPetAttack && bars.Pet is { Active: true } &&
+            !ForeverBindings.PetAttack.IsBoundIn(bars))
+        {
+            reason = "Pet Attack has no key binding; bind it in the client's Key Bindings, " +
+                $"or set {nameof(ClassConfiguration.AutoPetAttack)} to false in the profile";
+            return false;
+        }
+        return TryAttacksUsable(bars, out reason);
+    }
+
+    /// <summary>
+    /// The client reports every Combat action, and every opener while the
+    /// buffs it waits for are up, usable or short only of mana. Unusable for
+    /// another reason means something the attack needs is missing, such as
+    /// ammo in the ammo slot or a ranged weapon: a person stops to fix that
+    /// rather than fight without it, so the run stops before the next pull.
+    /// </summary>
+    public bool TryAttacksUsable(VisualBarSample bars, out string reason)
+    {
+        bool openersCount = BuffsUp(bars, inCombat: false);
+        foreach (KeyAction action in config.Combat.Sequence)
+        {
+            if (Unusable(bars, action))
+                return Refuse(action, out reason);
+        }
+        if (openersCount)
+        {
+            foreach (KeyAction action in config.Pull.Sequence)
+            {
+                if (Unusable(bars, action))
+                    return Refuse(action, out reason);
+            }
+        }
         reason = string.Empty;
         return true;
+
+        static bool Refuse(KeyAction action, out string reason)
+        {
+            reason = $"{action.Name} on slot {action.Slot} is not usable, and not for lack of mana: " +
+                "something it needs is missing, such as ammo in the ammo slot or a ranged weapon";
+            return false;
+        }
     }
+
+    // The client reports the action on its slot unusable, and not for lack of
+    // mana or power. A slot without the action is the preflight's to refuse.
+    private static bool Unusable(VisualBarSample bars, KeyAction action) =>
+        !action.BaseAction &&
+        bars.ActionBar?.GetSlot(action.Slot) is { Kind: VisualActionKind.Spell, Id: var placed } &&
+        (action.SpellId == 0 || placed == action.SpellId) &&
+        bars.ActionStates?.GetSlot(action.Slot) is { Usable: false, NoMana: false };
 
     public ForeverCombatResult Update(VisualBarSample bars,
         VisualTargetIdentity identity, out string reason)
@@ -202,6 +280,16 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         {
             target = identity;
             usedPulls.Clear();
+            reachRefusals = 0;
+            // Messages from before this target are history.
+            seenErrorSequence = bars.LastError?.Sequence ?? 0;
+        }
+        // Melee is on but cannot reach: the client says "You are too far away!".
+        if (bars.LastError is { } error && error.Sequence != seenErrorSequence)
+        {
+            seenErrorSequence = error.Sequence;
+            if (error.Error == VisualGameError.TooFarAway && bars.Attack?.Melee == true)
+                return RefuseReach(bars, identity, out reason);
         }
 
         // Attacking and facing go together: the target is turned toward on
@@ -216,7 +304,7 @@ public sealed class ForeverRotation : IForeverCombatRoutine
             case ForeverFightStep.NeedRange:
                 return ForeverCombatResult.NeedRange;
             case ForeverFightStep.Pull:
-                ForeverCombatResult pulled = Cast(plan.Action!, out reason);
+                ForeverCombatResult pulled = Cast(plan.Action!, bars, identity, out reason);
                 if (pulled == ForeverCombatResult.ActionSent)
                     usedPulls.Add(plan.Action!);
                 return pulled;
@@ -230,27 +318,88 @@ public sealed class ForeverRotation : IForeverCombatRoutine
                 input.PressRandom(startAttack, token);
                 lastStartAttack = GetTimestamp();
                 return ForeverCombatResult.ActionSent;
+            case ForeverFightStep.PetAttack:
+                if (!ForeverBindings.PetAttack.TryGetKeyAction(bars, "Forever Pet Attack",
+                        out KeyAction petAttack))
+                {
+                    reason = "pet attack binding changed";
+                    return ForeverCombatResult.Failed;
+                }
+                input.PressRandom(petAttack, token);
+                lastPetAttack = GetTimestamp();
+                return ForeverCombatResult.ActionSent;
             case ForeverFightStep.Combat:
-                return Cast(plan.Action!, out reason);
+                return Cast(plan.Action!, bars, identity, out reason);
             default:
                 return ForeverCombatResult.Waiting;
         }
     }
 
     /// <summary>
-    /// The fight's next step against <paramref name="identity"/>: an opener
-    /// first, each once per target and only with every buff up; then the
-    /// Combat list in priority order, where <c>AutoAttack</c> starts the
-    /// attack that fits the distance whenever the attack state asks for it.
+    /// What the fight does about a press the game refused with
+    /// <paramref name="error"/>, as upstream reacts to the same messages: out
+    /// of range or melee reach it steps in; out of sight before the fight
+    /// began it gives the unit up, as upstream clears such a target, and in
+    /// combat it steps in instead, since that unit fights on. Anything else,
+    /// such as not ready or too close, is tried again.
+    /// </summary>
+    public static ForeverRefusal ReactionTo(VisualGameError error, bool inCombat) => error switch
+    {
+        VisualGameError.LineOfSight => inCombat ? ForeverRefusal.StepIn : ForeverRefusal.GiveUp,
+        VisualGameError.OutOfRange or VisualGameError.TooFarAway => ForeverRefusal.StepIn,
+        _ => ForeverRefusal.Retry,
+    };
+
+    // The game refused the target's reach: the fight holds back until the
+    // character stepped toward it. A refusal while one is still open
+    // renews it without counting; too many in a row give the unit up.
+    private ForeverCombatResult RefuseReach(VisualBarSample bars, VisualTargetIdentity identity,
+        out string reason)
+    {
+        reason = string.Empty;
+        if (!ReachRefused(bars, identity) && ++reachRefusals >= MaxReachRefusals)
+        {
+            reachRefusals = 0;
+            refusedAt = 0;
+            reason = $"the game refused the target's reach {MaxReachRefusals} times";
+            return ForeverCombatResult.Unreachable;
+        }
+        refusedTarget = identity;
+        refusedAt = GetTimestamp();
+        refusedFrom = bars.WorldPosition is { } world ? new((float)world.X, (float)world.Y) : null;
+        return ForeverCombatResult.StepIn;
+    }
+
+    // The game refused the target's reach a moment ago, and the character
+    // has not yet stepped toward it.
+    private bool ReachRefused(VisualBarSample bars, VisualTargetIdentity identity) =>
+        refusedAt != 0 && refusedTarget == identity &&
+        GetElapsedTime(refusedAt).TotalMilliseconds < StepInMs &&
+        !(refusedFrom is { } from && bars.WorldPosition is { } world &&
+          Vector2.Distance(new((float)world.X, (float)world.Y), from) >= StepInYards);
+
+    /// <summary>
+    /// The fight's next step against <paramref name="identity"/>: the pet
+    /// sent in first, whenever it attacks something else; an opener next,
+    /// each once per target and only with every buff up; then the Combat
+    /// list in priority order, where <c>AutoAttack</c> starts the attack that
+    /// fits the distance whenever the attack state asks for it.
     /// </summary>
     public ForeverFightPlan Plan(VisualBarSample bars, VisualTargetIdentity identity)
     {
+        if (ReachRefused(bars, identity))
+            return new(ForeverFightStep.NeedRange);
         ForeverSlotRanges ranges = ForeverSlotRanges.Target(bars);
         bool combatRange = AnyInRange(bars, config.Combat.Sequence, ranges);
-        if (NextPull(bars, identity) is { } pull)
-            return new(ForeverFightStep.Pull, pull);
-        if (!combatRange)
+        KeyAction? pull = NextPull(bars, identity);
+        // Out of reach the fight hands the target back for range, and the pet
+        // waits too: a press here would hold that hand-back off.
+        if (pull is null && !combatRange)
             return new(ForeverFightStep.NeedRange);
+        if (SendsPet(bars, identity))
+            return new(ForeverFightStep.PetAttack);
+        if (pull is not null)
+            return new(ForeverFightStep.Pull, pull);
 
         foreach (KeyAction action in config.Combat.Sequence)
         {
@@ -279,6 +428,15 @@ public sealed class ForeverRotation : IForeverCombatRoutine
         (!attack.AutoRepeat || attack.TargetClose == true) &&
         GetElapsedTime(lastStartAttack).TotalMilliseconds >= StartAttackRetryMs;
 
+    // Pet Attack sends a living pet at the target while it attacks nothing or
+    // something else, as upstream does; between presses its target has time
+    // to follow. No facing needed: a person sends the pet while turning.
+    private bool SendsPet(VisualBarSample bars, VisualTargetIdentity identity) =>
+        config.AutoPetAttack &&
+        bars.Pet is { Active: true } pet && !pet.Attacks(identity) &&
+        ForeverBindings.PetAttack.IsBoundIn(bars) &&
+        GetElapsedTime(lastPetAttack).TotalMilliseconds >= PetAttackRetryMs;
+
     // A next-swing ability pressed and waiting for its swing shows as current
     // on its slot; pressing it again would only repeat the request.
     private static bool Queued(VisualBarSample bars, KeyAction action) =>
@@ -286,10 +444,11 @@ public sealed class ForeverRotation : IForeverCombatRoutine
 
     // An opener counts only while it can actually be pressed. Otherwise
     // pursuit hands the target to the fight, the fight hands it back for
-    // range, and neither ever moves the character closer.
+    // range, and neither ever moves the character closer. A reach the game
+    // just refused does not count until the character stepped in.
     public bool InRange(VisualBarSample bars, VisualTargetIdentity identity) =>
-        AnyInRange(bars, config.Combat.Sequence) ||
-        NextPull(bars, identity) is not null;
+        !ReachRefused(bars, identity) &&
+        (AnyInRange(bars, config.Combat.Sequence) || NextPull(bars, identity) is not null);
 
     public ForeverReach Reach(VisualBarSample bars, ForeverSlotRanges ranges)
     {
@@ -384,7 +543,10 @@ public sealed class ForeverRotation : IForeverCombatRoutine
     /// <summary>
     /// Any spell of <paramref name="actions"/> whose slot has a range to the
     /// current target reports it in range. Readiness is not required, so a
-    /// cooldown never sends the fight back to pursuit.
+    /// cooldown never sends the fight back to pursuit. A spell the client
+    /// reports unusable for a reason other than mana, such as a shot without
+    /// ammo, reaches nothing: the fight closes in to what it can still use
+    /// rather than stand at range and start a melee attack there.
     /// </summary>
     public static bool AnyInRange(VisualBarSample bars, ReadOnlySpan<KeyAction> actions) =>
         AnyInRange(bars, actions, ForeverSlotRanges.Target(bars));
@@ -399,6 +561,7 @@ public sealed class ForeverRotation : IForeverCombatRoutine
                 bars.ActionBar?.GetSlot(action.Slot) is
                     { Kind: VisualActionKind.Spell, Id: var placed } &&
                 (action.SpellId == 0 || placed == action.SpellId) &&
+                !Unusable(bars, action) &&
                 RangeCounts(action, ranges) &&
                 ranges.InRange(action.Slot) == true)
                 return true;
@@ -489,15 +652,32 @@ public sealed class ForeverRotation : IForeverCombatRoutine
 
     private bool Cancelled() => token.IsCancellationRequested;
 
-    private ForeverCombatResult Cast(KeyAction action, out string reason)
+    private ForeverCombatResult Cast(KeyAction action, VisualBarSample bars, VisualTargetIdentity identity,
+        out string reason)
     {
         ForeverCastResult result = caster.TryCast(action, Cancelled, whileWaiting: faceWhileWaiting);
         reason = result == ForeverCastResult.Failed ? $"{action.Name} success was not confirmed" : string.Empty;
-        return result switch
+        switch (result)
         {
-            ForeverCastResult.Succeeded or ForeverCastResult.Queued => ForeverCombatResult.ActionSent,
-            ForeverCastResult.Failed => ForeverCombatResult.Failed,
-            _ => ForeverCombatResult.Waiting,
-        };
+            case ForeverCastResult.Succeeded or ForeverCastResult.Queued:
+                reachRefusals = 0;
+                return ForeverCombatResult.ActionSent;
+            case ForeverCastResult.Failed:
+                return ForeverCombatResult.Failed;
+            case ForeverCastResult.Refused:
+                // The fight has seen this message; the next update does not take it again.
+                seenErrorSequence = caster.LastRefusal.Sequence;
+                switch (ReactionTo(caster.LastRefusal.Error, bars.TargetFlags is { PlayerCombat: true }))
+                {
+                    case ForeverRefusal.StepIn:
+                        return RefuseReach(bars, identity, out reason);
+                    case ForeverRefusal.GiveUp:
+                        reason = $"{action.Name} was refused: the target is out of sight";
+                        return ForeverCombatResult.Unreachable;
+                }
+                return ForeverCombatResult.Waiting;
+            default:
+                return ForeverCombatResult.Waiting;
+        }
     }
 }

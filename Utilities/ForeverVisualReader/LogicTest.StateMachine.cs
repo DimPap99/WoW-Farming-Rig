@@ -86,6 +86,21 @@ internal static partial class LogicTest
         check("machine: a handler that does not move still fails the run",
             handing.State == Step.Failed && handing.LastFailure == "slow walk", $"{handing.State} '{handing.LastFailure}'");
 
+        // What a state allows besides its work is declared with it.
+        ForeverStateMachine<Step> allowing = new ForeverStateMachine<Step>(NullLogger.Instance, "test",
+                Step.Start, Step.Failed, Step.Done)
+            .On(Step.Start, _ => { }, exits: [Step.Walk])
+            .On(Step.Walk, _ => { }, exits: [Step.Fight], allows: ForeverAllowed.SnagHop | ForeverAllowed.IdleHops)
+            .On(Step.Fight, _ => { }, exits: [Step.Done]);
+        bool startAllowsNothing = allowing.Allowed == ForeverAllowed.None;
+        allowing.Go(Step.Walk);
+        bool walkAllows = allowing.Allowed == (ForeverAllowed.SnagHop | ForeverAllowed.IdleHops);
+        allowing.Go(Step.Fight);
+        check("machine: a state allows what it declares, and nothing once left",
+            startAllowsNothing && walkAllows && allowing.Allowed == ForeverAllowed.None &&
+            allowing.AllowedIn(Step.Walk) == (ForeverAllowed.SnagHop | ForeverAllowed.IdleHops) &&
+            allowing.AllowedIn(Step.Done) == ForeverAllowed.None, $"{allowing.Allowed}");
+
         bool threw = false;
         try
         {

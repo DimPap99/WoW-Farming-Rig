@@ -16,15 +16,12 @@ namespace Core.Forever;
 public sealed class ForeverTargetSelector
 {
     private readonly ConfigurableInput input;
-    private readonly ExecGameCommand command;
     private readonly ForeverPointAndClick click;
     private readonly KeyAction? profileClearTarget;
 
-    public ForeverTargetSelector(ConfigurableInput input,
-        ExecGameCommand command, IMousePointer pointer, ClassConfiguration config)
+    public ForeverTargetSelector(ConfigurableInput input, IMousePointer pointer, ClassConfiguration config)
     {
         this.input = input;
-        this.command = command;
         click = new(pointer);
         profileClearTarget = ProfileClearTarget(config);
     }
@@ -67,8 +64,6 @@ public sealed class ForeverTargetSelector
         input.PressRandom(ClearTargetKey(bars));
         return true;
     }
-
-    public void RestoreLastTarget() => command.Run("/targetlasttarget");
 
     /// <summary>
     /// The profile's <c>"ClearTarget": { "Key": ... }</c> when the client binds

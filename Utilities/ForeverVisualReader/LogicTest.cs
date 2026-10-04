@@ -146,6 +146,10 @@ internal static partial class LogicTest
             classic.Requirements.Add("InCombat");
             bad.Combat.Sequence = [classic];
             Check("profile: Classic requirement refused", ForeverProfileRules.FindUnsupportedProfile(bad)?.Contains("'InCombat'") == true);
+            bad = new();
+            bad.Adhoc.Sequence = [new KeyAction { Name = "Holy Light", Slot = 1, MacroText = "/cast [@player] Holy Light" }];
+            Check("profile: a macro, which would be typed into chat, refused",
+                ForeverProfileRules.FindUnsupportedProfile(bad)?.Contains("MacroText") == true);
             Check("action: aura expected beyond slot 12 refused",
                 ForeverProfileRules.FindUnsupportedAction(new KeyAction { Name = "Buff", Slot = 30, AfterCastAuraExpected = true }) is not null);
             Check("action: aura expected on slot 5 allowed",
@@ -361,6 +365,7 @@ internal static partial class LogicTest
             for (int i = 0; i < hb.Length; i++) hb[i] = 0;
             foreach (int slot in hunterSlots.Keys) hb[20 + slot - 1] = Encode(20 + slot, ConsoleKey.D0 + slot, ModifierKey.None);
             hb[ForeverBindings.StartAttack.Index - 1] = Encode(ForeverBindings.StartAttack.Index, ConsoleKey.D2, ModifierKey.Shift);
+            hb[ForeverBindings.PetAttack.Index - 1] = Encode(ForeverBindings.PetAttack.Index, ConsoleKey.Subtract, ModifierKey.None);
             VisualSpellBookSnapshot hbook = New<VisualSpellBookSnapshot>(
                 (object)hunterSlots.Values.Select((id, i) => (VisualSpellBookEntry?)new VisualSpellBookEntry(i + 1, VisualSpellIdSource.SpellId, id)).ToArray());
 
@@ -368,8 +373,11 @@ internal static partial class LogicTest
             // about 100 yards and the Attack slot (4) reads no range; Auto Shot
             // (2) and Serpent Sting (3) read out of range inside 8 yards, where
             // the target also turns close.
+            // shotsUsable false: the client reports the shots unusable, as without ammo;
+            // shotsNoMana: unusable only for lack of mana.
             VisualBarSample HFrame(bool ranged, bool? close, bool combat = true, double stingCooldown = 0,
-                bool melee = false, bool autoShot = false, bool queued = false, bool attackReadable = true)
+                bool melee = false, bool autoShot = false, bool queued = false, bool attackReadable = true,
+                bool shotsUsable = true, bool shotsNoMana = false, VisualPet? pet = null)
             {
                 VisualActionSample?[] bar = new VisualActionSample?[VisualActionBarSnapshot.SlotCount];
                 VisualActionState?[] states = new VisualActionState?[VisualActionBarSnapshot.SlotCount];
@@ -379,7 +387,8 @@ internal static partial class LogicTest
                     {
                         bar[slot - 1] = new(slot, VisualActionKind.Spell, id);
                         bool? range = slot switch { 1 => true, 2 or 3 => ranged, _ => null };
-                        states[slot - 1] = new(slot, true, false, range);
+                        bool shot = slot is 2 or 3;
+                        states[slot - 1] = new(slot, !shot || shotsUsable, shot && shotsNoMana, range);
                     }
                     else
                     {
@@ -398,7 +407,8 @@ internal static partial class LogicTest
                     PlayerPowerType: 0, PlayerIdentity: new((int)UnitClass.Hunter, 8, 6),
                     TargetFlags: new(true, true, false, combat, false), LastCastEvent: new(0, 0),
                     TargetIdentity: hmob, SlotAuras: null,
-                    Attack: attackReadable ? new VisualAttackState(queued ? 1 : 0, autoShot ? 1 << 1 : 0, melee, close) : null);
+                    Attack: attackReadable ? new VisualAttackState(queued ? 1 : 0, autoShot ? 1 << 1 : 0, melee, close) : null,
+                    Pet: pet);
             }
             ForeverRotation HRotation() =>
                 new(NullLogger<ForeverRotation>.Instance, null!, null!, new InFront(), hunterConfig, spells, new CancellationTokenSource<GoapAgent>());
@@ -438,6 +448,92 @@ internal static partial class LogicTest
                     !HRotation().Reach(current, ForeverSlotRanges.Of(plate with { Close = false })).Combat &&
                     !HRotation().Reach(current, ForeverSlotRanges.Of(plate)).Combat);
             }
+            // Shots the client reports unusable, as without ammo in the ammo slot.
+            HExpect("shots unusable at range: close in, no start attack (it would start melee at range)",
+                HFrame(ranged: true, close: false, combat: false, shotsUsable: false), ForeverFightStep.NeedRange);
+            current = HFrame(ranged: true, close: false, combat: false, shotsUsable: false);
+            Check("hunter: with the shots unusable, range does not stop the pursuit", !HRotation().InRange(current, hmob));
+            HExpect("shots unusable, the mob in contact: melee goes on",
+                HFrame(ranged: false, close: true, melee: true, shotsUsable: false), ForeverFightStep.Combat, "Raptor Strike");
+            {
+                bool usable = HRotation().TryAttacksUsable(HFrame(ranged: true, close: false, combat: false,
+                    shotsUsable: false), out string why);
+                Check("hunter: an attack unusable but not for mana stops the run, naming it",
+                    !usable && why.Contains("Serpent Sting") && why.Contains("ammo"), why);
+                Check("hunter: shots short only of mana do not",
+                    HRotation().TryAttacksUsable(HFrame(ranged: true, close: false, combat: false,
+                        shotsUsable: false, shotsNoMana: true), out why), why);
+            }
+
+            // The pet: sent in as the fight opens, again only when it attacks something else.
+            {
+                VisualPet idle = new(true, false, false, 0, 0);
+                VisualPet onTarget = idle with { InCombat = true, TargetHash1 = hmob.GuidHash1, TargetHash2 = hmob.GuidHash2 };
+                HExpect("pet idle as the fight opens: Pet Attack before the first shot",
+                    HFrame(ranged: true, close: false, combat: false, pet: idle), ForeverFightStep.PetAttack);
+                HExpect("pet on the target: the shots go on",
+                    HFrame(ranged: true, close: false, combat: false, pet: onTarget), ForeverFightStep.Combat, "Serpent Sting");
+                HExpect("pet on another unit: sent again",
+                    HFrame(ranged: true, close: false, pet: onTarget with { TargetHash1 = 1, TargetHash2 = 2 }),
+                    ForeverFightStep.PetAttack);
+                HExpect("dead pet: not sent", HFrame(ranged: true, close: false, combat: false, pet: idle with { Dead = true }),
+                    ForeverFightStep.Combat, "Serpent Sting");
+                HExpect("no pet: nothing to send", HFrame(ranged: true, close: false, combat: false, pet: new(false, null, null, 0, 0)),
+                    ForeverFightStep.Combat, "Serpent Sting");
+                HExpect("out of reach: the pet waits with the fight, so the hand-back for range is not held off",
+                    HFrame(ranged: false, close: false, melee: true, pet: idle), ForeverFightStep.NeedRange);
+                hunterConfig.AutoPetAttack = false;
+                HExpect("AutoPetAttack off: not sent", HFrame(ranged: true, close: false, combat: false, pet: idle),
+                    ForeverFightStep.Combat, "Serpent Sting");
+                hunterConfig.AutoPetAttack = true;
+            }
+
+            // The game's error messages: what a refused press does.
+            Check("refusal: out of sight before the fight gives the unit up, in it steps in",
+                ForeverRotation.ReactionTo(VisualGameError.LineOfSight, inCombat: false) == ForeverRefusal.GiveUp &&
+                ForeverRotation.ReactionTo(VisualGameError.LineOfSight, inCombat: true) == ForeverRefusal.StepIn);
+            Check("refusal: out of range or melee reach steps in; anything else is tried again",
+                ForeverRotation.ReactionTo(VisualGameError.OutOfRange, false) == ForeverRefusal.StepIn &&
+                ForeverRotation.ReactionTo(VisualGameError.TooFarAway, true) == ForeverRefusal.StepIn &&
+                new[] { VisualGameError.NotReady, VisualGameError.TooClose, VisualGameError.Facing, VisualGameError.Moving,
+                    VisualGameError.InProgress, VisualGameError.Prevented, VisualGameError.BadTarget }
+                    .All(e => ForeverRotation.ReactionTo(e, true) == ForeverRefusal.Retry));
+            {
+                // Close, melee on, Raptor Strike pending its swing: nothing to
+                // press, so Update never reaches the caster.
+                ForeverRotation rotation = HRotation();
+                VisualBarSample At(float x, int sequence, VisualGameError error = VisualGameError.TooFarAway) =>
+                    HFrame(ranged: false, close: true, melee: true, queued: true) with
+                    {
+                        WorldPosition = new(x, 200, 0, 1),
+                        LastError = new(sequence, error)
+                    };
+                ForeverCombatResult Step(VisualBarSample frame)
+                {
+                    current = frame;
+                    return rotation.Update(frame, hmob, out _);
+                }
+                Check("too far: a message from before the target is history", Step(At(100, 3)) == ForeverCombatResult.Waiting);
+                Check("too far: melee on and the client says too far away: step in", Step(At(100, 4)) == ForeverCombatResult.StepIn);
+                current = At(101, 4);
+                Check("too far: the fight holds back for range until the character stepped in",
+                    rotation.Plan(current, hmob).Step == ForeverFightStep.NeedRange && !rotation.InRange(current, hmob));
+                current = At(103.5f, 4);
+                Check("too far: three yards on, the fight goes on",
+                    rotation.Plan(current, hmob).Step == ForeverFightStep.Wait && rotation.InRange(current, hmob));
+                Check("too far: the same message is not taken twice", Step(At(103.5f, 4)) == ForeverCombatResult.Waiting);
+                Check("too far: another message is not about melee reach",
+                    Step(At(103.5f, 5, VisualGameError.OutOfRange)) == ForeverCombatResult.Waiting);
+                ForeverCombatResult second = Step(At(103.5f, 6));
+                ForeverCombatResult renewed = Step(At(104, 7));
+                ForeverCombatResult third = Step(At(107.5f, 8));
+                ForeverCombatResult fourth = Step(At(111, 9));
+                Check("too far: a refusal while one is open renews it; the fourth in a row gives the unit up",
+                    second == ForeverCombatResult.StepIn && renewed == ForeverCombatResult.StepIn &&
+                    third == ForeverCombatResult.StepIn && fourth == ForeverCombatResult.Unreachable,
+                    $"{second} {renewed} {third} {fourth}");
+            }
+
             hunterConfig.NPCMaxLevels_Above = 0;
             HExpect("level cap from the profile: a level 6 mob is refused at +0? no, equal level passes", HFrame(ranged: true, close: false, combat: false), ForeverFightStep.Combat, "Serpent Sting");
             VisualTargetIdentity higher = new(555, 666, 7, false);
@@ -461,6 +557,16 @@ internal static partial class LogicTest
                 reason.Contains("Seal of Righteousness"), reason);
             Check("preflight refuses unreadable buff state", !rotation.TryPreflight(Frame(target: false, aurasReadable: false), out reason) &&
                 reason.Contains("aura"), reason);
+            VisualPet pet = new(true, false, false, 0, 0);
+            Check("preflight: a pet with Pet Attack unbound is refused, naming the binding",
+                !rotation.TryPreflight(Frame(target: false) with { Pet = pet }, out reason) && reason.Contains("Pet Attack"), reason);
+            int?[] petBound = (int?[])bindings.Clone();
+            petBound[ForeverBindings.PetAttack.Index - 1] = Encode(ForeverBindings.PetAttack.Index, ConsoleKey.Subtract, ModifierKey.None);
+            Check("preflight: a pet with Pet Attack bound passes",
+                rotation.TryPreflight(Frame(target: false) with { Pet = pet, Bindings = New<VisualBindingSnapshot>((object)petBound) },
+                    out reason), reason);
+            Check("preflight: a dead pet needs no binding",
+                rotation.TryPreflight(Frame(target: false) with { Pet = pet with { Dead = true } }, out reason), reason);
             Check("GOAP: Judgement range is pull range",
                 ForeverGoapWorldState.TryBuild(Frame(judgementRange: true), config, out BitVector32 state) &&
                 state[1 << (int)GoapKey.withinpullrange] && !state[1 << (int)GoapKey.incombatrange]);
@@ -499,7 +605,7 @@ internal static partial class LogicTest
             {
                 ClassConfiguration cfg = new();
                 cfg.ClearTarget.Key = profileKey;
-                ForeverTargetSelector selector = new(null!, null!, null!, cfg);
+                ForeverTargetSelector selector = new(null!, null!, cfg);
                 KeyAction k = (KeyAction)keyFor.Invoke(selector, [frame])!;
                 return k.ConsoleKey;
             }
@@ -515,7 +621,7 @@ internal static partial class LogicTest
                 ClearKey("", KeyFrame()) == ConsoleKey.Escape);
             ClassConfiguration none = new();
             Check("clear target: nothing pressed without a target",
-                !new ForeverTargetSelector(null!, null!, null!, none).ClearTarget(KeyFrame(target: false)));
+                !new ForeverTargetSelector(null!, null!, none).ClearTarget(KeyFrame(target: false)));
             Check("forward: the live binding, not a fixed W",
                 ForeverBindings.MoveForward.IsBoundTo(KeyFrame(forward: ConsoleKey.UpArrow), ConsoleKey.UpArrow) &&
                 !ForeverBindings.MoveForward.IsBoundTo(KeyFrame(forward: ConsoleKey.UpArrow), ConsoleKey.W));
@@ -523,6 +629,9 @@ internal static partial class LogicTest
 
         TargetingChecks(Check, config, (target, inCombat) => Frame(target: target, combat: inCombat), NewRotation());
         LootChecks(Check);
+        HopChecks(Check);
+        PhaseChecks(Check);
+        DangerChecks(Check);
 
         Console.WriteLine(failures == 0 ? "All logic checks passed." : $"{failures} logic checks failed.");
         return failures == 0 ? 0 : 1;

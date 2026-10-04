@@ -1,15 +1,17 @@
 {
-  // Level 8 Troll Hunter without a pet, for the guarded Forever runtime: the
-  // same shared behaviour as the Paladin profile. Serpent Sting from range
-  // aggroes the mob and starts Auto Shot, which runs alongside the shots. As
-  // the mob crosses the 8-yard minimum range the client switches to melee,
-  // and Raptor Strike, a next-swing ability, is pressed only then: the beta
-  // reports its slot in range out to about 100 yards, so the runtime takes
-  // its reach from the target being close (see docs/forever-port.md, "Melee
-  // reach and attack state"). Aspect of the Monkey is on slot 64, and Forever
-  // reads auras and cooldowns for slots 1 to 12 only.
+  // Troll Hunter with a pet, for the guarded Forever runtime: the same shared
+  // behaviour as the Paladin profile. The client's Pet Attack key sends the
+  // pet in first, and again whenever it attacks something else. Serpent Sting
+  // from range aggroes the mob and starts Auto Shot, which runs alongside the
+  // shots. As the mob crosses the 8-yard minimum range the client switches to
+  // melee, and Raptor Strike, a next-swing ability, is pressed only then: the
+  // beta reports its slot in range out to about 100 yards, so the runtime
+  // takes its reach from the target being close (see docs/forever-port.md,
+  // "Melee reach and attack state"). Aspect of the Monkey is on slot 64, and
+  // Forever reads auras and cooldowns for slots 1 to 12 only.
   "Loot": true,
   "UseMount": false,
+  "AutoPetAttack": true,
   "Paths": [],
   "Combat": {
     "Sequence": [
@@ -26,8 +28,8 @@
       {
         "Name": "Arcane Shot",
         "SpellId": 3044,
-        "Slot": 5,
-        "Key": "5",
+        "Slot": 4,
+        "Key": "4",
         "WhenUsable": true,
         "Requirements": ["Spell:3044", "TargetHealth% > 0", "Mana% >= 20"]
       },

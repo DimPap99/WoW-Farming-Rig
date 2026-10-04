@@ -87,6 +87,17 @@ internal static partial class LogicTest
             !ForeverTargetPolicy.IsEligible(Plate(1, player: true), player, config) &&
             !ForeverTargetPolicy.IsEligible(Plate(1, dead: true), player, config) &&
             !ForeverTargetPolicy.IsEligible(Plate(1, attackable: null), player, config), "");
+        VisualNameplate elite = Plate(1) with { Classification = UnitClassification.Elite };
+        check("policy: an elite is not, unless it fights the player; a rare or unknown kind is",
+            !ForeverTargetPolicy.IsEligible(elite, player, config) &&
+            ForeverTargetPolicy.IsEligible(elite with { TargetsPlayer = true }, player, config) &&
+            ForeverTargetPolicy.IsEligible(Plate(1) with { Classification = UnitClassification.Rare }, player, config) &&
+            ForeverTargetPolicy.IsEligible(Plate(1), player, config), "");
+        UnitClassification mask = config.TargetMask;
+        config.TargetMask |= UnitClassification.Elite;
+        bool eliteAllowed = ForeverTargetPolicy.IsEligible(elite, player, config);
+        config.TargetMask = mask;
+        check("policy: a profile whose TargetMask includes elites takes them", eliteAllowed, "");
 
         // Choice among the plates in view.
         VisualNameplate opener = Plate(1, hash: 10, judgement: true, screenY: 0.3);
@@ -110,6 +121,26 @@ internal static partial class LogicTest
         check("choice: in combat only a unit that fights the player", pick == "slot 2", pick);
         pick = Chosen(fighting with { Nameplates = Roster(opener) });
         check("choice: in combat with no attacker in view, nothing", pick == "none", pick);
+        VisualNameplate hitter = Plate(2, hash: 20, targetsPlayer: true, screenY: 0.8);
+        ForeverExclusions asideAttacker = new();
+        asideAttacker.Exclude(hitter, TimeSpan.FromMinutes(1));
+        pick = Chosen(fighting with { Nameplates = Roster(hitter) }, asideAttacker);
+        check("choice: in combat a unit set aside earlier is taken once it attacks", pick == "slot 2", pick);
+
+        // Hit by another unit while the selected one does not fight: take the attacker.
+        VisualNameplate passive = Plate(1, hash: 10, isTarget: true, judgement: true);
+        check("attacked: in combat, the selected unit passive and another attacking",
+            ForeverTargetPolicy.AttackedByAnother(fighting with { Nameplates = Roster(passive, hitter) }, config), "");
+        check("attacked: not while the selected unit fights too",
+            !ForeverTargetPolicy.AttackedByAnother(fighting with
+                { Nameplates = Roster(passive with { TargetsPlayer = true, OnThreatTable = true }, hitter) }, config), "");
+        check("attacked: not out of combat, nor while the selected unit's threat is unreadable",
+            !ForeverTargetPolicy.AttackedByAnother(idle with { Nameplates = Roster(passive, hitter) }, config) &&
+            !ForeverTargetPolicy.AttackedByAnother(fighting with
+                { Nameplates = Roster(passive with { OnThreatTable = null }, hitter) }, config), "");
+        check("attacked: not by a unit outside the level window",
+            !ForeverTargetPolicy.AttackedByAnother(fighting with
+                { Nameplates = Roster(passive, hitter with { Level = 12 + config.NPCMaxLevels_Above + 1 }) }, config), "");
 
         // Reach from a plate's own ranges, as the target's action states give it.
         ForeverReach reach = combat.Reach(idle, ForeverSlotRanges.Of(Plate(1, judgement: false, strike: true)));
@@ -153,7 +184,7 @@ internal static partial class LogicTest
         // Selection: glide onto the plate, click the moment the game reports it
         // under the cursor, retry a click the target flag did not follow, then give up.
         FakePointer pointer = new();
-        ForeverTargetSelector selector = new(null!, null!, pointer, config);
+        ForeverTargetSelector selector = new(null!, pointer, config);
         selector.BeginSelect(opener);
         VisualBarSample Step(VisualNameplate plate) => idle with { Nameplates = Roster(plate) };
         ForeverClickResult result = selector.Select(Step(opener with { IsMouseover = true }), out string reason);
@@ -177,7 +208,7 @@ internal static partial class LogicTest
 
         // A plate walking right is aimed ahead of its marker.
         FakePointer leading = new();
-        ForeverTargetSelector ahead = new(null!, null!, leading, config);
+        ForeverTargetSelector ahead = new(null!, leading, config);
         ahead.BeginSelect(opener);
         ahead.Select(Step(opener with { Screen = new(0.40, 0.3) }), out _);
         Thread.Sleep(140);
@@ -208,7 +239,7 @@ internal static partial class LogicTest
             ForeverRecovery.SetAsideFor(ForeverSetback.SelectFailed, true) == TimeSpan.Zero, "");
 
         FakePointer stubborn = new() { Arrive = true };
-        ForeverTargetSelector retrying = new(null!, null!, stubborn, config);
+        ForeverTargetSelector retrying = new(null!, stubborn, config);
         retrying.BeginSelect(opener);
         retrying.Select(Step(opener with { IsMouseover = true }), out _);
         Thread.Sleep(140);

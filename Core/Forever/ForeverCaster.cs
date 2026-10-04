@@ -14,13 +14,16 @@ namespace Core.Forever;
 /// How a press ended. <see cref="Queued"/>: a next-swing ability waits for
 /// the swing. <see cref="NotTaken"/>: the game did not take a next-swing
 /// press, as when the target is out of melee reach; nothing happened.
+/// <see cref="Refused"/>: the game answered with an error message
+/// (<see cref="ForeverCaster.LastRefusal"/>); nothing happened either.
 /// </summary>
-public enum ForeverCastResult { NotReady, Succeeded, Failed, Queued, NotTaken }
+public enum ForeverCastResult { NotReady, Succeeded, Failed, Queued, NotTaken, Refused }
 
 /// <summary>
 /// Presses one guarded Forever action and waits for the visual cast-success
-/// event that proves it. Only the checked visual channel is read; the Classic
-/// aura, GCD, current-action, cast-time and UI-error cells do not exist here.
+/// event that proves it, or the game's error message that refuses it. Only the
+/// checked visual channel is read; the Classic aura, GCD, current-action,
+/// cast-time and UI-error cells do not exist here.
 /// </summary>
 public sealed class ForeverCaster
 {
@@ -38,10 +41,13 @@ public sealed class ForeverCaster
     // again no sooner than the retry, as a person presses again.
     private const int SwingQueueMs = 1000;
     private const int NotTakenRetryMs = 1500;
+    // A new error message after a press refuses it unless the success event
+    // follows within this long: an unrelated message, such as a melee swing
+    // or an Auto Shot out of reach, can arrive alongside a press that worked.
+    private const int RefusalGraceMs = 500;
 
     private readonly ILogger<ForeverCaster> logger;
     private readonly ConfigurableInput input;
-    private readonly ExecGameCommand command;
     private readonly ForeverVisualBarTracker tracker;
     private readonly SpellDB spells;
     private readonly ClassConfiguration config;
@@ -54,13 +60,14 @@ public sealed class ForeverCaster
     private KeyAction? notTaken;
     private long notTakenAt;
 
+    /// <summary>The error message of the last <see cref="ForeverCastResult.Refused"/> press.</summary>
+    public VisualErrorEvent LastRefusal { get; private set; }
+
     public ForeverCaster(ILogger<ForeverCaster> logger, ConfigurableInput input,
-        ExecGameCommand command, ForeverVisualBarTracker tracker,
-        SpellDB spells, ClassConfiguration config)
+        ForeverVisualBarTracker tracker, SpellDB spells, ClassConfiguration config)
     {
         this.logger = logger;
         this.input = input;
-        this.command = command;
         this.tracker = tracker;
         this.spells = spells;
         this.config = config;
@@ -89,11 +96,13 @@ public sealed class ForeverCaster
         needsReset = true;
         VisualTargetIdentity? targetIdentity = before.TargetIdentity;
         bool auraWasActive = before.SlotAuras?.IsActive(item.Slot) == true;
+        VisualErrorEvent? errorBefore = before.LastError;
         Press(item);
         item.SetClicked();
 
         long start = GetTimestamp();
         long lastFrame = before.FrameId;
+        long errorSeenAt = 0;
         bool nextSwing = item.AfterCastWaitSwing;
         // A next-swing press without a readable attack state keeps the long
         // wait for the swing's own event, and fails closed after it.
@@ -160,6 +169,15 @@ public sealed class ForeverCaster
                 current.SlotAuras?.IsActive(item.Slot) == true)
                 return Succeeded(item);
 
+            // The game answered with an error message and no success followed.
+            if (errorBefore is { } quiet && current.LastError is { } error && error.IsNewSince(quiet))
+            {
+                if (errorSeenAt == 0)
+                    errorSeenAt = GetTimestamp();
+                else if (GetElapsedTime(errorSeenAt).TotalMilliseconds >= RefusalGraceMs)
+                    return Refused(item, error);
+            }
+
             Thread.Sleep(PollMs);
         }
 
@@ -171,20 +189,26 @@ public sealed class ForeverCaster
         return ForeverCastResult.Failed;
     }
 
+    // The action's key, as a person presses it; nothing is typed into chat
+    // (the profile rules refuse a MacroText).
     private void Press(KeyAction item)
     {
-        // As upstream, a profile macro is typed as a command instead of a key
-        // press; this is how a profile targets the player explicitly.
-        if (!string.IsNullOrEmpty(item.MacroText))
-        {
-            // Macro() substitutes profile variables once RequirementFactory set it up.
-            string text = item.Macro();
-            command.Run(string.IsNullOrEmpty(text) ? item.MacroText : text);
-            return;
-        }
-
         try { input.PressRandom(item.ConsoleKey, ForeverBinding.PressMs); }
         finally { input.SetKeyState(item.ConsoleKey, false, true); }
+    }
+
+    // Nothing happened, so casting stays open; the same action waits before
+    // it is tried again, as a person presses again rather than mashing.
+    private ForeverCastResult Refused(KeyAction item, VisualErrorEvent error)
+    {
+        if (logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("Forever press of {Spell} refused by the game: {Error}; trying again after {Retry} ms",
+                item.Name, error.Error, NotTakenRetryMs);
+        needsReset = false;
+        notTaken = item;
+        notTakenAt = GetTimestamp();
+        LastRefusal = error;
+        return ForeverCastResult.Refused;
     }
 
     private ForeverCastResult Succeeded(KeyAction item,
