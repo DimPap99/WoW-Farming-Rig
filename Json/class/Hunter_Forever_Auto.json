@@ -8,7 +8,8 @@
   // beta reports its slot in range out to about 100 yards, so the runtime
   // takes its reach from the target being close (see docs/forever-port.md,
   // "Melee reach and attack state"). Aspect of the Monkey is on slot 64, and
-  // Forever reads auras and cooldowns for slots 1 to 12 only.
+  // Forever reads auras and cooldowns for slots 1 to 12 only. The spell IDs
+  // name rank 1; at start-up each action takes the rank its slot holds.
   "Loot": true,
   "UseMount": false,
   "AutoPetAttack": true,

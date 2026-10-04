@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 
 using System;
+using System.Linq;
 
 namespace Core.Forever;
 
@@ -78,7 +79,8 @@ public sealed class ForeverLootActivity : IForeverActivity
             return;
         }
         if (logger.IsEnabled(LogLevel.Information))
-            logger.LogInformation("Forever loot round: {Count} bodies where they fell", corpses.Pending.Count);
+            logger.LogInformation("Forever loot round: {Count} bodies where they fell, {Tracked} placed by the minimap's tracking",
+                corpses.Pending.Count, corpses.Pending.Count(corpse => corpse.Tracked));
         loot.Begin();
         machine.Go(ForeverLootState.Round);
     }

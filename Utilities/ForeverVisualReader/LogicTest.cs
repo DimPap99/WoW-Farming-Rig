@@ -119,7 +119,6 @@ internal static partial class LogicTest
             foreach (KeyAction a in hunter.Pull.Sequence) a.Slot = int.Parse(a.Key);
             Check("Hunter profile passes the Forever profile rules", ForeverProfileRules.FindUnsupportedProfile(hunter) is null,
                 ForeverProfileRules.FindUnsupportedProfile(hunter) ?? "");
-            Check("verified maps: Durotar on Kalimdor", ForeverVerifiedSetup.IsVerifiedMap(1411, 1) && !ForeverVerifiedSetup.IsVerifiedMap(1411, 0));
             Check("verified classes: Hunter and Paladin only", ForeverVerifiedSetup.AutoProfileFor((int)UnitClass.Hunter) == ForeverVerifiedSetup.HunterAutoProfile && ForeverVerifiedSetup.AutoProfileFor((int)UnitClass.Warrior) is null);
         }
 
@@ -471,8 +470,34 @@ internal static partial class LogicTest
                 VisualPet onTarget = idle with { InCombat = true, TargetHash1 = hmob.GuidHash1, TargetHash2 = hmob.GuidHash2 };
                 HExpect("pet idle as the fight opens: Pet Attack before the first shot",
                     HFrame(ranged: true, close: false, combat: false, pet: idle), ForeverFightStep.PetAttack);
-                HExpect("pet on the target: the shots go on",
-                    HFrame(ranged: true, close: false, combat: false, pet: onTarget), ForeverFightStep.Combat, "Serpent Sting");
+                // The pull: the shots wait until the mob is on the pet, then a moment longer.
+                VisualNameplateRoster MobPlate(bool onPet, bool onPlayer = false) => new(
+                    [new VisualNameplate(1, 1, hmob.GuidHash1, hmob.GuidHash2, hmob.Level, true, false, false, false, true,
+                        true, false, false, onPlayer, 2, onPlayer, null, 1.0, new VisualSlotRanges(RosterRanges(2, 3)))
+                        { TargetsPet = onPet }, null, null, null, null, null, null, null],
+                    1, 1, 0, true, true, 45);
+                ForeverRotation pull = HRotation();
+                ForeverFightPlan Pull(VisualBarSample frame)
+                {
+                    current = frame;
+                    return pull.Plan(frame, hmob);
+                }
+                bool waitsForMob = Pull(HFrame(ranged: true, close: false, pet: onTarget) with { Nameplates = MobPlate(onPet: false) })
+                    .Step == ForeverFightStep.Wait;
+                bool waitsOnPet = Pull(HFrame(ranged: true, close: false, pet: onTarget) with { Nameplates = MobPlate(onPet: true) })
+                    .Step == ForeverFightStep.Wait;
+                Thread.Sleep(ForeverRotation.PetHoldsMobMs + 100);
+                ForeverFightPlan opened = Pull(HFrame(ranged: true, close: false, pet: onTarget) with { Nameplates = MobPlate(onPet: true) });
+                Check("hunter: pet on the target, the mob not on it yet: the shots wait", waitsForMob, "");
+                Check("hunter: the mob on the pet: the shots wait a moment longer, then Serpent Sting",
+                    waitsOnPet && opened is { Step: ForeverFightStep.Combat, Action.Name: "Serpent Sting" },
+                    $"{waitsOnPet} {opened.Step} {Describe(opened.Action)}");
+                HExpect("the mob goes for the player: no waiting for the pet",
+                    HFrame(ranged: true, close: false, pet: onTarget) with { Nameplates = MobPlate(onPet: false, onPlayer: true) },
+                    ForeverFightStep.Combat, "Serpent Sting");
+                HExpect("auto attack already running: no waiting for the pet",
+                    HFrame(ranged: true, close: false, autoShot: true, pet: onTarget) with { Nameplates = MobPlate(onPet: false) },
+                    ForeverFightStep.Combat, "Serpent Sting");
                 HExpect("pet on another unit: sent again",
                     HFrame(ranged: true, close: false, pet: onTarget with { TargetHash1 = 1, TargetHash2 = 2 }),
                     ForeverFightStep.PetAttack);
@@ -489,9 +514,23 @@ internal static partial class LogicTest
             }
 
             // The game's error messages: what a refused press does.
-            Check("refusal: out of sight before the fight gives the unit up, in it steps in",
+            Check("refusal: out of sight before the fight gives the unit up, in it walks to see it again",
                 ForeverRotation.ReactionTo(VisualGameError.LineOfSight, inCombat: false) == ForeverRefusal.GiveUp &&
-                ForeverRotation.ReactionTo(VisualGameError.LineOfSight, inCombat: true) == ForeverRefusal.StepIn);
+                ForeverRotation.ReactionTo(VisualGameError.LineOfSight, inCombat: true) == ForeverRefusal.RegainSight);
+            // Walking to see the target again: the next instant attack is pressed on the move.
+            {
+                VisualBarSample OnScreen(VisualBarSample frame) => frame with { TargetScreenPosition = new(0.5, 0.6) };
+                current = OnScreen(HFrame(ranged: true, close: false));
+                KeyAction? shot = HRotation().NextShotOnTheMove(current);
+                Check("hunter: on the move, the next instant attack in priority order (Serpent Sting)",
+                    shot?.Name == "Serpent Sting", Describe(shot));
+                current = OnScreen(HFrame(ranged: true, close: false, stingCooldown: 0.5));
+                shot = HRotation().NextShotOnTheMove(current);
+                Check("hunter: on the move, never Raptor Strike nor the auto attack", shot is null, Describe(shot));
+                current = HFrame(ranged: true, close: false);
+                Check("hunter: with the target off screen, nothing is pressed on the move",
+                    HRotation().NextShotOnTheMove(current) is null, "");
+            }
             Check("refusal: out of range or melee reach steps in; anything else is tried again",
                 ForeverRotation.ReactionTo(VisualGameError.OutOfRange, false) == ForeverRefusal.StepIn &&
                 ForeverRotation.ReactionTo(VisualGameError.TooFarAway, true) == ForeverRefusal.StepIn &&
@@ -567,6 +606,24 @@ internal static partial class LogicTest
                     out reason), reason);
             Check("preflight: a dead pet needs no binding",
                 rotation.TryPreflight(Frame(target: false) with { Pet = pet with { Dead = true } }, out reason), reason);
+
+            // The bar decides the rank: Holy Light rank 2 (639) where the profile names rank 1 (635).
+            VisualBarSample WithSlot1(int spellId)
+            {
+                VisualActionSample?[] bar = new VisualActionSample?[VisualActionBarSnapshot.SlotCount];
+                for (int s = 1; s <= bar.Length; s++)
+                    bar[s - 1] = frame.ActionBar!.GetSlot(s);
+                bar[0] = new(1, VisualActionKind.Spell, spellId);
+                return frame with { ActionBar = New<VisualActionBarSnapshot>((object)bar) };
+            }
+            bool HolyLightIs(int spellId) =>
+                config.Adhoc.Sequence.Concat(config.Combat.Sequence).Where(a => a.Name == "Holy Light").All(a => a.SpellId == spellId);
+            Check("preflight takes another rank of the spell on the slot, as the bar holds after training",
+                rotation.TryPreflight(WithSlot1(639), out reason) && HolyLightIs(639), reason);
+            Check("preflight still refuses another spell on the slot, naming the action",
+                !rotation.TryPreflight(WithSlot1(678), out reason) && reason.Contains("Holy Light") && HolyLightIs(639), reason);
+            Check("preflight follows the bar back to the rank the profile names",
+                rotation.TryPreflight(frame, out reason) && HolyLightIs(635), reason);
             Check("GOAP: Judgement range is pull range",
                 ForeverGoapWorldState.TryBuild(Frame(judgementRange: true), config, out BitVector32 state) &&
                 state[1 << (int)GoapKey.withinpullrange] && !state[1 << (int)GoapKey.incombatrange]);
@@ -606,20 +663,22 @@ internal static partial class LogicTest
                 ClassConfiguration cfg = new();
                 cfg.ClearTarget.Key = profileKey;
                 ForeverTargetSelector selector = new(null!, null!, cfg);
-                KeyAction k = (KeyAction)keyFor.Invoke(selector, [frame])!;
-                return k.ConsoleKey;
+                KeyAction? k = (KeyAction?)keyFor.Invoke(selector, [frame]);
+                return k?.ConsoleKey ?? ConsoleKey.NoName;
             }
             Check("clear target: the profile's key when the client binds it to a main-bar macro",
                 ClearKey("7", KeyFrame()) == ConsoleKey.D7);
             Check("clear target: the profile's key is refused when its slot holds a spell",
-                ClearKey("7", KeyFrame(slot7: VisualActionKind.Spell)) == ConsoleKey.Escape);
+                ClearKey("7", KeyFrame(slot7: VisualActionKind.Spell)) == ConsoleKey.NoName);
             Check("clear target: the profile's key is refused when the client rebinds the slot",
-                ClearKey("7", KeyFrame(slot7Key: ConsoleKey.D8)) == ConsoleKey.Escape);
-            Check("clear target: upstream's clear-target binding when the client has one",
+                ClearKey("7", KeyFrame(slot7Key: ConsoleKey.D8)) == ConsoleKey.NoName);
+            Check("clear target: the clear-target binding when the client has one, as ForeverProbe binds",
                 ClearKey("", KeyFrame(customClear: ConsoleKey.Insert)) == ConsoleKey.Insert);
-            Check("clear target: Escape with neither",
-                ClearKey("", KeyFrame()) == ConsoleKey.Escape);
             ClassConfiguration none = new();
+            Check("clear target: never Escape; with neither there is no key and nothing is pressed",
+                ClearKey("", KeyFrame()) == ConsoleKey.NoName &&
+                !new ForeverTargetSelector(null!, null!, none).CanClearTarget(KeyFrame()) &&
+                !new ForeverTargetSelector(null!, null!, none).ClearTarget(KeyFrame()));
             Check("clear target: nothing pressed without a target",
                 !new ForeverTargetSelector(null!, null!, none).ClearTarget(KeyFrame(target: false)));
             Check("forward: the live binding, not a fixed W",
@@ -635,6 +694,7 @@ internal static partial class LogicTest
         TravelChecks(Check);
         RoamChecks(Check);
         RouteChecks(Check);
+        TrackingChecks(Check);
 
         Console.WriteLine(failures == 0 ? "All logic checks passed." : $"{failures} logic checks failed.");
         return failures == 0 ? 0 : 1;

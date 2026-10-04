@@ -30,7 +30,7 @@ internal static partial class LogicTest
         static ForeverNavigator NewNavigator() =>
             new(NullLogger<ForeverNavigator>.Instance, null!, new MouseCameraInput(null!), null!, null!);
         static ForeverEngageActivity NewEngage(ForeverNavigator navigator, ClassConfiguration config) =>
-            new(NullLogger<ForeverEngageActivity>.Instance, null!, navigator, null!, config);
+            new(NullLogger<ForeverEngageActivity>.Instance, null!, navigator, null!, config, new ForeverCorpses());
         static ForeverFacts Facts(bool inCombat = false, bool danger = false, int bodies = 0, bool canOpen = true) =>
             new(Stopwatch.GetTimestamp(), inCombat, danger, TakingDamage: false, Engaged: false,
                 bodies, canOpen, LastKillAt: 0);

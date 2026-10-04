@@ -65,6 +65,35 @@ yards off it, and on each frame walks toward the point 20 yards along it with
 point within 2 yards counts as passed, and a walk that cut a corner is found
 past the points before it.
 
+### Which floor
+
+The client reports no height for the player (Forever's `UnitPosition` gives
+Z = 0), and a column of the mesh can hold more than one walkable surface: a
+mountain top over the ground below, a rock top or a ledge beside a trail. So
+the navigator asks for paths without a height, and the pathfinder's column
+scan picks the floor: outdoors the highest surface, and the player's own kept
+from one request to the next within 80 yards. Where a path from that floor
+does not hold, it is asked for again from the surface nearest height 0, the
+other likely floor (`FindOnEitherFloor`). A walk along a route needs neither
+guess: the route's points carry the height of the floor it runs on, and each
+step passes the route's height at the player and at the point ahead.
+
+### Walking toward an estimate
+
+A body or a unit out of sight has no exact position: its nameplate places it
+along a bearing, or the minimap's tracking places it to a few yards. `WalkToward`
+takes an end slack for such a point (5 yards for a body), or
+`ForeverNavigator.AsCloseAsReachable`, which walks to wherever the mesh comes
+closest and is `Blocked` once it comes no closer; a point over a hole in the
+mesh is drawn back toward the player until there is ground under it.
+
+### Turning
+
+A person turns standing at an unhurried pace. No standing turn goes faster
+than 0.6 of full mouse speed, however far it turns; looking further round for
+a target out of view runs at 0.35; the calm look-around of hunting and
+roaming at 0.25. Facing a mob in a fight follows its marker as before.
+
 ### Getting unstuck
 
 Borrowed from upstream's `StuckDetector`, redone with held keys and mouse
@@ -99,8 +128,10 @@ destination, each with the walker.
   given up.
 - With `Pulls: Any` it takes units in view as it goes; units that attack are
   always fought, and the travel resumes from wherever the fight left it.
-- When the task starts, every point must convert on a verified map, lie on the
-  player's continent and on the baked mesh, or the run stops with why.
+- When the task starts, every point must be on a map the map data has, on the
+  player's continent and on the baked mesh, or the run stops with why. The
+  point may be in another zone: the mesh is one per continent, so the walk
+  crosses zone borders without noticing them.
 
 ## Roaming an area
 
@@ -160,4 +191,7 @@ cut-corner paths, the off-path distance, the ladder's order, the progress
 rule, a walker following a real 190-yard Durotar path, area containment, the
 spot picker on stand-ins and ten spots around Razor Hill on the baked mesh.
 Live: `ForeverControllerTrial --travel <x> <y>` and
-`--roam <x1> <y1> <x2> <y2> <kills>` (see the testing handover).
+`--roam <x1> <y1> <x2> <y2> <kills>` (see the testing handover). On
+2026-10-04 in The Barrens, travel passed over 60 yards of open ground and over
+a 402-yard route through hilly ground, fighting an attacker on the way and
+travelling on after it.

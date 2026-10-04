@@ -56,6 +56,15 @@ internal static partial class LogicTest
             ranged.Pending is [{ } far] && Points(far) == "(108.0,200.0)-(145.0,200.0)",
             ranged.Pending.Count == 1 ? Points(ranged.Pending[0]) : $"{ranged.Pending.Count}");
 
+        // A living unit is placed the same way, for a walk toward it.
+        ForeverCorpses live = new();
+        live.Observe(Seen(mob, close: false, plates: Roster()), At(0));
+        bool located = live.TryLocate(mob.GuidHash1, mob.GuidHash2, out Vector2 liveNear, out Vector2 liveFar);
+        check("sightings: a living unit lies along its bearing, from duel distance out to the plate distance",
+            located && liveNear == new Vector2(108, 200) && liveFar == new Vector2(145, 200) &&
+            !live.TryLocate(1, 2, out _, out _),
+            FormattableString.Invariant($"{located} ({liveNear.X:F1},{liveNear.Y:F1})-({liveFar.X:F1},{liveFar.Y:F1})"));
+
         ForeverCorpses banded = new();
         VisualNameplate mid = Plate(2, hash: 44, screenX: 0.5) with { Close = false, WithinFollowDistance = true };
         VisualNameplate distant = Plate(3, hash: 66, screenX: 0.5) with { Close = false, WithinFollowDistance = false };

@@ -111,6 +111,17 @@ double[]? NumbersAfter(string flag, int count)
     return numbers;
 }
 
+// The pet as the snapshot shows it: absent, dead, idle, on the target or on another unit.
+static string PetState(VisualBarSample bars) => bars.Pet switch
+{
+    null => "unreadable",
+    { Exists: not true } => "none",
+    { Dead: true } => "dead",
+    { TargetHash1: 0, TargetHash2: 0 } => "idle",
+    { } pet when bars.TargetIdentity is { } target && pet.Attacks(target) => "on the target",
+    _ => "on another unit"
+};
+
 static bool OffMap(double coordinate) => coordinate is < 0 or > ForeverMapPoint.MapSize || !double.IsFinite(coordinate);
 
 int pidIndex = Array.IndexOf(args, "--pid");
@@ -319,7 +330,8 @@ try
                         $"auras={current.SlotAuras?.ToString() ?? "unreadable"}, marker={current.TargetScreenPosition}, " +
                         $"plates={current.Nameplates?.PlateCount.ToString() ?? "unreadable"}, " +
                         $"range1/2/3={current.ActionStates?.GetSlot(1)?.InRange}/{current.ActionStates?.GetSlot(2)?.InRange}/{current.ActionStates?.GetSlot(3)?.InRange}, " +
-                        $"attack={current.Attack?.ToString() ?? "unreadable"}, " +
+                        $"attack={current.Attack?.ToString() ?? "unreadable"}, pet={PetState(current)}, " +
+                        $"tracked={current.TrackedBlips?.Count.ToString() ?? "no minimap"}, " +
                         $"soft={current.SoftInteract?.ToString() ?? "unreadable"}, " +
                         $"cast={current.LastCastEvent}, death={current.LastDeathEvent}, loot={current.Loot}, " +
                         $"frameReady={ForeverFrame.HasTrialInputs(current)}");

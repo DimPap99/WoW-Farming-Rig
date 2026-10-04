@@ -59,11 +59,12 @@ public static class ForeverFrame
         bars.TargetIdentity is { } identity &&
         flags.Present == identity.Present;
 
-    /// <summary>The trial inputs, from a verified class in the open world on a verified map.</summary>
+    /// <summary>
+    /// The trial inputs, from a verified class. Any zone will do: walking
+    /// checks the map it is on (<see cref="ForeverNavigator"/>).
+    /// </summary>
     public static bool IsVerifiedSetup(VisualBarSample bars) =>
         HasTrialInputs(bars) &&
-        bars.Position is { } map && bars.WorldPosition is { } world &&
-        ForeverVerifiedSetup.IsVerifiedMap(map.UIMapId, world.InstanceMapId) &&
         bars.PlayerIdentity is { } player &&
         ForeverVerifiedSetup.IsVerifiedClass(player.ClassId);
 

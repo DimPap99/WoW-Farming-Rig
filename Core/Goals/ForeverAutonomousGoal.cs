@@ -37,6 +37,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private readonly ForeverRestActivity resting;
     private readonly ForeverTaskActivity tasking;
     private readonly ForeverAgenda agenda;
+    private readonly ForeverTargetSelector targets;
     private readonly ForeverSelector selector;
     private readonly CancellationToken token;
     private readonly ForeverStateMachine<RunState> machine;
@@ -70,7 +71,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         IForeverCombatRoutine combat, ForeverCorpses corpses, ClassConfiguration config,
         ForeverEngageActivity engage, ForeverThreatActivity threat, ForeverLootActivity looting,
         ForeverRestActivity resting, ForeverTaskActivity tasking, ForeverAgenda agenda,
-        CancellationTokenSource<GoapAgent> cts)
+        ForeverTargetSelector targets, CancellationTokenSource<GoapAgent> cts)
         : base(nameof(ForeverAutonomousGoal))
     {
         this.logger = logger;
@@ -83,6 +84,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         this.looting = looting;
         this.resting = resting;
         this.tasking = tasking;
+        this.targets = targets;
         this.agenda = agenda;
         token = cts.Token;
 
@@ -103,7 +105,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         if (!tracker.TryGetLatest(out VisualBarSample bars) ||
             !ForeverFrame.IsVerifiedSetup(bars) || bars.TargetFlags is not { } flags)
         {
-            reason = "no complete visual frame from a verified class on a verified map";
+            reason = "no complete visual frame from a verified class";
             return false;
         }
         if (flags.PlayerCombat)
@@ -155,6 +157,13 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 reason = "Auto Loot is off; turn on Auto Loot in the client's settings";
                 return false;
             }
+        }
+        // Looting and resting deselect the dead with this key, never with Escape.
+        if (!targets.CanClearTarget(bars))
+        {
+            reason = "no clear-target key; reload the ForeverProbe add-on that ships with this build, which binds one, " +
+                "or name the key of a /cleartarget macro on the main bar in the profile's ClearTarget";
+            return false;
         }
         return combat.TryPreflight(bars, out reason) &&
             navigator.TryReadOnlyPreflight(bars, out reason) &&

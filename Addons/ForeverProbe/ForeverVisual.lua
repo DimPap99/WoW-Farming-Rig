@@ -19,6 +19,8 @@ local visual
 local ROSTER_VERSION = 4
 -- Version of the pet block; the reader refuses any other.
 local PET_VERSION = 1
+-- Version of the minimap block; the reader refuses any other.
+local MINIMAP_VERSION = 1
 -- Version of the attack-state block; the reader refuses any other.
 local ATTACK_VERSION = 1
 -- Version of the soft-interact block; the reader refuses any other.
@@ -33,6 +35,68 @@ local FOLLOW_DISTANCE = 4
 -- The client's unit classifications as the roster codes them; 0 is unknown.
 local CLASSIFICATION_CODES = { normal = 1, trivial = 2, minus = 3, rare = 4,
     elite = 5, rareelite = 6, worldboss = 7 }
+
+-- A key that clears the target, for the bot. The client has no clear-target
+-- binding of its own, and Escape opens the game menu whenever nothing is
+-- selected. So a secure button runs /cleartarget and the first free key of a
+-- short list is bound to it, out of combat, for this session only: an
+-- override binding, so the player's saved key bindings never change. The
+-- binding grid reports the key in DataToColor's clear-target row, which
+-- otherwise needs the BindPad add-on.
+local CLEAR_TARGET_BUTTON = "ForeverProbeClearTargetButton"
+-- DataToColor's binding-grid row for its clear-target command (CUSTOM_CLEARTARGET).
+local CLEAR_TARGET_INDEX = 58
+-- Tried in order. Shift is the modifier the bot's key presses are known to
+-- carry (Pet Attack and Start Attack use it).
+local CLEAR_TARGET_KEYS = { "SHIFT-INSERT", "SHIFT-F12", "SHIFT-F11", "SHIFT-HOME", "SHIFT-END" }
+-- DataToColor's codes for those keys (WoWKeyToId in SetupDefaultBindings.lua)
+-- and for the Shift modifier.
+local CLEAR_TARGET_KEY_IDS = { INSERT = 70, F12 = 63, F11 = 62, HOME = 71, END = 72 }
+local SHIFT_CODE = 1
+local clearTargetButton
+local clearTargetKey
+
+-- Creates the button and binds a free key, once per session; nothing is done
+-- in combat, where both are protected.
+local function bindClearTarget()
+    if clearTargetKey or InCombatLockdown() then return end
+    if not clearTargetButton then
+        clearTargetButton = CreateFrame("Button", CLEAR_TARGET_BUTTON, UIParent,
+            "SecureActionButtonTemplate")
+        clearTargetButton:SetAttribute("type", "macro")
+        clearTargetButton:SetAttribute("macrotext", "/cleartarget")
+        -- A key binding clicks on key down or up, as ActionButtonUseKeyDown
+        -- says; the template runs the macro once either way.
+        clearTargetButton:RegisterForClicks("AnyUp", "AnyDown")
+    end
+    for _, key in ipairs(CLEAR_TARGET_KEYS) do
+        local action = GetBindingAction(key, true)
+        if action == nil or action == "" then
+            SetOverrideBindingClick(clearTargetButton, true, key, CLEAR_TARGET_BUTTON, "LeftButton")
+            clearTargetKey = key
+            return
+        end
+    end
+end
+
+-- The clear-target row of the binding grid in DataToColor's encoding:
+-- (key1 modifier << 22) | (index << 14) | (key1 id << 7); 0 while unbound.
+local function clearTargetCode()
+    if not clearTargetKey then return 0 end
+    local id = CLEAR_TARGET_KEY_IDS[(clearTargetKey:gsub("^SHIFT%-", ""))]
+    if not id then return 0 end
+    return SHIFT_CODE * 4194304 + CLEAR_TARGET_INDEX * 16384 + id * 128
+end
+
+do
+    local bindings = CreateFrame("Frame")
+    bindings:RegisterEvent("PLAYER_ENTERING_WORLD")
+    -- A login in combat binds once the fight is over.
+    bindings:RegisterEvent("PLAYER_REGEN_ENABLED")
+    bindings:SetScript("OnEvent", function()
+        pcall(bindClearTarget)
+    end)
+end
 
 local isCurrentAction = (C_ActionBar and C_ActionBar.IsCurrentAction) or IsCurrentAction
 local isAutoRepeatAction = (C_ActionBar and C_ActionBar.IsAutoRepeatAction) or IsAutoRepeatAction
@@ -138,6 +202,9 @@ local function createVisual()
     -- The player's pet, beside the roster header.
     frame.petPixels = {}
     for i = 1, 4 do frame.petPixels[i] = addPixel(21 + i, 245) end
+    -- Where the minimap sits and how far it sees, after the world row's values.
+    frame.minimapPixels = {}
+    for i = 1, 6 do frame.minimapPixels[i] = addPixel(14 + i, 105) end
 
     -- The nameplate roster: a header with the plate counts and settings,
     -- then one checksummed row of seven values per slot.
@@ -626,6 +693,42 @@ local function createVisual()
 
     -- The player's pet: whether it is there, dead and fighting, then the
     -- unit it attacks as identity hashes (0 with none), and the checksum.
+    -- The minimap's centre and radius as shares of the screen (65535 is all
+    -- of it; the centre measured from the top left), the yards its radius
+    -- spans, and whether it turns with the player. The reader finds the dots
+    -- of tracked units inside it, such as a Hunter's Track Beasts, and places
+    -- them in the world.
+    local function renderMinimap()
+        local map = Minimap
+        if not map or not C_Minimap or type(C_Minimap.GetViewRadius) ~= "function" then return end
+        local uiScale = readableNumber(UIParent:GetEffectiveScale())
+        local scale = readableNumber(map:GetEffectiveScale())
+        local screenWidth, screenHeight = readableNumber(GetScreenWidth()), readableNumber(GetScreenHeight())
+        local centerX, centerY = map:GetCenter()
+        centerX, centerY = readableNumber(centerX), readableNumber(centerY)
+        local width = readableNumber(map:GetWidth())
+        local yards = readableNumber(C_Minimap.GetViewRadius())
+        if not uiScale or not scale or not screenWidth or not screenHeight or not centerX or
+            not centerY or not width or not yards or screenWidth <= 0 or screenHeight <= 0 or
+            yards <= 0 then return end
+        local screenX, screenY = screenWidth * uiScale, screenHeight * uiScale
+        local x = floor(centerX * scale / screenX * 65535 + 0.5)
+        local y = floor((1 - centerY * scale / screenY) * 65535 + 0.5)
+        local radius = floor(width / 2 * scale / screenX * 65535 + 0.5)
+        local view = floor(yards * 100 + 0.5)
+        if x < 0 or x > 65535 or y < 0 or y > 65535 or radius <= 0 or radius > 65535 or
+            view > 16777215 then return end
+        local rotates = C_CVar.GetCVar("rotateMinimap") == "1" and 1 or 0
+        local flags = rotates + MINIMAP_VERSION * 16
+        local pixels = frame.minimapPixels
+        setIntPixel(pixels[1], x)
+        setIntPixel(pixels[2], y)
+        setIntPixel(pixels[3], radius)
+        setIntPixel(pixels[4], view)
+        setIntPixel(pixels[5], flags)
+        setIntPixel(pixels[6], (0xA5F122 - x - y - radius - view - flags) % 16777216)
+    end
+
     local function renderPet()
         local exists = tri(UnitExists("pet"))
         local dead, combat, hash1, hash2 = 0, 0, 0, 0
@@ -951,6 +1054,8 @@ local function createVisual()
     end
 
     -- DataToColor's compact binding codes; they need both add-ons installed.
+    -- Its clear-target row needs BindPad; without it, the key bound to this
+    -- add-on's own clear-target button fills the row.
     local function renderBindingGrid()
         if not DataToColor or
             type(DataToColor.GetBindingEncodedByIndex) ~= "function" then
@@ -960,6 +1065,9 @@ local function createVisual()
         for index = 1, 62 do
             local code = readableNumber(
                 DataToColor:GetBindingEncodedByIndex(index))
+            if code == 0 and index == CLEAR_TARGET_INDEX then
+                code = clearTargetCode()
+            end
             if not code or code < 0 or code > 16777215 or
                 code ~= floor(code) then return end
             if code > 0 then
@@ -1071,6 +1179,8 @@ local function createVisual()
         pcall(renderSoftInteract)
         for i = 1, 4 do setBlack(frame.petPixels[i]) end
         pcall(renderPet)
+        setBlack(frame.minimapPixels[6])
+        pcall(renderMinimap)
 
         setBlack(frame.castValidPixel)
         renderEvents()

@@ -1754,6 +1754,101 @@ checks, among them the example loading, every refusal naming its step, a
 repeating agenda starting over, and the start-up check finding the example's
 points on the baked mesh. Not yet verified live.
 
+### Any zone, and the bar's spell ranks (2026-10-04)
+
+Before the first live test of the activities, the Hunter had levelled to 12
+and moved to the Crossroads in The Barrens: outside the two zones the runtime
+accepted, and with higher spell ranks on the bar than its profile names. Both
+limits went:
+
+- **Any zone of a baked continent.** `ForeverVerifiedSetup` no longer lists
+  maps; it keeps the profiles and classes. A zone works when the map data has
+  it (`Json/dbc/forever/WorldMapArea.json` holds every zone of both
+  continents) and its continent's mesh is baked. The navigator's start-up
+  check still proves the client's map position against its world position
+  there, and now also that the map data puts the zone on the continent the
+  client reports. The mesh is one per continent, so a walk that crosses into
+  the next zone keeps it, and a route continues there with a step's own
+  `UIMapId`. Another continent needs a boat or a zeppelin, which no task takes
+  yet, so its points are refused at start-up. Walking into a zone the map
+  data lacks, or onto a continent without a bake, fails the walk with the
+  zone named.
+- **The bar decides the rank.** A profile names a spell by one rank's ID, and
+  the client puts each newly trained rank on the bar. The rotation's start-up
+  check (`TakeRankFromBar`) gives an action the ID of the rank on its slot
+  when the spell data names the same spell, and logs it once, so the slot
+  checks, the cast gate and the cast confirmation expect that rank. Another
+  spell on the slot is still refused, naming the action. This is the
+  rank-selection rule the early trial note above asked for.
+
+Offline, `--logic-test` has 232 checks, among them a travel point at the
+Crossroads passing the start-up check from Razor Hill, an unknown map refused,
+and Holy Light taking rank 2 from its slot and back. Not yet verified live.
+
+### Live tests, line of sight and minimap tracking (2026-10-04)
+
+The first live runs of the activities, on the level 12 Hunter around the
+Crossroads in The Barrens: the read-only checks, one hunt cycle (`--auto-run`),
+the sweep (`--sweep`, two kills), and travel over open ground and over a
+402-yard route through hilly ground with an attacker on the way, all passed in
+the end. What the runs showed, and what changed:
+
+- **Clear target.** The bot fell back to Escape, which opened the game menu
+  whenever the target was already gone; with the menu open the game stops
+  turning the camera, so the mouse moved the visible cursor instead.
+  ForeverProbe now makes its own `/cleartarget` secure button and binds the
+  first free key of Shift+Insert, Shift+F12, Shift+F11, Shift+Home and
+  Shift+End to it for the session (`SetOverrideBindingClick`, so saved
+  bindings are untouched), and fills DataToColor's clear-target row (58) of the
+  binding grid with it when BindPad's is missing. Escape is never pressed, and
+  the start-up check needs a clear-target key.
+- **The pet goes first.** The pull waits until the mob targets the pet and has
+  stayed on it 1.5 s (8 s at most), so the mob stays on the pet and the Hunter
+  at range; Pet Attack presses are logged and the snapshot shows the pet.
+- **Out of sight.** A refused attack or Auto Shot's "out of line of sight" in
+  combat sends the fight to `Sight` (see
+  [forever-activities.md](forever-activities.md)). The first version did not
+  move: its walk asked for a path ending within 8 yards of the estimated
+  position, which a mob below a ledge never had. It now walks as close as the
+  mesh comes, steps aside where it comes no closer, and presses again only
+  after moving. Live, it saw the mob again after one step aside, twice.
+- **Which floor.** The navigator gave the pathfinder the surface nearest
+  height 0 (`TryGetHeight`) as the player's height, which bypassed the column
+  scan built for Forever's missing Z; on a mountain top the bot then stood on
+  the ground below, and no path to a body there existed. Paths are now asked
+  for without a height, with the surface nearest height 0 as the second try,
+  and a walk along a route passes the route's own heights
+  ([forever-movement.md](forever-movement.md), "Which floor"). Live: a body on
+  the mountain top looted, and the route that had stalled beside a rock walked.
+- **Bodies** are walked to within 5 yards when their estimated place is not
+  reachable exactly.
+- **Turning** standing is capped at 0.6 of full mouse speed and looking for a
+  lost target at 0.35, after a run turned round violently.
+
+**Minimap tracking.** No game function returns other units' positions, but a
+Hunter's tracking (Track Beasts, Track Humanoids, ...) draws them on the
+minimap, and the minimap is in every capture. ForeverProbe writes a minimap
+block on the world row, cells 15 to 20 (frame row 105): the centre across and
+down as shares of the screen (×65535), the radius as a share of the width,
+`C_Minimap.GetViewRadius()` ×100 (233.33 yards at the widest zoom), the flags
+(bit 0 `rotateMinimap`, version 1 from bit 4), and a checksum from 0xA5F122.
+`VisualMinimapReader` decodes it, and the tracker scans only the minimap's
+square of the frame: every dot has a gold ring, its centre gold for a neutral
+unit, dark red for a hostile one and green for a friendly one; gold and red
+count, green does not, and the outer band beyond 0.78 of the radius, where the
+minimap draws its arrows and icons, is left out. Each dot becomes a world point
+(`VisualBarSample.TrackedBlips`). Tracking only adds to the nameplates: a
+sighting takes a dot when one lies along its bearing (within 6 degrees, or 4
+yards across) and as far as the plate allows (±4 yards; the target's marker
+out to 100 yards), and then `TryLocate` and a body's place are that point. With
+no dot, or no tracking, nothing changes. Calibrated on a live capture: 10 of
+the 10 tracked dots found, the green one left out; not yet used in a live
+fight. `ForeverVisualReader --watch-tracking [seconds]` prints the dots, in
+yards and in map coordinates, and the one along the target's bearing;
+`--read <png>` does the same for a saved capture.
+
+Offline, `--logic-test` has 244 checks.
+
 ### Quests (later)
 
 Not designed yet; this note records what the design above leaves room for.

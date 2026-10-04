@@ -3,6 +3,7 @@ using SharedLib;
 using SixLabors.ImageSharp.PixelFormats;
 
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace Core;
@@ -253,6 +254,16 @@ public readonly record struct VisualBarSample(
     /// reader can never pair a newer frame ID with an older frame's values.
     /// </summary>
     public long FrameId { get; init; }
+
+    /// <summary>Where the minimap sits and how far it sees, from the add-on; null when unreadable.</summary>
+    public VisualMinimap? Minimap { get; init; }
+
+    /// <summary>
+    /// The world points of the dots the minimap draws for tracked units, set
+    /// by <see cref="ForeverVisualBarTracker"/>; null when the minimap was not
+    /// read, empty when nothing tracked is in its view.
+    /// </summary>
+    public IReadOnlyList<Vector2>? TrackedBlips { get; init; }
 }
 
 /// <summary>
@@ -397,7 +408,7 @@ public static class VisualBarReader
             VisualAttackReader.Read(probe, targetIdentity),
             VisualInteractReader.Read(probe),
             VisualErrorReader.Read(probe),
-            VisualPetReader.Read(probe));
+            VisualPetReader.Read(probe)) { Minimap = VisualMinimapReader.Read(probe) };
         if (locateMarkers)
             sample = LocateMarkers(pixels, width, height, sample);
         return true;

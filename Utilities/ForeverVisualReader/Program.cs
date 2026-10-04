@@ -64,6 +64,7 @@ bool trialJudgement = args.Length == 1 && args[0] == "--trial-judgement";
 bool trialJudgementArmed = args.Length == 1 && args[0] == "--trial-judgement-armed";
 bool bagsView = args.Length == 1 && args[0] == "--bags";
 bool whereView = args.Length is 1 or 2 && args[0] == "--where";
+bool trackingView = args.Length is 1 or 2 && args[0] == "--watch-tracking";
 
 if (args.Length == 2 && args[0] == "--read")
 {
@@ -165,6 +166,36 @@ try
         return 0;
     }
 
+    // Read-only: the minimap's tracked dots as world points, once a second,
+    // and the one along the target's nameplate bearing.
+    if (trackingView)
+    {
+        int trackingSeconds = args.Length == 2 && int.TryParse(args[1], out int askedTracking)
+            ? Math.Clamp(askedTracking, 5, 600)
+            : 30;
+        Console.WriteLine($"Watching the minimap's tracked dots for {trackingSeconds} seconds; no game input is sent.");
+        WorldMapAreaDB trackingMaps = new(new DataConfig { Root = Path.GetFullPath("Json"), Exp = "forever" });
+        for (int i = 0; i < trackingSeconds * 10; i++)
+        {
+            screen.Update();
+            tracker.Update();
+            if (i % 10 == 0 && tracker.TryGetLatest(out VisualBarSample frame))
+            {
+                Console.WriteLine($"{DateTime.Now:HH:mm:ss}  {DescribeTracking(frame)}");
+                // The same dots in the zone map's coordinates, as route files use them.
+                if (frame.TrackedBlips is { Count: > 0 } blips && frame.Position is { } zone &&
+                    trackingMaps.TryGet(zone.UIMapId, out WorldMapArea zoneArea))
+                    Console.WriteLine("          on the map: " + string.Join(", ", blips.Select(blip =>
+                    {
+                        Vector3 point = WorldMapAreaDB.ToMap_FlipXY(new(blip.X, blip.Y, 0), zoneArea);
+                        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"[{point.X:0.00}, {point.Y:0.00}]");
+                    })));
+            }
+            await Task.Delay(100);
+        }
+        return 0;
+    }
+
     // Read-only: every occupied bag slot's item and count, and each main-bar
     // action's usable state, from one fresh complete frame.
     if (bagsView)
@@ -199,7 +230,7 @@ try
                         Console.WriteLine($"action {slot}: {action.Kind} {action.Id} {states.GetSlot(slot)}");
                 }
                 // The client's keys for the commands the runtime may press, by binding-grid index.
-                for (int index = 1; index <= 20; index++)
+                foreach (int index in Enumerable.Range(1, 20).Append(ForeverBindings.ClearTarget.Index))
                 {
                     if (frame.Bindings?.GetCode(index) is > 0 and int code && KeyReader.DecodeBinding(code) is { } bound)
                         Console.WriteLine($"binding {index}: {bound.bindingId} = {bound.mod1} {bound.key1}" +
@@ -327,6 +358,20 @@ static void PrintBars(Bgra32[] pixels, int width, int height)
     Console.WriteLine(BindingsText(bars.Bindings));
     Console.WriteLine($"last successful player cast={bars.LastCastEvent?.ToString() ?? "unavailable"}");
     Console.WriteLine($"last target death={bars.LastDeathEvent?.ToString() ?? "unavailable"}; loot={bars.Loot?.ToString() ?? "unavailable"}");
+    // The tracked units' dots, found in the capture as the tracker finds them.
+    if (bars.Minimap is { } minimap && bars.WorldPosition is { } world && bars.Position is { } map &&
+        VisualMinimapReader.Region(minimap, width, height) is { Size: > 0 } square)
+    {
+        Bgra32[] region = new Bgra32[square.Size * square.Size];
+        for (int y = 0; y < square.Size; y++)
+            Array.Copy(pixels, (square.Top + y) * width + square.Left, region, y * square.Size, square.Size);
+        bars = bars with
+        {
+            TrackedBlips = VisualMinimapReader.FindBlips(region, square.Left, square.Top, square.Size,
+                minimap, width, height, new((float)world.X, (float)world.Y), map.Direction)
+        };
+    }
+    Console.WriteLine(DescribeTracking(bars));
 }
 
 static string PositionText(VisualPositionSample? position) => position is { } value
@@ -386,6 +431,34 @@ static string BindingsText(VisualBindingSnapshot? snapshot)
 
     return $"bindings {snapshot.ReadableCount}/{VisualBindingSnapshot.Count} readable, " +
         $"{bound.Count} bound [{string.Join(", ", bound)}]";
+}
+
+// The minimap block, every tracked dot by distance and angle off the facing
+// (positive to the left), and the dot along the target's nameplate bearing.
+static string DescribeTracking(VisualBarSample frame)
+{
+    if (frame.Minimap is not { } minimap)
+        return "minimap block unreadable: reload the ForeverProbe add-on that ships with this build";
+    if (frame.WorldPosition is not { } world || frame.Position is not { } map)
+        return "position unreadable";
+    Vector2 here = new((float)world.X, (float)world.Y);
+    IReadOnlyList<Vector2> blips = frame.TrackedBlips ?? [];
+    double Off(double bearing) => Math.Atan2(Math.Sin(bearing - map.Direction), Math.Cos(bearing - map.Direction)) * 180 / Math.PI;
+    string dots = string.Join(", ", blips.OrderBy(blip => Vector2.Distance(here, blip)).Select(blip =>
+        $"{Vector2.Distance(here, blip):0} yd at {Off(Math.Atan2(blip.Y - here.Y, blip.X - here.X)):0}Â°"));
+    string target = "no target marker";
+    if (frame.TargetScreenPosition is { } marker)
+    {
+        double bearing = ForeverNavigator.BearingOf(map, marker);
+        bool close = frame.Attack?.TargetClose == true;
+        Vector2? matched = ForeverCorpses.TrackedAlong(blips, here, bearing,
+            close ? 0 : ForeverCorpses.CloseYards, close ? ForeverCorpses.CloseYards : ForeverCorpses.TargetTrackedYards);
+        target = matched is { } dot
+            ? $"the target's dot is {Vector2.Distance(here, dot):0} yd at {Off(bearing):0}Â°"
+            : $"no dot along the target's bearing ({Off(bearing):0}Â°)";
+    }
+    return $"minimap centre ({minimap.CenterX:0.000}, {minimap.CenterY:0.000}), radius {minimap.Radius:0.0000} of the width, " +
+        $"{minimap.ViewYards:0} yd{(minimap.Rotates ? ", rotating" : string.Empty)}; {blips.Count} dots: {dots}; {target}";
 }
 
 static string TargetText(bool? present) => present switch

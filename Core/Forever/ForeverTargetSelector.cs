@@ -54,23 +54,29 @@ public sealed class ForeverTargetSelector
 
     /// <summary>
     /// Clears the target the way the player set the client up, and only while
-    /// this frame shows one: with nothing selected Escape opens the game menu.
-    /// Callers wait for the flags to follow before pressing again.
+    /// this frame shows one. Never with Escape: when the target is already
+    /// gone, or a window is open, Escape opens the game menu or closes the
+    /// window instead, and the frame cannot tell which. Callers wait for the
+    /// flags to follow before pressing again.
     /// </summary>
     public bool ClearTarget(VisualBarSample bars)
     {
-        if (bars.TargetFlags is not { Present: true })
+        if (bars.TargetFlags is not { Present: true } || ClearTargetKey(bars) is not { } key)
             return false;
-        input.PressRandom(ClearTargetKey(bars));
+        input.PressRandom(key);
         return true;
     }
 
+    /// <summary>The client has a key that clears the target, which looting and resting need.</summary>
+    public bool CanClearTarget(VisualBarSample bars) => ClearTargetKey(bars) is not null;
+
     /// <summary>
     /// The profile's <c>"ClearTarget": { "Key": ... }</c> when the client binds
-    /// that key to a macro on the main bar, then upstream's clear-target
-    /// binding when the client has one, then Escape.
+    /// that key to a macro on the main bar, then the clear-target binding
+    /// (ForeverProbe binds a free key to its own /cleartarget button, as
+    /// upstream binds BindPad's); null with neither.
     /// </summary>
-    private KeyAction ClearTargetKey(VisualBarSample bars)
+    private KeyAction? ClearTargetKey(VisualBarSample bars)
     {
         if (profileClearTarget is { } profile &&
             ForeverBindings.MainBarSlotBoundTo(bars, profile.ConsoleKey, profile.Modifier) is int macroSlot &&
@@ -78,7 +84,7 @@ public sealed class ForeverTargetSelector
             return profile;
         if (ForeverBindings.ClearTarget.TryGetKeyAction(bars, ClearTargetName, out KeyAction bound))
             return bound;
-        return ForeverBinding.ToKeyAction(ClearTargetName, ConsoleKey.Escape, ModifierKey.None);
+        return null;
     }
 
     private const string ClearTargetName = "Forever Clear Target";
