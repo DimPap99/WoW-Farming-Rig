@@ -7,7 +7,19 @@ public sealed class ForeverTaskProgress
 {
     public int Kills { get; set; }
 
-    public override string ToString() => $"{Kills} kills";
+    /// <summary>When the task's runner first started, a <see cref="System.Diagnostics.Stopwatch"/> timestamp; 0 before.</summary>
+    public long StartedAt { get; private set; }
+
+    /// <summary>Marks the task begun at <paramref name="now"/>, once.</summary>
+    public void Start(long now)
+    {
+        if (StartedAt == 0)
+            StartedAt = now;
+    }
+
+    public override string ToString() => StartedAt == 0
+        ? $"{Kills} kills"
+        : $"{Kills} kills in {System.Diagnostics.Stopwatch.GetElapsedTime(StartedAt).TotalMinutes:0.#} minutes";
 }
 
 /// <summary>

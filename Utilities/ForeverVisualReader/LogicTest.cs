@@ -633,6 +633,7 @@ internal static partial class LogicTest
         PhaseChecks(Check);
         DangerChecks(Check);
         TravelChecks(Check);
+        RoamChecks(Check);
 
         Console.WriteLine(failures == 0 ? "All logic checks passed." : $"{failures} logic checks failed.");
         return failures == 0 ? 0 : 1;

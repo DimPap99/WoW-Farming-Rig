@@ -30,9 +30,30 @@ public sealed record ForeverHuntHereTask(ForeverUntil Until) : ForeverTask("Hunt
 public sealed record ForeverTravelTask(ForeverMapPoint To, IReadOnlyList<ForeverMapPoint> Via,
     ForeverPulls Pulls, ForeverUntil Until) : ForeverTask($"Travel to {To}", Until);
 
+/// <summary>
+/// Roams <paramref name="Area"/> until <paramref name="Until"/> holds: walks
+/// in if outside, then from spot to spot inside, looking round at each, and
+/// takes eligible units in view unless <paramref name="Pulls"/> says
+/// otherwise. Spots are drawn from <see cref="Seed"/>, or a fresh seed that
+/// is logged.
+/// </summary>
+public sealed record ForeverRoamAreaTask(ForeverArea Area, ForeverPulls Pulls, ForeverUntil Until)
+    : ForeverTask($"Roam the {Area}", Until)
+{
+    public int? Seed { get; init; }
+}
+
 /// <summary>The tasks an agenda takes: the API for code, and what route files load into.</summary>
 public static class ForeverTasks
 {
+    /// <summary>
+    /// Roam <paramref name="area"/> until <paramref name="until"/> holds,
+    /// taking the units in view unless <paramref name="pulls"/> says otherwise.
+    /// </summary>
+    public static ForeverTask RoamArea(ForeverArea area, ForeverUntil until,
+        ForeverPulls pulls = ForeverPulls.Any, int? seed = null) =>
+        new ForeverRoamAreaTask(area, pulls, until) { Seed = seed };
+
     /// <summary>Hunt where the run stands until <paramref name="until"/> holds.</summary>
     public static ForeverTask HuntHere(ForeverUntil until) => new ForeverHuntHereTask(until);
 

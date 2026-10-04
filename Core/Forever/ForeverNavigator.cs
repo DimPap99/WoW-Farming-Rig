@@ -377,6 +377,23 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         nav!.TryGetHeight(point.X, point.Y, out _);
 
     /// <summary>
+    /// The walkable point of the baked mesh nearest <paramref name="hint"/> on
+    /// the ground under it: the height comes from the column under the point,
+    /// and the snap stays tight around that height, so a roof or a canopy
+    /// beside it is not taken.
+    /// </summary>
+    public bool TrySnapWalkable(VisualBarSample bars, Vector2 hint, out Vector2 spot)
+    {
+        spot = default;
+        if (bars.Position is not { } map || !TryNav(map.UIMapId, out _) ||
+            !nav!.TryGetHeight(hint.X, hint.Y, out float z) ||
+            !nav.TrySnapWalkable(new(hint.X, hint.Y, z), out Vector3 snapped, out _))
+            return false;
+        spot = new(snapped.X, snapped.Y);
+        return true;
+    }
+
+    /// <summary>
     /// The whole way from the player to <paramref name="destination"/> along
     /// the baked mesh, as world X/Y points, when a complete path exists over
     /// tiles already on disk. A long way costs tens of milliseconds, so a
