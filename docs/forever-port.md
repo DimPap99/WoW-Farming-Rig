@@ -207,6 +207,10 @@ Forever-owned code:
   `VisualMarkerLocator`.
 - `Game/Input/MouseCameraInput.cs`, `Game/Input/MousePointerInput.cs`,
   `Addons/ForeverProbe`, `Utilities/Forever*`.
+- `Frontend/ForeverRunHost.cs` (starts and stops the trial runner),
+  `ForeverRunOutput.cs` (what a run printed, read through `ForeverRunProtocol`),
+  `ForeverPages.cs` (the pages offered on Forever), `Pages/ForeverRuns.razor`
+  and `Pages/ForeverStatus.razor` (the home page card).
 
 Where Forever still touches upstream code:
 
@@ -226,9 +230,9 @@ Where Forever still touches upstream code:
   skip the Classic usable/current-action requirements.
 - PPather: the `IGameFileSource`/`ILiquidMetadataSource` CASC seam, the numeric
   WMO and MH2O formats, and the opt-in `NavmeshQueryOptions.PreferGroundUnderPoint`.
-- Frontend: the Forever status page and navigation, the hidden `BotHeader`, and the
-  Forever runs page (`ForeverRuns.razor`, `ForeverRunHost`), which starts the trial
-  runner as a child process; `BlazorServer/Program.cs` registers the host on Forever.
+- Frontend: `Index.razor` shows `ForeverStatus` on Forever, `MainLayout` takes
+  its navigation and page gate from `ForeverPages`, and `Screenshot.razor` hides
+  `BotHeader`; `BlazorServer/Program.cs` registers `ForeverRunHost` on Forever.
 
 A Forever-owned controller loop would let `BotController`, `GoapAgent`,
 `PlayerReader`, `KeyReader` and `RequirementFactory` return to upstream as well.

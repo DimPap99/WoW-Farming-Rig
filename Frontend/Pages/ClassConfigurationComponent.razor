@@ -1,7 +1,7 @@
 ﻿@inject IBotController botController
 @inject IAddonReader addonReader
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 <div class="container">
     <Card>
@@ -150,29 +150,8 @@
     {
         RefreshData();
 
-        botController.ProfileLoaded += OnProfileLoaded;
-        addonReader.AddonDataChanged += OnAddonDataChanged;
-    }
-
-    public void Dispose()
-    {
-        addonReader.AddonDataChanged -= OnAddonDataChanged;
-        botController.ProfileLoaded -= OnProfileLoaded;
-    }
-
-    private void OnAddonDataChanged()
-    {
-        base.InvokeAsync(StateHasChanged);
-    }
-
-    public void OnGet()
-    {
-        RefreshData();
-    }
-
-    private void OnProfileLoaded()
-    {
-        RefreshData();
+        Subscribe(() => botController.ProfileLoaded += RefreshData, () => botController.ProfileLoaded -= RefreshData);
+        Subscribe(() => addonReader.AddonDataChanged += Redraw, () => addonReader.AddonDataChanged -= Redraw);
     }
 
     private void RefreshData()

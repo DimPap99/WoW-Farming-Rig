@@ -6,7 +6,7 @@
 @inject ExecGameCommand exec
 @inject WowProcess process
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 <div class="container mt-3">
     <div class="card">
@@ -95,18 +95,8 @@
 
     protected override void OnInitialized()
     {
-        addonConfigurator.OnChange += OnChanged;
+        Subscribe(() => addonConfigurator.OnChange += Redraw, () => addonConfigurator.OnChange -= Redraw);
         addonConfig = addonConfigurator.Config;
-    }
-
-    public void Dispose()
-    {
-        addonConfigurator.OnChange -= OnChanged;
-    }
-
-    public void OnChanged()
-    {
-        base.InvokeAsync(StateHasChanged);
     }
 
     private void Delete()

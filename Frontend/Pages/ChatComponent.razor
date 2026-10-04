@@ -1,6 +1,6 @@
 ﻿@using System.Collections.Specialized
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 @inject TextReader reader
 
@@ -29,16 +29,11 @@
 
     protected override void OnInitialized()
     {
-        reader.Messages.CollectionChanged += Changed;
-    }
-
-    public void Dispose()
-    {
-        reader.Messages.CollectionChanged -= Changed;
+        Subscribe(() => reader.Messages.CollectionChanged += Changed, () => reader.Messages.CollectionChanged -= Changed);
     }
 
     private void Changed(object? s, NotifyCollectionChangedEventArgs e)
     {
-        base.InvokeAsync(StateHasChanged);
+        Redraw();
     }
 }

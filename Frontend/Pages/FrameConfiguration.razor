@@ -7,7 +7,7 @@
 @inject DataConfig dataConfig
 @inject IAddonDataProvider reader
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 <div class="container">
 
@@ -168,16 +168,12 @@
     protected override void OnInitialized()
     {
         addonConfig = addonConfigurator.Config;
-        frameConfigurator.OnUpdate += OnUpdate;
+        // Leaving the page cancels the configurator's manual configuration loop.
+        OnDispose(frameConfigurator.Dispose);
+        Subscribe(() => frameConfigurator.OnUpdate += OnUpdate, () => frameConfigurator.OnUpdate -= OnUpdate);
 
         if (!FrameConfig.Exists())
             disabled = false;
-    }
-
-    public void Dispose()
-    {
-        frameConfigurator.OnUpdate -= OnUpdate;
-        frameConfigurator.Dispose();
     }
 
 
@@ -194,7 +190,7 @@
 
         saved = frameConfigurator.Saved;
 
-        base.InvokeAsync(StateHasChanged);
+        Redraw();
     }
 
     public void ToggleManualConfig()

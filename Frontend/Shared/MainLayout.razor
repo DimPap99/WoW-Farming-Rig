@@ -136,35 +136,15 @@
     private async Task<Sidebar2DataProviderResult> Sidebar2DataProvider(Sidebar2DataProviderRequest request)
     {
         navItems = client.Version == ClientVersion.Forever
-            ? GetForeverNavItems()
+            ? ForeverPages.NavItems()
             : ConfigExists ? GetNormalNavItems() : GetConfigNavItems();
 
         return await Task.FromResult(request.ApplyTo(navItems));
     }
 
-    // Other pages read Classic-only readers or services that are not
-    // registered on Forever. Not rendering @Body also skips their injection.
-    private bool IsUnavailableOnForever
-    {
-        get
-        {
-            if (client.Version != ClientVersion.Forever)
-                return false;
-
-            string path = "/" + navigation.ToBaseRelativePath(navigation.Uri).Split('?', '#')[0];
-            return !GetForeverNavItems().Exists(item =>
-                string.Equals(item.Href, path, StringComparison.OrdinalIgnoreCase));
-        }
-    }
-
-    private static List<NavItem> GetForeverNavItems() =>
-    [
-        new() { Id = "0", Href = "/", Text = "Forever status", Match = NavLinkMatch.All },
-        new() { Id = "4", Href = "/ForeverRuns", Text = "Forever runs" },
-        new() { Id = "1", Href = "/Screenshot", Text = "Screenshot" },
-        new() { Id = "2", Href = "/Log", Text = "Log" },
-        new() { Id = "3", Href = "/RestartServer", Text = "Restart" }
-    ];
+    // Not rendering @Body also skips the page's injections, which Forever may not register.
+    private bool IsUnavailableOnForever => client.Version == ClientVersion.Forever
+        && !ForeverPages.Includes(navigation.ToBaseRelativePath(navigation.Uri));
 
     private List<NavItem> GetNormalNavItems()
     {

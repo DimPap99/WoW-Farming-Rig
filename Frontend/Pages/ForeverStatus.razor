@@ -1,0 +1,86 @@
+@inherits SubscribingComponentBase
+
+@inject ForeverVisualBarTracker visualBars
+
+@* WoW: Forever's home page card: what the add-on's diagnostic bars read. *@
+
+<div class="col-sm">
+    <div class="card">
+        <div class="card-header">WoW: Forever beta compatibility</div>
+        <div class="card-body">
+            <p>Read-only view of what the add-on's bars read. Routes are started, watched and stopped on <a href="ForeverRuns">Forever runs</a>.</p>
+            @if (visualBars.TryGetLatest(out var bars))
+            {
+                <p>Player health: @bars.PlayerHealth.ToString("P0")<br />
+                   Player power: @bars.PlayerPower.ToString("P0")<br />
+                   Target bar fill: @bars.TargetHealth.ToString("P0")<br />
+                   Target presence: @TargetPresenceText(bars.TargetPresent)</p>
+                <p class="text-muted">Target health is usable only when target presence is confirmed.</p>
+                @if (bars.ActionBar is { } actionBar)
+                {
+                    <p>Action bar: @actionBar.OccupiedCount occupied, @actionBar.ReadableCount / @VisualActionBarSnapshot.SlotCount readable slots</p>
+                    <p>Main bar: @MainBarText(bars)</p>
+                    <p class="text-muted">Cooldown is the remaining fraction of the spell's cooldown, not seconds.</p>
+                }
+                else
+                {
+                    <p class="text-muted">No valid full action-bar snapshot yet.</p>
+                }
+                @if (bars.Position is { } position)
+                {
+                    <p>Map @position.UIMapId: @position.MapX.ToString("F5"), @position.MapY.ToString("F5")<br />
+                       Facing: @position.Direction.ToString("F2") radians</p>
+                }
+                else
+                {
+                    <p class="text-muted">No valid position marker yet.</p>
+                }
+                <p class="text-muted">Visual calibration: @bars.Calibration.ToString("P0"). Data expires if screen capture stops.</p>
+            }
+            else
+            {
+                <p>No fresh visual data. In the game, type <code>/forevervisual</code> to show the diagnostic bars.</p>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    // The tracker raises no event when the bars change, so the card polls it.
+    private const int RefreshMs = 250;
+
+    protected override void OnInitialized()
+    {
+        System.Threading.Timer refresh = new(_ => Redraw(), null, RefreshMs, RefreshMs);
+        OnDispose(refresh.Dispose);
+    }
+
+    private static string TargetPresenceText(bool? present) => present switch
+    {
+        true => "present",
+        false => "absent",
+        null => "unknown"
+    };
+
+    // The main-bar slots the Forever runtime can press: what each holds and
+    // how much of its cooldown remains, from the add-on's checked grids.
+    private static string MainBarText(VisualBarSample bars)
+    {
+        if (bars.ActionBar is not { } bar)
+            return "unavailable";
+        List<string> parts = [];
+        for (int slot = 1; slot <= VisualCooldownGridSnapshot.SlotCount; slot++)
+        {
+            if (bar.GetSlot(slot) is not { } action || action.Kind == VisualActionKind.Empty)
+                continue;
+            string cooldown = bars.Cooldowns?.GetSlot(slot) switch
+            {
+                null => "cooldown unknown",
+                0 => "ready",
+                double fill => $"{fill:P0} cooldown"
+            };
+            parts.Add($"{slot}: {action.Kind} {action.Id}, {cooldown}");
+        }
+        return parts.Count == 0 ? "empty" : string.Join("; ", parts);
+    }
+}

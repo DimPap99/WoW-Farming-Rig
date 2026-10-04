@@ -3,7 +3,7 @@
 @inject IBotController botController
 @inject NavigationManager navManager
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 @if (issueCount > 0)
 {
@@ -17,27 +17,17 @@
 
     protected override void OnInitialized()
     {
-        actionBarTextureReader.TextureChanged += OnTextureChanged;
-        botController.ProfileLoaded += OnProfileLoaded;
+        Subscribe(() => actionBarTextureReader.TextureChanged += OnTextureChanged, () => actionBarTextureReader.TextureChanged -= OnTextureChanged);
+        Subscribe(() => botController.ProfileLoaded += Recount, () => botController.ProfileLoaded -= Recount);
         UpdateIssueCount();
     }
 
-    public void Dispose()
-    {
-        actionBarTextureReader.TextureChanged -= OnTextureChanged;
-        botController.ProfileLoaded -= OnProfileLoaded;
-    }
-
-    private void OnProfileLoaded()
-    {
-        InvokeAsync(() =>
-        {
-            UpdateIssueCount();
-            StateHasChanged();
-        });
-    }
-
     private void OnTextureChanged(int slot, int textureId)
+    {
+        Recount();
+    }
+
+    private void Recount()
     {
         InvokeAsync(() =>
         {

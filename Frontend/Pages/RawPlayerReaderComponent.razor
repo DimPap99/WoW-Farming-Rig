@@ -1,6 +1,4 @@
-﻿@using System.Reflection
-
-@inject IAddonReader addonReader
+﻿@inject IAddonReader addonReader
 @inject PlayerReader PlayerReader
 @inject AddonBits bits
 @inject SpellInRange spellInRange
@@ -12,123 +10,42 @@
 @inject GossipReader gossipReader
 @inject ActionBarBits<ICurrentAction> currentAction
 
-@implements IDisposable
+@inherits SubscribingComponentBase
 
 <div class="container">
-    <div class="card">
-        <div class="card-header">
-            AddonReader
+    @foreach ((string title, object reader) in Readers)
+    {
+        <div class="card">
+            <div class="card-header">
+                @title
+            </div>
+            <div class="card-body" style="padding-bottom: 0">
+                <TableOfComponent Obj="@reader" />
+            </div>
         </div>
-        <div class="card-body" style="padding-bottom: 0">
-            <TableOfComponent Obj="@addonReader" />
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            PlayerReader
-        </div>
-        <div class="card-body" style="padding-bottom: 0">
-            <TableOfComponent Obj="@PlayerReader" />
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-header">
-            AddonBits
-        </div>
-        <div class="card-body" style="padding-bottom: 0">
-            <TableOfComponent Obj="@bits" />
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            CurrentAction
-        </div>
-        <div class="card-body" style="padding-bottom: 0">
-            <TableOfComponent Obj="@currentAction" />
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            SpellInRange
-        </div>
-        <div class="card-body" style="padding-bottom: 0">
-            <TableOfComponent Obj="@spellInRange" />
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            CombatLog
-        </div>
-        <div class="card-body" style="padding-bottom: 0">
-            <TableOfComponent Obj="@combatLog" />
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            Player Buffs
-        </div>
-        <div class="card-body" style="padding-bottom: 0">
-            <TableOfComponent Obj="@playerbuffs" />
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            Focus Buffs
-        </div>
-        <div class="card-body" style="padding-bottom: 0">
-            <TableOfComponent Obj="@focusbuffs" />
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            Actionbar Cost Reader
-        </div>
-        <div class="card-body" style="padding-bottom: 0">
-            <TableOfComponent Obj="@costReader" />
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            Session Stats
-        </div>
-        <div class="card-body" style="padding-bottom: 0">
-            <TableOfComponent Obj="@sessionStat" />
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            Gossip
-        </div>
-        <div class="card-body" style="padding-bottom: 0">
-            <TableOfComponent Obj="@gossipReader" />
-        </div>
-    </div>
+    }
 </div>
 
 @code {
 
+    private (string Title, object Reader)[] Readers =>
+    [
+        ("AddonReader", addonReader),
+        ("PlayerReader", PlayerReader),
+        ("AddonBits", bits),
+        ("CurrentAction", currentAction),
+        ("SpellInRange", spellInRange),
+        ("CombatLog", combatLog),
+        ("Player Buffs", playerbuffs),
+        ("Focus Buffs", focusbuffs),
+        ("Actionbar Cost Reader", costReader),
+        ("Session Stats", sessionStat),
+        ("Gossip", gossipReader),
+    ];
+
     protected override void OnInitialized()
     {
-        addonReader.AddonDataChanged += OnAddonDataChanged;
-    }
-
-    public void Dispose()
-    {
-        addonReader.AddonDataChanged -= OnAddonDataChanged;
-    }
-
-    private void OnAddonDataChanged()
-    {
-        base.InvokeAsync(StateHasChanged);
+        Subscribe(() => addonReader.AddonDataChanged += Redraw, () => addonReader.AddonDataChanged -= Redraw);
     }
 
 }
