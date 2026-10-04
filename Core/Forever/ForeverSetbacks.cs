@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace Core.Forever;
 
 /// <summary>
@@ -11,39 +9,43 @@ namespace Core.Forever;
 /// left for another; an activity that fails starts afresh
 /// (<see cref="IForeverActivity.FallBack"/>); a task that fails is given up for
 /// the next; and the last task of a route is tried again after hunting where
-/// the run stands (<see cref="ForeverAgenda.GiveUp"/>). Only what no fallback
-/// can make good stops the run: the player's death, the player taking the
-/// game back, a client setup that broke, a long loss of the screen.
+/// the run stands (<see cref="ForeverAgenda.GiveUp"/>). The run never stops
+/// for a failure: only reaching its goal ends it, or what no fallback can
+/// change (the player taking the game back, the player's death, a client
+/// setup that broke).
 /// <para>
 /// This counts the failures that reach the run in a row, without a kill, a
-/// body looted or a task done between them. Past <see cref="MaxInARow"/>
-/// whatever the run falls back to keeps failing too, and it stops with the
-/// first reason rather than loop on.
+/// body looted or a task done between them. Every <see cref="MaxInARow"/>th
+/// in a row, what the run falls back to keeps failing too, so the current
+/// task is given up as well: the next bigger goal is tried.
 /// </para>
 /// </summary>
 public sealed class ForeverSetbacks
 {
-    /// <summary>Failures in a row, with no progress between them, that stop the run.</summary>
+    /// <summary>Failures in a row, with no progress between them, after which the current task is given up too.</summary>
     public const int MaxInARow = 10;
 
-    private readonly List<string> inARow = [];
+    private int inARow;
+    private string first = string.Empty;
 
     /// <summary>Failures since the last progress.</summary>
-    public int InARow => inARow.Count;
+    public int InARow => inARow;
 
-    /// <summary>Counts a failure the run falls back from; false once too many came in a row, with why.</summary>
-    public bool TryAbsorb(string reason, out string refusal)
+    /// <summary>The first failure since the last progress.</summary>
+    public string First => first;
+
+    /// <summary>Counts a failure the run falls back from; true when the current task is to be given up as well.</summary>
+    public bool Absorb(string reason)
     {
-        inARow.Add(reason);
-        if (inARow.Count < MaxInARow)
-        {
-            refusal = string.Empty;
-            return true;
-        }
-        refusal = $"{inARow.Count} failures in a row without a kill, a body looted or a task done; the first: {inARow[0]}";
-        return false;
+        if (inARow++ == 0)
+            first = reason;
+        return inARow % MaxInARow == 0;
     }
 
     /// <summary>A kill, a body looted or a task done: the run gets somewhere again.</summary>
-    public void Progress() => inARow.Clear();
+    public void Progress()
+    {
+        inARow = 0;
+        first = string.Empty;
+    }
 }

@@ -251,15 +251,14 @@ internal static partial class LogicTest
             watching && idleWithoutRestart && watcher.State == ForeverThreatState.Watch, $"{watcher.State}");
 
         ForeverSetbacks setbacks = new();
-        bool absorbed = Enumerable.Range(1, ForeverSetbacks.MaxInARow - 1).All(i => setbacks.TryAbsorb($"failure {i}", out _));
+        bool quiet = Enumerable.Range(1, ForeverSetbacks.MaxInARow - 1).All(i => !setbacks.Absorb($"failure {i}"));
         setbacks.Progress();
-        bool cleared = setbacks.InARow == 0;
-        for (int i = 1; i < ForeverSetbacks.MaxInARow; i++)
-            setbacks.TryAbsorb($"again {i}", out _);
-        bool stops = !setbacks.TryAbsorb("one more", out string refusal);
-        check("setbacks: failures fall back until ten come in a row with no kill, loot or task done between them; then the run stops, naming the first",
-            absorbed && cleared && stops && refusal.StartsWith($"{ForeverSetbacks.MaxInARow} failures") && refusal.EndsWith("again 1"),
-            refusal);
+        bool cleared = setbacks.InARow == 0 && setbacks.First.Length == 0;
+        bool[] escalations = [.. Enumerable.Range(1, 3 * ForeverSetbacks.MaxInARow).Select(i => setbacks.Absorb($"again {i}"))];
+        check("setbacks: failures never stop the run; every tenth in a row without progress gives the task up as well, the first named",
+            quiet && cleared && escalations.Count(up => up) == 3 && escalations[ForeverSetbacks.MaxInARow - 1] &&
+            setbacks.First == "again 1" && setbacks.InARow == 3 * ForeverSetbacks.MaxInARow,
+            $"{escalations.Count(up => up)} escalations, first '{setbacks.First}'");
 
         // A frame that misses an input names it, for the pause's log line.
         check("frame: an unreadable frame names what it misses",

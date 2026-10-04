@@ -27,9 +27,9 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private enum RunState { Start, Running, Complete, Failed }
 
     // Without a readable frame the run pauses, its keys released, and says
-    // why after this long; past FrameLostMs it stops.
+    // why after this long, then again at this interval while it lasts.
     private const int FramePauseMs = 5000;
-    private const int FrameLostMs = 60000;
+    private const int FramePauseLogMs = 60000;
     private const int PreflightMs = 5000;
 
     private readonly ILogger<ForeverAutonomousGoal> logger;
@@ -57,6 +57,7 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
     private long lastActionFrame;
     private long invalidFrameSince;
     private bool framePaused;
+    private long framePauseSaidAt;
     // Bodies looted and tasks done when last seen: either is progress.
     private int lootsSeen;
     private int tasksSeen;
@@ -243,19 +244,20 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
                 string why = !latest ? tracker.Problem
                     : ForeverFrame.MissingTrialInput(bars) is { } missing ? $"{missing} did not read"
                     : "the class is not a verified one";
-                if (missingMs > FrameLostMs)
-                    machine.Fail($"no readable frame for {FrameLostMs / 1000} seconds: {why}");
-                else if (missingMs > FramePauseMs && !framePaused)
+                // Paused as long as it takes, saying so now and then.
+                if (missingMs > FramePauseMs && GetElapsedTime(framePauseSaidAt).TotalMilliseconds > FramePauseLogMs)
                 {
                     framePaused = true;
-                    logger.LogWarning("Forever paused: no readable frame for {Seconds} seconds ({Why}); waiting up to {Limit} seconds for one",
-                        FramePauseMs / 1000, why, FrameLostMs / 1000);
+                    framePauseSaidAt = GetTimestamp();
+                    logger.LogWarning("Forever paused: no readable frame for {Seconds:0} seconds ({Why}); waiting for one",
+                        missingMs / 1000, why);
                 }
                 return;
             }
             if (framePaused)
             {
                 framePaused = false;
+                framePauseSaidAt = 0;
                 if (logger.IsEnabled(LogLevel.Information))
                     logger.LogInformation("Forever resumed after {Seconds:0} seconds without a readable frame",
                         GetElapsedTime(invalidFrameSince).TotalSeconds);
@@ -332,12 +334,12 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             machine.Go(RunState.Complete);
     }
 
-    // A failure stops the run only when no fallback can make it good: the
-    // player took the game back (it lost focus), or the client lost
+    // A failure never ends the run: only what no fallback can change does,
+    // the player taking the game back (it lost focus) or the client losing
     // something the run needs. Otherwise the failed activity falls back as
     // it knows how and starts afresh, a failed task is given up for the
-    // next, and the selector picks again on the next frame. Too many
-    // failures in a row without progress stop the run all the same.
+    // next, and the selector picks again on the next frame. Every tenth
+    // failure in a row without progress gives the current task up as well.
     private void FallBack(VisualBarSample bars, IForeverActivity? activity, string reason)
     {
         if (!navigator.GameHasFocus)
@@ -350,11 +352,10 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
             machine.Fail($"{reason}; {broken}");
             return;
         }
-        if (!setbacks.TryAbsorb(reason, out string refusal))
-        {
-            machine.Fail(refusal);
-            return;
-        }
+        // A fresh start: a press whose outcome could not be proved does not
+        // keep casting closed.
+        combat.ReleaseCasting();
+        bool escalate = setbacks.Absorb(reason);
         string fallback = "the run goes on";
         if (activity is not null)
         {
@@ -363,6 +364,12 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
         }
         logger.LogWarning("Forever {Activity} failed: {Reason}; falling back: {Fallback} ({Count} in a row without progress)",
             activity?.Name ?? "Adhoc", reason, fallback, setbacks.InARow);
+        if (!escalate || activity == tasking)
+            return;
+        string bigger = tasking.FallBack(reason);
+        selector.Restart();
+        logger.LogWarning("Forever: {Count} failures in a row without progress, the first: {First}; falling back to a bigger goal: {Bigger}",
+            setbacks.InARow, setbacks.First, bigger);
     }
 
     // A verified kill counts for the run and for the agenda's task. Out of
