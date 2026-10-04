@@ -74,7 +74,10 @@ public sealed class ForeverSelector
     /// The current activity fell back and starts afresh: the next
     /// <see cref="Switch"/> enters whichever activity it picks, the same one too.
     /// </summary>
-    public void Restart() => restart = true;
+    public void Restart()
+    {
+        restart = true;
+    }
 
     /// <summary>The cheapest activity that wants to run on <paramref name="facts"/>; it switches nothing.</summary>
     public IForeverActivity? Pick(in ForeverFacts facts)

@@ -217,7 +217,10 @@ public sealed class ForeverCaster
     /// outcome could not be proved opens again. Each such press costs the run
     /// a fallback, so one never leads to presses without end.
     /// </summary>
-    public void Release() => needsReset = false;
+    public void Release()
+    {
+        needsReset = false;
+    }
 
     // The action's key, as a person presses it; nothing is typed into chat
     // (the profile rules refuse a MacroText).

@@ -133,7 +133,9 @@ public static class Program
 
         // Forever: the server stays read-only and starts runs as a child process.
         if (isForever)
+        {
             services.AddSingleton<ForeverRunHost>();
+        }
 
         services.AddCoreFrontend();
 
