@@ -2078,6 +2078,16 @@ a first version stopped the run after ten such failures in a row. The user:
 fallback now opens casting again, and every tenth failure in a row gives the
 current task up instead of stopping.
 
+The trip after that (`5-crossroads12`) passed: it arrived at the Crossroads in
+3.5 minutes with 8 kills, every frame read, all 8 bodies looted (6 on the
+second press, a step closer) and both beasts skinned. Twice an Arcane Shot's
+success did not show; each time the fight fell back once and went on to a
+verified kill. Open from it: the Arcane Shot event is likely overwritten by an
+Auto Shot one in the add-on's single cast latch (only Auto Shot events seen,
+three in the 3 seconds); and six windows "closed with 1 items left", every
+body that was not a beast, which looks like the coin slot not reporting
+`LOOT_SLOT_CLEARED` rather than an item left behind.
+
 Offline, `--logic-test` has 302 checks.
 
 ### Quests (later)
