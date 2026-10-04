@@ -15,7 +15,6 @@
 
 @inject IBotController botController
 @inject LevelTracker levelTracker
-@inject WApi api
 
 @inherits SubscribingComponentBase
 
@@ -66,7 +65,7 @@
                     <td>
                         @if (Bits.Target())
                         {
-                            <a href="@($"{api.NpcId}{playerReader.TargetId}")" target="_blank">
+                            <WowheadLink Kind="WowheadKind.Npc" Id="playerReader.TargetId">
                                 <div>
                                     @addonReader.TargetName<br />
                                     (@playerReader.TargetLevel) @((int)playerReader.TargetHealthPercent()) %<br />
@@ -82,7 +81,7 @@
                                     }
 
                                 </div>
-                            </a>
+                            </WowheadLink>
                         }
                         else
                         {

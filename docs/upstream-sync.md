@@ -21,4 +21,18 @@ dotnet build WoWFarmingRig.sln
 git push origin main
 ```
 
-If Git reports conflicts, resolve them and complete the merge before building or pushing. Check changes to client detection, add-on data, and pathfinding against the [Forever port status](forever-port.md), since those areas have fork-specific behavior.
+If Git reports conflicts, resolve them and complete the merge before building or pushing.
+
+Upstream keeps the Leaflet map in one `Frontend/wwwroot/script/leaflet-watch.js`; here it
+is split into pieces loaded in order, so an upstream change to that file conflicts with
+the split. While the merge is in progress, let the script merge it as one file and split
+it again, then mark it resolved:
+
+```powershell
+node scripts/leaflet-pieces.mjs merge upstream/dev
+git add Frontend/wwwroot/script/leaflet-*.js
+```
+
+It reads our side from `HEAD`, so the conflicted working copy does not matter. If both
+sides changed the same lines it writes `leaflet-watch.merged.js` with conflict markers
+instead; resolve them there and run `node scripts/leaflet-pieces.mjs split leaflet-watch.merged.js`. Check changes to client detection, add-on data, and pathfinding against the [Forever port status](forever-port.md), since those areas have fork-specific behavior.

@@ -1,9 +1,8 @@
 ﻿@using Core.Database
 
-@inject WApi api
 @inject ItemDB itemDB
 
-<a href="@($"{api.ItemId}{Item.Entry}")" target="_blank" data-wowhead="item=@Item.Entry" class="small" style="text-decoration:none">
+<WowheadLink Kind="WowheadKind.Item" Id="Item.Entry" class="small">
     <b>
         <span style="font-weight:normal" class="@ItemQualityCss.For(Item.Quality)">
             @if (Count > 1)
@@ -32,7 +31,7 @@
             }
         </span>
     </b>
-</a>
+</WowheadLink>
 
 @code {
     private const int MaxLifeTime = 30;

@@ -176,7 +176,7 @@ function bakeSetClickMode(on) {
     }
 }
 
-/// Builds the sidebar section. Called from createSidebar in leaflet-watch.js.
+/// Builds the sidebar section. Called from createSidebar in leaflet-sidebar.js.
 function bakeBuildSection(body) {
     bakeStatusEl = L.DomUtil.create('div', 'section-label', body);
     bakeStatusEl.style.cssText = 'margin-bottom:6px;font-size:11px;color:#bbb;white-space:normal;';

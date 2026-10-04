@@ -13,11 +13,20 @@ Pages/                   Leaflet, RecordPath, ClassConfig, ... (routable)
 Shared/MainLayout.razor  nav menu, incl. which items a client version gets
 Shared/SubscribingComponentBase.cs   event subscriptions + thread-safe redraw
 Shared/BagGrid.razor     the bag table (Swag, Mail), slot content templatable
-Helper/                  Currency, ItemQualityCss, JsonFolderWatcher, JS teardown
+Shared/WowheadLink.razor an item, spell or NPC linked to the client's Wowhead page
+Shared/PropertyRows.razor  settings rows by reflection (Class Config, Addon Config)
+Shared/Terminal.razor    the dark log window (Log, Chat, Forever runs); its rig-*
+                         classes live in site.css
+Helper/                  Currency, ItemQualityCss, JsonFolderWatcher, JS teardown,
+                         PathEditor (the Path Editor's points and selection)
+KeyBindings/             the Key Bindings page's checks: KeyboardKeys,
+                         KeyBindingCheck (needed vs bound), ActionBarSlotMap
 Controllers/             Road / DangerZone / Path authoring endpoints
 Forever*.cs, Pages/Forever*.razor   WoW: Forever only (see docs/forever-port.md)
 wwwroot/script/
-  leaflet-watch.js       the map: eras, tile bases, zone/subzone resolution, POIs
+  leaflet-watch.js       the map, part 1: eras, Configs, tile bases, shared state
+  leaflet-map.js ...     the map's other parts, in load order: map (data, init),
+  ... leaflet-signalr.js layers, coords, spawns, sidebar, paths, signalr
   leaflet-navmesh.js     navmesh tile overlay
   leaflet-bake.js        bake controls
   leaflet-zones.js       zone polygons
@@ -39,6 +48,15 @@ component that has both. Its JS cleanup goes through `InvokeTeardownAsync`.
 which `_Imports.razor` does not import. Without `@using Frontend.Pages`, a tag like
 `<ItemComponent>` renders as an unknown HTML element, and the build only warns (RZ10012).
 
+**Razor keeps the line break between two sibling elements.** Only whitespace next to
+a code block (`@if`, `@foreach`) is dropped. A `rig-line` in a `Terminal` is a flex row
+for that reason: flex ignores whitespace between items, and only `rig-msg` keeps
+`pre-wrap`. Put `pre-wrap` on a whole line and every indented span shows its newline.
+
+**Format numbers for CSS with the invariant culture.** The server may run in a culture
+with a decimal comma, and `width: 82,5%` or `rotate(-2,41rad)` is silently ignored.
+`ForeverStatus` shows how.
+
 **Static file routes are order-sensitive.** `DependencyInjection` registers
 `/tiles/<continent>` for shared-art continents *before* the general `/tiles`. Reversing
 that serves the wrong era's art.
@@ -50,6 +68,16 @@ not break one route, it kills host startup.
 **Never gate UI on a hardcoded client-version list.** Use `DataConfig.HasLeaflet(...)`
 (era-derived). The map and its nav entry were stuck on `SoM or TBC` long after wrath,
 cata and mop worked, which is exactly how that goes stale.
+
+**The map script is in pieces, and upstream still has it whole.** `leaflet-watch.js`
+and `leaflet-map/layers/coords/spawns/sidebar/paths/signalr.js` are contiguous runs of
+upstream's one `leaflet-watch.js`, listed in that order in `BlazorServer/App.razor` and
+`PathingAPI/Pages/_Host.cshtml`. They share one global scope, so a function may call
+into any piece, but a load-time statement (`const x = new L.…`) sees only earlier
+pieces. Merge an upstream change to the single file with `node
+scripts/leaflet-pieces.mjs merge upstream/dev` (see `docs/upstream-sync.md`), not by
+hand, and run its `check` after moving a boundary. `Configs` stays in
+`leaflet-watch.js`: `CoreTests` reads it from there.
 
 **The JS mirrors `DataConfig` and must be kept in step.** `clientEra()`, `tileEra()`,
 `TILE_SHARED_CONTINENTS` and the `Configs` blocks in `leaflet-watch.js` duplicate

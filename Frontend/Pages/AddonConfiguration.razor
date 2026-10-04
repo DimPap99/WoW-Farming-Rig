@@ -16,23 +16,7 @@
         <div class="card-body" style="padding-bottom: 0">
             <table class="table table-bordered">
                 <tbody>
-                    @foreach (var property in addonConfig.GetType().GetProperties())
-                    {
-                        <tr>
-                            @switch (Type.GetTypeCode(property.PropertyType))
-                            {
-                                case TypeCode.String:
-                                    <td>@(property.Name)</td>
-                                    <td>
-                                        <input value="@property.GetValue(addonConfig)?.ToString()"
-                                               class="form-control"
-                                               disabled="@(property.Name.Contains(nameof(addonConfig.Command)) || addonConfigurator.Installed())"
-                                               @onchange="c => { property.SetValue(addonConfig, c.Value); }" />
-                                    </td>
-                                    break;
-                            }
-                        </tr>
-                    }
+                    <PropertyRows Target="addonConfig" Editable="@(addonConfigurator.Installed() ? none : editable)" Hidden="hidden" />
                 </tbody>
             </table>
         </div>
@@ -92,6 +76,13 @@
 @code {
 
     private AddonConfig addonConfig = null!;
+
+    // Install makes Command from Title (AddonConfigurator.Validate), and the
+    // other commands from Command; nothing is edited once the addon is installed.
+    private static readonly HashSet<string> editable =
+        [nameof(AddonConfig.Author), nameof(AddonConfig.CellSize), nameof(AddonConfig.Title)];
+    private static readonly HashSet<string> none = [];
+    private static readonly HashSet<string> hidden = [nameof(AddonConfig.Version)];
 
     protected override void OnInitialized()
     {

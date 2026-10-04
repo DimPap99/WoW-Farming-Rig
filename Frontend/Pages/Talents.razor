@@ -5,7 +5,6 @@
 @using SharedLib
 
 @inject IAddonReader addonReader
-@inject WApi api
 @inject TalentReader talentReader
 @inject TalentDB talentDB
 @inject IconDB iconDB
@@ -44,11 +43,11 @@
                                         var isSpent = spentRank > 0;
 
                                         <div class="talent-icon-wrapper @(isSpent ? "" : "talent-unspent")">
-                                            <a href="@($"{api.SpellId}{spellId}")" target="_blank">
+                                            <WowheadLink Kind="WowheadKind.Spell" Id="spellId">
                                                 <img src="@iconDB.GetIconUrlForSpell(spellId, 36)"
                                                      class="talent-icon"
                                                      title="@GetTalentName(spellId)" />
-                                            </a>
+                                            </WowheadLink>
                                             @if (isSpent)
                                             {
                                                 <span class="talent-rank-badge">@spentRank</span>

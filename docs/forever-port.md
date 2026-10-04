@@ -208,6 +208,8 @@ Forever-owned code:
 - `Game/Input/MouseCameraInput.cs`, `Game/Input/MousePointerInput.cs`,
   `Addons/ForeverProbe`, `Utilities/Forever*`.
 - `Frontend/ForeverRunHost.cs` (starts and stops the trial runner),
+  `ForeverRunFiles.cs` (the repository, the runner's build, routes and logs),
+  `ForeverRouteCatalog.cs` (the route files a run can start from),
   `ForeverRunOutput.cs` (what a run printed, read through `ForeverRunProtocol`),
   `ForeverPages.cs` (the pages offered on Forever), `Pages/ForeverRuns.razor`
   and `Pages/ForeverStatus.razor` (the home page card).

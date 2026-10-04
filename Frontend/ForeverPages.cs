@@ -13,11 +13,11 @@ public static class ForeverPages
 {
     public static List<NavItem> NavItems() =>
     [
-        new() { Id = "0", Href = "/", Text = "Forever status", Match = NavLinkMatch.All },
-        new() { Id = "4", Href = "/ForeverRuns", Text = "Forever runs" },
-        new() { Id = "1", Href = "/Screenshot", Text = "Screenshot" },
-        new() { Id = "2", Href = "/Log", Text = "Log" },
-        new() { Id = "3", Href = "/RestartServer", Text = "Restart" }
+        new() { Id = "0", Href = "/", Text = "Forever status", IconName = IconName.Activity, Match = NavLinkMatch.All },
+        new() { Id = "4", Href = "/ForeverRuns", Text = "Forever runs", IconName = IconName.PlayCircle },
+        new() { Id = "1", Href = "/Screenshot", Text = "Screenshot", IconName = IconName.Camera },
+        new() { Id = "2", Href = "/Log", Text = "Log", IconName = IconName.Terminal },
+        new() { Id = "3", Href = "/RestartServer", Text = "Restart", IconName = IconName.ArrowClockwise }
     ];
 
     /// <summary>Whether the page at <paramref name="baseRelativeUri"/> is one of <see cref="NavItems"/>.</summary>

@@ -218,6 +218,11 @@ app {
     object-fit: contain;
 }
 
+/* Shared/WowheadLink: entries read as names, not as underlined links. */
+a[data-wowhead] {
+    text-decoration: none;
+}
+
 .poor {
     color: #9d9d9d;
 }
@@ -265,4 +270,204 @@ app {
 
 [data-bs-theme="dark"] .goal-child-row {
     background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* ------------------------------------------------------------------ terminal
+   Shared/Terminal.razor and the rig-line rows inside it: the log, chat and a
+   run's output. A terminal stays dark in either theme. */
+:root {
+    --rig-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, SFMono-Regular, Menlo, monospace;
+    --rig-term-bg: #0d1117;
+    --rig-term-bar: #161b22;
+    --rig-term-border: #30363d;
+    --rig-term-text: #c9d1d9;
+    --rig-term-dim: #7d8590;
+    --rig-term-green: #3fb950;
+    --rig-term-yellow: #d29922;
+    --rig-term-red: #f85149;
+    --rig-term-blue: #58a6ff;
+    --rig-term-cyan: #39c5cf;
+    --rig-term-violet: #d2a8ff;
+}
+
+.rig-terminal {
+    background: var(--rig-term-bg);
+    border: 1px solid var(--rig-term-border);
+    border-radius: .5rem;
+    overflow: hidden;
+    box-shadow: 0 .25rem .75rem rgba(0, 0, 0, .25);
+}
+
+.rig-terminal-bar {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .4rem .75rem;
+    background: var(--rig-term-bar);
+    border-bottom: 1px solid var(--rig-term-border);
+    color: var(--rig-term-dim);
+    font-family: var(--rig-mono);
+    font-size: .75rem;
+}
+
+.rig-terminal-lights {
+    display: inline-flex;
+    gap: .35rem;
+}
+
+    .rig-terminal-lights i {
+        display: block;
+        width: .7rem;
+        height: .7rem;
+        border-radius: 50%;
+        background: #ff5f56;
+    }
+
+        .rig-terminal-lights i:nth-child(2) {
+            background: #ffbd2e;
+        }
+
+        .rig-terminal-lights i:nth-child(3) {
+            background: #27c93f;
+        }
+
+.rig-terminal-title {
+    color: var(--rig-term-text);
+}
+
+.rig-terminal-tools {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: .75rem;
+}
+
+    .rig-terminal-tools label {
+        margin: 0;
+        cursor: pointer;
+    }
+
+    .rig-terminal-tools input[type=checkbox] {
+        accent-color: var(--rig-term-green);
+        vertical-align: middle;
+    }
+
+.rig-terminal-body {
+    overflow-y: auto;
+    padding: .5rem .75rem;
+    color: var(--rig-term-text);
+    font-family: var(--rig-mono);
+    font-size: .8rem;
+    line-height: 1.5;
+    scrollbar-color: var(--rig-term-border) transparent;
+}
+
+/* Written oldest first: the reversed column keeps the newest line in view. */
+.rig-terminal-tail {
+    display: flex;
+    flex-direction: column-reverse;
+}
+
+/* A row of parts - time, level, source, message - spaced by the gap: a flex
+   row also ignores the markup's whitespace between them. The message wraps in
+   its own column and keeps its spacing; an exception goes on a row below. */
+.rig-line {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: .6rem;
+}
+
+.rig-msg {
+    flex: 1 1 0;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.rig-time,
+.rig-dim {
+    color: var(--rig-term-dim);
+}
+
+.rig-level {
+    font-weight: 600;
+}
+
+.rig-source {
+    color: var(--rig-term-cyan);
+}
+
+.rig-empty {
+    color: var(--rig-term-dim);
+    font-style: italic;
+}
+
+/* LogComponent: a level tag, and from warnings up the message in its colour. */
+.rig-vrb .rig-level,
+.rig-vrb .rig-msg {
+    color: var(--rig-term-dim);
+}
+
+.rig-dbg .rig-level {
+    color: var(--rig-term-blue);
+}
+
+.rig-inf .rig-level {
+    color: var(--rig-term-green);
+}
+
+.rig-wrn .rig-level,
+.rig-wrn .rig-msg {
+    color: var(--rig-term-yellow);
+}
+
+.rig-err .rig-level,
+.rig-err .rig-msg,
+.rig-ftl .rig-msg {
+    color: var(--rig-term-red);
+}
+
+.rig-ftl .rig-level {
+    padding: 0 .25rem;
+    border-radius: .2rem;
+    color: #fff;
+    background: var(--rig-term-red);
+}
+
+.rig-exception {
+    flex-basis: 100%;
+    margin: .1rem 0 .35rem 1.5rem;
+    color: var(--rig-term-red);
+}
+
+    .rig-exception summary {
+        cursor: pointer;
+    }
+
+    .rig-exception pre {
+        margin: .25rem 0 0;
+        color: var(--rig-term-dim);
+        font-size: .75rem;
+        white-space: pre-wrap;
+    }
+
+/* ChatComponent: the game's channel colours. */
+.rig-chat-whisper {
+    color: #ff80ff;
+}
+
+.rig-chat-yell {
+    color: #ff4040;
+}
+
+.rig-chat-emote {
+    color: #ff8040;
+}
+
+.rig-chat-party {
+    color: #aaaaff;
+}
+
+.rig-author {
+    font-weight: 600;
 }

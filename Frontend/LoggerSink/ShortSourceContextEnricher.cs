@@ -7,6 +7,9 @@ namespace Frontend;
 
 public sealed class ShortSourceContextEnricher : ILogEventEnricher
 {
+    /// <summary>The property it adds: the source context's last segment, the class name.</summary>
+    public const string PropertyName = "ShortSource";
+
     private static readonly ConcurrentDictionary<string, LogEventProperty> Cache = [];
 
     public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
@@ -20,7 +23,7 @@ public sealed class ShortSourceContextEnricher : ILogEventEnricher
                 {
                     int lastDot = ctx.LastIndexOf('.');
                     string shortName = lastDot >= 0 ? ctx[(lastDot + 1)..] : ctx;
-                    return factory.CreateProperty("ShortSource", shortName);
+                    return factory.CreateProperty(PropertyName, shortName);
                 }, propertyFactory));
         }
     }
