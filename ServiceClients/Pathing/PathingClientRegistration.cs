@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using System;
 
@@ -15,10 +17,35 @@ public static class PathingClientRegistration
     /// <summary>Every call is safe to repeat: routes are queries, saves replace, deletes are idempotent.</summary>
     public const int Retries = 2;
 
+    /// <summary>
+    /// Registers <see cref="PathingServiceOptions"/>, read from the host's configuration when first
+    /// needed, so settings a host adds after registering services still count.
+    /// </summary>
+    public static IServiceCollection AddPathingServiceOptions(this IServiceCollection services)
+    {
+        services.TryAddSingleton(sp => PathingServiceOptions.From(sp.GetRequiredService<IConfiguration>()));
+        return services;
+    }
+
+    /// <summary>
+    /// Registers <see cref="IPathingClient"/> for the service the host's configuration names
+    /// (<see cref="PathingServiceOptions"/>), and the options themselves.
+    /// </summary>
+    public static IHttpClientBuilder AddPathingClient(this IServiceCollection services)
+    {
+        services.AddPathingServiceOptions();
+        return services.AddPathingClient((sp, client) => client.BaseAddress = sp.GetRequiredService<PathingServiceOptions>().Url);
+    }
+
     /// <summary>Registers <see cref="IPathingClient"/> for the service at <paramref name="baseAddress"/>.</summary>
     public static IHttpClientBuilder AddPathingClient(this IServiceCollection services, Uri baseAddress)
     {
-        IHttpClientBuilder builder = services.AddHttpClient<IPathingClient, PathingClient>(client => client.BaseAddress = baseAddress);
+        return services.AddPathingClient((_, client) => client.BaseAddress = baseAddress);
+    }
+
+    private static IHttpClientBuilder AddPathingClient(this IServiceCollection services, Action<IServiceProvider, System.Net.Http.HttpClient> configure)
+    {
+        IHttpClientBuilder builder = services.AddHttpClient<IPathingClient, PathingClient>(configure);
 
         builder.AddStandardResilienceHandler(options =>
         {

@@ -19,9 +19,9 @@ namespace PathingService.Paths;
 
 /// <summary>
 /// The recorded path library: the files under <see cref="DataConfig.Path"/> that class profiles
-/// name and the bot walks. Formats stay exactly as they were, so the bot, BlazorServer and
-/// PathingAPI keep reading the same files: points are read the way the bot reads them
-/// (Newtonsoft, case-insensitive, a missing Z is 0) and written the way
+/// name and the bot walks. Formats stay exactly as they were, so the bot and BlazorServer keep
+/// reading the same files: points are read the way the bot reads them (Newtonsoft,
+/// case-insensitive, a missing Z is 0) and written the way the old
 /// <c>PathController.SavePath</c> wrote them.
 /// </summary>
 public sealed class RecordedPathStore(DataConfig dataConfig)

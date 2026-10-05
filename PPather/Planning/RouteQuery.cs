@@ -1,4 +1,6 @@
 #nullable enable
+using DotRecast.Detour;
+
 using PPather.Navmesh;
 
 using System.Numerics;
@@ -55,3 +57,17 @@ public sealed record RouteOutcome(RoutePlanStatus Status, Vector3[] Points, stri
 {
     public bool Found => Status == RoutePlanStatus.Found;
 }
+
+/// <summary>What <see cref="RoutePlanner.RoutePlanned"/> reports: one answer, always in world yards.</summary>
+/// <param name="Continent">The continent the query ran on.</param>
+/// <param name="From">The start, with the height it was resolved to when the query got that far.</param>
+/// <param name="To">The destination, likewise.</param>
+/// <param name="Points">The route in world yards; empty unless found.</param>
+/// <param name="Status">How the query ended.</param>
+/// <param name="ElapsedMs">Time spent.</param>
+/// <param name="Detail">Why nothing was found; null when found.</param>
+public sealed record PlannedRoute(string Continent, Vector3 From, Vector3 To, Vector3[] Points, RoutePlanStatus Status,
+    double ElapsedMs, string? Detail);
+
+/// <summary>A navmesh tile a planner lane loaded (with its mesh data) or evicted (no data).</summary>
+public readonly record struct LaneTile(string Continent, int X, int Z, DtMeshData? Data);

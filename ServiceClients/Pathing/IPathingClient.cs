@@ -38,4 +38,36 @@ public interface IPathingClient
     Task<ServiceResult> SaveDangerAsync(string continent, int uiMapId, DangerZones danger, CancellationToken token = default);
 
     Task<ServiceResult> ReloadCostZonesAsync(CancellationToken token = default);
+
+    Task<ServiceResult<WorldInfo>> GetWorldAsync(CancellationToken token = default);
+
+    /// <param name="uiMapId">The zone.</param>
+    /// <param name="npcType">A key of <see cref="WorldInfo.NpcFlags"/>, such as <c>vendor</c>.</param>
+    Task<ServiceResult<NpcInfo[]>> GetNpcsAsync(int uiMapId, string npcType, CancellationToken token = default);
+
+    Task<ServiceResult<NamedLocation[]>> GetLocationsAsync(CancellationToken token = default);
+
+    Task<ServiceResult<TestRoute[]>> GetTestRoutesAsync(CancellationToken token = default);
+
+    Task<ServiceResult<NavmeshTile[]>> GetNavmeshTilesAsync(string continent, CancellationToken token = default);
+
+    /// <summary>Deletes every baked tile of <paramref name="continent"/>; refused while a bake runs.</summary>
+    Task<ServiceResult<CacheCleared>> ClearNavmeshAsync(string continent, CancellationToken token = default);
+
+    Task<ServiceResult<BakeStatus>> GetBakeStatusAsync(CancellationToken token = default);
+
+    /// <summary>Starts a bake in the background; refused (409) while another one runs.</summary>
+    Task<ServiceResult<BakeStatus>> StartBakeAsync(BakeRequest request, CancellationToken token = default);
+
+    /// <summary>Cancels the running bake; refused (409) when none runs.</summary>
+    Task<ServiceResult<BakeStatus>> CancelBakeAsync(CancellationToken token = default);
+
+    /// <summary>Starts extracting the area-id grid of <paramref name="continent"/>, or of every continent.</summary>
+    Task<ServiceResult> BuildAreaGridAsync(string? continent = null, CancellationToken token = default);
+
+    Task<ServiceResult> DrawPathAsync(WatchPath path, CancellationToken token = default);
+
+    Task<ServiceResult> ShowMarkerAsync(WatchMarker marker, CancellationToken token = default);
+
+    Task<ServiceResult> ClearWatchAsync(CancellationToken token = default);
 }

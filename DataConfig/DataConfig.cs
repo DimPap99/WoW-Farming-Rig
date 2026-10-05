@@ -17,6 +17,9 @@ public sealed class DataConfig
     /// <summary>The navmesh tile folder under <see cref="PathInfo"/>.</summary>
     public const string NavmeshFolder = "navmesh";
 
+    /// <summary>The named places (teleport targets and landmarks) in <see cref="Locations"/>.</summary>
+    public const string TeleportLocationsFile = "teleport_locations.txt";
+
     public int Version = DataConfigMeta.Version;
     // Spelled as the repo folder is: "json" only resolves on a case-insensitive filesystem.
     public string Root { get; set; } = Join("..", "Json");
@@ -49,6 +52,12 @@ public sealed class DataConfig
     public string Leaflet => Join(Root, "leaflet", ClientEra(Exp));
     [JsonIgnore]
     public string AreaGrid => Join(Root, "area_grid", ClientEra(Exp));
+    /// <summary>
+    /// Named places in world coordinates (<see cref="TeleportLocationsFile"/>), for every client:
+    /// each line carries its own map id, and a reader keeps the continents it knows.
+    /// </summary>
+    [JsonIgnore]
+    public string Locations => Join(Root, "locations");
 
     /// <summary>
     /// Groups clients whose art/geometry is shared, so geometry-derived assets
@@ -130,8 +139,24 @@ public sealed class DataConfig
         Join(Root, "leaflet", TileEra(Exp, continent), continent);
 
     /// <summary>
+    /// The continents whose tiles this client reads from an earlier era's folder, with that
+    /// folder. A host serving tiles registers these before its general tile route, so the more
+    /// specific route wins.
+    /// </summary>
+    public System.Collections.Generic.IEnumerable<(string Continent, string Folder)> SharedTileFolders()
+    {
+        foreach (string continent in TileSharedContinents)
+        {
+            if (TileEra(Exp, continent) != ClientEra(Exp))
+            {
+                yield return (continent, LeafletFor(continent));
+            }
+        }
+    }
+
+    /// <summary>
     /// Geometry eras that have minimap tiles and a leaflet map config. Mirrors the
-    /// Configs blocks in Frontend/wwwroot/script/leaflet-watch.js: a client whose
+    /// Configs blocks in MapAssets/wwwroot/script/leaflet-watch.js: a client whose
     /// era is missing there resolves to no config and renders a blank map, so the
     /// UI gates on this rather than on a hand-listed set of client versions.
     /// </summary>

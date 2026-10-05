@@ -18,9 +18,9 @@ namespace PathingService.CostZones;
 /// <summary>
 /// The authored roads and danger zones under <see cref="DataConfig.Road"/>: one file per uiMap,
 /// named by its id, with danger zones in <c>dangerzone/</c>. The layout and the bytes are what
-/// the map UI's road and danger-zone controllers write, so the bot's
-/// <see cref="CostZoneLoader"/> and the PathingAPI keep reading the same files. Unlike those
-/// controllers, a save is checked with the loader's own rules first.
+/// the map's old road and danger-zone controllers wrote, so the bot's
+/// <see cref="CostZoneLoader"/> keeps reading the same files. Unlike those controllers, a save
+/// is checked with the loader's own rules first.
 /// </summary>
 public sealed class CostZoneStore(DataConfig dataConfig)
 {

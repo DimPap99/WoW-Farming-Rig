@@ -14,7 +14,7 @@ using Xunit;
 
 namespace ServiceTests;
 
-/// <summary>A route of the corpus: a known case from PathingAPI's test routes on a precata continent.</summary>
+/// <summary>A route of the corpus: a known case from the test routes on a precata continent.</summary>
 public sealed record CorpusRoute(string Name, int UiMap, RouteSpace Space, Vector3 From, Vector3 To)
 {
     public override string ToString()
@@ -59,7 +59,7 @@ internal static class TestData
     }
 
     /// <summary>
-    /// Known-trouble routes from <c>PathingAPI/Catalog/TestRoutes.cs</c> on Azeroth and Kalimdor:
+    /// Known-trouble routes from <c>PathingService/Catalog/TestRoutes.cs</c> on Azeroth and Kalimdor:
     /// open ground, towns, interiors, water and destinations given without a height.
     /// </summary>
     public static IReadOnlyList<CorpusRoute> Corpus { get; } =
