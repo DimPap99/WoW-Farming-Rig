@@ -1,3 +1,5 @@
+using Contracts.Pathing;
+
 using Core;
 
 using Frontend;
@@ -13,6 +15,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 using Serilog;
+
+using ServiceClients.Pathing;
 
 using SharedLib.Logging;
 using Serilog.Templates;
@@ -161,13 +165,10 @@ public static class Program
             services.AddHostedService<MdnsAdvertisingService>();
         }
 
-        services.AddControllers().AddJsonOptions(options =>
-        {
-            options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
-            options.JsonSerializerOptions.Converters.Add(new Vector3Converter());
-            options.JsonSerializerOptions.Converters.Add(new Vector2Converter());
-            options.JsonSerializerOptions.Converters.Add(new Vector4Converter());
-        });
+        // The map authors recorded paths and cost zones through the Pathing Service's API,
+        // forwarded so the map's script stays same-origin (see ConfigureApp).
+        services.AddPathingServiceOptions();
+        services.AddHttpForwarder();
 
         services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true });
@@ -198,10 +199,9 @@ public static class Program
 
         app.UseAntiforgery();
 
-        app.UseEndpoints(endpoints =>
-        {
-            endpoints.MapControllers();
-        });
+        // No service running answers 502, which the map reports as "offline".
+        PathingServiceOptions pathing = app.Services.GetRequiredService<PathingServiceOptions>();
+        app.MapForwarder($"{PathingApi.Root}/{{**catch-all}}", pathing.Url.GetLeftPart(UriPartial.Authority));
 
         return app;
     }

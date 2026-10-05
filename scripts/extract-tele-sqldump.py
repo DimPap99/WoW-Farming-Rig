@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Merge a world DB's `game_tele` table into Frontend/wwwroot/teleport_locations.txt.
+"""Merge a world DB's `game_tele` table into Json/locations/teleport_locations.txt.
 
 `game_tele` is what backs the `.tele <name>` GM command on TrinityCore and its forks
 (SkyFire included), so it is a ready-made POI list: one named, reachable spot per
 landmark, already in world coordinates.
 
 FILE FORMAT  `id x y z orientation mapId name`, space separated, one per line.
-Both readers - leaflet-watch.js addPoi/addTeleportPoints and PathingAPI's
-SearchParameters.razor - index fields positionally and use only x, y, z, mapId and
-name. `id` and `orientation` are never read, but must stay present or the positions
-shift.
+Both readers - the map's addPoi/addTeleportPoints (MapAssets) and the Pathing Service's
+LocationCatalog - index fields positionally and use only x, y, z, mapId and name.
+`id` and `orientation` are never read, but must stay present or the positions shift.
 
 MERGE RULES
   * existing lines are kept verbatim, in order - the committed file is hand-augmented
@@ -36,12 +35,10 @@ _sql = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_sql)
 rows = _sql.rows
 
-# Two tracked copies, kept byte-identical. Frontend's is served to the Leaflet page;
-# PathingAPI reads its own from disk at wwwroot/teleport_locations.txt. Everything else
-# a glob turns up is a bin/ build artefact.
+# The one tracked copy (DataConfig.Locations): the map fetches it at /locations and the
+# Pathing Service's location catalog reads it.
 DEFAULT_OUTS = [
-    os.path.join(ROOT, "Frontend", "wwwroot", "teleport_locations.txt"),
-    os.path.join(ROOT, "PathingAPI", "wwwroot", "teleport_locations.txt"),
+    os.path.join(ROOT, "Json", "locations", "teleport_locations.txt"),
 ]
 
 
@@ -54,7 +51,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dump")
     ap.add_argument("--out", action="append", default=None,
-                    help="repeatable; defaults to both tracked copies")
+                    help="repeatable; defaults to the tracked copy")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 

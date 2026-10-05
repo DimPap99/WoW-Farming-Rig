@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Contracts\Contracts.csproj" />
+    <ProjectReference Include="..\ControlCenter\ControlCenter.csproj" />
     <ProjectReference Include="..\PathingService\PathingService.csproj" />
     <ProjectReference Include="..\PPather\PPather.csproj" />
     <ProjectReference Include="..\ServiceClients\ServiceClients.csproj" />

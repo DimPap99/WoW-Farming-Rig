@@ -3,10 +3,10 @@
   <!--
     Cross-platform navmesh bake CLI.
 
-    Every other way to drive a bake (Benchmarks, PathingAPI, CoreTests) is
-    net10.0-windows, so none of them can run on macOS or Linux. This is a plain
-    net10.0 console over the same PPatherService.StartBake the API uses, so a
-    spare Apple-silicon or Linux box can be used as a bake host.
+    A plain net10.0 console over the same PPatherService.StartBake the Pathing
+    Service's bake API uses, for baking from a script; Benchmarks and CoreTests
+    are net10.0-windows. A spare Apple-silicon or Linux box can be a bake host,
+    with this tool or with the Pathing Service.
     See docs/headless-pathing-server-design.md §12.
   -->
   <PropertyGroup>

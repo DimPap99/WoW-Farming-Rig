@@ -1,0 +1,100 @@
+@inherits ControlCenterComponent
+
+@inject PathingStatus status
+@inject PathingServiceOptions pathing
+
+<header class="pa-statusbar">
+    @if (status.Capabilities is PathingCapabilities caps)
+    {
+        <span class="pa-chip" title="The client data the Pathing Service serves (--exp) and its navmesh era">
+            <span class="oi oi-globe" aria-hidden="true"></span>
+            <strong>@caps.Client</strong><span class="pa-faint">@caps.Era</span>
+        </span>
+    }
+
+    @if (status.Health is PathingHealth health)
+    {
+        int tiles = health.Coverage.Sum(c => c.Tiles);
+        @if (tiles > 0)
+        {
+            <span class="pa-chip pa-chip--ok" title="@CoverageTitle(health)">
+                <span class="pa-dot" aria-hidden="true"></span>
+                <strong>@tiles.ToString("N0", CultureInfo.InvariantCulture)</strong> tiles
+                <span class="pa-faint">@string.Join(", ", health.Coverage.Where(c => c.Tiles > 0).Select(c => c.Continent))</span>
+            </span>
+        }
+        else
+        {
+            <span class="pa-chip pa-chip--warn" title="@CoverageTitle(health)">
+                <span class="pa-dot" aria-hidden="true"></span>
+                No navmesh tiles for @health.Era: run <code>scripts/download-navmesh.ps1</code>
+            </span>
+        }
+
+        @if (health.Bake.Running)
+        {
+            <span class="pa-chip pa-chip--busy" title="@health.Bake.Message">
+                <span class="pa-dot" aria-hidden="true"></span>
+                Baking <strong>@health.Bake.Continent</strong>
+                <span class="pa-meter" aria-hidden="true"><span style="width: @BakePercent(health.Bake)"></span></span>
+                <span class="pa-faint">@health.Bake.AdtDone / @health.Bake.AdtTotal ADT</span>
+            </span>
+        }
+    }
+
+    @if (status.Capabilities is { GameFiles: false })
+    {
+        <span class="pa-chip" title="The client is not installed where the Pathing Service runs: routes work from the baked tiles, but baking, area grids and terrain need the game files">
+            <span class="pa-faint">tiles only</span>
+        </span>
+    }
+
+    <span class="pa-spacer"></span>
+
+    @if (status.Health is PathingHealth lanes)
+    {
+        @foreach (PlannerLane lane in lanes.Lanes)
+        {
+            <span class="pa-chip" title="@($"{lane.ResidentTiles} tiles in memory")">
+                <span class="pa-faint">@lane.Continent</span>
+                <strong>@lane.Queries.ToString(CultureInfo.InvariantCulture)</strong> routes
+                <span class="pa-faint">last @lane.LastMs.ToString("F0", CultureInfo.InvariantCulture) ms</span>
+            </span>
+        }
+    }
+
+    @if (status.Online)
+    {
+        <span class="pa-chip pa-chip--ok" title="@pathing.Url">
+            <span class="pa-dot" aria-hidden="true"></span>
+            Pathing Service
+        </span>
+    }
+    else
+    {
+        <span class="pa-chip pa-chip--warn" title="@($"{pathing.Url}: {status.Error}")">
+            <span class="pa-dot" aria-hidden="true"></span>
+            Pathing Service offline
+        </span>
+    }
+</header>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Subscribe(() => status.Changed += Redraw, () => status.Changed -= Redraw);
+    }
+
+    private static string CoverageTitle(PathingHealth health)
+    {
+        return string.Join("\n", health.Coverage.Select(c => $"{c.Continent}: {c.Tiles:N0} tiles"));
+    }
+
+    // Invariant: a decimal comma makes the width invalid CSS, and it is silently ignored.
+    private static string BakePercent(BakeStatus bake)
+    {
+        return bake.AdtTotal > 0
+            ? (100.0 * bake.AdtDone / bake.AdtTotal).ToString("F1", CultureInfo.InvariantCulture) + "%"
+            : "0%";
+    }
+}

@@ -1,0 +1,322 @@
+@page "/paths/edit/{*name}"
+
+@using System.Numerics
+
+@inherits ControlCenterComponent
+
+@inject IPathingClient pathing
+@inject WorldCache worldCache
+@inject NavigationManager navigation
+
+<PageTitle>@Title · Control Center</PageTitle>
+
+<div class="pa-editor">
+    <header class="pa-editor-header">
+        <a class="pa-btn pa-btn--ghost" href="paths" title="Back to the path library">
+            <span class="oi oi-chevron-left" aria-hidden="true"></span> Library
+        </a>
+        <h1 class="pa-editor-title">@Title</h1>
+        <span class="pa-faint">@(editor?.Count ?? 0) points</span>
+        <span class="pa-spacer"></span>
+
+        <select class="pa-select pa-editor-zone" @bind="uiMap" title="The zone the points belong to, for drawing in 3D">
+            <option value="0" disabled>Zone for drawing</option>
+            @foreach (ZoneInfo zone in zones)
+            {
+                <option value="@zone.UiMapId">@zone.Name</option>
+            }
+        </select>
+        <button class="pa-btn" type="button" disabled="@(editor is null || uiMap == 0)" @onclick="DrawAsync" title="Show the edited points in every 3D view">
+            <span class="oi oi-eye" aria-hidden="true"></span> Draw
+        </button>
+        <button class="pa-btn" type="button" disabled="@(editor is null || busy)" @onclick="RevertAsync" title="Throw the edits away and read the file again">
+            Revert
+        </button>
+        <BusyButton Class="pa-btn--primary" Icon="data-transfer-upload" Busy="@busy" Disabled="@(editor is null || editor.Count == 0)" OnClick="() => SaveAsync(PathName)">
+            Save
+        </BusyButton>
+        <div class="pa-input-group pa-editor-saveas">
+            <input class="pa-input" placeholder="folder/new name.json" aria-label="Save as" @bind="saveAs" />
+            <button class="pa-btn" type="button" disabled="@(editor is null || busy || string.IsNullOrWhiteSpace(saveAs))"
+                    @onclick="() => SaveAsync(saveAs.Trim())">Save as</button>
+        </div>
+    </header>
+
+    <ResultLine Text="@result" Kind="@resultKind" />
+
+    @if (editor is not null)
+    {
+        <div class="pa-editor-body">
+            <svg class="pa-editor-canvas" viewBox="0 0 @Size @Size" role="img" aria-label="The path's points">
+                <polyline class="pa-editor-line" points="@Polyline()" />
+                @for (int i = 0; i < editor.Count; i++)
+                {
+                    Vector3 point = editor.Points[i];
+                    int index = i;
+                    <circle class="pa-editor-point @(point == editor.Selected ? "is-selected" : null)"
+                            cx="@X(point.X)" cy="@Y(point.Y)" r="@(point == editor.Selected ? 6 : 4)"
+                            @onclick="() => Select(point, index)">
+                        <title>@index: @Format(point.X), @Format(point.Y)</title>
+                    </circle>
+                }
+                @if (editor.Selected != default && editor.Preview != editor.Selected)
+                {
+                    <circle class="pa-editor-preview" cx="@X(editor.Preview.X)" cy="@Y(editor.Preview.Y)" r="6" />
+                }
+            </svg>
+
+            <aside class="pa-editor-tools pa-form">
+                @if (editor.Selected == default)
+                {
+                    <p class="pa-faint">Select a point on the path to move, remove or insert after it.</p>
+                }
+                else
+                {
+                    <div class="pa-row">
+                        <div class="pa-field">
+                            <label class="pa-label" for="pa-edit-x">X</label>
+                            <input class="pa-input" id="pa-edit-x" type="number" step="0.01" @bind="PreviewX" />
+                        </div>
+                        <div class="pa-field">
+                            <label class="pa-label" for="pa-edit-y">Y</label>
+                            <input class="pa-input" id="pa-edit-y" type="number" step="0.01" @bind="PreviewY" />
+                        </div>
+                    </div>
+                    <div class="pa-actions">
+                        <button class="pa-btn" type="button" disabled="@(editor.Preview == editor.Selected)" @onclick="MoveToPreview">Move here</button>
+                        <button class="pa-btn" type="button" @onclick="InsertPreview" title="Insert the X, Y above after the selected point">Insert after</button>
+                        <button class="pa-btn" type="button" @onclick="Remove">Remove</button>
+                    </div>
+                    <div class="pa-actions">
+                        <button class="pa-btn" type="button" @onclick="() => Neighbour(-1)">
+                            <span class="oi oi-chevron-left" aria-hidden="true"></span> Previous
+                        </button>
+                        <button class="pa-btn" type="button" @onclick="() => Neighbour(1)">
+                            Next <span class="oi oi-chevron-right" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                }
+
+                <div class="pa-divider"></div>
+                <div class="pa-actions">
+                    <button class="pa-btn" type="button" disabled="@(editor.Count < 3)" @onclick="Halve" title="Keep every other point">Halve points</button>
+                    <button class="pa-btn" type="button" disabled="@(editor.Count < 2)" @onclick="Double" title="Add a point halfway between each pair">Double points</button>
+                </div>
+
+                <div class="pa-editor-points">
+                    @for (int i = 0; i < editor.Count; i++)
+                    {
+                        Vector3 point = editor.Points[i];
+                        int index = i;
+                        <button type="button" class="pa-editor-badge @(point == editor.Selected ? "is-selected" : null)"
+                                @onclick="() => Select(point, index)">
+                            @Format(point.X), @Format(point.Y)
+                        </button>
+                    }
+                </div>
+            </aside>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>The library name, '/' between folders.</summary>
+    [Parameter] public string? name { get; set; }
+
+    private const int Size = 600;
+    private const int Margin = 24;
+
+    private PathEditor? editor;
+    private ZoneInfo[] zones = [];
+    private int uiMap;
+    private string saveAs = string.Empty;
+    private bool busy;
+    private string? result;
+    private ResultKind resultKind;
+
+    // The view's box: the points' bounds, square, so a path keeps its shape.
+    private float minX;
+    private float minY;
+    private float scale = 1;
+
+    private string PathName => Uri.UnescapeDataString(name ?? string.Empty);
+
+    private string Title => string.IsNullOrEmpty(PathName) ? "Path editor" : PathName;
+
+    private float PreviewX
+    {
+        get => editor?.Preview.X ?? 0;
+        set
+        {
+            if (editor is not null)
+            {
+                editor.Preview = editor.Preview with { X = value };
+            }
+        }
+    }
+
+    private float PreviewY
+    {
+        get => editor?.Preview.Y ?? 0;
+        set
+        {
+            if (editor is not null)
+            {
+                editor.Preview = editor.Preview with { Y = value };
+            }
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        WorldSnapshot? world = await worldCache.GetAsync();
+        zones = world?.World.Zones ?? [];
+        if (world is not null && ZoneMath.GuessFromName(zones, System.IO.Path.GetFileNameWithoutExtension(PathName)) is ZoneInfo zone)
+        {
+            uiMap = zone.UiMapId;
+        }
+
+        saveAs = PathName;
+        await ReadAsync();
+    }
+
+    private async Task ReadAsync()
+    {
+        ServiceResult<RecordedPath> read = await pathing.GetPathAsync(PathName, Token);
+        if (!read.Ok)
+        {
+            editor = null;
+            Show(read.Status == 404 ? $"{PathName} is not in the library" : read.Error, ResultKind.Error);
+            return;
+        }
+
+        editor = new PathEditor(read.Value.Points.Select(p => new Vector3(p.X, p.Y, p.Z)));
+        Fit();
+        Show(null, ResultKind.Info);
+    }
+
+    private void Fit()
+    {
+        if (editor is null || editor.Count == 0)
+        {
+            return;
+        }
+
+        minX = editor.Points.Min(p => p.X);
+        minY = editor.Points.Min(p => p.Y);
+        float span = MathF.Max(editor.Points.Max(p => p.X) - minX, editor.Points.Max(p => p.Y) - minY);
+        scale = span > 0 ? (Size - (2 * Margin)) / span : 1;
+    }
+
+    // Map y grows southwards, as SVG y does.
+    private string X(float x) => Format(Margin + ((x - minX) * scale));
+
+    private string Y(float y) => Format(Margin + ((y - minY) * scale));
+
+    private string Polyline()
+    {
+        return editor is null ? string.Empty : string.Join(' ', editor.Points.Select(p => $"{X(p.X)},{Y(p.Y)}"));
+    }
+
+    // Invariant: a decimal comma is not an SVG number.
+    private static string Format(float value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private void Select(Vector3 point, int index)
+    {
+        editor?.Select(point, index);
+    }
+
+    private void MoveToPreview()
+    {
+        editor?.MoveSelectedTo(editor.Preview);
+        Fit();
+    }
+
+    private void InsertPreview()
+    {
+        editor?.InsertAfterSelected(editor.Preview);
+        Fit();
+    }
+
+    private void Remove()
+    {
+        editor?.RemoveSelected();
+        Fit();
+    }
+
+    private void Neighbour(int step)
+    {
+        if (editor is not null && editor.TryGetNeighbour(step, out Vector3 point, out int index))
+        {
+            editor.Select(point, index);
+        }
+    }
+
+    private void Halve()
+    {
+        editor?.Halve();
+    }
+
+    private void Double()
+    {
+        editor?.Double();
+    }
+
+    private async Task RevertAsync()
+    {
+        await ReadAsync();
+        Show("Reverted to the saved file", ResultKind.Info);
+    }
+
+    private async Task SaveAsync(string target)
+    {
+        if (editor is null)
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            Point3[] points = [.. editor.Points.Select(p => new Point3(p.X, p.Y, p.Z))];
+            ServiceResult saved = await pathing.SavePathAsync(target, points, Token);
+            if (!saved.Ok)
+            {
+                Show(saved.Error, ResultKind.Error);
+                return;
+            }
+
+            Show($"Saved {points.Length} points to {target}", ResultKind.Ok);
+            if (target != PathName)
+            {
+                navigation.NavigateTo($"paths/edit/{PathLibrary.PathUrl(target)}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task DrawAsync()
+    {
+        if (editor is null || uiMap == 0)
+        {
+            return;
+        }
+
+        Point3[] points = [.. editor.Points.Select(p => new Point3(p.X, p.Y, p.Z))];
+        CoordinateSpace space = points.All(p => p.Z == 0) ? CoordinateSpace.Map : CoordinateSpace.World;
+        ServiceResult drawn = await pathing.DrawPathAsync(new WatchPath(WatchNames.Recorded, uiMap, space, points), Token);
+        Show(drawn.Ok ? "Drawn in the 3D views" : drawn.Error, drawn.Ok ? ResultKind.Info : ResultKind.Error);
+    }
+
+    private void Show(string? text, ResultKind kind)
+    {
+        result = text;
+        resultKind = kind;
+    }
+}

@@ -1,0 +1,200 @@
+@* The 3D view: a Babylon canvas fed by the Pathing Service's watch hub, its toolbar, and
+   whatever panels the page puts on top. Opening it disturbs nothing on the server: the hub
+   replays the planner's tiles and the last routes to this view alone. *@
+
+@inherits ControlCenterComponent
+@implements IAsyncDisposable
+
+@inject IJSRuntime js
+@inject PathingStatus status
+
+<div class="pa-viewport">
+    <canvas class="pa-canvas" @ref="canvas" tabindex="0" aria-label="3D route view"></canvas>
+
+    <div class="pa-toolbar">
+        <div class="pa-group" role="group" aria-label="Layers in this view">
+            <span class="pa-group-label" title="What this view shows">Show</span>
+            <button class="pa-toggle" type="button" aria-pressed="@navmesh" @onclick="ToggleNavmesh"
+                    title="The navmesh tiles the planner holds: what every route is planned on">Navmesh</button>
+            <button class="pa-toggle" type="button" aria-pressed="@terrain" disabled="@(terrainBusy || !GameFiles)"
+                    title="@TerrainHint" @onclick="ToggleTerrain">
+                @if (terrainBusy)
+                {
+                    <span class="pa-spinner" aria-hidden="true"></span>
+                }
+                Terrain
+            </button>
+            @if (terrain)
+            {
+                @foreach ((int kind, string label) in TerrainKinds)
+                {
+                    <button class="pa-toggle" type="button" aria-pressed="@(!hiddenKinds.Contains(kind))"
+                            @onclick="() => ToggleKind(kind)">@label</button>
+                }
+            }
+            <button class="pa-toggle" type="button" aria-pressed="@wireframe" @onclick="ToggleWireframe">Wireframe</button>
+        </div>
+
+        <span class="pa-spacer"></span>
+
+        <div class="pa-group" role="group" aria-label="Scene actions">
+            <button class="pa-toggle" type="button" @onclick="ReplayAsync"
+                    title="Ask the Pathing Service again for the tiles it holds and the last routes">
+                <span class="oi oi-reload" aria-hidden="true"></span> Replay
+            </button>
+            <button class="pa-toggle" type="button" @onclick="ClearAsync" title="Empty this view; the service and other viewers keep theirs">
+                Clear
+            </button>
+            <button class="pa-toggle" type="button" aria-pressed="@inspector" @onclick="ToggleInspector"
+                    title="Babylon's scene inspector">Inspector</button>
+        </div>
+    </div>
+
+    @if (!status.Online)
+    {
+        <OfflineNotice Reason="@status.Error" />
+    }
+
+    @ChildContent
+
+    <div class="pa-hint" aria-hidden="true">
+        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move
+        <kbd>Q</kbd><kbd>E</kbd> down / up
+        <kbd>Shift</kbd> fast <kbd>Alt</kbd> slow · drag to look
+    </div>
+</div>
+
+@code {
+    private static readonly (int Kind, string Label)[] TerrainKinds =
+    [
+        (0, "Ground"),
+        (1, "Liquid"),
+        (2, "Objects"),
+        (3, "Models"),
+    ];
+
+    /// <summary>Panels shown over the view.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private ElementReference canvas;
+    private readonly HashSet<int> hiddenKinds = [];
+    private bool navmesh = true;
+    private bool terrain;
+    private bool terrainBusy;
+    private bool wireframe;
+    private bool inspector;
+
+    private bool GameFiles => status.Capabilities?.GameFiles == true;
+
+    private string TerrainHint => GameFiles
+        ? "The game geometry under the navmesh tiles nearest the camera: why the mesh looks as it does"
+        : "No game files where the Pathing Service runs: terrain needs the client installed there";
+
+    protected override void OnInitialized()
+    {
+        Subscribe(() => status.Changed += Redraw, () => status.Changed -= Redraw);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            await js.InvokeAsync<bool>("pathingScene.create", Token, canvas);
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or OperationCanceledException)
+        {
+            // Left before the scene was up, or Babylon could not be fetched.
+        }
+    }
+
+    private async Task ToggleNavmesh()
+    {
+        navmesh = !navmesh;
+        await Js("pathingScene.setNavmesh", navmesh);
+    }
+
+    private async Task ToggleTerrain()
+    {
+        terrainBusy = true;
+        try
+        {
+            string? why = await js.InvokeAsync<string?>("pathingScene.setTerrain", Token, !terrain);
+            if (why is null)
+            {
+                terrain = !terrain;
+                hiddenKinds.Clear();
+            }
+            else
+            {
+                await Js("pathingUi.log", "No terrain: " + why);
+            }
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or OperationCanceledException)
+        {
+        }
+        finally
+        {
+            terrainBusy = false;
+        }
+    }
+
+    private async Task ToggleKind(int kind)
+    {
+        if (!hiddenKinds.Remove(kind))
+        {
+            hiddenKinds.Add(kind);
+        }
+
+        await Js("pathingScene.setTerrainKind", kind, !hiddenKinds.Contains(kind));
+    }
+
+    private async Task ToggleWireframe()
+    {
+        wireframe = !wireframe;
+        await Js("pathingScene.setWireframe", wireframe);
+    }
+
+    private async Task ToggleInspector()
+    {
+        inspector = !inspector;
+        await Js("pathingScene.setInspector", inspector);
+    }
+
+    private Task ReplayAsync()
+    {
+        return Js("pathingScene.replay");
+    }
+
+    private async Task ClearAsync()
+    {
+        if (terrain)
+        {
+            terrain = false;
+            await Js("pathingScene.setTerrain", false);
+        }
+
+        await Js("pathingScene.clear");
+    }
+
+    private async Task Js(string identifier, params object[] args)
+    {
+        try
+        {
+            await js.InvokeVoidAsync(identifier, Token, args);
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or OperationCanceledException)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        await js.InvokeTeardownAsync("pathingScene.dispose");
+    }
+}

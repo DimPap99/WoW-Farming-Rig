@@ -1,0 +1,235 @@
+@page "/npc-routes"
+
+@inherits ControlCenterComponent
+
+@inject IPathingClient pathing
+@inject WorldCache worldCache
+@inject PathingStatus status
+
+<PageTitle>NPC routes · Control Center</PageTitle>
+
+<Viewport3D>
+    <Panel Title="NPC routes" Icon="people">
+        <div class="pa-form">
+            <div class="pa-field">
+                <label class="pa-label" for="pa-npc-zone">Zone</label>
+                <select class="pa-select" id="pa-npc-zone" value="@uiMap" @onchange="ZoneChosenAsync">
+                    <option value="0" disabled>Choose a zone</option>
+                    @foreach (ZoneInfo zone in zones)
+                    {
+                        <option value="@zone.UiMapId">@zone.Name (@zone.Continent)</option>
+                    }
+                </select>
+            </div>
+
+            <div class="pa-row">
+                <div class="pa-field">
+                    <label class="pa-label" for="pa-npc-type">Type</label>
+                    <select class="pa-select" id="pa-npc-type" value="@type" @onchange="TypeChosenAsync">
+                        @foreach (string flag in types)
+                        {
+                            <option value="@flag">@flag</option>
+                        }
+                    </select>
+                </div>
+                <div class="pa-field pa-grow2">
+                    <label class="pa-label" for="pa-npc-name">NPC</label>
+                    <select class="pa-select" id="pa-npc-name" @bind="npcEntry" disabled="@(npcs.Length == 0)">
+                        @if (npcs.Length == 0)
+                        {
+                            <option value="0">@(uiMap == 0 ? "Choose a zone first" : loading ? "Loading..." : "None in this zone")</option>
+                        }
+                        @foreach (NpcInfo npc in npcs)
+                        {
+                            <option value="@npc.Entry">@npc.Name</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="pa-field">
+                <span class="pa-label">Start</span>
+                <div class="pa-input-group">
+                    <span class="pa-input pa-readout">@(start is Point3 s ? $"{s.X:F0}, {s.Y:F0}, {s.Z:F0}" : "Random point in the zone")</span>
+                    <button class="pa-btn" type="button" disabled="@(uiMap == 0)" @onclick="RandomStartAsync" title="Pick a random point in the zone">
+                        <span class="oi oi-random" aria-hidden="true"></span> Roll
+                    </button>
+                </div>
+            </div>
+
+            <label class="pa-check"><input type="checkbox" @bind="reversed" /> From the NPC back to the start</label>
+
+            <div class="pa-actions">
+                <button class="pa-btn" type="button" disabled="@(!Ready || busy)" @onclick="DrawAsync" title="Straight line to the NPC">
+                    <span class="oi oi-minus" aria-hidden="true"></span> Line
+                </button>
+                <BusyButton Class="pa-btn--primary pa-grow" Icon="media-play" Busy="@busy" Disabled="@(!Ready)" OnClick="FindAsync">
+                    Find path
+                </BusyButton>
+            </div>
+
+            <ResultLine Text="@result" Kind="@resultKind" />
+        </div>
+    </Panel>
+</Viewport3D>
+
+@code {
+    // Random starts stay this far inside the zone's map, where most zones have ground.
+    private const float MapMargin = 20f;
+    private const float MapSpan = 70f;
+
+    public const string DefaultType = "vendor";
+
+    private ZoneInfo[] zones = [];
+    private string[] types = [];
+    private NpcInfo[] npcs = [];
+
+    private int uiMap;
+    private string type = DefaultType;
+    private int npcEntry;
+    private Point3? start;
+    private bool reversed;
+    private bool loading;
+    private bool busy;
+    private string? result;
+    private ResultKind resultKind;
+
+    private ZoneInfo? Zone => zones.FirstOrDefault(z => z.UiMapId == uiMap);
+
+    private NpcInfo? Npc => npcs.FirstOrDefault(n => n.Entry == npcEntry);
+
+    private bool Ready => start.HasValue && Npc is not null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Subscribe(() => status.Reconnected += Reload, () => status.Reconnected -= Reload);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        WorldSnapshot? world = await worldCache.GetAsync();
+        zones = world?.World.Zones ?? [];
+        types = world is null ? [] : [.. world.World.NpcFlags.Keys.Order(StringComparer.Ordinal)];
+    }
+
+    private void Reload()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task ZoneChosenAsync(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int chosen))
+        {
+            return;
+        }
+
+        uiMap = chosen;
+        start = null;
+        await ListNpcsAsync();
+    }
+
+    private async Task TypeChosenAsync(ChangeEventArgs e)
+    {
+        type = e.Value?.ToString() ?? DefaultType;
+        await ListNpcsAsync();
+    }
+
+    private async Task ListNpcsAsync()
+    {
+        npcs = [];
+        npcEntry = 0;
+        if (uiMap == 0)
+        {
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            ServiceResult<NpcInfo[]> listed = await pathing.GetNpcsAsync(uiMap, type, Token);
+            npcs = listed.Value ?? [];
+            npcEntry = npcs.Length > 0 ? npcs[0].Entry : 0;
+            Show(listed.Ok ? null : listed.Error, ResultKind.Error);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task RandomStartAsync()
+    {
+        if (Zone is not ZoneInfo zone)
+        {
+            return;
+        }
+
+        Point3 map = new((Random.Shared.NextSingle() * MapSpan) + MapMargin, (Random.Shared.NextSingle() * MapSpan) + MapMargin, 0);
+        Point3 world = ZoneMath.ToWorld(zone, map);
+        try
+        {
+            // The navmesh's height there, so the marker and the route start on the ground.
+            ServiceResult<AreaAtPoint> area = await pathing.GetAreaAsync(zone.MapId, world.X, world.Y, Token);
+            start = world with { Z = area.Value?.Z ?? 0 };
+
+            await pathing.ShowMarkerAsync(new WatchMarker(WatchNames.Start, uiMap, CoordinateSpace.World, start.Value), Token);
+            Show(string.Create(CultureInfo.InvariantCulture, $"Start at map {map.X:F1}, {map.Y:F1}"), ResultKind.Info);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private (Point3 From, Point3 To) Endpoints()
+    {
+        Point3 npc = Npc!.Position;
+        return reversed ? (npc, start!.Value) : (start!.Value, npc);
+    }
+
+    private async Task DrawAsync()
+    {
+        (Point3 from, Point3 to) = Endpoints();
+        try
+        {
+            ServiceResult drawn = await pathing.DrawPathAsync(new WatchPath(WatchNames.Line, uiMap, CoordinateSpace.World, [from, to]), Token);
+            Show(drawn.Ok ? "Straight line drawn" : drawn.Error, drawn.Ok ? ResultKind.Info : ResultKind.Error);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task FindAsync()
+    {
+        (Point3 from, Point3 to) = Endpoints();
+        busy = true;
+        Show("Searching...", ResultKind.Info);
+        try
+        {
+            RouteResponse response = await pathing.FindRouteAsync(new RouteRequest(null, uiMap, CoordinateSpace.World, from, to), Token);
+            (result, resultKind) = RouteResults.Describe(response);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void Show(string? text, ResultKind kind)
+    {
+        result = text;
+        resultKind = kind;
+    }
+}

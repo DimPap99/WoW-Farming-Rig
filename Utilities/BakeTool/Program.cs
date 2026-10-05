@@ -94,8 +94,8 @@ internal static class Program
         // feeds the settings hash - a mismatch silently writes to a different
         // cache directory. It also matters for correctness: Outland is a floating
         // landmass whose MPQ still carries the low "base" terrain, which bakes as
-        // a walkable death-fall floor unless filtered. PathingAPI supplies this
-        // from appsettings.json; mirror that default here and let --min-world-z
+        // a walkable death-fall floor unless filtered. The Pathing Service supplies
+        // this from appsettings.json; mirror that default here and let --min-world-z
         // override, so a bake from this tool lands in the same directory as one
         // from the API.
         bake.MinWorldZ["Expansion01"] = -700f;

@@ -1,0 +1,67 @@
+@inherits LayoutComponentBase
+
+@inject IJSRuntime js
+
+<div class="pa-shell @(collapsed ? "is-collapsed" : null)">
+    <aside class="pa-rail" aria-label="Main navigation">
+        <a class="pa-brand" href="" title="Control Center">
+            <svg class="pa-logo" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="5" cy="18" r="2.6" />
+                <circle cx="19" cy="6" r="2.6" />
+                <path d="M7.4 16.6c3-1 2.2-5.4 5-6.6s3.3.3 4.4-1.6" fill="none" stroke-width="2" stroke-linecap="round" />
+            </svg>
+            <span class="pa-brand-text">Control<b>Center</b></span>
+        </a>
+
+        <NavMenu />
+
+        <button class="pa-rail-toggle" type="button" @onclick="ToggleRail"
+                title="@(collapsed ? "Expand menu" : "Collapse menu")" aria-expanded="@(!collapsed)">
+            <span class="oi @(collapsed ? "oi-chevron-right" : "oi-chevron-left")" aria-hidden="true"></span>
+            <span class="pa-nav-label">Collapse</span>
+        </button>
+    </aside>
+
+    <div class="pa-main">
+        <StatusBar />
+        <main class="pa-stage">
+            @Body
+        </main>
+    </div>
+</div>
+
+<div id="pa-toast" role="status" aria-live="polite"></div>
+
+@code {
+    private const string RailKey = "cc.rail.collapsed";
+
+    private bool collapsed;
+    private bool relayout;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            collapsed = await js.InvokeAsync<string?>("pathingUi.storageGet", RailKey) == "1";
+            if (collapsed)
+            {
+                StateHasChanged();
+            }
+            return;
+        }
+
+        if (relayout)
+        {
+            // The map sizes itself on window resize; the stage changed without one.
+            relayout = false;
+            await js.InvokeVoidAsync("pathingUi.relayout");
+        }
+    }
+
+    private async Task ToggleRail()
+    {
+        collapsed = !collapsed;
+        relayout = true;
+        await js.InvokeVoidAsync("pathingUi.storageSet", RailKey, collapsed ? "1" : "0");
+    }
+}

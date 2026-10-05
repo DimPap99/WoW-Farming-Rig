@@ -1,4 +1,4 @@
-// The Leaflet map's script comes in pieces: Frontend/wwwroot/script/leaflet-watch.js
+// The Leaflet map's script comes in pieces: MapAssets/wwwroot/script/leaflet-watch.js
 // and the leaflet-*.js files listed below, loaded in this order by both hosts.
 // The pieces are contiguous runs of one script in its own order, so joined they
 // are that script again. `join` writes the whole script (to stdout or a file),
@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
-const folder = join(repo, 'Frontend', 'wwwroot', 'script');
+const folder = join(repo, 'MapAssets', 'wwwroot', 'script');
 
 // Each piece starts at the first line, after the previous piece's start, equal
 // to `starts`, or `back` lines before it. The first piece starts at the top and
@@ -45,7 +45,7 @@ const pieces = [
     },
     {
         file: 'leaflet-signalr.js', starts: '////////////// signalR ///////////////////////////', back: 1,
-        about: 'PathingAPI\'s live view over its SignalR watch hub; nothing happens where signalR is not loaded.',
+        about: 'The live view over the Pathing Service\'s watch hub, proxied by the Control Center; nothing happens where signalR is not loaded.',
     },
 ];
 

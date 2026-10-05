@@ -18,6 +18,7 @@
     <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\HeadlessServer\HeadlessServer.csproj" />
     <ProjectReference Include="..\PPather\PPather.csproj" />
+    <ProjectReference Include="..\ServiceClients\ServiceClients.csproj" />
   </ItemGroup>
 
 </Project>

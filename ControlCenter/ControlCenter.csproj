@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The Control Center (docs/service-architecture.md): the central web UI. It holds no data and
+       plans nothing; it is a client of the Pathing Service and forwards the map's data, API calls
+       and watch hub to it. Plain net10.0. It references the contracts, the service clients and the
+       map's static assets only - never PPather, Core, Game, WinAPI or Frontend. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Expressions" />
+    <PackageReference Include="Yarp.ReverseProxy" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contracts\Contracts.csproj" />
+    <ProjectReference Include="..\MapAssets\MapAssets.csproj" />
+    <ProjectReference Include="..\ServiceClients\ServiceClients.csproj" />
+  </ItemGroup>
+
+</Project>
