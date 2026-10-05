@@ -170,7 +170,7 @@ bot uses, either on the same PC or with changes committed to the repository.
 | `POST /api/v1/bake/cancel` | | `BakeStatus`; 409 when none runs |
 | `POST /api/v1/areagrids?continent` | | 202; 409 without game files |
 | `POST /api/v1/watch/paths`, `/watch/markers`, `/watch/clear` | `WatchPath`, `WatchMarker` | 202 |
-| `/watchHub` (SignalR, MessagePack) | `Replay()`, `Terrain(continent, tiles)` | `drawPath`, `drawLine`, `drawSphere`, `removeMesh`, `clear`, `log`, `addNavmeshTile`, `addTerrainTile` |
+| `/watchHub` (SignalR, MessagePack) | `Replay()`, `Terrain(continent, tiles)`, `WatchRoutes()` (routes only, no scene) | `drawPath`, `drawLine`, `drawSphere`, `removeMesh`, `clear`, `log`, `addNavmeshTile`, `addTerrainTile`; to route watchers `routePlanned(WatchRoute)` and `clear` |
 | `/tiles`, `/dbc`, `/area`, `/npcspawnlocations`, `/mailboxlocations`, `/path`, `/locations` | | the map's world data files (`WorldData`) |
 
 ## Bot Manager contracts (v1)

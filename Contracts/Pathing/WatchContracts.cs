@@ -1,3 +1,5 @@
+using System;
+
 namespace Contracts.Pathing;
 
 /// <summary>Colours on the watch hub; the 3D view and the map decode the same codes.</summary>
@@ -64,7 +66,26 @@ public static class WatchHubMethods
     /// (<see cref="PathingCapabilities.GameFiles"/>).
     /// </summary>
     public const string Terrain = "Terrain";
+
+    /// <summary>
+    /// From a watcher of routes only, such as the Control Center: from then on the connection gets
+    /// each route the planner answers as <see cref="RoutePlanned"/>, the remembered ones first, and
+    /// none of the scene - no tiles, no drawings - only <see cref="Clear"/>.
+    /// </summary>
+    public const string WatchRoutes = "WatchRoutes";
+
+    /// <summary>To route watchers (<see cref="WatchRoutes"/>): <c>(WatchRoute)</c>, a route the planner answered.</summary>
+    public const string RoutePlanned = "routePlanned";
 }
+
+/// <summary>A route the planner answered, for any caller, as a route watcher gets it; positions in world yards.</summary>
+/// <param name="Continent">The continent it is on, as the planner names it.</param>
+/// <param name="From">Where it starts, as the planner resolved it (with the ground's height).</param>
+/// <param name="To">Where it was going.</param>
+/// <param name="Points">The route as far as it goes; empty when there is none.</param>
+/// <param name="At">When the planner answered it.</param>
+public sealed record WatchRoute(string Continent, Point3 From, Point3 To, Point3[] Points, RouteStatus Status,
+    double ElapsedMs, string? Detail, DateTimeOffset At);
 
 /// <summary>Points to show as a path in every viewer, without planning a route.</summary>
 /// <param name="Name">The drawing's id; a later one with the same name replaces it.</param>

@@ -1,3 +1,4 @@
+using Contracts;
 using Contracts.Pathing;
 
 using DotRecast.Detour;
@@ -7,12 +8,15 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 using PathingService.Navmesh;
+using PathingService.Routes;
 
 using PPather.Graph;
 using PPather.Planning;
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Channels;
@@ -51,22 +55,53 @@ public sealed class WatchBroadcaster(
     private readonly Channel<Func<CancellationToken, Task>> work =
         Channel.CreateUnbounded<Func<CancellationToken, Task>>(new UnboundedChannelOptions { SingleReader = true });
 
+    /// <summary>The hub group of the connections that watch routes only (<see cref="WatchHubMethods.WatchRoutes"/>).</summary>
+    public const string RouteWatchers = "routes";
+
     private readonly Lock recentLock = new();
-    private readonly Queue<PlannedRoute> recent = new();
+    private readonly Queue<(PlannedRoute Route, DateTimeOffset At)> recent = new();
+    private readonly ConcurrentDictionary<string, bool> routeWatchers = new();
     private int viewers;
 
     public int Viewers => Volatile.Read(ref viewers);
 
+    // Anyone gets routes; only a viewer of the scene gets tiles and drawings, which are work to build.
     private bool Watched => Viewers > 0;
+
+    private bool SceneWatched => Viewers > routeWatchers.Count;
+
+    // Every connection but the route watchers.
+    private IClientProxy Scene => routeWatchers.IsEmpty ? hub.Clients.All : hub.Clients.AllExcept([.. routeWatchers.Keys]);
 
     public void ViewerJoined()
     {
         Interlocked.Increment(ref viewers);
     }
 
-    public void ViewerLeft()
+    public void ViewerLeft(string connectionId)
     {
+        routeWatchers.TryRemove(connectionId, out _);
         Interlocked.Decrement(ref viewers);
+    }
+
+    /// <summary>Makes a connection a route watcher, and sends it the remembered routes.</summary>
+    public void WatchRoutes(string connectionId)
+    {
+        routeWatchers[connectionId] = true;
+        WatchRoute[] routes;
+        lock (recentLock)
+        {
+            routes = [.. recent.Select(r => WatchRouteOf(r.Route, r.At))];
+        }
+
+        IClientProxy watcher = hub.Clients.Client(connectionId);
+        Enqueue(async token =>
+        {
+            foreach (WatchRoute route in routes)
+            {
+                await SendAsync(watcher, WatchHubMethods.RoutePlanned, token, route);
+            }
+        });
     }
 
     /// <summary>Sends one viewer the tiles every lane holds and the remembered routes.</summary>
@@ -84,7 +119,7 @@ public sealed class WatchBroadcaster(
             PlannedRoute[] routes;
             lock (recentLock)
             {
-                routes = [.. recent];
+                routes = [.. recent.Select(r => r.Route)];
             }
 
             IClientProxy viewer = hub.Clients.Client(connectionId);
@@ -162,25 +197,25 @@ public sealed class WatchBroadcaster(
         return null;
     }
 
-    /// <summary>Shows <paramref name="points"/> (world yards) as a path in every viewer.</summary>
+    /// <summary>Shows <paramref name="points"/> (world yards) as a path in every viewer of the scene.</summary>
     public void Draw(string name, Vector3[] points, WatchColor color)
     {
-        if (Watched)
+        if (SceneWatched)
         {
-            Enqueue(token => SendAsync(hub.Clients.All, WatchHubMethods.DrawPath, token, Wire(points), (int)color, name));
+            Enqueue(token => SendAsync(Scene, WatchHubMethods.DrawPath, token, Wire(points), (int)color, name));
         }
     }
 
-    /// <summary>Marks a point (world yards) in every viewer.</summary>
+    /// <summary>Marks a point (world yards) in every viewer of the scene.</summary>
     public void Mark(string name, Vector3 at, WatchColor color)
     {
-        if (Watched)
+        if (SceneWatched)
         {
-            Enqueue(token => SendAsync(hub.Clients.All, WatchHubMethods.DrawSphere, token, Wire(at), (int)color, name));
+            Enqueue(token => SendAsync(Scene, WatchHubMethods.DrawSphere, token, Wire(at), (int)color, name));
         }
     }
 
-    /// <summary>Wipes every viewer's scene and forgets the remembered routes.</summary>
+    /// <summary>Wipes every viewer's scene and forgets the remembered routes; route watchers hear it too.</summary>
     public void Clear()
     {
         lock (recentLock)
@@ -236,11 +271,12 @@ public sealed class WatchBroadcaster(
 
     private void OnRoutePlanned(PlannedRoute route)
     {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
         if (route.Points.Length > 0)
         {
             lock (recentLock)
             {
-                recent.Enqueue(route);
+                recent.Enqueue((route, at));
                 while (recent.Count > RememberedRoutes)
                 {
                     recent.Dequeue();
@@ -248,23 +284,29 @@ public sealed class WatchBroadcaster(
             }
         }
 
-        if (Watched)
+        if (SceneWatched)
         {
-            Enqueue(token => SendRouteAsync(hub.Clients.All, route, token));
+            Enqueue(token => SendRouteAsync(Scene, route, token));
+        }
+
+        if (!routeWatchers.IsEmpty)
+        {
+            WatchRoute watched = WatchRouteOf(route, at);
+            Enqueue(token => SendAsync(hub.Clients.Group(RouteWatchers), WatchHubMethods.RoutePlanned, token, watched));
         }
     }
 
     private void OnTileLoaded(LaneTile tile)
     {
-        if (Watched)
+        if (SceneWatched)
         {
-            Enqueue(token => SendTileAsync(hub.Clients.All, tile, token));
+            Enqueue(token => SendTileAsync(Scene, tile, token));
         }
     }
 
     private void OnTileUnloaded(LaneTile tile)
     {
-        if (!Watched)
+        if (!SceneWatched)
         {
             return;
         }
@@ -272,9 +314,21 @@ public sealed class WatchBroadcaster(
         string name = NavmeshTileMesh.Name(tile.Continent, tile.X, tile.Z);
         Enqueue(async token =>
         {
-            await SendAsync(hub.Clients.All, WatchHubMethods.RemoveMesh, token, name + NavmeshTileMesh.GroundSuffix);
-            await SendAsync(hub.Clients.All, WatchHubMethods.RemoveMesh, token, name + NavmeshTileMesh.LiquidSuffix);
+            await SendAsync(Scene, WatchHubMethods.RemoveMesh, token, name + NavmeshTileMesh.GroundSuffix);
+            await SendAsync(Scene, WatchHubMethods.RemoveMesh, token, name + NavmeshTileMesh.LiquidSuffix);
         });
+    }
+
+    // A route as watchers get it: the contract's types, the service's statuses.
+    private static WatchRoute WatchRouteOf(PlannedRoute route, DateTimeOffset at)
+    {
+        return new WatchRoute(route.Continent, Point(route.From), Point(route.To), [.. route.Points.Select(Point)],
+            RouteHandler.ToStatus(route.Status), route.ElapsedMs, route.Detail, at);
+    }
+
+    private static Point3 Point(Vector3 v)
+    {
+        return new Point3(v.X, v.Y, v.Z);
     }
 
     // --- sends (the loop) ------------------------------------------------------------

@@ -8,16 +8,25 @@
 
 <PageTitle>NPC routes · Control Center</PageTitle>
 
-<Viewport3D>
-    <Panel Title="NPC routes" Icon="people">
+@* Routes to an NPC, as a bot walks to a vendor or a trainer: every NPC of a type in a zone is a
+   marker on the world view, one is chosen in the list or by clicking it, the start is picked on the
+   map or rolled at random, and the route is drawn in its status colour. *@
+
+<WorldView Scene="@scene" Picking="@picking" OnPick="Picked" OnMarker="MarkerClicked">
+    <Panel Title="NPC routes" Icon="people" Position="top-left">
         <div class="pa-form">
             <div class="pa-field">
                 <label class="pa-label" for="pa-npc-zone">Zone</label>
                 <select class="pa-select" id="pa-npc-zone" value="@uiMap" @onchange="ZoneChosenAsync">
                     <option value="0" disabled>Choose a zone</option>
-                    @foreach (ZoneInfo zone in zones)
+                    @foreach (IGrouping<string, ZoneInfo> group in zones.GroupBy(z => z.Continent))
                     {
-                        <option value="@zone.UiMapId">@zone.Name (@zone.Continent)</option>
+                        <optgroup label="@group.Key">
+                            @foreach (ZoneInfo zone in group)
+                            {
+                                <option value="@zone.UiMapId">@zone.Name</option>
+                            }
+                        </optgroup>
                     }
                 </select>
             </div>
@@ -34,7 +43,7 @@
                 </div>
                 <div class="pa-field pa-grow2">
                     <label class="pa-label" for="pa-npc-name">NPC</label>
-                    <select class="pa-select" id="pa-npc-name" @bind="npcEntry" disabled="@(npcs.Length == 0)">
+                    <select class="pa-select" id="pa-npc-name" @bind="npcEntry" @bind:after="NpcChosen" disabled="@(npcs.Length == 0)">
                         @if (npcs.Length == 0)
                         {
                             <option value="0">@(uiMap == 0 ? "Choose a zone first" : loading ? "Loading..." : "None in this zone")</option>
@@ -50,28 +59,33 @@
             <div class="pa-field">
                 <span class="pa-label">Start</span>
                 <div class="pa-input-group">
-                    <span class="pa-input pa-readout">@(start is Point3 s ? $"{s.X:F0}, {s.Y:F0}, {s.Z:F0}" : "Random point in the zone")</span>
-                    <button class="pa-btn" type="button" disabled="@(uiMap == 0)" @onclick="RandomStartAsync" title="Pick a random point in the zone">
-                        <span class="oi oi-random" aria-hidden="true"></span> Roll
+                    <span class="pa-input pa-readout">@(start is Point3 s ? ZoneLabels.Where(world, Zone?.MapId ?? -1, s) : "Pick a point or roll one")</span>
+                    <button class="pa-btn pa-btn--icon @(picking ? "pa-btn--primary" : null)" type="button" disabled="@(uiMap == 0)"
+                            title="@(picking ? "Click the map to start there, or click here to stop" : "Pick the start on the map")" @onclick="() => picking = !picking">
+                        <span class="oi oi-map-marker" aria-hidden="true"></span>
+                    </button>
+                    <button class="pa-btn pa-btn--icon" type="button" disabled="@(uiMap == 0)" title="A random point in the zone" @onclick="RandomStartAsync">
+                        <span class="oi oi-random" aria-hidden="true"></span>
                     </button>
                 </div>
             </div>
 
-            <label class="pa-check"><input type="checkbox" @bind="reversed" /> From the NPC back to the start</label>
+            <label class="pa-check"><input type="checkbox" @bind="reversed" @bind:after="() => Draw()" /> From the NPC back to the start</label>
 
-            <div class="pa-actions">
-                <button class="pa-btn" type="button" disabled="@(!Ready || busy)" @onclick="DrawAsync" title="Straight line to the NPC">
-                    <span class="oi oi-minus" aria-hidden="true"></span> Line
-                </button>
-                <BusyButton Class="pa-btn--primary pa-grow" Icon="media-play" Busy="@busy" Disabled="@(!Ready)" OnClick="FindAsync">
-                    Find path
-                </BusyButton>
-            </div>
+            <BusyButton Class="pa-btn--primary" Icon="media-play" Busy="@busy" Disabled="@(!Ready)" OnClick="FindAsync">
+                Find route
+            </BusyButton>
 
             <ResultLine Text="@result" Kind="@resultKind" />
+            <span class="pa-faint">Click an NPC on the map to choose it.</span>
         </div>
     </Panel>
-</Viewport3D>
+</WorldView>
+
+@if (!status.Online)
+{
+    <OfflineNotice Service="@status.Service" Reason="@status.Error" />
+}
 
 @code {
     // Random starts stay this far inside the zone's map, where most zones have ground.
@@ -80,6 +94,9 @@
 
     public const string DefaultType = "vendor";
 
+    private const string NpcPrefix = "npc-";
+
+    private WorldSnapshot? world;
     private ZoneInfo[] zones = [];
     private string[] types = [];
     private NpcInfo[] npcs = [];
@@ -89,10 +106,13 @@
     private int npcEntry;
     private Point3? start;
     private bool reversed;
+    private bool picking;
     private bool loading;
     private bool busy;
     private string? result;
     private ResultKind resultKind;
+    private RouteResponse? route;
+    private WorldScene scene = WorldScene.Empty(string.Empty);
 
     private ZoneInfo? Zone => zones.FirstOrDefault(z => z.UiMapId == uiMap);
 
@@ -102,15 +122,20 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Subscribe(() => status.Changed += Redraw, () => status.Changed -= Redraw);
         Subscribe(() => status.Reconnected += Reload, () => status.Reconnected -= Reload);
         await LoadAsync();
     }
 
     private async Task LoadAsync()
     {
-        WorldSnapshot? world = await worldCache.GetAsync();
-        zones = world?.World.Zones ?? [];
+        world = await worldCache.GetAsync();
+        // Zones only: a continent's or the world's map holds no NPC list of its own.
+        zones = world is null
+            ? []
+            : [.. world.World.Zones.Where(z => z.AreaId != 0 && world.CanRoute(z.Continent)).OrderBy(z => z.Continent).ThenBy(z => z.Name)];
         types = world is null ? [] : [.. world.World.NpcFlags.Keys.Order(StringComparer.Ordinal)];
+        Draw();
     }
 
     private void Reload()
@@ -131,13 +156,17 @@
 
         uiMap = chosen;
         start = null;
+        route = null;
         await ListNpcsAsync();
+        Draw(frame: true);
     }
 
     private async Task TypeChosenAsync(ChangeEventArgs e)
     {
         type = e.Value?.ToString() ?? DefaultType;
+        route = null;
         await ListNpcsAsync();
+        Draw(frame: true);
     }
 
     private async Task ListNpcsAsync()
@@ -155,7 +184,7 @@
             ServiceResult<NpcInfo[]> listed = await pathing.GetNpcsAsync(uiMap, type, Token);
             npcs = listed.Value ?? [];
             npcEntry = npcs.Length > 0 ? npcs[0].Entry : 0;
-            Show(listed.Ok ? null : listed.Error, ResultKind.Error);
+            Say(listed.Ok ? null : listed.Error, ResultKind.Error);
         }
         catch (OperationCanceledException)
         {
@@ -166,6 +195,30 @@
         }
     }
 
+    private void NpcChosen()
+    {
+        route = null;
+        Draw();
+    }
+
+    private void MarkerClicked(string id)
+    {
+        if (id.StartsWith(NpcPrefix, StringComparison.Ordinal) &&
+            int.TryParse(id[NpcPrefix.Length..], NumberStyles.Integer, CultureInfo.InvariantCulture, out int entry))
+        {
+            npcEntry = entry;
+            NpcChosen();
+        }
+    }
+
+    private void Picked(WorldPoint point)
+    {
+        start = point.ToPoint3();
+        picking = false;
+        route = null;
+        Draw();
+    }
+
     private async Task RandomStartAsync()
     {
         if (Zone is not ZoneInfo zone)
@@ -174,15 +227,14 @@
         }
 
         Point3 map = new((Random.Shared.NextSingle() * MapSpan) + MapMargin, (Random.Shared.NextSingle() * MapSpan) + MapMargin, 0);
-        Point3 world = ZoneMath.ToWorld(zone, map);
+        Point3 at = ZoneMath.ToWorld(zone, map);
         try
         {
             // The navmesh's height there, so the marker and the route start on the ground.
-            ServiceResult<AreaAtPoint> area = await pathing.GetAreaAsync(zone.MapId, world.X, world.Y, Token);
-            start = world with { Z = area.Value?.Z ?? 0 };
-
-            await pathing.ShowMarkerAsync(new WatchMarker(WatchNames.Start, uiMap, CoordinateSpace.World, start.Value), Token);
-            Show(string.Create(CultureInfo.InvariantCulture, $"Start at map {map.X:F1}, {map.Y:F1}"), ResultKind.Info);
+            ServiceResult<AreaAtPoint> area = await pathing.GetAreaAsync(zone.MapId, at.X, at.Y, Token);
+            start = at with { Z = area.Value?.Z ?? 0 };
+            route = null;
+            Draw();
         }
         catch (OperationCanceledException)
         {
@@ -195,28 +247,16 @@
         return reversed ? (npc, start!.Value) : (start!.Value, npc);
     }
 
-    private async Task DrawAsync()
-    {
-        (Point3 from, Point3 to) = Endpoints();
-        try
-        {
-            ServiceResult drawn = await pathing.DrawPathAsync(new WatchPath(WatchNames.Line, uiMap, CoordinateSpace.World, [from, to]), Token);
-            Show(drawn.Ok ? "Straight line drawn" : drawn.Error, drawn.Ok ? ResultKind.Info : ResultKind.Error);
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
-
     private async Task FindAsync()
     {
         (Point3 from, Point3 to) = Endpoints();
         busy = true;
-        Show("Searching...", ResultKind.Info);
+        Say("Searching...", ResultKind.Info);
         try
         {
-            RouteResponse response = await pathing.FindRouteAsync(new RouteRequest(null, uiMap, CoordinateSpace.World, from, to), Token);
-            (result, resultKind) = RouteResults.Describe(response);
+            route = await pathing.FindRouteAsync(new RouteRequest(null, uiMap, CoordinateSpace.World, from, to), Token);
+            (result, resultKind) = RouteResults.Describe(route);
+            Draw(frame: true);
         }
         catch (OperationCanceledException)
         {
@@ -227,9 +267,36 @@
         }
     }
 
-    private void Show(string? text, ResultKind kind)
+    private void Say(string? text, ResultKind kind)
     {
         result = text;
         resultKind = kind;
+    }
+
+    // The zone's NPCs of the type, the chosen one named; the start; the route found.
+    private void Draw(bool frame = false)
+    {
+        string continent = Zone?.Continent ?? world?.World.Continents.FirstOrDefault(c => c.Tiles > 0)?.Name ?? string.Empty;
+        List<WorldMarker> markers = [];
+        foreach (NpcInfo npc in npcs)
+        {
+            bool chosen = npc.Entry == npcEntry;
+            markers.Add(WorldMarker.At($"{NpcPrefix}{npc.Entry.ToString(CultureInfo.InvariantCulture)}", chosen ? WorldKinds.End : WorldKinds.Npc,
+                npc.Position, chosen ? npc.Name : null, npc.Name));
+        }
+
+        if (start is Point3 from)
+        {
+            markers.Add(WorldMarker.At("start", WorldKinds.Start, from, "Start"));
+        }
+
+        List<WorldRoute> routes = [];
+        if (route is not null && Ready)
+        {
+            (Point3 a, Point3 b) = Endpoints();
+            routes.AddRange(RouteDrawing.Of("route", "Route", route.Status, route.Points, a, b, route.Detail, markers));
+        }
+
+        scene = new WorldScene(continent, [.. routes], [.. markers], ZoneLabels.Of(world, continent), frame);
     }
 }

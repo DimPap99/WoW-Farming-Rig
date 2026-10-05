@@ -22,7 +22,7 @@ public sealed class WatchHub(WatchBroadcaster broadcaster) : Hub
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
-        broadcaster.ViewerLeft();
+        broadcaster.ViewerLeft(Context.ConnectionId);
         return base.OnDisconnectedAsync(exception);
     }
 
@@ -31,6 +31,14 @@ public sealed class WatchHub(WatchBroadcaster broadcaster) : Hub
     public void Replay()
     {
         broadcaster.Replay(Context.ConnectionId);
+    }
+
+    /// <summary>Makes this connection a watcher of routes only: each route as it is answered, no scene.</summary>
+    [HubMethodName(WatchHubMethods.WatchRoutes)]
+    public async Task WatchRoutes()
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, WatchBroadcaster.RouteWatchers);
+        broadcaster.WatchRoutes(Context.ConnectionId);
     }
 
     /// <summary>Starts sending this viewer the game geometry under the tiles; null, or why not.</summary>

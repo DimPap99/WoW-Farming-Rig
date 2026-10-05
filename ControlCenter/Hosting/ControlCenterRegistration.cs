@@ -36,6 +36,9 @@ public static class ControlCenterRegistration
         services.AddSingleton<PathingStatus>();
         services.AddHostedService(sp => sp.GetRequiredService<PathingStatus>());
         services.AddSingleton<WorldCache>();
+        // Connected only while a page watches the routes the service plans.
+        services.AddSingleton<IWatchConnectionFactory, WatchConnectionFactory>();
+        services.AddSingleton<WatchFeed>();
 
         // The Bot Manager is called from here only, never forwarded: /api/v1 is the Pathing
         // Service's on this host. Registers BotManagerOptions too (BotManager:Url).

@@ -53,7 +53,7 @@ Navmesh/ForeverGameFiles.cs        ForeverCasc:* -> Forever's CASC geometry
 Navmesh/NavmeshEndpoints.cs        /api/v1/navmesh, /api/v1/bake, /api/v1/areagrids
 Navmesh/NavmeshViews.cs            the navmesh as a map draws it: a continent's relief, one tile's polygons
 Navmesh/StartupBakes.cs            --bake= / --bake-area=
-Watch/WatchHub.cs                  /watchHub (MessagePack): viewers, Replay, Terrain
+Watch/WatchHub.cs                  /watchHub (MessagePack): viewers, Replay, Terrain, WatchRoutes
 Watch/WatchBroadcaster.cs          planner events and drawings -> the hub, one send loop
 Watch/NavmeshTileMesh.cs           a Detour tile as triangles
 Watch/TerrainMesh.cs               the game geometry under a navmesh tile, by kind
@@ -127,6 +127,13 @@ not know MessagePack-CSharp's compression extension.
 **Opening a view resets nothing.** A late viewer calls `Replay` and gets the lanes' resident
 tiles and the last five routes, sent to it alone. PathingAPI reset its single engine for every
 new 3D page; a service planning for others must not.
+
+**A route watcher gets routes, not the scene.** A connection that calls `WatchRoutes` (the Control
+Center's Live view) joins the `routes` group: each route the planner answers comes to it as one
+`routePlanned` with a `WatchRoute` (the contract's types, its continent, its status; a .NET client
+reads it, the browsers' scene does not), the remembered ones first, and `clear`. Scene messages go
+to every connection but the route watchers (`AllExcept`), and tile meshes are built only while a
+viewer of the scene is connected, so a watcher costs the service no meshes.
 
 **Terrain is extracted, sent and dropped.** The Terrain toggle sends up to 25 tile indices;
 `BakeAdmin.TryExtractTerrain` loads those ADTs, sends each tile's mesh to that viewer only and

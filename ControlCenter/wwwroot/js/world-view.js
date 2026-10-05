@@ -35,6 +35,8 @@
         gap: [240, 160, 50],
         failed: [248, 81, 73],
         pending: [139, 148, 158],
+        recent: [120, 146, 182, 170],
+        npc: [57, 197, 207],
         leg: [88, 166, 255],
         recorded: [210, 168, 255],
         start: [63, 185, 80],
@@ -123,7 +125,12 @@
                 showReadout(view, info);
             },
             onClick: info => {
-                if (!window.worldEdit.click(view, info)) picked(view, info);
+                if (window.worldEdit.click(view, info)) return;
+                if (info.layer && info.layer.id === 'markers' && info.object && !view.picking) {
+                    view.dotnet.invokeMethodAsync('OnMarkerClicked', info.object.id).catch(() => { });
+                    return;
+                }
+                picked(view, info);
             },
             // Deck hears a drag before the map's controller does: a drag on a handle stops it there, so
             // the handle moves and the map stays.
@@ -461,9 +468,12 @@
 
         const solid = view.scene.routes.filter(r => !DASHED.has(r.kind));
         const dashed = view.scene.routes.filter(r => DASHED.has(r.kind));
+        // Faint routes first, so the one that matters is drawn over them.
+        solid.sort((a, b) => (b.kind === 'recent') - (a.kind === 'recent'));
         layers.push(new deck.PathLayer({
             id: 'routes', data: solid, getPath: r => r.path, getColor: r => KINDS[r.kind] || KINDS.point,
-            getWidth: 4, widthUnits: 'pixels', capRounded: true, jointRounded: true, pickable: true, parameters: over,
+            getWidth: r => r.kind === 'recent' ? 2 : 4, widthUnits: 'pixels', capRounded: true, jointRounded: true,
+            pickable: true, parameters: over,
         }));
         layers.push(new deck.PathLayer({
             id: 'gaps', data: dashed, getPath: r => r.path, getColor: r => KINDS[r.kind] || KINDS.point,
@@ -582,7 +592,7 @@
         if (info.layer.id === 'routes' || info.layer.id === 'gaps') {
             text = o.label || o.kind;
         } else if (info.layer.id === 'markers') {
-            text = o.label || o.kind;
+            text = o.title || o.label || o.kind;
         } else if (info.layer.id === 'shape-areas' || info.layer.id === 'shape-circles' || info.layer.id === 'shape-lines') {
             text = o.label || null;
         } else if (info.layer.id === 'relief') {
@@ -593,17 +603,25 @@
         return text ? { text, style: { background: 'rgba(16, 22, 30, 0.95)', color: '#e6edf3', fontSize: '12px', padding: '4px 8px', borderRadius: '6px' } } : null;
     }
 
-    /** What every view holds, for a browser check: its continent, ground, layers and tools. */
+    /** What every view holds, for a browser check: its continent, ground, layers, markers on the screen and tools. */
     function describe() {
-        return [...instances.values()].map(v => ({
-            id: v.id,
-            continent: v.continent,
-            reliefTiles: v.overview ? v.overview.cells.length : 0,
-            detailTiles: [...v.tiles.values()].filter(t => t).length,
-            viewState: { target: v.viewState.target, zoom: v.viewState.zoom, rotationX: v.viewState.rotationX },
-            layers: (v.deck.props.layers || []).map(l => l.id + ':' + (Array.isArray(l.props.data) ? l.props.data.length : '?')),
-            edit: window.worldEdit.describe(v),
-        }));
+        return [...instances.values()].map(v => {
+            const viewport = v.deck.getViewports()[0];
+            return {
+                id: v.id,
+                continent: v.continent,
+                reliefTiles: v.overview ? v.overview.cells.length : 0,
+                detailTiles: [...v.tiles.values()].filter(t => t).length,
+                viewState: { target: v.viewState.target, zoom: v.viewState.zoom, rotationX: v.viewState.rotationX },
+                layers: (v.deck.props.layers || []).map(l => l.id + ':' + (Array.isArray(l.props.data) ? l.props.data.length : '?')),
+                routes: v.scene.routes.map(r => r.id + ':' + r.kind + ':' + r.path.length),
+                markers: viewport ? v.scene.markers.map(m => {
+                    const [x, y] = viewport.project(m.position);
+                    return { id: m.id, kind: m.kind, x, y };
+                }) : [],
+                edit: window.worldEdit.describe(v),
+            };
+        });
     }
 
     /** Where a world point is on the screen, relative to the view's canvas, for a browser check. */

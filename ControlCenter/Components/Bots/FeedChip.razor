@@ -1,18 +1,23 @@
-@* Whether the fleet pages follow the manager live, or show the last they knew while the feed reconnects. *@
+@* Whether a page follows a hub live, or shows the last it knew while the feed reconnects: the fleet
+   pages the manager's fleet hub, the live view the routes the Pathing Service plans. *@
 
 @if (Connected)
 {
-    <span class="pa-chip pa-chip--ok" title="Following the Bot Manager's fleet hub: changes show as they happen">
+    <span class="pa-chip pa-chip--ok" title="@LiveTitle">
         <span class="pa-dot" aria-hidden="true"></span> live
     </span>
 }
 else
 {
-    <span class="pa-chip pa-chip--warn" title="The fleet hub's connection is down: this shows the last state known until it is back">
+    <span class="pa-chip pa-chip--warn" title="@DownTitle">
         <span class="pa-dot" aria-hidden="true"></span> reconnecting
     </span>
 }
 
 @code {
     [Parameter] public bool Connected { get; set; }
+
+    [Parameter] public string LiveTitle { get; set; } = "Following the Bot Manager's fleet hub: changes show as they happen";
+
+    [Parameter] public string DownTitle { get; set; } = "The fleet hub's connection is down: this shows the last state known until it is back";
 }

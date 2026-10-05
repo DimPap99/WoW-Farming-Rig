@@ -6,73 +6,126 @@
 @inject IPathingClient pathing
 @inject WorldCache worldCache
 @inject PathingStatus status
+@inject WatchFeed feed
 
 <PageTitle>Live view · Control Center</PageTitle>
 
-@* Watches every route the Pathing Service plans, from any caller. *@
-<Viewport3D>
-    <Panel Title="Test routes" Icon="list" Position="top-left" Class="pa-panel--tall">
+@* Watches every route the Pathing Service plans, for any caller - a bot, a page, a test route
+   below - as it answers them (WatchFeed). The route shown is drawn on its continent in its status
+   colour, from where it started to where it was going; the others planned there are faint. *@
+
+<WorldView Scene="@scene">
+    <Panel Title="Live view" Icon="pulse" Position="top-left" Class="pa-panel--tall">
         <Actions>
-            <span class="pa-count">@shown.Count / @All.Length</span>
+            <FeedChip Connected="@feed.Live" LiveTitle="Watching the Pathing Service: each route shows as it is planned"
+                      DownTitle="The watch connection is down: this shows the routes known until it is back" />
         </Actions>
         <ChildContent>
-            <input class="pa-input" type="search" placeholder="Filter by zone or name" aria-label="Filter test routes"
-                   @bind="filter" @bind:event="oninput" @bind:after="Refilter" />
-            <label class="pa-check" title="Hide routes on continents the Pathing Service has no navmesh tiles for">
-                <input type="checkbox" @bind="onlyRoutable" @bind:after="Refilter" /> Only continents with tiles
-            </label>
+            <div class="pa-form">
+                <label class="pa-check" title="Off keeps the route chosen below on the map">
+                    <input type="checkbox" @bind="follow" @bind:after="Show" /> Show each new route
+                </label>
 
-            @if (world is null)
-            {
-                <ResultLine Text="@(status.Online ? "Loading..." : "Waiting for the Pathing Service")" Kind="ResultKind.Info" />
-            }
-
-            <div class="pa-list">
-                @foreach (IGrouping<string, TestRoute> zone in shown.GroupBy(r => r.Zone))
+                @if (routes.Count == 0)
                 {
-                    <div class="pa-list-heading">@zone.Key</div>
-                    @foreach (TestRoute route in zone)
-                    {
-                        bool routable = world?.CanRoute(world.ContinentOf(route.Forward.UiMapId)) == true;
-                        <div class="pa-list-item @(routable ? null : "is-unavailable")"
-                             title="@(routable ? Describe(route.Forward) : $"No navmesh tiles for {world?.ContinentOf(route.Forward.UiMapId) ?? "this map"}")">
-                            <span class="pa-list-name">@route.Name</span>
-                            @if (results.TryGetValue(route.Forward, out (string Text, ResultKind Kind) outcome))
+                    <span class="pa-faint">No routes yet. They show here as the service plans them: for a bot, a page, or a test route below.</span>
+                }
+                else
+                {
+                    <ol class="pa-waypoints pa-live-routes" aria-label="Routes planned, newest first">
+                        @foreach (WatchRoute route in routes)
+                        {
+                            <li class="pa-waypoint @(route == shown ? "is-selected" : null)">
+                                <span class="pa-dot pa-dot--@Dot(route)" aria-hidden="true"></span>
+                                <button class="pa-waypoint-at" type="button" title="@Title(route)" @onclick="() => Choose(route)">@Ends(route)</button>
+                                <span class="pa-waypoint-leg">@route.At.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)</span>
+                            </li>
+                        }
+                    </ol>
+                }
+
+                <details class="pa-details" open>
+                    <summary>Test routes</summary>
+                    <div class="pa-form">
+                        <input class="pa-input" type="search" placeholder="Filter by zone or name" aria-label="Filter test routes"
+                               @bind="filter" @bind:event="oninput" @bind:after="Refilter" />
+                        <label class="pa-check" title="Hide routes on continents the Pathing Service has no navmesh tiles for">
+                            <input type="checkbox" @bind="onlyRoutable" @bind:after="Refilter" /> Only continents with tiles
+                        </label>
+
+                        @if (world is null)
+                        {
+                            <ResultLine Text="@(status.Online ? "Loading..." : "Waiting for the Pathing Service")" Kind="ResultKind.Info" />
+                        }
+
+                        <div class="pa-list pa-test-routes">
+                            @foreach (IGrouping<string, TestRoute> zone in tests.GroupBy(r => r.Zone))
                             {
-                                <ResultLine Text="@outcome.Text" Kind="@outcome.Kind" />
-                            }
-                            <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Run"
-                                    @onclick="() => RunAsync(route.Forward)">
-                                <span class="oi oi-media-play" aria-hidden="true"></span>
-                            </button>
-                            @if (route.Reverse is RouteRequest reverse)
-                            {
-                                <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Run reversed"
-                                        @onclick="() => RunAsync(reverse, route.Forward)">
-                                    <span class="oi oi-loop-circular" aria-hidden="true"></span>
-                                </button>
+                                <div class="pa-list-heading">@zone.Key</div>
+                                @foreach (TestRoute route in zone)
+                                {
+                                    bool routable = world?.CanRoute(world.ContinentOf(route.Forward.UiMapId)) == true;
+                                    <div class="pa-list-item @(routable ? null : "is-unavailable")"
+                                         title="@(routable ? Describe(route.Forward) : $"No navmesh tiles for {world?.ContinentOf(route.Forward.UiMapId) ?? "this map"}")">
+                                        <span class="pa-list-name">@route.Name</span>
+                                        @if (results.TryGetValue(route.Forward, out (string Text, ResultKind Kind) outcome))
+                                        {
+                                            <ResultLine Text="@outcome.Text" Kind="@outcome.Kind" />
+                                        }
+                                        <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Run" @onclick="() => RunAsync(route.Forward)">
+                                            <span class="oi oi-media-play" aria-hidden="true"></span>
+                                        </button>
+                                        @if (route.Reverse is RouteRequest reverse)
+                                        {
+                                            <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Run reversed"
+                                                    @onclick="() => RunAsync(reverse, route.Forward)">
+                                                <span class="oi oi-loop-circular" aria-hidden="true"></span>
+                                            </button>
+                                        }
+                                    </div>
+                                }
                             }
                         </div>
-                    }
-                }
+                    </div>
+                </details>
             </div>
         </ChildContent>
     </Panel>
-</Viewport3D>
+</WorldView>
+
+@if (!status.Online)
+{
+    <OfflineNotice Service="@status.Service" Reason="@status.Error" />
+}
 
 @code {
+    /// <summary>While routes arrive, the map is drawn again at most this often.</summary>
+    private const int RedrawMs = 150;
+
+    /// <summary>Other routes drawn faintly beside the one shown, on its continent.</summary>
+    private const int Faint = 10;
+
     // Keyed by the forward request: a record, so equal requests share their last outcome.
     private readonly Dictionary<RouteRequest, (string Text, ResultKind Kind)> results = [];
 
     private WorldSnapshot? world;
+    private IReadOnlyList<WatchRoute> routes = [];
+    private WatchRoute? chosen;
+    private WatchRoute? shown;
+    private WatchRoute? framed;
+    private bool follow = true;
+    private bool redrawQueued;
+    private WorldScene scene = WorldScene.Empty(string.Empty);
+
     private string filter = string.Empty;
     private bool onlyRoutable;
-    private List<TestRoute> shown = [];
-
-    private TestRoute[] All => world?.TestRoutes ?? [];
+    private List<TestRoute> tests = [];
 
     protected override async Task OnInitializedAsync()
     {
+        OnDispose(feed.Watch().Dispose);
+        Subscribe(() => feed.Changed += Arrived, () => feed.Changed -= Arrived);
+        Subscribe(() => status.Changed += Redraw, () => status.Changed -= Redraw);
         Subscribe(() => status.Reconnected += Reload, () => status.Reconnected -= Reload);
         await LoadAsync();
     }
@@ -81,6 +134,7 @@
     {
         world = await worldCache.GetAsync();
         Refilter();
+        Show();
     }
 
     private void Reload()
@@ -92,9 +146,106 @@
         });
     }
 
+    // Routes arrived or the connection changed: the map is drawn again shortly, once for all that came meanwhile.
+    private void Arrived()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (redrawQueued)
+            {
+                return;
+            }
+
+            redrawQueued = true;
+            try
+            {
+                await Task.Delay(RedrawMs, Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            redrawQueued = false;
+            Show();
+            StateHasChanged();
+        });
+    }
+
+    private void Choose(WatchRoute route)
+    {
+        chosen = route;
+        follow = false;
+        Show();
+    }
+
+    // The newest route while following, else the one chosen; framed when it changes.
+    private void Show()
+    {
+        routes = feed.Routes;
+        shown = follow || chosen is null || !routes.Contains(chosen) ? routes.FirstOrDefault() : chosen;
+        string continent = shown?.Continent
+            ?? world?.World.Continents.FirstOrDefault(c => c.Tiles > 0)?.Name ?? string.Empty;
+
+        List<WorldRoute> drawn = [];
+        List<WorldMarker> markers = [];
+        foreach (WatchRoute other in routes.Where(r => r != shown && r.Continent == continent && r.Points.Length > 0).Take(Faint))
+        {
+            drawn.Add(WorldRoute.Of($"recent-{drawn.Count}", WorldKinds.Recent, other.Points, Title(other)));
+        }
+
+        if (shown is WatchRoute route)
+        {
+            drawn.AddRange(RouteDrawing.Of("shown", "Route", route.Status, route.Points, route.From, route.To, route.Detail, markers));
+            markers.Add(WorldMarker.At("from", WorldKinds.Start, route.From, "From"));
+            markers.Add(WorldMarker.At("to", WorldKinds.End, route.To, "To"));
+        }
+
+        bool frame = shown is not null && shown != framed;
+        framed = shown ?? framed;
+        scene = new WorldScene(continent, [.. drawn], [.. markers], ZoneLabels.Of(world, continent), frame);
+    }
+
+    private string Ends(WatchRoute route)
+    {
+        int mapId = world?.Continent(route.Continent)?.MapId ?? -1;
+        string from = ZoneName(mapId, route.From);
+        string to = ZoneName(mapId, route.To);
+        string length = route.Points.Length > 0 ? $" · {Words.Yards(RouteGeometry.Length(route.Points))}" : string.Empty;
+        return (from == to ? from : $"{from} to {to}") + length;
+    }
+
+    private string ZoneName(int mapId, Point3 at)
+    {
+        return world is not null && ZoneMath.ZoneAt(world.World.Zones, mapId, at.X, at.Y) is ZoneInfo zone ? zone.Name : "?";
+    }
+
+    private static string Title(WatchRoute route)
+    {
+        string what = route.Status switch
+        {
+            RouteStatus.Found => $"found, {route.Points.Length:N0} points",
+            RouteStatus.Partial => $"part of the way: {route.Detail}",
+            _ => $"{route.Status}: {route.Detail}",
+        };
+        return string.Create(CultureInfo.InvariantCulture, $"{route.Continent}, {what}, in {route.ElapsedMs:F0} ms");
+    }
+
+    private static string Dot(WatchRoute route)
+    {
+        return route.Status switch
+        {
+            RouteStatus.Found => "ok",
+            RouteStatus.Partial => "warn",
+            _ => "error",
+        };
+    }
+
+    // --- test routes ------------------------------------------------------------------------
+
     private void Refilter()
     {
-        shown = All
+        tests = (world?.TestRoutes ?? [])
             .Where(r => filter.Length == 0 ||
                         r.Zone.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
                         r.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
@@ -102,10 +253,12 @@
             .ToList();
     }
 
+    // The route shows on the map as the feed brings it, as anyone's does.
     private async Task RunAsync(RouteRequest request, RouteRequest? key = null)
     {
         RouteRequest slot = key ?? request;
         results[slot] = ("...", ResultKind.Info);
+        follow = true;
         try
         {
             RouteResponse response = await pathing.FindRouteAsync(request, Token);
