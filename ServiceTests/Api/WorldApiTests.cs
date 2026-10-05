@@ -59,6 +59,55 @@ public sealed class WorldApiTests
     }
 
     [Fact]
+    public async Task A_zones_layers_list_what_is_inside_it_in_world_yards()
+    {
+        using PathingServiceFactory factory = new(TestData.RepoJson);
+        PathingClient client = new(factory.CreateClient());
+        ServiceResult<WorldInfo> world = await client.GetWorldAsync(TestContext.Current.CancellationToken);
+        ZoneInfo durotar = Assert.Single(world.Value!.Zones, z => z.UiMapId == 1411);
+
+        foreach (string layer in SpawnLayers.All)
+        {
+            ServiceResult<SpawnPoint[]> spawns = await client.GetSpawnsAsync(1411, layer, TestContext.Current.CancellationToken);
+
+            Assert.True(spawns.Ok, $"{layer}: {spawns.Error}");
+            Assert.True(spawns.Value.Length > 0, $"no {layer} in Durotar");
+            // World yards near Durotar, most of them on its map: the zone's area box reaches a little past the map's edge.
+            Point3[] onMap = [.. spawns.Value.Select(s => ZoneMath.ToMap(durotar, s.At))];
+            Assert.All(onMap, p =>
+            {
+                Assert.InRange(p.X, -20, 120);
+                Assert.InRange(p.Y, -20, 120);
+            });
+            Assert.True(onMap.Count(p => p.X is >= 0 and <= 100 && p.Y is >= 0 and <= 100) * 2 > onMap.Length, $"{layer}: most are off Durotar's map");
+        }
+
+        ServiceResult<SpawnPoint[]> herbs = await client.GetSpawnsAsync(1411, SpawnLayers.Herb, TestContext.Current.CancellationToken);
+        ServiceResult<SpawnPoint[]> unknown = await client.GetSpawnsAsync(1411, "dragons", TestContext.Current.CancellationToken);
+
+        Assert.Contains(herbs.Value!, h => h.Name == "Peacebloom");
+        Assert.Equal((int)HttpStatusCode.BadRequest, unknown.Status);
+        Assert.Contains("herb", unknown.Error);
+    }
+
+    [Fact]
+    public async Task Creatures_are_found_by_a_part_of_their_name_on_one_continent()
+    {
+        using PathingServiceFactory factory = new(TestData.RepoJson);
+        PathingClient client = new(factory.CreateClient());
+
+        ServiceResult<NpcInfo[]> onElwynnsContinent = await client.GetNpcsAsync(1429, "vendor", TestContext.Current.CancellationToken);
+        ServiceResult<NpcInfo[]> hogger = await client.SearchNpcsAsync(0, "hogg", TestContext.Current.CancellationToken);
+        ServiceResult<NpcInfo[]> notOnKalimdor = await client.SearchNpcsAsync(1, "Hogger", TestContext.Current.CancellationToken);
+        ServiceResult<NpcInfo[]> tooShort = await client.SearchNpcsAsync(0, "h", TestContext.Current.CancellationToken);
+
+        Assert.True(onElwynnsContinent.Ok);
+        Assert.Contains(hogger.Value!, n => n.Name == "Hogger");
+        Assert.DoesNotContain(notOnKalimdor.Value!, n => n.Name == "Hogger");
+        Assert.Equal((int)HttpStatusCode.BadRequest, tooShort.Status);
+    }
+
+    [Fact]
     public async Task Locations_hold_the_curated_spots_and_the_teleports()
     {
         using PathingServiceFactory factory = new(TestData.RepoJson);

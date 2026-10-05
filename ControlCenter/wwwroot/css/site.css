@@ -1920,3 +1920,24 @@ kbd {
     border-radius: var(--pa-radius-sm);
     background: var(--pa-surface-2);
 }
+
+/* The map page's layers: a check, its colour, its name and how many it shows. */
+.pa-layers {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 10px;
+}
+
+.pa-layer {
+    font-size: 12.5px;
+}
+
+.pa-layer .pa-faint {
+    margin-left: auto;
+    font-size: 11px;
+}
+
+.pa-layer-dot {
+    width: 9px;
+    height: 9px;
+}

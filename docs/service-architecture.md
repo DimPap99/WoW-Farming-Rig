@@ -160,6 +160,8 @@ bot uses, either on the same PC or with changes committed to the repository.
 | `POST /api/v1/costzones/reload` | | 204 |
 | `GET /api/v1/world` | | `WorldInfo(Client, Era, HasMap, Continents, Zones, NpcFlags)` |
 | `GET /api/v1/world/npcs?uiMapId&flag` | | `NpcInfo[]` of that type in the zone |
+| `GET /api/v1/world/npcs/search?mapId&name` | | `NpcInfo[]` of creatures on the continent whose name holds the text (50 at most) |
+| `GET /api/v1/world/spawns?uiMapId&layer` | | `SpawnPoint[]`: every elite, herb, vein, skinnable spawn or mailbox in the zone (`SpawnLayers`) |
 | `GET /api/v1/catalog/locations` | | `NamedLocation[]` (curated spots and teleports) |
 | `GET /api/v1/catalog/testroutes` | | `TestRoute[]` with ready `RouteRequest`s |
 | `GET /api/v1/navmesh/{continent}/tiles` | | `NavmeshTile[]` (bounds, resident) |

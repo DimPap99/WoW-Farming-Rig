@@ -38,6 +38,13 @@
         pending: [139, 148, 158],
         recent: [120, 146, 182, 170],
         npc: [57, 197, 207],
+        elite: [229, 83, 75],
+        herb: [87, 171, 90],
+        vein: [198, 144, 38],
+        skinnable: [212, 180, 90],
+        mailbox: [108, 182, 255],
+        place: [230, 237, 243],
+        mark: [217, 112, 214],
         leg: [88, 166, 255],
         recorded: [210, 168, 255],
         start: [63, 185, 80],
@@ -47,6 +54,8 @@
     };
     // Kinds drawn dashed: where there is no route, only the straight line it should take.
     const DASHED = new Set(['gap', 'failed', 'pending']);
+    // Markers that come by the hundred - spawns, nodes - drawn smaller.
+    const SMALL = new Set(['npc', 'elite', 'herb', 'vein', 'skinnable', 'mailbox', 'place']);
     const WATER = [44, 96, 150];
     const OUTLINE = [8, 12, 16, 110];
 
@@ -208,17 +217,30 @@
             labels: (scene.labels || []).map(l => ({ ...l, position: toView(l.x, l.y, 0) })),
         };
         window.worldEdit.setShapes(view, scene.shapes, scene.selected);
+        // Points to frame instead of what the scene holds, such as a zone's corners.
+        const frameOn = scene.frameOn && scene.frameOn.length >= 3 ? boundsOf(pathOf(scene.frameOn)) : null;
 
         if (scene.continent && scene.continent !== view.continent) {
             await loadContinent(view, scene.continent);
-            if (!scene.frame) frameBounds(view, view.overview ? view.overview.bounds : null);
+            if (!scene.frame && !frameOn) frameBounds(view, view.overview ? view.overview.bounds : null);
         }
 
-        if (scene.frame) {
+        if (frameOn) {
+            frameBounds(view, frameOn);
+        } else if (scene.frame) {
             frameBounds(view, sceneBounds(view) || (view.overview ? view.overview.bounds : null));
         }
 
         render(view);
+    }
+
+    function boundsOf(positions) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        positions.forEach(p => {
+            minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]);
+            minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]);
+        });
+        return minX <= maxX ? [minX, minY, maxX, maxY] : null;
     }
 
     function pathOf(flat) {
@@ -485,8 +507,10 @@
         }));
         layers.push(new deck.ScatterplotLayer({
             id: 'markers', data: view.scene.markers, getPosition: m => m.position,
-            getFillColor: m => KINDS[m.kind] || KINDS.point, getLineColor: [255, 255, 255, 230], stroked: true,
-            radiusUnits: 'pixels', getRadius: 7, lineWidthUnits: 'pixels', getLineWidth: 2, pickable: true, parameters: over,
+            getFillColor: m => KINDS[m.kind] || KINDS.point,
+            getLineColor: m => SMALL.has(m.kind) ? [10, 14, 19, 200] : [255, 255, 255, 230], stroked: true,
+            radiusUnits: 'pixels', getRadius: m => SMALL.has(m.kind) ? 4.5 : 7,
+            lineWidthUnits: 'pixels', getLineWidth: m => SMALL.has(m.kind) ? 1.2 : 2, pickable: true, parameters: over,
         }));
         layers.push(new deck.TextLayer({
             id: 'marker-labels', data: view.scene.markers.filter(m => m.label), getPosition: m => m.position,

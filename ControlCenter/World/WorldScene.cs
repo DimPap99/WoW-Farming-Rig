@@ -13,8 +13,9 @@ namespace ControlCenter.World;
 /// <param name="Frame">Move the view to frame the routes, markers and shapes when this scene arrives.</param>
 /// <param name="Shapes">Areas, lines and points, drawn under the routes; editable ones can be changed with the pointer.</param>
 /// <param name="Selected">The shape whose handles show, when it is editable; null for none.</param>
+/// <param name="FrameOn">x, y, z triples to frame when this scene arrives, instead of what it holds: a zone's corners.</param>
 public sealed record WorldScene(string Continent, WorldRoute[] Routes, WorldMarker[] Markers, WorldLabel[] Labels, bool Frame = false,
-    WorldShape[]? Shapes = null, string? Selected = null)
+    WorldShape[]? Shapes = null, string? Selected = null, float[]? FrameOn = null)
 {
     public static WorldScene Empty(string continent)
     {
