@@ -34,6 +34,7 @@
     const MIN_VERTICES = { line: 2, polygon: 3, points: 1 };
     const FINISH_PX = 9;        // a click this close to the draft's last (or a polygon's first) vertex finishes it
     const MAX_NUMBERED = 60;    // waypoints beyond this many are numbered first and last only
+    const FEW_NUMBERED = 12;    // this many or fewer are numbered at any zoom; more only close in
     const FONT = 'ui-sans-serif, system-ui, Segoe UI, sans-serif';
 
     function colorOf(kind, alpha) {
@@ -44,7 +45,7 @@
     /** The editing state of a view. */
     function attach(view, helpers) {
         view.edit = {
-            helpers,             // { toView, fromView, lift, groundAt(x, y, info), emit(method, ...args), render() }
+            helpers,             // { toView, fromView, lift, groundAt(x, y, info), closeIn(), emit(method, ...args), render() }
             tool: null,
             draft: [],           // view coordinates
             cursor: null,
@@ -139,13 +140,15 @@
             lineWidthUnits: 'pixels', getLineWidth: 1.5, parameters: over,
         }));
 
+        // Names show close in, or on the selected shape: zoomed out over a continent they only pile up.
+        const close = edit.helpers.closeIn();
         const labels = [];
         edit.shapes.forEach(s => {
-            if (s.label && s.vertices.length > 0) labels.push({ text: s.label, position: labelPosition(s) });
+            if (s.label && s.vertices.length > 0 && (close || isSelected(s))) labels.push({ text: s.label, position: labelPosition(s) });
             if (s.type === 'points' && s.kind === 'waypoints') {
                 const n = s.vertices.length;
                 s.vertices.forEach((p, i) => {
-                    if (n <= MAX_NUMBERED || i === 0 || i === n - 1) labels.push({ text: String(i + 1), position: p, small: true });
+                    if (n <= FEW_NUMBERED || (close && n <= MAX_NUMBERED) || i === 0 || i === n - 1) labels.push({ text: String(i + 1), position: p, small: true });
                 });
             }
         });

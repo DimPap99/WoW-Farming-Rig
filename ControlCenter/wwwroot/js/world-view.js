@@ -18,6 +18,7 @@
 
     const DECK_URL = 'https://cdn.jsdelivr.net/npm/deck.gl@9.4.0/dist.min.js';
     const DETAIL_SPAN = 1600;        // yards across the view below which tiles show their polygons
+    const LABEL_SPAN = 3200;         // yards across the view below which every shape is named
     const MAX_DETAIL_TILES = 220;    // more than this in view stays on the relief
     const FETCHES = 6;               // tile requests at once
     const LIFT = 1.5;                // routes, markers and shapes float this far above the ground
@@ -153,6 +154,7 @@
         window.worldEdit.attach(view, {
             toView, fromView, lift: LIFT,
             groundAt: (x, y, info) => groundAt(view, x, y, info),
+            closeIn: () => viewSpan(view) < LABEL_SPAN,
             emit: (method, ...args) => view.dotnet.invokeMethodAsync(method, ...args).catch(() => { }),
             render: () => render(view),
         });

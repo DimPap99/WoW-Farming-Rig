@@ -70,7 +70,12 @@ which it always is.
    game geometry under tiles, needing game files) has no new home; deck.gl could draw it as a mesh
    if it is still wanted. Its page is gone, its code goes in step 6.
 4. The map page: cost zones (roads, danger zones), spawns and search, custom points, navmesh
-   coverage and bakes, the ADT grid.
+   coverage and bakes, the ADT grid. In parts:
+   - **Done.** Cost zones (`/cost-zones`): roads drawn as lines, danger zones as circles and
+     rectangles, avoid or block, each kept in the file of the zone it was drawn in (the area grid's
+     zone); changes collect until Save, which the service checks and applies to the next route.
+     Names show close in or on the selected shape, so a continent of roads stays readable.
+   - Spawns and search; custom points; navmesh coverage and bakes; the ADT grid and coordinates.
 5. Forever routes: the route drawn beside its text; coordinates picked from the map.
 6. Remove Babylon (`pathing-scene.js`, `Viewport3D`) and Leaflet from the Control Center (the Map
    page, the MapAssets scripts in `App.razor`, `SearchPanel`).

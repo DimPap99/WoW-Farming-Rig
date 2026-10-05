@@ -61,8 +61,9 @@ Components/Designer/               the route designer's sections: RouteLibrary (
                                    recorded paths), ForeverSave (the route as a Forever route file);
                                    not Components/Routes, which would clash with the router
 Components/Pages/                  LiveView (/), RouteMap (/routes, the route designer), NpcRoutes,
-                                   Map (/Leaflet/...), ForeverRoutes (/forever-routes), Fleet
-                                   (/fleet), BotConsole (/fleet/{agentId}), ApiReference
+                                   CostZones (/cost-zones), Map (/Leaflet/...), ForeverRoutes
+                                   (/forever-routes), Fleet (/fleet), BotConsole (/fleet/{agentId}),
+                                   ApiReference
 wwwroot/css/site.css               the whole theme; pa- prefixed so the map keeps Bootstrap
 wwwroot/js/world-view.js           the world view on deck.gl (fetched on demand): flat map, tilts into 3D
 wwwroot/js/world-edit.js           its drawing tools: shapes, drafts, handles, the pointer and keys
