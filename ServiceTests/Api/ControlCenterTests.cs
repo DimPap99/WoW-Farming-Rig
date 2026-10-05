@@ -23,8 +23,7 @@ public sealed class ControlCenterTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting(ControlCenterLogging.FileKey, string.Empty);
-            // The discard port: nothing listens there, so the service is down.
-            builder.UseSetting(PathingServiceOptions.UrlKey, "http://127.0.0.1:9");
+            builder.UseSetting(PathingServiceOptions.UrlKey, ClosedPort.NewUrl().ToString());
         }
     }
 

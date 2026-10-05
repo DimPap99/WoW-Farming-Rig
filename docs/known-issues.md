@@ -108,6 +108,24 @@ commit that fixed it.
     - **Fix:** delete the page and its host once the agent has passed the Windows checks (Phase 3's
       decision 7); the Control Center's console replaces it.
 
+25. **Forever leaves bodies unlooted when the mob died close beside the player.**
+    - **Where:** `Core/Forever/ForeverLoot.cs` (`Plan`), `ForeverCorpses.Sight`,
+      `ForeverLootStep.Approach`.
+    - **Seen:** a 9-minute crossroads trip on 2026-10-04, started from BlazorServer's Forever runs
+      page: 14 bodies, 9 looted, 5 left. The Interact Key never showed three of the five.
+    - **Cause, read from the code** (the run's snapshots come only every 2 s): a body's place is a
+      stretch along the mob's last bearing, and the loot round looks round only at the stretch's
+      far end. A mob that came at the Hunter died 8 to 12 yards out, beside the player at the
+      stretch's near end, so the round walked away from it. The step closer walks along the facing,
+      not toward the body, and after losing a body the round goes on to the far end instead of
+      looking where it was seen. Two bodies lying together can be mixed up. Minimap tracking placed
+      none of the 14 bodies. Not ruled out: a body with nothing to loot or skin may never show for
+      the Interact Key.
+    - **Fix (proposed, not started):** look round at the near end too, and where the key last
+      showed a pending body; log each body's stretch at death and every dead unit the key shows,
+      so a run tells "walked past it" from "nothing to loot"; check the tracking's dot matching
+      against a live capture.
+
 ## Fixed
 
 9. **A Forever run could not outlive the web UI** (Phase 3). `ForeverRunHost --listen` stopped the
