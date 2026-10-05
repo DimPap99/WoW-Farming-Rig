@@ -51,6 +51,7 @@ Routes/RouteLegs.cs                the route designer's legs: one request per pa
                                    by their ends, four at a time
 Routes/ForeverExport.cs            a designed route as a Forever route file (travel per zone, roams)
 Routes/RecordedPaths.cs            library files as waypoints and back (one zone's map coordinates)
+Routes/ForeverRouteSketch.cs       a Forever route's text read leniently for drawing as it is written
 Components/App.razor, Routes.razor the document; InteractiveServer without prerendering
 Components/Layout/                 MainLayout (rail), NavMenu, StatusBar
 Components/Shared/                 ControlCenterComponent (base), WorldView, Viewport3D, SearchPanel,
@@ -166,6 +167,10 @@ back with height 0, which the service reads as "find the ground here". Keys reac
 the map's own element (`.pa-world-canvas`, made focusable by deck.gl) has the focus. Framing and
 centring use the width a tall panel at the side leaves uncovered. A shape edited whole can be a few
 thousand points, so the circuit takes messages up to `MaxCircuitMessageBytes` (1 MB), not 32 KB.
+A click goes to the tool in use if there is one, else to picking (`Picking`) whatever lies under
+it, else it selects a shape or a marker. A scene's `Frame` and `FrameOn` are kept until a scene is
+actually sent: a page whose answers come quickly replaces a scene before the view has even been
+made (deck.gl loads on first use), and the framing asked for must not be lost with it.
 
 **Static assets are fingerprinted and compressed at build time.** In Release (`MapStaticAssets`),
 a changed `wwwroot` script is served as it was built until the Control Center is built again:

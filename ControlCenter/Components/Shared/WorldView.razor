@@ -91,10 +91,25 @@
     private DotNetObjectReference<WorldView>? self;
     private string? id;
     private WorldScene? shown;
+    private WorldScene? seen;
+    // A scene asked to be framed, and a later one replaced it before it was sent (the view was still
+    // being made, or answers came quickly): the framing still happens, with the latest scene.
+    private bool frameWanted;
+    private float[]? frameOnWanted;
     private bool? pickingShown;
     private string? toolShown;
     private bool tilted;
     private string? failed;
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(Scene, seen))
+        {
+            seen = Scene;
+            frameWanted |= Scene.Frame;
+            frameOnWanted = Scene.FrameOn ?? frameOnWanted;
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -114,7 +129,10 @@
             if (!ReferenceEquals(Scene, shown))
             {
                 shown = Scene;
-                await js.InvokeVoidAsync("worldView.setScene", Token, id, Scene);
+                WorldScene sending = Scene with { Frame = frameWanted, FrameOn = frameOnWanted };
+                frameWanted = false;
+                frameOnWanted = null;
+                await js.InvokeVoidAsync("worldView.setScene", Token, id, sending);
             }
 
             if (pickingShown != Picking)
