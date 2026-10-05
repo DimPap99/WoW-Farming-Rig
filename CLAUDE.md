@@ -8,6 +8,8 @@
 Multi-project .NET 10 solution (WoWFarmingRig.sln) with Blazor Server frontend, SignalR communication, and various utility projects.
 It is moving to separate services (Pathing Service, Bot Manager, Control Center) plus one resident bot
 agent per game PC - read `docs/service-architecture.md` before changing how the parts talk to each other.
+Problems spotted but not fixed on the spot go in `docs/known-issues.md` - check it before working on
+pathing, the hosts or the authoring endpoints, and add to it.
 
 ## Language & Framework
 - **Target:** .NET 10 (`net10.0`) with C# 14 (`LangVersion: preview`)

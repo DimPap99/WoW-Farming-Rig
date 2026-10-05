@@ -353,15 +353,17 @@ public sealed class RoutePlanner : IDisposable
     }
 
     // As PPatherService.ToLocal: each point in the zone that holds it, preferring the
-    // query's own zone where zones overlap. A point outside every zone of the continent
-    // stays in the query's zone rather than failing the whole route.
+    // query's own zone where zones overlap. GetWorldMapArea throws for a point outside
+    // every zone of the continent, and for one inside two overlapping zones when neither
+    // is the query's; such a point stays in the query's zone rather than failing the
+    // whole route (docs/known-issues.md).
     private Vector3 WorldToMap(Vector3 world, in WorldMapArea area)
     {
         try
         {
             return maps.ToMap_FlipXY(world, area.MapID, area.UIMapId);
         }
-        catch (ArgumentOutOfRangeException)
+        catch (Exception ex) when (ex is ArgumentOutOfRangeException or InvalidOperationException)
         {
             return WorldMapAreaDB.ToMap_FlipXY(world, area);
         }
