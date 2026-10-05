@@ -7,10 +7,14 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 
+using PathingService.Catalog;
 using PathingService.CostZones;
+using PathingService.Navmesh;
 using PathingService.Paths;
 using PathingService.Routes;
 using PathingService.Status;
+using PathingService.Watch;
+using PathingService.World;
 
 using PPather.Planning;
 
@@ -23,7 +27,7 @@ public static class PathingServiceRegistration
     /// <summary>The configuration key (<c>--exp=som</c>) naming the client whose data is served.</summary>
     public const string ExpKey = "exp";
 
-    /// <summary>Classic is served when no client is named, as PathingAPI does.</summary>
+    /// <summary>Classic is served when no client is named.</summary>
     public const string DefaultExp = "som";
 
     public const string ApiTitle = "Pathing Service";
@@ -49,6 +53,18 @@ public static class PathingServiceRegistration
         services.AddSingleton<RouteHandler>();
         services.AddSingleton<RecordedPathStore>();
         services.AddSingleton<CostZoneStore>();
+        services.AddSingleton<CoverageCache>();
+        services.AddSingleton<WorldCatalog>();
+        services.AddSingleton<LocationCatalog>();
+        services.AddSingleton<TestRoutes>();
+        services.AddSingleton<BakeAdmin>();
+
+        services.AddSingleton<WatchBroadcaster>();
+        services.AddHostedService(sp => sp.GetRequiredService<WatchBroadcaster>());
+
+        // No LZ4: the browser's MessagePack reader does not know MessagePack-CSharp's compression
+        // extension, and a compressed stream reaches the 3D view as garbage.
+        services.AddSignalR().AddMessagePackProtocol();
 
         services.ConfigureHttpJsonOptions(options => ContractJson.Apply(options.SerializerOptions));
         services.AddProblemDetails();
@@ -66,10 +82,18 @@ public static class PathingServiceRegistration
         app.UseSwagger();
         app.UseSwaggerUI(swagger => swagger.SwaggerEndpoint("/swagger/v1/swagger.json", ApiTitle));
 
+        app.UseWorldData();
+
         app.MapStatusEndpoints();
         app.MapRouteEndpoints();
         app.MapPathEndpoints();
         app.MapCostZoneEndpoints();
+        app.MapWorldEndpoints();
+        app.MapCatalogEndpoints();
+        app.MapNavmeshEndpoints();
+        app.MapWatchEndpoints();
+
+        app.StartRequestedBakes();
 
         return app;
     }

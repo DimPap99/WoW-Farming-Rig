@@ -14,7 +14,10 @@ public enum StoreOutcome
     Invalid,
 
     /// <summary>A file the store owns could not be read; <c>Error</c> names it.</summary>
-    Unreadable
+    Unreadable,
+
+    /// <summary>The request is sound but clashes with what the service is doing (a bake runs); <c>Error</c> says what.</summary>
+    Conflict
 }
 
 /// <summary>The outcome of a store operation that returns nothing.</summary>
@@ -27,6 +30,11 @@ public readonly record struct StoreResult(StoreOutcome Outcome, string? Error = 
     public static StoreResult Invalid(string error)
     {
         return new(StoreOutcome.Invalid, error);
+    }
+
+    public static StoreResult Conflict(string error)
+    {
+        return new(StoreOutcome.Conflict, error);
     }
 }
 
@@ -48,6 +56,11 @@ public readonly record struct StoreResult<T>(StoreOutcome Outcome, T? Value = de
     public static StoreResult<T> Unreadable(string error)
     {
         return new(StoreOutcome.Unreadable, default, error);
+    }
+
+    public static StoreResult<T> Conflict(string error)
+    {
+        return new(StoreOutcome.Conflict, default, error);
     }
 }
 
@@ -76,8 +89,11 @@ public static class StoreResultHttp
 
     private static IResult Problem(StoreOutcome outcome, string? error)
     {
-        return outcome == StoreOutcome.Invalid
-            ? Results.Problem(detail: error, statusCode: StatusCodes.Status400BadRequest, title: "Request refused")
-            : Results.Problem(detail: error, statusCode: StatusCodes.Status500InternalServerError, title: "Stored data unreadable");
+        return outcome switch
+        {
+            StoreOutcome.Invalid => Results.Problem(detail: error, statusCode: StatusCodes.Status400BadRequest, title: "Request refused"),
+            StoreOutcome.Conflict => Results.Problem(detail: error, statusCode: StatusCodes.Status409Conflict, title: "Not now"),
+            _ => Results.Problem(detail: error, statusCode: StatusCodes.Status500InternalServerError, title: "Stored data unreadable"),
+        };
     }
 }

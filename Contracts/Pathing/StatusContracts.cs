@@ -6,8 +6,10 @@ namespace Contracts.Pathing;
 /// <param name="Era">The navmesh era of that client (<c>precata</c>, <c>cata</c>, ...).</param>
 /// <param name="PathsAreSmoothed">Routes are dense validated splines.</param>
 /// <param name="BakedContinents">Continents with at least one baked navmesh tile.</param>
+/// <param name="GameFiles">The client's game files are installed where the service runs, so it can
+/// bake, extract area grids and show terrain.</param>
 public sealed record PathingCapabilities(int ApiVersion, string Client, string Era, bool PathsAreSmoothed,
-    string[] BakedContinents);
+    string[] BakedContinents, bool GameFiles);
 
 /// <summary>Baked navmesh tiles on disk for one continent.</summary>
 public sealed record ContinentCoverage(string Continent, int Tiles);
@@ -19,4 +21,6 @@ public sealed record ContinentCoverage(string Continent, int Tiles);
 public sealed record PlannerLane(string Continent, int ResidentTiles, long Queries, double LastMs);
 
 /// <summary>The service's state, for a status page.</summary>
-public sealed record PathingHealth(string Client, string Era, ContinentCoverage[] Coverage, PlannerLane[] Lanes);
+/// <param name="Bake">The running, or last, navmesh bake.</param>
+public sealed record PathingHealth(string Client, string Era, ContinentCoverage[] Coverage, PlannerLane[] Lanes,
+    BakeStatus Bake);

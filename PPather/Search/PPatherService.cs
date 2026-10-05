@@ -621,6 +621,12 @@ public sealed class PPatherService : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Raised on the bake's thread when it ends - done, cancelled or failed - with its final
+    /// status. A host that plans from the same tile cache uses it to look at the disk again.
+    /// </summary>
+    public event Action<NavmeshBakeStatus>? BakeEnded;
+
     public bool CancelBake()
     {
         if (bakeCts is null || !bakeStatus.Running)
@@ -677,6 +683,15 @@ public sealed class PPatherService : IDisposable
             {
                 bakeStatus.Running = false;
                 bakeStatus.ElapsedSeconds = GetElapsedTime(start).TotalSeconds;
+            }
+
+            try
+            {
+                BakeEnded?.Invoke(BakeStatus);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "A bake-ended handler failed");
             }
         }
     }
@@ -854,12 +869,6 @@ public sealed class PPatherService : IDisposable
     /// </summary>
     public NavmeshTileInfo[] GetNavmeshTiles(string continent)
     {
-        string dir = NavmeshCacheDir(continent);
-        if (!System.IO.Directory.Exists(dir))
-        {
-            return [];
-        }
-
         HashSet<(int x, int z)> live = [];
         if (navmeshPathfinder != null)
         {
@@ -867,6 +876,22 @@ public sealed class PPatherService : IDisposable
             {
                 live.Add((x, z));
             }
+        }
+
+        return GetNavmeshTiles(dataConfig, bakeOptions, continent, live);
+    }
+
+    /// <summary>
+    /// <see cref="GetNavmeshTiles(string)"/> for a caller with no service of its own (the route
+    /// planner's host), which says itself which tiles are <paramref name="resident"/>.
+    /// </summary>
+    public static NavmeshTileInfo[] GetNavmeshTiles(DataConfig dataConfig, NavmeshBakeOptions bakeOptions,
+        string continent, IReadOnlySet<(int X, int Z)> resident)
+    {
+        string dir = NavmeshSettings.CacheDirectory(dataConfig, bakeOptions, continent);
+        if (!System.IO.Directory.Exists(dir))
+        {
+            return [];
         }
 
         List<NavmeshTileInfo> result = [];
@@ -887,7 +912,7 @@ public sealed class PPatherService : IDisposable
             NavmeshCoords.GetTileWowBounds(tx, tz,
                 out float minX, out float minY, out float maxX, out float maxY);
 
-            result.Add(new NavmeshTileInfo(tx, tz, minX, minY, maxX, maxY, live.Contains((tx, tz))));
+            result.Add(new NavmeshTileInfo(tx, tz, minX, minY, maxX, maxY, resident.Contains((tx, tz))));
         }
 
         return [.. result];

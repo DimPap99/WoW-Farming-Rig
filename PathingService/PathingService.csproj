@@ -2,7 +2,8 @@
 
   <!-- The Pathing Service (docs/service-architecture.md). Plain net10.0 so it runs on
        Linux and macOS: it references the pathing chain and the contracts only, never Core,
-       Game, WinAPI or Frontend. -->
+       Game, WinAPI or Frontend. ForeverCasc (not in the .sln; MSBuild builds it as a
+       reference) reads WoW: Forever's geometry for bakes and terrain. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -10,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Protocols.MessagePack" />
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Expressions" />
@@ -21,6 +23,7 @@
     <ProjectReference Include="..\DataConfig\DataConfig.csproj" />
     <ProjectReference Include="..\PPather\PPather.csproj" />
     <ProjectReference Include="..\SharedLib\SharedLib.csproj" />
+    <ProjectReference Include="..\Utilities\ForeverCasc\ForeverCasc.csproj" />
   </ItemGroup>
 
 </Project>
