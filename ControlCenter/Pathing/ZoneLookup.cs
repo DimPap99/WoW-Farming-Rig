@@ -40,10 +40,15 @@ public sealed class ZoneLookup(IServiceProvider services)
         known.Clear();
     }
 
-    /// <summary>The zone at a point as far as known now: the grid's, when asked before and baked, else the maps' guess.</summary>
+    /// <summary>
+    /// The zone at a point as far as known now: the grid's, when asked before, baked, and its map
+    /// holds the point (a few areas belong to a zone whose map does not reach them, and a point is
+    /// named in 0 to 100 of its zone's map); else the maps' guess.
+    /// </summary>
     public ZoneInfo? Known(WorldSnapshot world, int mapId, Point3 at)
     {
-        return known.TryGetValue(CellOf(mapId, at), out int uiMap) && uiMap != 0 && world.Zone(uiMap) is ZoneInfo zone
+        return known.TryGetValue(CellOf(mapId, at), out int uiMap) && uiMap != 0 && world.Zone(uiMap) is ZoneInfo zone &&
+               ZoneMath.Contains(zone, mapId, at.X, at.Y)
             ? zone
             : ZoneMath.ZoneAt(world.World.Zones, mapId, at.X, at.Y);
     }

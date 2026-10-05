@@ -1,6 +1,6 @@
 # World view - moving the Control Center off Leaflet and Babylon
 
-**Status (2026-10-05):** agreed with the user and under way; steps 1 to 3 are done. The user found the Leaflet map and the
+**Status (2026-10-05):** agreed with the user and under way; steps 1 to 5 are done. The user found the Leaflet map and the
 Babylon 3D view buggy and hard to use, and asked to move everything to the new map, keep the
 drawing tools (polygons and the rest), then improve the look. Phase 3 step 6 and the Windows
 checklist are parked for another session ([phase3-plan.md](phase3-plan.md)).
@@ -86,7 +86,10 @@ which it always is.
      where the service has no game files. Coordinates show under the pointer on every page.
    - Not moved, on purpose: the old minimap's art (the world view draws the navmesh instead, for
      every client), and BlazorServer's own path recording (it stays in BlazorServer).
-5. Forever routes: the route drawn beside its text; coordinates picked from the map.
+5. **Done.** Forever routes: the route drawn beside its text as it is written (read leniently by
+   `ForeverRouteSketch`: comments, trailing commas), each travel leg planned as the bot would,
+   each roam's area outlined; a point picked on the map gives its zone map coordinates, inserted
+   at the text's cursor or copied. The service's check stays the word on whether a run loads it.
 6. Remove Babylon (`pathing-scene.js`, `Viewport3D`) and Leaflet from the Control Center (the Map
    page, the MapAssets scripts in `App.razor`, `SearchPanel`).
 7. The look: an aesthetics pass over the world view and the pages on it.

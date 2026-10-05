@@ -1228,15 +1228,52 @@ kbd {
 
 .pa-route-columns {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
     gap: var(--pa-gap);
     flex: 1;
     min-height: 0;
 }
 
+/* The text over what a run does with it, beside the map. */
+.pa-route-text {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: var(--pa-gap);
+    min-height: 0;
+}
+
 .pa-route-check {
+    max-height: 240px;
     min-height: 0;
     overflow-y: auto;
+}
+
+.pa-route-map {
+    position: relative;
+    min-height: 360px;
+    overflow: hidden;
+    border: 1px solid var(--pa-border);
+    border-radius: var(--pa-radius);
+}
+
+/* Over the map: pick a point, then put its coordinates in the text. */
+.pa-route-pick {
+    position: absolute;
+    left: var(--pa-gap);
+    bottom: var(--pa-gap);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: calc(100% - 2 * var(--pa-gap) - 160px);
+    padding: 8px 10px;
+    background: var(--pa-glass);
+    border: 1px solid var(--pa-border);
+    border-radius: var(--pa-radius-sm);
+}
+
+.pa-route-picked {
+    font-size: 12.5px;
 }
 
 .pa-steps {

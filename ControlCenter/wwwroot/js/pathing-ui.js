@@ -50,7 +50,31 @@
         requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
     }
 
-    window.pathingUi = { loadScript, log, storageGet, storageSet, relayout };
+    /**
+     * Puts text where the caret is in a text box, as typing would: an input event follows, so a
+     * Blazor binding on oninput takes the new text.
+     */
+    function insertAtCursor(element, text) {
+        if (!element) return;
+        const start = element.selectionStart ?? element.value.length;
+        const end = element.selectionEnd ?? start;
+        element.value = element.value.slice(0, start) + text + element.value.slice(end);
+        element.selectionStart = element.selectionEnd = start + text.length;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.focus();
+    }
+
+    /** Copies text to the clipboard; false where the browser does not allow it. */
+    async function copy(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    window.pathingUi = { loadScript, log, storageGet, storageSet, relayout, insertAtCursor, copy };
 
     // The shared map scripts call a global log().
     if (typeof window.log !== 'function') {

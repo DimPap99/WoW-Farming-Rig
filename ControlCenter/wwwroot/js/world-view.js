@@ -134,13 +134,15 @@
                 window.worldEdit.hover(view, info);
                 showReadout(view, info);
             },
+            // A tool takes the click; else picking does, whatever is under it; else it selects a shape or a marker.
             onClick: info => {
-                if (window.worldEdit.click(view, info)) return;
-                if (info.layer && info.layer.id === 'markers' && info.object && !view.picking) {
+                if (view.edit.tool) {
+                    window.worldEdit.click(view, info);
+                } else if (view.picking) {
+                    picked(view, info);
+                } else if (!window.worldEdit.click(view, info) && info.layer && info.layer.id === 'markers' && info.object) {
                     view.dotnet.invokeMethodAsync('OnMarkerClicked', info.object.id).catch(() => { });
-                    return;
                 }
-                picked(view, info);
             },
             // Deck hears a drag before the map's controller does: a drag on a handle stops it there, so
             // the handle moves and the map stays.

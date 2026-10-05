@@ -3,8 +3,12 @@
 
 @inherits ControlCenterComponent
 
+@using System.Threading
+
 @inject IPathingClient pathing
 @inject PathingStatus status
+@inject WorldCache worldCache
+@inject ZoneLookup zoneLookup
 @inject IJSRuntime js
 
 <PageTitle>Forever routes · Control Center</PageTitle>
@@ -88,8 +92,10 @@ else
                     <ResultLine Text="@result" Kind="@resultKind" />
 
                     <div class="pa-route-columns">
+                        <div class="pa-route-text">
                         @* Bound as you type, so Save knows of an edit before the text box loses focus. *@
-                        <textarea class="pa-code" spellcheck="false" aria-label="The route file's text" @bind="text" @bind:event="oninput"></textarea>
+                        <textarea class="pa-code" spellcheck="false" aria-label="The route file's text" @ref="editor"
+                                  @bind="text" @bind:event="oninput" @bind:after="Edited"></textarea>
                         <aside class="pa-route-check" aria-label="What a run does">
                             <h3 class="pa-list-heading">What a run does</h3>
                             @if (check is null)
@@ -119,6 +125,36 @@ else
                                 <code>Kills</code>, <code>Minutes</code> or <code>Level</code>). See <code>docs/forever-routes.md</code>.
                             </p>
                         </aside>
+                        </div>
+
+                        @* The route as the text says, drawn as it is written: the travel's legs planned, the roams' areas. *@
+                        <div class="pa-route-map">
+                            <WorldView Scene="@scene" Picking="@picking" OnPick="PickedAsync">
+                                <div class="pa-route-pick">
+                                    <div class="pa-actions">
+                                        <button class="pa-btn @(picking ? "pa-btn--primary" : null)" type="button" @onclick="() => picking = !picking"
+                                                title="@(picking ? "Click the map, or here to stop" : "Click the map for a point's coordinates")">
+                                            <span class="oi oi-map-marker" aria-hidden="true"></span> @(picking ? "Click the map" : "Pick a point")
+                                        </button>
+                                        @if (picked is Picked p)
+                                        {
+                                            <button class="pa-btn" type="button" title="Put [x, y] where the cursor is in the text" @onclick="InsertAsync">Insert</button>
+                                            <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Copy [x, y]" @onclick="CopyAsync">
+                                                <span class="oi oi-clipboard" aria-hidden="true"></span>
+                                            </button>
+                                        }
+                                    </div>
+                                    @if (picked is Picked q)
+                                    {
+                                        <span class="pa-route-picked"><code>@q.Text</code> on @q.Zone.Name (@q.Zone.UiMapId.ToString(CultureInfo.InvariantCulture))</span>
+                                    }
+                                    @if (sketch is not null)
+                                    {
+                                        <span class="pa-faint">@sketch</span>
+                                    }
+                                </div>
+                            </WorldView>
+                        </div>
                     </div>
                 }
             </section>
@@ -159,10 +195,181 @@ else
 
     private bool Dirty => text != saved;
 
+    /// <summary>The map is drawn again this long after the typing stops, and while legs are being planned.</summary>
+    private const int RedrawMs = 400;
+
+    /// <summary>A point clicked on the map: its zone, and its coordinates on that zone's map as the text writes them.</summary>
+    private sealed record Picked(ZoneInfo Zone, string Text);
+
+    private ElementReference editor;
+    private WorldSnapshot? world;
+    private WorldScene scene = WorldScene.Empty(string.Empty);
+    private RouteLegs legs = null!;
+    private readonly CancellationTokenSource plans = new();
+    private bool redrawQueued;
+    private bool frameNext;
+    private bool picking;
+    private Picked? picked;
+    private string? sketch;
+
     protected override void OnInitialized()
     {
+        legs = new RouteLegs((request, token) => pathing.FindRouteAsync(request, token), () => QueueDraw());
+        OnDispose(() =>
+        {
+            plans.Cancel();
+            plans.Dispose();
+        });
         Subscribe(() => status.Changed += Redraw, () => status.Changed -= Redraw);
         Subscribe(() => status.Reconnected += Reload, () => status.Reconnected -= Reload);
+    }
+
+    // --- the map ------------------------------------------------------------------------------
+
+    private void Edited()
+    {
+        QueueDraw();
+    }
+
+    // The map is drawn shortly, once for every edit or answer that comes meanwhile.
+    private void QueueDraw(bool frame = false)
+    {
+        frameNext |= frame;
+        _ = InvokeAsync(async () =>
+        {
+            if (redrawQueued)
+            {
+                return;
+            }
+
+            redrawQueued = true;
+            try
+            {
+                await Task.Delay(RedrawMs, Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            redrawQueued = false;
+            world ??= await worldCache.GetAsync();
+            DrawRoute();
+            StateHasChanged();
+        });
+    }
+
+    // The steps as the text says: each travel point in order, the legs between them planned as the
+    // bot would, each roam's area; on the continent of the first step's map.
+    private void DrawRoute()
+    {
+        bool frame = frameNext;
+        frameNext = false;
+        if (world is null)
+        {
+            return;
+        }
+
+        if (!ForeverRouteSketch.TryRead(text, out List<ForeverStepSketch> steps, out string error))
+        {
+            sketch = error;
+            return;
+        }
+
+        List<Point3> travel = [];
+        List<WorldShape> shapes = [];
+        string? continent = null;
+        int mapId = -1;
+        for (int i = 0; i < steps.Count; i++)
+        {
+            if (world.Zone(steps[i].UiMapId) is not ZoneInfo zone)
+            {
+                continue;
+            }
+
+            continent ??= zone.Continent;
+            mapId = mapId < 0 ? zone.MapId : mapId;
+            Point3[] points = [.. steps[i].Points.Select(p => ZoneMath.ToWorld(zone, new Point3(p.X, p.Y, 0)))];
+            if (steps[i].Travel)
+            {
+                travel.AddRange(points);
+            }
+            else if (points.Length >= 2)
+            {
+                shapes.Add(WorldShape.Of($"roam-{i}", points.Length == 2 ? WorldShapes.Rectangle : WorldShapes.Polygon, WorldKinds.Area, points,
+                    label: $"Step {i + 1}: roam"));
+            }
+        }
+
+        if (continent is null)
+        {
+            sketch = "No step names a map the Pathing Service knows: give the route a \"UIMapId\".";
+            return;
+        }
+
+        sketch = null;
+        ContinentInfo? info = world.Continent(continent);
+        WorldSnapshot snapshot = world;
+        legs.Plan(travel, RouteSearch.Band, at => snapshot.ZoneAt(info?.MapId ?? mapId, at)?.UiMapId ?? 0, plans.Token);
+
+        List<WorldRoute> routes = [];
+        List<WorldMarker> markers = [];
+        for (int i = 0; i + 1 < travel.Count; i++)
+        {
+            Leg leg = legs.Get(travel[i], travel[i + 1], RouteSearch.Band);
+            routes.AddRange(RouteDrawing.Of($"leg-{i}", $"Leg {i + 1} to {i + 2}", leg.Status, leg.Points, travel[i], travel[i + 1], leg.Detail, markers));
+        }
+
+        if (travel.Count > 0)
+        {
+            shapes.Add(WorldShape.Of("travel", WorldShapes.Points, WorldKinds.Waypoints, travel));
+        }
+
+        scene = new WorldScene(continent, [.. routes], [.. markers], ZoneLabels.Of(world, continent), frame, [.. shapes]);
+    }
+
+    // A point clicked: named on the map of the zone the area grid puts it in.
+    private async Task PickedAsync(WorldPoint point)
+    {
+        picking = false;
+        world ??= await worldCache.GetAsync();
+        if (world?.Continent(scene.Continent) is not ContinentInfo continent)
+        {
+            return;
+        }
+
+        Point3 at = point.ToPoint3();
+        try
+        {
+            await zoneLookup.LearnAsync(continent.MapId, [at], Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (zoneLookup.Known(world, continent.MapId, at) is ZoneInfo zone)
+        {
+            Point3 map = ZoneMath.ToMap(zone, at);
+            picked = new Picked(zone, FormattableString.Invariant($"[{map.X:0.##}, {map.Y:0.##}]"));
+        }
+    }
+
+    private async Task InsertAsync()
+    {
+        if (picked is not null)
+        {
+            await js.InvokeVoidAsync("pathingUi.insertAtCursor", Token, editor, picked.Text);
+        }
+    }
+
+    private async Task CopyAsync()
+    {
+        if (picked is not null)
+        {
+            bool copied = await js.InvokeAsync<bool>("pathingUi.copy", Token, picked.Text);
+            Show(copied ? $"{picked.Text} copied" : "The browser did not allow copying", copied ? ResultKind.Info : ResultKind.Warn);
+        }
     }
 
     protected override async Task OnParametersSetAsync()
@@ -232,6 +439,8 @@ else
             text = saved = read.Value.Text;
             check = read.Value.Info;
             Show(null, ResultKind.Info);
+            picked = null;
+            QueueDraw(frame: true);
         }
         catch (OperationCanceledException)
         {
@@ -263,6 +472,8 @@ else
         saved = string.Empty;
         check = null;
         newName = string.Empty;
+        picked = null;
+        QueueDraw(frame: true);
         Show("A new route: edit it, then Save.", ResultKind.Info);
     }
 
