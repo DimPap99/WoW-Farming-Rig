@@ -114,28 +114,14 @@ public sealed class NavmeshPathfinder : IDisposable
     private readonly bool skipWidenOnShortRoutes;
     private readonly float pathSpacingYd;
 
-    // Surface the last query resolved the caller onto, and where that was.
-    // A walking caller stays on it, which settles "which floor" for positions
-    // that arrive without a usable height.
-    private Vector3? lastResolvedFrom;
+    private readonly float defaultEdgeMarginYards;
+
+    // What the walker's queries remember between calls (its floor, the band that
+    // worked, the last stall). This instance's own caller uses its own memory; a
+    // caller that brings one swaps it in for the length of its query.
+    private NavmeshQueryMemory memory;
 
     private readonly List<(long PolyRef, Vector3 RcPos)> retargetCandidates = [];
-
-    // Band half-width the last query settled on, and the destination it was
-    // settled for. The follower re-requests the same destination as it walks,
-    // and a widen it already paid for left those tiles resident - but an
-    // unrelated route should not inherit the wider band and load tiles it has
-    // no use for.
-    private int stickyCorridorRadius;
-    private long stickyEndRef;
-    private Vector3 stickyFrom;
-    private long stickyStamp;
-
-    // Last search that ran out of room, so an identical repeat can answer from
-    // what was already learned instead of re-walking the whole escalation.
-    private long stalledEndRef;
-    private Vector3 stalledFrom;
-    private long stalledStamp;
 
     public NavmeshStats LastStats;
 
@@ -218,7 +204,8 @@ public sealed class NavmeshPathfinder : IDisposable
         skipWidenOnShortRoutes = queryOptions.SkipWidenShortRoutes;
         pathSpacingYd = queryOptions.PathSpacing;
         EdgeMarginYards = queryOptions.EdgeMargin;
-        stickyCorridorRadius = corridorTileRadius;
+        defaultEdgeMarginYards = queryOptions.EdgeMargin;
+        memory = CreateMemory();
 
         tiles = new NavmeshTileCache(logger, world, cacheDir, bake, corridorTileRadius, minWorldZ);
         query = new DtNavMeshQuery(tiles.NavMesh);
@@ -229,6 +216,12 @@ public sealed class NavmeshPathfinder : IDisposable
     public void Dispose()
     {
         tiles.Dispose();
+    }
+
+    /// <summary>Fresh memory for a walker this pathfinder has not seen, for the overload that takes one.</summary>
+    public NavmeshQueryMemory CreateMemory()
+    {
+        return new() { StickyCorridorRadius = corridorTileRadius };
     }
 
     /// <summary>
@@ -362,7 +355,7 @@ public sealed class NavmeshPathfinder : IDisposable
                 reason = $"current position is {snap:F2} yards from the walkable surface";
                 return false;
             }
-            lastResolvedFrom = start;
+            memory.LastResolvedFrom = start;
             Vector3 rcStart = NavmeshCoords.ToRc(start);
             Vector3 rcEnd = NavmeshCoords.ToRc(new(destination.X, destination.Y, start.Z));
             Span<long> corridor = stackalloc long[128];
@@ -382,6 +375,40 @@ public sealed class NavmeshPathfinder : IDisposable
             return true;
         }
         finally { tiles.Lock.ExitReadLock(); }
+    }
+
+    /// <summary>
+    /// <see cref="FindPath(Vector3, Vector3, bool?)"/> for a caller that brings its own
+    /// <paramref name="callerMemory"/> and <paramref name="tuning"/>: several walkers sharing
+    /// one pathfinder. The instance's own memory, jitter and edge margin are left as they
+    /// were. Like the other overload this is not re-entrant - the caller serialises queries
+    /// on this instance.
+    /// </summary>
+    public Path? FindPath(Vector3 wowFrom, Vector3 wowTo, bool? startIndoors,
+        NavmeshQueryMemory callerMemory, in NavmeshQueryTuning tuning, out NavmeshStats stats)
+    {
+        NavmeshQueryMemory ownMemory = memory;
+        float ownJitter = JitterYards;
+        int? ownSeed = JitterSeed;
+        float ownEdgeMargin = EdgeMarginYards;
+
+        memory = callerMemory;
+        JitterYards = tuning.JitterYards;
+        JitterSeed = tuning.JitterSeed;
+        EdgeMarginYards = tuning.EdgeMarginYards ?? defaultEdgeMarginYards;
+        try
+        {
+            Path? path = FindPath(wowFrom, wowTo, startIndoors);
+            stats = LastStats;
+            return path;
+        }
+        finally
+        {
+            memory = ownMemory;
+            JitterYards = ownJitter;
+            JitterSeed = ownSeed;
+            EdgeMarginYards = ownEdgeMargin;
+        }
     }
 
     public Path? FindPath(Vector3 wowFrom, Vector3 wowTo, bool? startIndoors)
@@ -408,7 +435,7 @@ public sealed class NavmeshPathfinder : IDisposable
                 return null;
             }
 
-            lastResolvedFrom = resolvedFrom;
+            memory.LastResolvedFrom = resolvedFrom;
 
             LastStats.ResolveMs = Stopwatch.GetElapsedTime(t1).TotalMilliseconds;
 
@@ -433,7 +460,7 @@ public sealed class NavmeshPathfinder : IDisposable
             // connected, so the arrival check has to measure against it - and
             // a corrected start is the better memory for the next query.
             resolvedTo = NavmeshCoords.ToWow(rcEnd);
-            lastResolvedFrom = NavmeshCoords.ToWow(rcStart);
+            memory.LastResolvedFrom = NavmeshCoords.ToWow(rcStart);
 
             if (rcPoints == null || rcPoints.Count == 0)
             {
@@ -489,12 +516,12 @@ public sealed class NavmeshPathfinder : IDisposable
     /// </summary>
     private float? ContinuityHint(Vector3 wowFrom)
     {
-        if (wowFrom.Z != 0f || !lastResolvedFrom.HasValue)
+        if (wowFrom.Z != 0f || !memory.LastResolvedFrom.HasValue)
         {
             return null;
         }
 
-        Vector3 last = lastResolvedFrom.Value;
+        Vector3 last = memory.LastResolvedFrom.Value;
         float dx = wowFrom.X - last.X;
         float dy = wowFrom.Y - last.Y;
 
@@ -665,11 +692,11 @@ public sealed class NavmeshPathfinder : IDisposable
     /// </summary>
     private int StickyRadius(long endRef, Vector3 rcStart)
     {
-        if (stickyStamp != 0 && stickyEndRef == endRef &&
-            Stopwatch.GetElapsedTime(stickyStamp) < StallMemory &&
-            Distance2D(stickyFrom, rcStart) < StallMemoRadiusYd)
+        if (memory.StickyStamp != 0 && memory.StickyEndRef == endRef &&
+            Stopwatch.GetElapsedTime(memory.StickyStamp) < StallMemory &&
+            Distance2D(memory.StickyFrom, rcStart) < StallMemoRadiusYd)
         {
-            return Math.Max(corridorTileRadius, stickyCorridorRadius);
+            return Math.Max(corridorTileRadius, memory.StickyCorridorRadius);
         }
 
         return corridorTileRadius;
@@ -677,10 +704,10 @@ public sealed class NavmeshPathfinder : IDisposable
 
     private void RememberRadius(int radius, long endRef, Vector3 rcStart)
     {
-        stickyCorridorRadius = radius;
-        stickyEndRef = endRef;
-        stickyFrom = rcStart;
-        stickyStamp = Stopwatch.GetTimestamp();
+        memory.StickyCorridorRadius = radius;
+        memory.StickyEndRef = endRef;
+        memory.StickyFrom = rcStart;
+        memory.StickyStamp = Stopwatch.GetTimestamp();
     }
 
     /// <summary>
@@ -690,25 +717,25 @@ public sealed class NavmeshPathfinder : IDisposable
     /// </summary>
     private bool StallRemembered(long endRef, Vector3 rcStart)
     {
-        if (stalledStamp == 0 || stalledEndRef != endRef ||
-            Stopwatch.GetElapsedTime(stalledStamp) >= StallMemory)
+        if (memory.StalledStamp == 0 || memory.StalledEndRef != endRef ||
+            Stopwatch.GetElapsedTime(memory.StalledStamp) >= StallMemory)
         {
             return false;
         }
 
-        return Distance2D(stalledFrom, rcStart) < StallMemoRadiusYd;
+        return Distance2D(memory.StalledFrom, rcStart) < StallMemoRadiusYd;
     }
 
     private void RememberStall(long endRef, Vector3 rcStart)
     {
-        stalledEndRef = endRef;
-        stalledFrom = rcStart;
-        stalledStamp = Stopwatch.GetTimestamp();
+        memory.StalledEndRef = endRef;
+        memory.StalledFrom = rcStart;
+        memory.StalledStamp = Stopwatch.GetTimestamp();
     }
 
     private void ForgetStall()
     {
-        stalledStamp = 0;
+        memory.StalledStamp = 0;
     }
 
     /// <summary>

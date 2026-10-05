@@ -176,4 +176,20 @@ public sealed class NavmeshSettings
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
         return Convert.ToHexString(hash.AsSpan(0, HashPrefixBytes)).ToLowerInvariant();
     }
+
+    /// <summary>
+    /// The tile directory a client's bake settings name for <paramref name="continent"/>:
+    /// <c>{Navmesh}/{continent}/{settings hash}</c>. The era, not the client name, goes into
+    /// the hash, so som, tbc and wrath share one bake.
+    /// </summary>
+    public static string CacheDirectory(DataConfig dataConfig, SharedLib.NavmeshBakeOptions bake, string continent)
+    {
+        string hash = ComputeSettingsHash(
+            MeshEra(dataConfig.Exp),
+            typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0",
+            bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope,
+            bake.ResolveMinWorldZ(continent));
+
+        return System.IO.Path.Join(dataConfig.Navmesh, continent, hash);
+    }
 }

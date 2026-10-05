@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The wire types every service and client shares. Plain net10.0 with no project or
+       package references, so referencing it never drags the bot, Windows or an engine
+       into a service, the Control Center or a client. See docs/service-architecture.md. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+  </PropertyGroup>
+
+</Project>
