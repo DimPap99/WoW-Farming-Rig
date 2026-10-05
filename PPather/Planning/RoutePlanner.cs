@@ -11,7 +11,9 @@ using SharedLib.Data;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Threading;
 
@@ -62,6 +64,9 @@ public sealed class RoutePlanner : IDisposable
 
     private readonly Lock areaGridLock = new();
     private readonly Dictionary<string, AreaGrid?> areaGrids = [];
+
+    private readonly Lock tileGraphLock = new();
+    private readonly Dictionary<string, NavmeshTileGraph> tileGraphs = [];
 
     private readonly CostZoneWatcher? zoneWatcher;
 
@@ -132,6 +137,11 @@ public sealed class RoutePlanner : IDisposable
                     $"the destination ({to.X:F1}, {to.Y:F1}) is on a tile of {continent} with no baked navmesh"), from, to, []);
             }
 
+            if (query.Reach == RouteReach.Continent)
+            {
+                return FindAcross(lane, continent, area, query, from, to, start, token);
+            }
+
             if (!lane.Gate.Wait(laneWait, token))
             {
                 return Fail(RoutePlanStatus.Busy, continent, start,
@@ -141,6 +151,7 @@ public sealed class RoutePlanner : IDisposable
             Graph.Path? path;
             Vector3 resolvedFrom;
             Vector3 resolvedTo;
+            NavmeshPathfinder.NavmeshStats stats;
             try
             {
                 // A bake or a cache clear closed this lane while the query waited for it; the
@@ -159,7 +170,7 @@ public sealed class RoutePlanner : IDisposable
                 resolvedFrom = WithSurfaceHeight(nav, from);
                 resolvedTo = WithSurfaceHeight(nav, to);
 
-                path = nav.FindPath(resolvedFrom, resolvedTo, null, nav.CreateMemory(), query.Tuning, out _);
+                path = nav.FindPath(resolvedFrom, resolvedTo, null, nav.CreateMemory(), query.Tuning, out stats);
                 lane.Served(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
             }
             finally
@@ -184,8 +195,289 @@ public sealed class RoutePlanner : IDisposable
                 }
             }
 
-            return Planned(new(RoutePlanStatus.Found, points, continent, Stopwatch.GetElapsedTime(start).TotalMilliseconds, null),
-                resolvedFrom, resolvedTo, world);
+            double elapsedMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+
+            // A search that found no way on still returns the part it found: say so, rather
+            // than hand that part over as the route.
+            if (stats.EndGapYd > ArrivalToleranceYd)
+            {
+                float band = stats.CorridorRadius * NavmeshSettings.TileWorldSize;
+                return Planned(new(RoutePlanStatus.Partial, points, continent, elapsedMs,
+                        StoppedShort(stats.EndGapYd, points[^1], query.Space,
+                            string.Create(CultureInfo.InvariantCulture, $"the search found no way on within {band:F0} yd of the straight line"))),
+                    resolvedFrom, resolvedTo, world);
+            }
+
+            return Planned(new(RoutePlanStatus.Found, points, continent, elapsedMs, null), resolvedFrom, resolvedTo, world);
+        }
+    }
+
+    /// <summary>
+    /// How far from the destination a route may end and still have reached it. A route that
+    /// arrives ends on the destination the search resolved, so anything beyond this stopped short.
+    /// </summary>
+    public const float ArrivalToleranceYd = 5f;
+
+    /// <summary>
+    /// How far a leg of a continent route may stray from the way the tile graph found: well inside
+    /// the band a leg's search loads around it, so the way stays in reach.
+    /// </summary>
+    public const float LegToleranceYd = 100f;
+
+    /// <summary>The longest leg of a continent route: each leg is one ordinary band search.</summary>
+    public const float MaxLegYd = 1500f;
+
+    // Where a partial route stops, in the coordinates the caller asked in, and why it stops there.
+    private static string StoppedShort(float gapYd, Vector3 last, RouteSpace space, string why)
+    {
+        string where = space == RouteSpace.Map
+            ? string.Create(CultureInfo.InvariantCulture, $"({last.X:F1}, {last.Y:F1})")
+            : string.Create(CultureInfo.InvariantCulture, $"({last.X:F1}, {last.Y:F1}, {last.Z:F1})");
+        return string.Create(CultureInfo.InvariantCulture, $"stops {gapYd:F0} yd short of the destination, at {where}: {why}");
+    }
+
+    /// <summary>
+    /// A route across the whole continent: the way across is found on the continent's tile graph,
+    /// cut into legs that stay close to it (<see cref="Legs"/>), and each leg is an ordinary band
+    /// search from where the last one ended. The lane is held per leg, not for the whole route, so
+    /// other callers get their turns.
+    /// </summary>
+    private RouteOutcome FindAcross(Lane lane, string continent, WorldMapArea area, in RouteQuery query, Vector3 from, Vector3 to,
+        long start, CancellationToken token)
+    {
+        NavmeshTileGraph graph = GetTileGraph(continent);
+        NavmeshQueryMemory memory = lane.Pathfinder.CreateMemory();
+        NavmeshQueryTuning tuning = query.Tuning;
+
+        Vector3 resolvedFrom = from;
+        Vector3 resolvedTo = to;
+        int startNode = -1;
+        int endNode = -1;
+        if (!OnLane(lane, token, nav =>
+            {
+                resolvedFrom = WithSurfaceHeight(nav, from);
+                resolvedTo = WithSurfaceHeight(nav, to);
+                startNode = NodeOf(graph, nav, resolvedFrom);
+                endNode = NodeOf(graph, nav, resolvedTo);
+            }))
+        {
+            return Fail(RoutePlanStatus.Busy, continent, start, $"{continent} stayed busy for {laneWait.TotalSeconds:F0} s");
+        }
+
+        if (startNode < 0 || endNode < 0)
+        {
+            return Planned(Fail(RoutePlanStatus.NoPath, continent, start,
+                $"the {(startNode < 0 ? "start" : "destination")} is on no walkable surface of the {continent} navmesh"),
+                resolvedFrom, resolvedTo, []);
+        }
+
+        if (graph.FindPath(startNode, endNode) is not int[] regions)
+        {
+            return Planned(Fail(RoutePlanStatus.NoPath, continent, start,
+                $"the {continent} navmesh connects no way between the points, across the whole continent"), resolvedFrom, resolvedTo, []);
+        }
+
+        List<Vector3> way = new(regions.Length + 1) { resolvedFrom };
+        for (int i = 1; i < regions.Length - 1; i++)
+        {
+            way.Add(graph.PointOf(regions[i]));
+        }
+
+        way.Add(resolvedTo);
+
+        List<Vector3> world = [];
+        string? stopped = null;
+        foreach (Vector3 legEnd in Legs(way).Skip(1))
+        {
+            Vector3 legStart = world.Count > 0 ? world[^1] : resolvedFrom;
+            Graph.Path? leg = null;
+            NavmeshPathfinder.NavmeshStats stats = default;
+            if (!OnLane(lane, token, nav => leg = nav.FindPath(legStart, legEnd, null, memory, tuning, out stats)))
+            {
+                return Fail(RoutePlanStatus.Busy, continent, start, $"{continent} stayed busy for {laneWait.TotalSeconds:F0} s");
+            }
+
+            if (leg is not null && leg.locations.Count > 0)
+            {
+                world.AddRange(world.Count > 0 ? leg.locations.Skip(1) : leg.locations);
+            }
+
+            if (leg is null || leg.locations.Count == 0 || stats.EndGapYd > ArrivalToleranceYd)
+            {
+                stopped = "the search along the way across the continent found no way on there";
+                break;
+            }
+        }
+
+        lane.Served(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+        if (world.Count == 0)
+        {
+            return Planned(Fail(RoutePlanStatus.NoPath, continent, start,
+                $"the {continent} navmesh connects no route between the points"), resolvedFrom, resolvedTo, []);
+        }
+
+        Vector3[] worldPoints = [.. world];
+        Vector3[] points = worldPoints;
+        if (query.Space == RouteSpace.Map)
+        {
+            points = new Vector3[worldPoints.Length];
+            for (int i = 0; i < points.Length; i++)
+            {
+                points[i] = WorldToMap(worldPoints[i], area);
+            }
+        }
+
+        double elapsedMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+        float gap = Vector3.Distance(worldPoints[^1], resolvedTo);
+        return stopped is null && gap <= ArrivalToleranceYd
+            ? Planned(new(RoutePlanStatus.Found, points, continent, elapsedMs, null), resolvedFrom, resolvedTo, worldPoints)
+            : Planned(new(RoutePlanStatus.Partial, points, continent, elapsedMs,
+                StoppedShort(gap, points[^1], query.Space, stopped ?? "the last leg ends away from the destination")),
+                resolvedFrom, resolvedTo, worldPoints);
+    }
+
+    /// <summary>
+    /// The way across, cut into straight legs (Douglas-Peucker): every point of the way stays within
+    /// <see cref="LegToleranceYd"/> of its leg, and no leg is longer than <see cref="MaxLegYd"/>. The
+    /// first and last points are kept.
+    /// </summary>
+    public static List<Vector3> Legs(IReadOnlyList<Vector3> way)
+    {
+        bool[] keep = new bool[way.Count];
+        keep[0] = true;
+        keep[^1] = true;
+        Split(way, 0, way.Count - 1, keep);
+
+        List<Vector3> legs = [];
+        for (int i = 0; i < way.Count; i++)
+        {
+            if (keep[i])
+            {
+                legs.Add(way[i]);
+            }
+        }
+
+        return legs;
+    }
+
+    private static void Split(IReadOnlyList<Vector3> way, int first, int last, bool[] keep)
+    {
+        if (last - first < 2)
+        {
+            return;
+        }
+
+        int farthest = first;
+        float deviation = 0;
+        for (int i = first + 1; i < last; i++)
+        {
+            float d = DistanceToSegment2D(way[i], way[first], way[last]);
+            if (d > deviation)
+            {
+                deviation = d;
+                farthest = i;
+            }
+        }
+
+        if (deviation <= LegToleranceYd)
+        {
+            if (Vector2.Distance(new(way[first].X, way[first].Y), new(way[last].X, way[last].Y)) <= MaxLegYd)
+            {
+                return;
+            }
+
+            // Straight but long: halved, so each leg stays one ordinary search.
+            farthest = (first + last) / 2;
+        }
+
+        keep[farthest] = true;
+        Split(way, first, farthest, keep);
+        Split(way, farthest, last, keep);
+    }
+
+    private static float DistanceToSegment2D(Vector3 point, Vector3 a, Vector3 b)
+    {
+        Vector2 p = new(point.X, point.Y);
+        Vector2 start = new(a.X, a.Y);
+        Vector2 segment = new Vector2(b.X, b.Y) - start;
+        float length = segment.LengthSquared();
+        float t = length > 0 ? Math.Clamp(Vector2.Dot(p - start, segment) / length, 0, 1) : 0;
+        return Vector2.Distance(p, start + (t * segment));
+    }
+
+    // The graph node of the polygon a route from or to this point would use; -1 when none.
+    private static int NodeOf(NavmeshTileGraph graph, NavmeshPathfinder nav, Vector3 wow)
+    {
+        return nav.TryLocatePoly(wow, out int tileX, out int tileZ, out int poly) && graph.TryNode(tileX, tileZ, poly, out int node)
+            ? node
+            : -1;
+    }
+
+    // Work on the lane's pathfinder under its gate; false when the lane stayed busy or closed meanwhile.
+    private bool OnLane(Lane lane, CancellationToken token, Action<NavmeshPathfinder> work)
+    {
+        if (!lane.Gate.Wait(laneWait, token))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (lane.Closed)
+            {
+                return false;
+            }
+
+            work(lane.Pathfinder);
+            return true;
+        }
+        finally
+        {
+            lane.Gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// The continent's tile graph: kept in memory once read, read from beside the tiles when they
+    /// have not changed since it was built, else built from them (about 10 s for Kalimdor) and kept
+    /// there. One build at a time; a caller that needs it meanwhile waits for it.
+    /// </summary>
+    private NavmeshTileGraph GetTileGraph(string continent)
+    {
+        lock (tileGraphLock)
+        {
+            if (tileGraphs.TryGetValue(continent, out NavmeshTileGraph? graph))
+            {
+                return graph;
+            }
+
+            string dir = NavmeshSettings.CacheDirectory(dataConfig, bakeOptions, continent);
+            try
+            {
+                graph = NavmeshTileGraph.TryLoad(dir);
+            }
+            catch (Exception ex) when (ex is IOException or EndOfStreamException or UnauthorizedAccessException)
+            {
+                logger.LogWarning("The tile graph of {Continent} could not be read ({Reason}); it is built again", continent, ex.Message);
+            }
+
+            if (graph is null)
+            {
+                TileSetStamp stamp = TileSetStamp.Of(dir);
+                graph = NavmeshTileGraph.Build(dir, logger);
+                try
+                {
+                    graph.Save(dir, stamp);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    logger.LogWarning("The tile graph of {Continent} was built but not kept ({Reason}); it is built again next start",
+                        continent, ex.Message);
+                }
+            }
+
+            tileGraphs[continent] = graph;
+            return graph;
         }
     }
 
@@ -284,6 +576,20 @@ public sealed class RoutePlanner : IDisposable
             {
                 lanes.Remove(lane.Continent);
                 reportedUnbaked.Remove(lane.Continent);
+            }
+        }
+
+        // The tiles may have changed: the next continent route reads the graph again, and its
+        // stamp tells whether it must be rebuilt.
+        lock (tileGraphLock)
+        {
+            if (continent is null)
+            {
+                tileGraphs.Clear();
+            }
+            else
+            {
+                tileGraphs.Remove(continent);
             }
         }
 

@@ -78,10 +78,25 @@ in-memory test server has) is always served; one from another machine only with 
 API, the hub and the world data. The Control Center and BlazorServer forward the browser's calls with
 the key, so a browser never holds it.
 
-**A route that does not exist is an answer, not an error.** `Found`, `NoPath` and `NotBaked`
-are HTTP 200. Only `BadRequest` (400) and `Unavailable` (503, a continent busy past the
+**A route that does not exist is an answer, not an error.** `Found`, `Partial`, `NoPath` and
+`NotBaked` are HTTP 200. Only `BadRequest` (400) and `Unavailable` (503, a continent busy past the
 planner's wait) are errors, and every one of them carries a `RouteResponse`. Never answer 429:
 that is how the old V1 client turned "busy" into "no path".
+
+**A route that stops short says so.** The band search (`RouteSearch.Band`, the default and the
+bot's own) loads tiles only within about 270 yards of the straight line, 530 when it widens; a
+route that must stray further ends at a dead end. That used to come back as `Found`. Now a route
+ending more than `RoutePlanner.ArrivalToleranceYd` (5 yd) from the resolved destination is
+`Partial`, with its points and a detail naming where it stops and how far short.
+
+**`RouteSearch.Continent` searches the whole continent.** The way across is found on the
+continent's `NavmeshTileGraph` (a node per connected part of each tile), cut into legs that stay
+within 100 yards of it, and each leg is an ordinary band search. The graph is built from the tile
+files once per bake (about 10 s for Kalimdor) and kept beside them as `tilegraph.v1.bin`, stamped
+with the tiles' count, size and newest write; closing a lane drops it from memory, and a changed
+stamp rebuilds it. After that a continent route takes well under a second. It plans what the
+navmesh connects: swimming costs 1.3 times walking, so Durotar to Tanaris runs down the east coast
+on the sea floor.
 
 **Each request gets fresh pathfinder memory.** `NavmeshPathfinder` remembers the last floor it
 resolved, its corridor band and recent stalls. That is right for one walker and wrong for a

@@ -38,7 +38,7 @@ public sealed class WatchBroadcaster(
     IHubContext<WatchHub> hub,
     ILogger<WatchBroadcaster> logger) : BackgroundService
 {
-    /// <summary>Found routes kept for <see cref="Replay"/>.</summary>
+    /// <summary>Routes with points (found or partial) kept for <see cref="Replay"/>.</summary>
     public const int RememberedRoutes = 5;
 
     /// <summary>A planned route's drawing; the next route replaces it.</summary>
@@ -236,7 +236,7 @@ public sealed class WatchBroadcaster(
 
     private void OnRoutePlanned(PlannedRoute route)
     {
-        if (route.Status == RoutePlanStatus.Found)
+        if (route.Points.Length > 0)
         {
             lock (recentLock)
             {
@@ -290,6 +290,12 @@ public sealed class WatchBroadcaster(
             await SendAsync(clients, WatchHubMethods.Log, token,
                 $"{route.Continent}: {route.Points.Length} points in {route.ElapsedMs:F0} ms");
             return;
+        }
+
+        // A partial route is drawn as far as it goes, in another colour, and says where it stops.
+        if (route.Points.Length > 0)
+        {
+            await SendAsync(clients, WatchHubMethods.DrawPath, token, Wire(route.Points), (int)WatchColor.Orange, RouteName);
         }
 
         await SendAsync(clients, WatchHubMethods.Log, token, $"{route.Status}: {route.Detail}");

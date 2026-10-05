@@ -15,6 +15,13 @@ public enum RouteStatus
 {
     Found,
 
+    /// <summary>
+    /// The route goes part of the way: the search found no way on near the straight line between
+    /// the points. <see cref="RouteResponse.Points"/> hold the part found; <see cref="RouteResponse.Detail"/>
+    /// says where it stops and how far short.
+    /// </summary>
+    Partial,
+
     /// <summary>Both points are on the navmesh, but it connects no route between them.</summary>
     NoPath,
 
@@ -26,6 +33,22 @@ public enum RouteStatus
 
     /// <summary>The service could not answer now (busy, down, timed out); asking again may work.</summary>
     Unavailable
+}
+
+/// <summary>How far from the straight line between the points a route request looks for its way.</summary>
+public enum RouteSearch
+{
+    /// <summary>
+    /// A band around the straight line, as the bot searches: fast, and the route a bot would walk.
+    /// A route that must stray far from the line answers <see cref="RouteStatus.Partial"/>.
+    /// </summary>
+    Band,
+
+    /// <summary>
+    /// The whole continent: the way across is found first, then searched leg by leg along it. Slower
+    /// (the first request after a bake also builds the continent's graph, about 10 s), for long routes.
+    /// </summary>
+    Continent
 }
 
 /// <summary>Shapes one route; every field applies to this request only.</summary>
@@ -41,15 +64,16 @@ public sealed record RouteTuning(float JitterYards = 0f, int? JitterSeed = null,
 /// <param name="From">Start. A height of 0 means "unknown": the walkable surface under the point is used.</param>
 /// <param name="To">Destination, with the same height rule.</param>
 /// <param name="Tuning">Optional jitter and edge margin.</param>
+/// <param name="Search">The band around the straight line (the default, as the bot searches) or the whole continent.</param>
 public sealed record RouteRequest(string? Client, int UiMapId, CoordinateSpace Space, Point3 From, Point3 To,
-    RouteTuning? Tuning = null);
+    RouteTuning? Tuning = null, RouteSearch Search = RouteSearch.Band);
 
 /// <summary>What a route request found.</summary>
-/// <param name="Status">How it ended; <see cref="Points"/> is empty unless <see cref="RouteStatus.Found"/>.</param>
-/// <param name="Points">The route, in the request's <see cref="CoordinateSpace"/>.</param>
+/// <param name="Status">How it ended; <see cref="Points"/> is empty unless <see cref="RouteStatus.Found"/> or <see cref="RouteStatus.Partial"/>.</param>
+/// <param name="Points">The route, in the request's <see cref="CoordinateSpace"/>; for a partial route, as far as it goes.</param>
 /// <param name="Smoothed">The points are a dense, validated spline: re-request rather than patch a partial route.</param>
 /// <param name="ElapsedMs">Time the service spent, including any wait for the continent.</param>
-/// <param name="Detail">Why nothing was found, for a person to read.</param>
+/// <param name="Detail">Why nothing, or only part of the way, was found, for a person to read; null when found.</param>
 public sealed record RouteResponse(RouteStatus Status, Point3[] Points, bool Smoothed, double ElapsedMs, string? Detail)
 {
     public static RouteResponse Failed(RouteStatus status, string detail)

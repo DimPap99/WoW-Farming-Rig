@@ -35,7 +35,8 @@ public sealed class RoutePlannerParityTests
         using RoutePlanner planner = TestData.NewPlanner();
         RouteOutcome outcome = planner.Find(new RouteQuery(route.UiMap, route.Space, route.From, route.To));
 
-        Assert.Equal(expected.Length > 0, outcome.Found);
+        // The bot walks what it gets, all the way or part of it; the planner says which, with the same points.
+        Assert.Equal(expected.Length > 0, outcome.Points.Length > 0);
         Assert.Equal(expected, outcome.Points);
     }
 
