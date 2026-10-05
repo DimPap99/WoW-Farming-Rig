@@ -57,5 +57,12 @@
     <PackageVersion Include="SixLabors.ImageSharp" Version="3.1.12" />
     <PackageVersion Include="SixLabors.ImageSharp.Drawing" Version="2.1.7" />
     <PackageVersion Include="System.Management" Version="10.0.10" />
+    <!-- Service clients (ServiceClients) and the service tests (ServiceTests). Resilience stays on
+         10.0.0, whose dependencies are 10.0.0, so it never forces a downgrade of the 10.0.10 pins. -->
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
   </ItemGroup>
 </Project>
