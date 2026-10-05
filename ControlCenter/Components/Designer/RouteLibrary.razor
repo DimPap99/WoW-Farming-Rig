@@ -1,0 +1,225 @@
+@* The route designer's path library: a recorded path opens as waypoints, and the waypoints save
+   under a name, as the bot records a path: one zone's map coordinates (RecordedPaths). *@
+
+@inherits ControlCenterComponent
+
+@inject IPathingClient pathing
+@inject IJSRuntime js
+
+<details class="pa-details">
+    <summary>Path library</summary>
+    <div class="pa-form">
+        <div class="pa-field">
+            <label class="pa-label" for="pa-route-file">Recorded path</label>
+            <input class="pa-input" id="pa-route-file" list="pa-route-files" autocomplete="off"
+                   placeholder="Type to search @files.Length paths, or a new name" @bind="fileName" @bind:event="oninput" @bind:after="Chosen" />
+            <datalist id="pa-route-files">
+                @foreach (RecordedPathInfo info in files)
+                {
+                    <option value="@info.Name"></option>
+                }
+            </datalist>
+        </div>
+        <div class="pa-field">
+            <label class="pa-label" for="pa-route-zone" title="A path is one zone map's coordinates, as the bot records them">Zone</label>
+            <select class="pa-select" id="pa-route-zone" @bind="zoneId">
+                <option value="0" disabled>Choose the zone</option>
+                @foreach (IGrouping<string, ZoneInfo> group in World.World.Zones.OrderBy(z => z.Continent).ThenBy(z => z.Name).GroupBy(z => z.Continent))
+                {
+                    <optgroup label="@group.Key">
+                        @foreach (ZoneInfo zone in group)
+                        {
+                            <option value="@zone.UiMapId">@zone.Name</option>
+                        }
+                    </optgroup>
+                }
+            </select>
+        </div>
+        <div class="pa-actions">
+            <BusyButton Class="pa-grow" Icon="folder" Busy="@busy" Disabled="@(File is null || zoneId == 0)" OnClick="OpenAsync"
+                        Title="Open the path as waypoints">
+                Open
+            </BusyButton>
+            <BusyButton Class="pa-btn--primary pa-grow" Icon="data-transfer-upload" Busy="@busy"
+                        Disabled="@(Waypoints.Count == 0 || zoneId == 0 || fileName.Trim().Length == 0)"
+                        OnClick="SaveAsync" Title="Save the waypoints under this name">
+                Save
+            </BusyButton>
+            <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" disabled="@(File is null || busy)"
+                    title="Delete this path (its screenshot stays)" @onclick="DeleteAsync">
+                <span class="oi oi-trash" aria-hidden="true"></span>
+            </button>
+        </div>
+        @if (File?.Screenshot is string screenshot)
+        {
+            <a class="pa-thumb" href="@ScreenshotUrl(screenshot)" target="_blank" title="Screenshot saved with the recording">
+                <img src="@ScreenshotUrl(screenshot)" alt="Screenshot of @File.Name" loading="lazy" />
+            </a>
+        }
+        <ResultLine Text="@result" Kind="@resultKind" />
+    </div>
+</details>
+
+@code {
+    /// <summary>A recorded path opened as waypoints in world yards.</summary>
+    public sealed record OpenedPath(string Name, ZoneInfo Zone, Point3[] Waypoints);
+
+    [Parameter, EditorRequired] public WorldSnapshot World { get; set; } = null!;
+
+    /// <summary>The waypoints Save writes.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<Point3> Waypoints { get; set; } = [];
+
+    /// <summary>The file the waypoints came from or were last saved to; saving over it asks nothing.</summary>
+    [Parameter] public string? Opened { get; set; }
+
+    /// <summary>The route shown has changes no file holds: opening another asks first.</summary>
+    [Parameter] public bool Dirty { get; set; }
+
+    [Parameter] public EventCallback<OpenedPath> OnOpened { get; set; }
+
+    /// <summary>The waypoints were saved under this name.</summary>
+    [Parameter] public EventCallback<string> OnSaved { get; set; }
+
+    private RecordedPathInfo[] files = [];
+    private string fileName = string.Empty;
+    private int zoneId;
+    private bool busy;
+    private string? result;
+    private ResultKind resultKind;
+
+    private RecordedPathInfo? File => files.FirstOrDefault(f => f.Name == fileName.Trim());
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ListAsync();
+    }
+
+    private async Task ListAsync()
+    {
+        ServiceResult<RecordedPathInfo[]> listed = await pathing.ListPathsAsync(token: Token);
+        files = listed.Value ?? [];
+        if (!listed.Ok)
+        {
+            Show($"The library is not available: {listed.Error}", ResultKind.Error);
+        }
+    }
+
+    // A path's zone, guessed from its name ("16_Loch Modan.json" is Loch Modan).
+    private void Chosen()
+    {
+        if (File is RecordedPathInfo info &&
+            ZoneMath.GuessFromName(World.World.Zones, System.IO.Path.GetFileNameWithoutExtension(info.Name)) is ZoneInfo zone)
+        {
+            zoneId = zone.UiMapId;
+        }
+    }
+
+    private async Task OpenAsync()
+    {
+        if (File is not RecordedPathInfo info || World.Zone(zoneId) is not ZoneInfo zone)
+        {
+            return;
+        }
+
+        if (Dirty && !await js.ConfirmAsync($"Open {info.Name} instead of the route shown? It is not saved.", Token))
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            ServiceResult<RecordedPath> read = await pathing.GetPathAsync(info.Name, Token);
+            if (!read.Ok)
+            {
+                Show(read.Error, ResultKind.Error);
+                return;
+            }
+
+            Point3[] points = read.Value.Points;
+            await OnOpened.InvokeAsync(new OpenedPath(info.Name, zone, RecordedPaths.ToWaypoints(points, zone)));
+            Show(RecordedPaths.AreMapPoints(points)
+                ? $"Opened {Words.Count(points.Length, "point")} on the {zone.Name} map"
+                : $"Opened {Words.Count(points.Length, "point")} in world yards", ResultKind.Ok);
+        }
+        catch (OperationCanceledException)
+        {
+            // The page went away.
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        string name = fileName.Trim();
+        if (World.Zone(zoneId) is not ZoneInfo zone || name.Length == 0 || Waypoints.Count == 0)
+        {
+            return;
+        }
+
+        if (!name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            name += ".json";
+        }
+
+        if (name != Opened && files.Any(f => f.Name == name) && !await js.ConfirmAsync($"Replace {name} in the library?", Token))
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            ServiceResult saved = await pathing.SavePathAsync(name, RecordedPaths.ToFile(Waypoints, zone), Token);
+            if (!saved.Ok)
+            {
+                Show(saved.Error, ResultKind.Error);
+                return;
+            }
+
+            fileName = name;
+            Show($"Saved {Words.Count(Waypoints.Count, "waypoint")} to {name} on the {zone.Name} map", ResultKind.Ok);
+            await OnSaved.InvokeAsync(name);
+            await ListAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (File is not RecordedPathInfo info || !await js.ConfirmAsync($"Delete {info.Name}? Its screenshot stays.", Token))
+        {
+            return;
+        }
+
+        try
+        {
+            ServiceResult deleted = await pathing.DeletePathAsync(info.Name, Token);
+            Show(deleted.Ok ? $"{info.Name} deleted" : deleted.Error, deleted.Ok ? ResultKind.Ok : ResultKind.Error);
+            await ListAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static string ScreenshotUrl(string libraryName)
+    {
+        return $"{WorldData.RecordedPaths}/{string.Join('/', libraryName.Split('/').Select(Uri.EscapeDataString))}";
+    }
+
+    private void Show(string? text, ResultKind kind)
+    {
+        result = text;
+        resultKind = kind;
+    }
+}

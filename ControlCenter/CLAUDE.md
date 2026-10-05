@@ -39,19 +39,29 @@ Bots/FleetFeed.cs                  the one client of the manager's /fleetHub: ev
 Bots/FleetConnectionFactory.cs     the feed's hub connection (MessagePack, the manager's key)
 Bots/BotLogBuffer.cs               a console's log: the backlog joined to the stream, each line once
 Bots/AssignmentDraft.cs            the assignment form's fields, Missing and Refusal (AssignmentRules)
-World/WorldScene.cs                what a page shows on the world view: routes, markers, labels, kinds
+World/WorldScene.cs                what a page shows on the world view: routes, markers, labels, shapes;
+                                   tools, the drawing events, WorldShapes and WorldKinds
+Routes/RouteLegs.cs                the route designer's legs: one request per pair of waypoints, kept
+                                   by their ends, four at a time
+Routes/ForeverExport.cs            a designed route as a Forever route file (travel per zone, roams)
+Routes/RecordedPaths.cs            library files as waypoints and back (one zone's map coordinates)
 Components/App.razor, Routes.razor the document; InteractiveServer without prerendering
 Components/Layout/                 MainLayout (rail), NavMenu, StatusBar
 Components/Shared/                 ControlCenterComponent (base), WorldView, Viewport3D, SearchPanel,
-                                   Panel, BusyButton, ResultLine, OfflineNotice, Terminal, Aria, ...
+                                   Panel, BusyButton, ResultLine, OfflineNotice, Terminal, Aria,
+                                   Words (counts and yards), Dialogs (confirm), ...
 Components/Bots/                   BotCard, BotState, BotLive, BotCommands, AssignmentForm,
                                    RunHistory, BotLog, FeedChip; BotFormat (words and styles)
-Components/Pages/                  RouteMap (/routes), LiveView (/), Map (/Leaflet/...), Search, PathLibrary (/paths),
+Components/Designer/               the route designer's sections: RouteLibrary (open, save, delete
+                                   recorded paths), ForeverSave (the route as a Forever route file);
+                                   not Components/Routes, which would clash with the router
+Components/Pages/                  RouteMap (/routes, the route designer), LiveView (/), Map (/Leaflet/...), Search, PathLibrary (/paths),
                                    PathEditorPage (/paths/edit/...), NpcRoutes, ForeverRoutes
                                    (/forever-routes), Fleet (/fleet), BotConsole
                                    (/fleet/{agentId}), ApiReference
 wwwroot/css/site.css               the whole theme; pa- prefixed so the map keeps Bootstrap
 wwwroot/js/world-view.js           the world view on deck.gl (fetched on demand): flat map, tilts into 3D
+wwwroot/js/world-edit.js           its drawing tools: shapes, drafts, handles, the pointer and keys
 wwwroot/js/pathing-scene.js        the Babylon 3D view; Babylon itself is fetched on demand
 wwwroot/js/pathing-ui.js           script loader, toast, remembered rail state
 ```
@@ -120,8 +130,40 @@ no minimap art and works for Forever too. The page draws WoW's x north and y wes
 left (`X = -y, Y = x`). Flat is orthographic, so ground at different heights lines up; tilted is in
 perspective. The ground is drawn unlit (`material: false`): deck.gl's default lighting turned it
 black once zoomed in. `worldView.describe()` reports each view's continent, ground and layers, for a
-browser check to wait on. `RouteMap` (`/routes`) is the first page on it; Live view, Map, Route
-search and the path pages still use Leaflet and Babylon until they move.
+browser check to wait on. `RouteMap` (`/routes`, the route designer) is the first page on it; Live
+view, Map, Route search and the path pages still use Leaflet and Babylon until they move
+(`docs/world-view-plan.md`).
+
+**The world view's tools edit locally and report the result; the page keeps it.** A page offers
+`Tools` (a `WorldTool`: the shape a click draws and its title) and binds `Tool`; shapes are part of
+the `WorldScene` (`WorldShape`, editable or not, and `Selected`). What a tool finishes comes back as
+`OnDrawn`, what the pointer changes on the selected editable shape as `OnEdited` (its whole
+geometry), clicks on shapes as `OnSelected` (null when a click lands beside every shape); the page
+puts the result in its next scene. A drag on a handle must not pan the map: deck.gl hands a drag to
+`Deck.onDragStart` before the map's controller, so `stopImmediatePropagation()` there keeps the map
+still - toggling the controller's `dragPan` does not work, as deck.gl applies a new controller only
+when the view state changes. A tool's button switches the tool in the script at once (a click on
+the map right after it is the new tool's), and the same tool sent again by the page is a no-op, so
+it cannot drop a corner drawn meanwhile. Handles hide while a shape is drawn, or the closing click
+on a corner over a waypoint is taken by the waypoint. The ground picks in 3D (`pickable: '3d'`), so
+a click knows its height even tilted; a point placed on the relief (one height per tile) comes
+back with height 0, which the service reads as "find the ground here". Keys reach the tools while
+the map's own element (`.pa-world-canvas`, made focusable by deck.gl) has the focus. Framing and
+centring use the width a tall panel at the side leaves uncovered. A shape edited whole can be a few
+thousand points, so the circuit takes messages up to `MaxCircuitMessageBytes` (1 MB), not 32 KB.
+
+**Static assets are fingerprinted and compressed at build time.** In Release (`MapStaticAssets`),
+a changed `wwwroot` script is served as it was built until the Control Center is built again:
+rebuild before a browser check.
+
+**The designer plans each leg once.** `RouteLegs` keys a leg by its ends to a tenth of a yard
+(the precision the map sends) and the search, so the whole list of waypoints coming back from an
+edit replans only the legs whose ends moved. A waypoint with height 0 takes the ground's from the
+first leg found through it. Library files are one zone's map coordinates with no height (as the bot
+records them; a file with heights is world yards); the zone is guessed from the file name.
+`ZoneMath.ZoneAt` names a point's zone from the zone maps alone - the one it lies furthest inside,
+since zone maps overlap (Durotar's covers the east of the Barrens) - which is right in the middle
+of a zone and approximate at its border; continent maps only where no zone's map reaches.
 
 **The era comes from the service, not the URL.** The map page passes the service's client to
 the map script; the `/Leaflet/{client}` segment is advisory, as the map's own continent selector
