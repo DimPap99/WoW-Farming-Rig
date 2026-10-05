@@ -208,8 +208,8 @@ budget answers `Unavailable` rather than 429, and an endpoint on an unbaked tile
 | `Contracts` | `net10.0` | nothing | DTOs, route and hub constants |
 | `ServiceClients` | `net10.0` | Contracts | typed clients for the Control Center and the agent |
 | `PathingService` | `net10.0`, web | Contracts, PPather, DataConfig, SharedLib, ForeverCasc | the Pathing Service |
-| `ControlCenter` | `net10.0`, web | Contracts, ServiceClients, MapAssets | the central UI (Phase 2) |
-| `MapAssets` | `net10.0`, Razor class library | nothing | the Leaflet map's scripts, libraries and styles, static files only |
+| `ControlCenter` | `net10.0`, web | Contracts, ServiceClients | the central UI (Phase 2); every world page on the world view (deck.gl) |
+| `MapAssets` | `net10.0`, Razor class library | nothing | the Leaflet map's scripts, libraries and styles, static files only; BlazorServer's |
 | `ServiceTests` | `net10.0` | the above | xUnit, runs on Linux |
 | `BotManager` | `net10.0`, web | Contracts, ServiceClients | the Bot Manager (Phase 3, port 5030) |
 | `BotAgent` | `net10.0` | Contracts, ServiceClients | the agent's link, run host, telemetry and log stream, without Core |
@@ -218,9 +218,10 @@ budget answers `Unavailable` rather than 429, and an endpoint on an unbaked tile
 
 Dependency rules:
 - Services never reference `Core`, `Game`, `WinAPI` or `Frontend`.
-- The Control Center never references `PPather` or `Core`. It proxies tiles, data and the watch
-  hub to the Pathing Service with YARP, so the map's JS keeps same-origin URLs. Its one
-  reference beyond Contracts and ServiceClients is `MapAssets`, which holds no code.
+- The Control Center never references `PPather` or `Core`. It proxies the API, the world data and
+  the watch hub to the Pathing Service with YARP, so the browser keeps same-origin URLs. It
+  references Contracts and ServiceClients only (MapAssets until 2026-10-05, when its pages moved
+  to the world view: `docs/world-view-plan.md`).
 
 The heavy lifting lives in reusable classes:
 
@@ -303,7 +304,9 @@ Run both with `PathingService/run.sh` and `ControlCenter/run.sh`, then open
 `http://localhost:5020`. The Control Center finds the service at `PathingService:Url`
 (default `http://localhost:5010`) and says "offline" while it does not answer.
 
-- **What the Control Center is.**
+- **What the Control Center is.** (As built in Phase 2. Since 2026-10-05 its pages are on one
+  deck.gl world view instead of Leaflet and Babylon, and it no longer references MapAssets:
+  `docs/world-view-plan.md`.)
   - A Blazor Web App (InteractiveServer, no prerendering) referencing Contracts,
     ServiceClients and MapAssets only.
   - Pages: live view (3D, test routes), map, route search, path library, path editor, NPC

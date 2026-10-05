@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <!-- The Control Center (docs/service-architecture.md): the central web UI. It holds no data and
-       plans nothing; it is a client of the Pathing Service, whose map data, API calls and watch hub
-       it forwards, and of the Bot Manager, whose fleet hub it follows. Plain net10.0. It references
-       the contracts, the service clients and the map's static assets only - never PPather, Core,
-       Game, WinAPI or Frontend. -->
+       plans nothing; it is a client of the Pathing Service, whose API calls and data files it
+       forwards and whose watch hub it follows, and of the Bot Manager, whose fleet hub it follows.
+       Plain net10.0. It references the contracts and the service clients only - never PPather,
+       Core, Game, WinAPI or Frontend. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -21,7 +21,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Contracts\Contracts.csproj" />
-    <ProjectReference Include="..\MapAssets\MapAssets.csproj" />
     <ProjectReference Include="..\ServiceClients\ServiceClients.csproj" />
   </ItemGroup>
 

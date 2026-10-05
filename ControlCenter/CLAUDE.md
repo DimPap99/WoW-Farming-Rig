@@ -1,10 +1,11 @@
 # ControlCenter - the central web UI
 
-The Control Center from `docs/service-architecture.md`: the place to watch routes, author paths
+The Control Center from `docs/service-architecture.md`: the place to watch routes, design routes
 and cost zones, administer bakes, and run the fleet - a console per bot - for every bot. It holds
 no data and plans nothing. It is a client of the Pathing Service and the Bot Manager, and it never
-references `PPather`, `Core`, `Game`, `WinAPI` or `Frontend`: only `Contracts`, `ServiceClients`
-and `MapAssets` (static files, no code).
+references `PPather`, `Core`, `Game`, `WinAPI` or `Frontend`: only `Contracts` and
+`ServiceClients`. Every page that shows the world is on one map, the world view (deck.gl); the
+Leaflet map is BlazorServer's alone now (`MapAssets`), and the Babylon 3D view is gone.
 
 ## Run
 
@@ -54,9 +55,9 @@ Routes/RecordedPaths.cs            library files as waypoints and back (one zone
 Routes/ForeverRouteSketch.cs       a Forever route's text read leniently for drawing as it is written
 Components/App.razor, Routes.razor the document; InteractiveServer without prerendering
 Components/Layout/                 MainLayout (rail), NavMenu, StatusBar
-Components/Shared/                 ControlCenterComponent (base), WorldView, Viewport3D, SearchPanel,
-                                   Panel, BusyButton, ResultLine, OfflineNotice, Terminal, Aria,
-                                   Words (counts and yards), Dialogs (confirm), ...
+Components/Shared/                 ControlCenterComponent (base), WorldView, Panel, BusyButton,
+                                   ResultLine, OfflineNotice, Terminal, Aria, Words (counts and
+                                   yards), Dialogs (confirm), JsTeardown, ...
 Components/Bots/                   BotCard, BotState, BotLive, BotCommands, AssignmentForm,
                                    RunHistory, BotLog, FeedChip; BotFormat (words and styles)
 Components/Designer/               the route designer's sections: RouteLibrary (open, save, delete
@@ -64,25 +65,24 @@ Components/Designer/               the route designer's sections: RouteLibrary (
                                    not Components/Routes, which would clash with the router
 Components/Pages/                  LiveView (/), WorldMap (/map), RouteMap (/routes, the route
                                    designer), NpcRoutes, CostZones (/cost-zones), Navmesh (/navmesh),
-                                   Map (/Leaflet/..., the old minimap), ForeverRoutes
-                                   (/forever-routes), Fleet (/fleet), BotConsole (/fleet/{agentId}),
-                                   ApiReference
-wwwroot/css/site.css               the whole theme; pa- prefixed so the map keeps Bootstrap
+                                   ForeverRoutes (/forever-routes), Fleet (/fleet), BotConsole
+                                   (/fleet/{agentId}), ApiReference
+wwwroot/css/site.css               the whole theme, over Bootstrap's reset; pa- prefixed
 wwwroot/js/world-view.js           the world view on deck.gl (fetched on demand): flat map, tilts into 3D
 wwwroot/js/world-edit.js           its drawing tools: shapes, drafts, handles, the pointer and keys
-wwwroot/js/pathing-scene.js        the Babylon 3D view (Viewport3D), no longer on any page; goes in
-                                   step 6 of docs/world-view-plan.md
-wwwroot/js/pathing-ui.js           script loader, toast, remembered rail state
+wwwroot/js/pathing-ui.js           script loader, toast, remembered rail state, insert at the cursor
 ```
 
 ## Things that will bite you
 
-**The browser talks only to the Control Center.** The map's script fetches `/tiles`, `/dbc`,
-`/api/v1/...` and connects to `/watchHub` on its own origin; `ServiceProxy` forwards them to
-the Pathing Service (WebSockets included), adding the service's key (`PathingService:ApiKey`, else
-`ApiKey`) so the browser never holds it. That also means whoever reaches the Control Center reaches
-the services: keep it on localhost, or behind your own access control. A prefix the map needs that is not in
-`ServiceProxy.PathingPrefixes` answers 404 here, not at the service.
+**The browser talks only to the Control Center.** The world view's script fetches
+`/api/v1/navmesh/...` and a path's screenshot comes from the world data (`/path/...`) on its own
+origin; `ServiceProxy` forwards them to the Pathing Service (WebSockets included, for `/watchHub`),
+adding the service's key (`PathingService:ApiKey`, else `ApiKey`) so the browser never holds it.
+Hubs the pages follow (`WatchFeed`, `FleetFeed`) are followed from the server. Whoever reaches the
+Control Center reaches the services: keep it on localhost, or behind your own access control. A
+prefix the browser needs that is not in `ServiceProxy.PathingPrefixes` answers 404 here, not at
+the service.
 
 **The Bot Manager is called from the server, never forwarded.** `/api/v1` is the root of both
 services, and here it belongs to the Pathing Service (`ServiceProxy`). Pages call the manager
@@ -120,8 +120,7 @@ components keyed alike threw on the first re-render and ended the circuit.
 
 **An exception thrown into a render or a handler ends the circuit.** The page then stops
 updating until reloaded. Catch `JSException` around script calls in `OnAfterRenderAsync`, as
-`Map.razor` and `Viewport3D` do: the map's `init` once failed on missing data and took the
-whole page down.
+`WorldView` does: the old map's `init` once failed on missing data and took the whole page down.
 
 **Subscribe through `ControlCenterComponent`.** The pollers raise their events on their own
 thread and the feed on SignalR's: pair each `+=` with its `-=` in `Subscribe`, redraw with
@@ -129,7 +128,7 @@ thread and the feed on SignalR's: pair each `+=` with its `-=` in `Subscribe`, r
 so a subscriber that throws is logged and stops neither the others nor the poller. A component
 that awaits JS teardown implements `IAsyncDisposable` and calls `Dispose()` itself.
 
-**The world view replaces the map and the 3D view, one page at a time.** `WorldView` (deck.gl,
+**Every page that shows the world is on the world view.** `WorldView` (deck.gl,
 `wwwroot/js/world-view.js`) is a flat, north-up map that tilts into 3D: drag pans, the wheel zooms,
 right-drag turns and tilts. The page sends a `WorldScene` (routes, markers, labels) whole when it
 changes, and hears clicks while `Picking`; the ground the view fetches itself from the service's
@@ -139,14 +138,13 @@ no minimap art and works for Forever too. The page draws WoW's x north and y wes
 left (`X = -y, Y = x`). Flat is orthographic, so ground at different heights lines up; tilted is in
 perspective. The ground is drawn unlit (`material: false`): deck.gl's default lighting turned it
 black once zoomed in. `worldView.describe()` reports each view's continent, ground and layers, for a
-browser check to wait on (with each marker's place on the screen). The Live view, the route designer
-(`RouteMap`, `/routes`) and NPC routes are on it; the Map page still uses Leaflet until it moves
-(`docs/world-view-plan.md`). A click on a marker comes back as `OnMarker` (not while `Picking`).
+browser check to wait on (with each marker's place on the screen). A click on a marker comes back
+as `OnMarker` (not while `Picking`). How the pages moved here: `docs/world-view-plan.md`.
 
 **The Live view watches routes, not a scene.** `WatchFeed` joins the service's watch hub as a route
 watcher (`WatchHubMethods.WatchRoutes`): it gets each route the planner answers as a `WatchRoute`,
 with its continent, and none of the 3D scene - no tiles, no drawings - so the service builds no
-meshes for it. It is connected only while a page holds a lease (`Watch()`), as the 3D view was; the
+meshes for it. It is connected only while a page holds a lease (`Watch()`); the
 hub replays its last five routes on every join, and the feed keeps each once (by its time and ends),
 the newest 30 across connections.
 
@@ -191,13 +189,9 @@ something. Where the grid is not baked, `ZoneMath.ZoneAt` guesses from the maps:
 lies furthest inside, continent maps last. The Forever export takes the looked-up zone when its map
 holds the point (a step's points must be 0 to 100 on its map), else the guess.
 
-**The era comes from the service, not the URL.** The map page passes the service's client to
-the map script; the `/Leaflet/{client}` segment is advisory, as the map's own continent selector
-writes it. Forever has no minimap art, so its map page says so and points to the 3D view.
-
-**The 3D view (Babylon, `Viewport3D`) is on no page any more.** It replayed rather than reset, and
-its Terrain toggle (the game geometry under 25 tiles, needing game files where the service runs)
-has no new home yet: whether the world view should draw it is open (`docs/world-view-plan.md`).
+**The Babylon 3D view is gone from here.** Its Terrain toggle (the game geometry under 25 tiles,
+needing game files where the service runs) has no new home: whether the world view should draw it
+is open (`docs/world-view-plan.md`); the watch hub still answers `Terrain`.
 
 **Bind text a button depends on with `@bind:event="oninput"`.** A plain `@bind` updates on
 `change`, which fires only when the box loses focus, and clicking a disabled button does not take

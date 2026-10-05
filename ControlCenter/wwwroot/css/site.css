@@ -1,7 +1,7 @@
 @import url('open-iconic/font/css/open-iconic-bootstrap.min.css');
 
-/* The Control Center: one dark theme for the shell, the panels and the tools. Every class is
-   pa-prefixed so the map's Bootstrap-styled sidebar and controls keep their own look. */
+/* The Control Center: one dark theme for the shell, the panels and the tools, over Bootstrap's
+   reset. Every class is pa-prefixed. */
 
 :root {
     --pa-bg: #0a0e13;
@@ -367,12 +367,6 @@ code {
     width: 380px;
 }
 
-/* On the map: clear of Leaflet's attribution, under its own sidebar. */
-.pa-panel--map {
-    bottom: 28px;
-    z-index: 900;
-}
-
 .pa-panel-header {
     display: flex;
     align-items: center;
@@ -421,11 +415,6 @@ code {
 
 .pa-panel.is-collapsed.pa-panel--tall {
     bottom: auto;
-}
-
-.pa-count {
-    font: 12px var(--pa-mono);
-    color: var(--pa-text-faint);
 }
 
 /* --- forms -------------------------------------------------------------------- */
@@ -514,31 +503,6 @@ code {
     min-width: 0;
 }
 
-.pa-endpoints {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-/* Sits between From and To, on the right edge. */
-.pa-swap {
-    position: absolute;
-    right: 4px;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 1;
-    width: 26px !important;
-    height: 26px !important;
-    border-radius: 50% !important;
-    background: var(--pa-surface-2) !important;
-    border: 1px solid var(--pa-border-strong) !important;
-}
-
-.pa-endpoints .pa-input {
-    padding-right: 36px;
-}
-
 .pa-check {
     display: flex;
     align-items: center;
@@ -578,18 +542,6 @@ code {
 
 .pa-details .pa-row + .pa-field {
     margin-top: 8px;
-}
-
-.pa-stepper {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.pa-stepper .pa-input {
-    flex: 1;
-    min-width: 0;
-    text-align: center;
 }
 
 .pa-divider {
@@ -772,43 +724,7 @@ code {
     text-decoration-color: rgba(99, 116, 137, 0.6);
 }
 
-/* --- 3D view ------------------------------------------------------------------ */
-
-.pa-viewport {
-    position: absolute;
-    inset: 0;
-    background: var(--pa-bg);
-}
-
-.pa-canvas {
-    position: absolute;
-    inset: 0;
-    display: block;
-    width: 100%;
-    height: 100%;
-    outline: none;
-    touch-action: none;
-}
-
-.pa-toolbar {
-    position: absolute;
-    top: var(--pa-gap);
-    left: var(--pa-gap);
-    right: var(--pa-gap);
-    z-index: 1001;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    pointer-events: none;
-}
-
-.pa-toolbar > * {
-    pointer-events: auto;
-}
-
-.pa-toolbar > .pa-spacer {
-    pointer-events: none;
-}
+/* --- toggles and groups: the world view's tools, segmented choices --------------- */
 
 .pa-group {
     display: flex;
@@ -878,19 +794,6 @@ code {
     color: var(--pa-text);
     font: 500 12px var(--pa-font);
     cursor: pointer;
-}
-
-.pa-hint {
-    position: absolute;
-    right: var(--pa-gap);
-    bottom: var(--pa-gap);
-    z-index: 999;
-    padding: 6px 10px;
-    border-radius: var(--pa-radius-sm);
-    background: rgba(10, 14, 19, 0.66);
-    color: var(--pa-text-faint);
-    font-size: 11.5px;
-    pointer-events: none;
 }
 
 kbd {
@@ -995,18 +898,7 @@ kbd {
     border-radius: var(--pa-radius);
 }
 
-/* --- map, frames, pages --------------------------------------------------------- */
-
-.pa-map {
-    position: absolute;
-    inset: 0;
-}
-
-.pa-map #js-map {
-    position: absolute;
-    inset: 0;
-    background-color: rgb(0 29 40);
-}
+/* --- frames and pages ------------------------------------------------------------ */
 
 .pa-frame {
     position: absolute;
@@ -1849,10 +1741,6 @@ kbd {
 
     .pa-nav-label,
     .pa-brand-text {
-        display: none;
-    }
-
-    .pa-hint {
         display: none;
     }
 
