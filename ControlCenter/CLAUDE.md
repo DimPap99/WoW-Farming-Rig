@@ -46,6 +46,7 @@ World/WorldScene.cs                what a page shows on the world view: routes, 
                                    tools, the drawing events, WorldShapes and WorldKinds
 World/RouteDrawing.cs              a route's lines by how it ended (found, partial + gap, none, planning)
 World/ZoneLabels.cs                zone names on a continent; a point as a player reads it
+World/AdtGrid.cs                   the bake API's ADT grid (x down from the world's edge along x)
 Routes/RouteLegs.cs                the route designer's legs: one request per pair of waypoints, kept
                                    by their ends, four at a time
 Routes/ForeverExport.cs            a designed route as a Forever route file (travel per zone, roams)
@@ -61,9 +62,10 @@ Components/Designer/               the route designer's sections: RouteLibrary (
                                    recorded paths), ForeverSave (the route as a Forever route file);
                                    not Components/Routes, which would clash with the router
 Components/Pages/                  LiveView (/), WorldMap (/map), RouteMap (/routes, the route
-                                   designer), NpcRoutes, CostZones (/cost-zones), Map (/Leaflet/...,
-                                   the old minimap), ForeverRoutes (/forever-routes), Fleet (/fleet),
-                                   BotConsole (/fleet/{agentId}), ApiReference
+                                   designer), NpcRoutes, CostZones (/cost-zones), Navmesh (/navmesh),
+                                   Map (/Leaflet/..., the old minimap), ForeverRoutes
+                                   (/forever-routes), Fleet (/fleet), BotConsole (/fleet/{agentId}),
+                                   ApiReference
 wwwroot/css/site.css               the whole theme; pa- prefixed so the map keeps Bootstrap
 wwwroot/js/world-view.js           the world view on deck.gl (fetched on demand): flat map, tilts into 3D
 wwwroot/js/world-edit.js           its drawing tools: shapes, drafts, handles, the pointer and keys
