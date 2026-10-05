@@ -94,6 +94,63 @@ which it always is.
    the Map page, the MapAssets scripts and its project reference, `SearchPanel`, and the browser's
    SignalR client (hubs are followed from the server). MapAssets stays, BlazorServer's own map.
    Bootstrap's reset stays under the theme for now.
-7. The look: an aesthetics pass over the world view and the pages on it.
+7. The look: an aesthetics pass over the world view and the pages on it. Not started; see the
+   handoff below.
 
 Each step is checked in Chrome with Playwright (screenshots, interactions) before the next.
+
+## Handoff: step 7, the look (2026-10-06)
+
+Steps 1 to 6 are on `origin/main` (4e9ebc8f to 64aa9c22). Nothing of step 7 is written yet. The
+user's words for it: once everything works, "see how we can improve it aesthetically".
+
+What I would do, most visible first:
+
+1. **A shaded relief for the flat view.** Zoomed out, the ground is one flat colour per 133-yard
+   tile, so a continent reads as a block map. Draw it instead as one image: a canvas with one pixel
+   per tile, its colour the height ramp (`heightColor`) times a hillshade (light from the
+   north-west; slope from the four neighbours, about three times exaggerated; a missing neighbour
+   counts as level), as a `deck.BitmapLayer` with linear filtering. Orientation, from
+   `overviewOf`: view X = -world y and tile x runs along world y, so column = maxTx - tx; view Y =
+   world x and tile z runs along it, so row = maxTz - tz (north up). Bounds `[left, bottom, right,
+   top]` = `[-(origin + (maxTx + 1) * size), origin + minTz * size, -(origin + minTx * size),
+   origin + (maxTz + 1) * size]`. Draw it after the relief cells with `parameters: {depthCompare:
+   'always', depthWriteEnabled: false}`: the cells stay underneath, pickable for the readout's and
+   the tools' heights (`pickable: '3d'`), and the detail polygons still draw over it (the cells
+   under shown detail tiles are already left out). Tilted keeps the stepped cells: a flat image
+   would lose the heights.
+2. **Routes with a casing**: a wider dark path (about 3 px more) under each solid route, so a
+   route reads over any ground.
+3. **Outlined names**: zone labels in an SDF font with an outline (`fontSettings: {sdf: true}`,
+   `outlineWidth`, `outlineColor`) instead of bare light text.
+4. **Panels**: `.pa-waypoints` stops at 240 px even in a tall panel whose body already scrolls;
+   let lists grow there. Check spacing and section headings across Routes, Map, Cost zones,
+   Navmesh and Forever routes.
+5. **The pointer readout** could add the zone and its map coordinates (the zones are known only
+   server-side today: `ZoneLookup`).
+6. **Bootstrap** is loaded only for its reset now; try without it and compare every page.
+
+Screenshot every page before and after; keep what is clearly better.
+
+How to check:
+- `dotnet test`: 278 tests, one skipped (minimap art). `ServiceTests/Api/ControlCenterTests`
+  renders the world view pages offline.
+- In a browser: a Playwright .NET harness drove `designer`, `live`, `npc`, `map`, `zones`,
+  `navmesh` and `forever` checks against the Pathing Service and Control Center on side ports
+  (5110, 5120). It is not in the repository (Windows PC: `local/browser-checks/`). Each check
+  waits on `worldView.describe()` (continent, layers, routes, markers with screen positions,
+  the tools' state and handles), clicks and drags on the canvas, and takes screenshots.
+
+What bites:
+- `wwwroot` scripts and styles are fingerprinted and compressed at build time: build the Control
+  Center again after changing them, or the browser gets the old ones.
+- The cost zone check saves into `Json/road`. It deletes its zone again and the files come back
+  byte-identical, but look at `git status` after it.
+- Never press "Clear the cache" on the Navmesh page in a check: it deletes the baked navmesh.
+- deck.gl 9.4 (luma.gl 9) names the GPU parameters `depthCompare` and `depthWriteEnabled`.
+
+Open for the user, not for step 7:
+- The Babylon view's terrain toggle (the game geometry under tiles, needing game files where the
+  service runs) has no home in the Control Center now. deck.gl could draw it as a mesh, if wanted.
+- Swimming costs 1.3 times walking (known issue 28): it is why a continent route from Durotar to
+  Tanaris runs on the sea floor. Changing it changes how the bot walks.
