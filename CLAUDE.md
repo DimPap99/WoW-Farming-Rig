@@ -6,6 +6,8 @@
 
 ## Project Overview
 Multi-project .NET 10 solution (WoWFarmingRig.sln) with Blazor Server frontend, SignalR communication, and various utility projects.
+It is moving to separate services (Pathing Service, Bot Manager, Control Center) plus one resident bot
+agent per game PC - read `docs/service-architecture.md` before changing how the parts talk to each other.
 
 ## Language & Framework
 - **Target:** .NET 10 (`net10.0`) with C# 14 (`LangVersion: preview`)
@@ -16,8 +18,10 @@ Multi-project .NET 10 solution (WoWFarmingRig.sln) with Blazor Server frontend, 
 ## Build & Test Commands
 ```bash
 dotnet build WoWFarmingRig.sln
-dotnet test
+dotnet test                                   # Microsoft.Testing.Platform (global.json); runs ServiceTests
+dotnet test --project ServiceTests            # just the service tests
 dotnet run --project BlazorServer
+PathingService/run.sh                         # the Pathing Service on :5010, Swagger at /swagger
 dotnet run --project Benchmarks -c Release
 ```
 
@@ -47,7 +51,13 @@ before working in one.
 - `Game/` ✎ - WoW process, input (stateful - read before touching), screen contracts
 - `Frontend/` ✎ - Blazor UI shared by BlazorServer and PathingAPI
 - `PPather/` ✎ - Pathfinding (DotRecast navmesh + legacy spot A*, MPQ reading)
-- `PathingAPI/` ✎ - Standalone pathing server, bake host, Leaflet map
+- `PathingAPI/` ✎ - Standalone pathing server, bake host, Leaflet map (legacy; its pages move to the
+  Control Center and its API to PathingService)
+- `PathingService/` ✎ - The Pathing Service: concurrent route planning and the authoring API (paths,
+  cost zones); plain `net10.0`, never references Core/Game/WinAPI/Frontend
+- `Contracts/` - Wire types and route constants shared by every service and client; no dependencies
+- `ServiceClients/` - Typed clients for the services (`IPathingClient`), shared by UI and agent
+- `ServiceTests/` - xUnit tests for the services, the planner and the stores; runs on Linux
 - `DataConfig/` ✎ - Every on-disk path; era vs client partitioning
 - `Benchmarks/` ✎ - BenchmarkDotNet + the `--bake-profile` byte-identity gate
 - `CoreTests/` ✎ - Integration test suites
@@ -71,6 +81,8 @@ Central package management via `Directory.Packages.props`:
 - Async/await throughout - avoid blocking calls
 
 ## Testing
+- Service code is tested with xUnit v3 in `ServiceTests` (`dotnet test`); tests that need the baked navmesh
+  skip themselves when the tiles are not downloaded
 - Run benchmarks in Release mode: `dotnet run --project Benchmarks -c Release`
 - Use BenchmarkDotNet `[Benchmark]` attributes for performance testing
 

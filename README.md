@@ -22,7 +22,7 @@ Wrath 3.3.5 is not planned because the bot requires *interact with target*, whic
 
 - Reads game state through the `DataToColor` add-on and supports configurable combat, looting, gathering, vendors, mail, trainers, and class profiles on supported clients.
 - Navigates with an in-process DotRecast navmesh. Pre-baked tiles can be downloaded by era, so normal navigation does not need local game archives or an external pathing server.
-- Offers a Blazor dashboard for configuration and monitoring, a headless host, and a standalone pathfinding API.
+- Offers a Blazor dashboard for configuration and monitoring, a headless host, and a Pathing Service that plans routes and stores recorded paths and road and danger-zone costs. The service runs on Linux and macOS as well as Windows. The project is moving to separate services with one bot agent per PC; see [service architecture](docs/service-architecture.md).
 - Supports generated grind routes, keybinding detection, and DXGI or Windows Graphics Capture screen readers.
 - Shows a read-only Forever diagnostic dashboard with visual health and power percentages, map position, target state, cooldown fill, and action-slot metadata. This port does not start the bot or send game input.
 

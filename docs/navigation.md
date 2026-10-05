@@ -54,6 +54,10 @@ BlazorServer / HeadlessServer at the same downloaded tiles (a shared `data_confi
 `Root` is fine, the tile cache is read-only) and run them independently. No pathing
 server, no MPQ, nothing shared at runtime.
 
+The new **Pathing Service** (`PathingService/`) does answer concurrent queries - one lane per
+continent, fresh pathfinder memory per request, no 429 - but it serves the authoring UI;
+bots keep planning in process (see [service architecture](service-architecture.md)).
+
 **Do not point several bots at one `PathingAPI` (V1 Remote).** It serves one search at
 a time: the `RateLimit` filter answers a concurrent request with **HTTP 429**, which the
 V1 client turns into an empty route - indistinguishable from "no path exists", so the

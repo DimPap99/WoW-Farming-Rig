@@ -1,5 +1,11 @@
 # V1 Remote Pathing - PathingAPI
 
+> **There is a new Pathing Service.** `PathingService/` (port 5010, Swagger at `/swagger`)
+> plans routes for many callers at once - one lane per continent, no 429 - and is the
+> authoring API for recorded paths and cost zones. This page covers the legacy PathingAPI
+> (port 5001), whose pages move to the Control Center and whose API moves to the Pathing
+> Service; see [service architecture](service-architecture.md) and `PathingService/CLAUDE.md`.
+
 Pathing is built into the bot, so you don't need to do anything special except provide
 navmesh tiles - `download-navmesh.ps1`, no MPQ files required (see
 [Setting up navigation](navigation.md#setting-up-navigation--the-short-version)). You can though run

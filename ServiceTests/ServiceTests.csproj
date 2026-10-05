@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Tests for the services and what they share (docs/service-architecture.md). Plain
+       net10.0, so `dotnet test` runs them on Linux too. Tests that need the baked precata
+       navmesh skip themselves when the tiles are not downloaded (CI has none). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contracts\Contracts.csproj" />
+    <ProjectReference Include="..\PathingService\PathingService.csproj" />
+    <ProjectReference Include="..\PPather\PPather.csproj" />
+    <ProjectReference Include="..\ServiceClients\ServiceClients.csproj" />
+  </ItemGroup>
+
+</Project>

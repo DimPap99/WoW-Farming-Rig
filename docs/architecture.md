@@ -1,11 +1,12 @@
 # Architecture
 
 How the solution is put together: project layout, dependency direction, technology
-choices and the design decisions behind them.
+choices and the design decisions behind them. Where it is heading - separate services and
+one resident bot agent per game PC - is in [service architecture](service-architecture.md).
 
 Further detail about the early architecture can be found in [Blog post](http://www.codesin.net/post/wowbot/). The project has evolved significantly since then.
 
-## Solution Structure (13 projects)
+## Solution Structure (17 projects)
 
 ```
 WoWFarmingRig.sln
@@ -13,7 +14,13 @@ WoWFarmingRig.sln
 ├── Hosts ─────────────────────────────────────────────────────────
 │   ├── BlazorServer/       ASP.NET Core Blazor Server — primary web UI
 │   ├── HeadlessServer/     Console app — CLI automation, no UI
-│   └── PathingAPI/         ASP.NET Core Web API — standalone pathfinding microservice
+│   └── PathingAPI/         Legacy pathing server + Blazor route viewer (being replaced)
+│
+├── Services ──────────────────────────────────────────────────────
+│   ├── PathingService/     Minimal API — concurrent route planning, authoring API
+│   │                       for recorded paths and cost zones (net10.0, any OS)
+│   ├── Contracts/          Wire types and route constants for services and clients
+│   └── ServiceClients/     Typed HTTP clients for the services
 │
 ├── Libraries ─────────────────────────────────────────────────────
 │   ├── Core/               Business logic, bot control, addon readers, databases,
@@ -33,6 +40,7 @@ WoWFarmingRig.sln
 ├── Tools ─────────────────────────────────────────────────────────
 │   ├── Benchmarks/         BenchmarkDotNet performance suite
 │   ├── CoreTests/          Integration tests (NPC finder, cursor, minimap, input)
+│   ├── ServiceTests/       xUnit tests: services, route planner, stores (any OS)
 │   └── Utilities/          DBC extraction, navmesh baking, data processing helpers
 │
 └── Addons ────────────────────────────────────────────────────────
@@ -71,6 +79,10 @@ so a solution build does not build them.
 └────────┘  └──────────┘  └──────────┘
 ```
 
+The services sit beside this graph, not on top of it: `PathingService` references only
+`Contracts`, `PPather`, `DataConfig` and `SharedLib`, and no service may reference `Core`,
+`Game`, `WinAPI` or `Frontend`.
+
 `Game/` and `WinAPI/` are the only Windows-only projects. The pathing chain
 (`PPather` → `DataConfig` / `SharedLib`) targets plain `net10.0` rather than the
 solution-wide `net10.0-windows`, which is what allows navmesh tiles to be baked and
@@ -108,7 +120,7 @@ The host and pathfinder are independently composable — pick one from each colu
 | Host | Pathfinder | Notes |
 |------|-----------|-------|
 | **BlazorServer** | Navmesh (in-process) | **Recommended** - DotRecast navmesh, no external services, every client |
-| **BlazorServer** | PathingAPI (out-of-process) | Offloads pathfinding to a dedicated service |
+| **BlazorServer** | PathingAPI (out-of-process) | Offloads pathfinding to the legacy server (one caller at a time) |
 | **BlazorServer** | AmeisenNavigation (external) | Legacy; superseded by the in-process navmesh |
 | **HeadlessServer** | Navmesh (in-process) | **Recommended** - fully headless, single process |
 | **HeadlessServer** | PathingAPI (out-of-process) | Headless with remote pathfinding |
@@ -120,6 +132,7 @@ The host and pathfinder are independently composable — pick one from each colu
 
 | document | covers |
 |---|---|
+| [`service-architecture.md`](service-architecture.md) | the services split: Pathing Service, Bot Manager, Control Center, agents |
 | [`headless-pathing-server-design.md`](headless-pathing-server-design.md) | the OS-neutral pathing chain and headless bake host |
 | [`mpq-casc-storage-abstraction.md`](mpq-casc-storage-abstraction.md) | per-client game-file formats and the storage seam |
 | [`dotrecast-fork.md`](dotrecast-fork.md) | the DotRecast fork, bake performance measurements |
