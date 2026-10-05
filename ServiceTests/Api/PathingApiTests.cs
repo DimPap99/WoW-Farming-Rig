@@ -161,8 +161,7 @@ public sealed class PathingApiTests
     [Fact]
     public async Task An_unreachable_service_is_unavailable_not_an_exception()
     {
-        // Port 9 (discard) is closed on a normal machine: the connection is refused at once.
-        PathingClient client = new(new HttpClient { BaseAddress = new Uri("http://127.0.0.1:9/"), Timeout = TimeSpan.FromSeconds(5) });
+        PathingClient client = new(new HttpClient { BaseAddress = ClosedPort.NewUrl(), Timeout = TimeSpan.FromSeconds(5) });
 
         RouteResponse route = await client.FindRouteAsync(
             new RouteRequest(null, 1429, CoordinateSpace.World, ElwynnVendor, ElwynnPath), TestContext.Current.CancellationToken);
