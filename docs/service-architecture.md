@@ -116,8 +116,12 @@ the management side is down.
 - **Direction.** Agents dial out to the manager, so an agent needs no inbound port and a
   restarted manager simply sees agents register again. The Control Center calls the two
   services. Nothing calls the agents except over the connection they opened.
-- **Security.** Everything binds to localhost by default. Once agents connect from other PCs,
-  every manager and pathing endpoint takes an API-key header.
+- **Security.** Everything binds to localhost by default. A request from this machine is always
+  served; one from another machine needs the shared key (`ApiKey`) in the `X-Api-Key` header, on
+  every manager and pathing endpoint and hub, and without a configured key it is refused. A service
+  bound beyond localhost without a key stops right after it starts. The rules live once, in
+  `ServiceClients/Security/ServiceKeyPolicy`; clients send the key from `<Service>:ApiKey`, else
+  `ApiKey`, and the Control Center and BlazorServer add it when they forward the browser's calls.
 - **Versioning.** Routes carry `/api/v1`, and agents send a protocol version when they
   register.
 
@@ -165,6 +169,26 @@ bot uses, either on the same PC or with changes committed to the repository.
 | `/watchHub` (SignalR, MessagePack) | `Replay()`, `Terrain(continent, tiles)` | `drawPath`, `drawLine`, `drawSphere`, `removeMesh`, `clear`, `log`, `addNavmeshTile`, `addTerrainTile` |
 | `/tiles`, `/dbc`, `/area`, `/npcspawnlocations`, `/mailboxlocations`, `/path`, `/locations` | | the map's world data files (`WorldData`) |
 
+## Bot Manager contracts (v1)
+
+`Contracts/Bots`, served by `BotManager` on port 5030:
+
+| Endpoint | Body | Answer |
+|---|---|---|
+| `GET /api/v1/health` | | `ManagerHealth(ApiVersion, AgentProtocol, Bots, Online)` |
+| `GET /api/v1/bots` | | `BotInfo[]`: what each agent reported, its assignment, run and latest snapshot |
+| `GET/DELETE /api/v1/bots/{agentId}` | | `BotInfo` / 204, or 409 while online / 404 |
+| `PUT/DELETE /api/v1/bots/{agentId}/assignment` | `BotAssignment` on PUT | 204, or 400 with why / 404 |
+| `POST /api/v1/bots/{agentId}/start`, `/stop` | | the agent's `CommandAck`; 409 offline, no assignment or refused; 504 no answer |
+| `GET /api/v1/bots/{agentId}/log` | | the latest 500 `BotLogLine`s, oldest first |
+| `GET /api/v1/bots/{agentId}/runs` | | `RunRecord[]`, newest first (200 kept) |
+| `/agentHub` (SignalR, MessagePack) | from agents: `Register(AgentHello)` → `AgentWelcome`, `Snapshot`, `Log`, `RunEnded` | to agents: `Assign(BotAssignment?)`, `Command(BotCommand)` → `CommandAck` |
+| `/fleetHub` (SignalR, MessagePack) | | to listeners: `BotChanged`, `BotRemoved`, `Snapshot`, `Log`, `RunEnded` |
+
+An agent registers on every connection with `AgentProtocol` (1); the manager refuses another
+protocol with why. A bot is the PC's agent: its id is a GUID the agent creates on its first start and
+keeps on its PC, and the account, character and client are what it reports.
+
 Planning happens in **continent lanes**. Each lane is a disk-only `NavmeshPathfinder` with its
 cost zones and a lock. Lanes never evict each other, so mixed-continent callers no longer
 thrash. Every request gets fresh query memory (see "Findings"), a lane busy beyond its wait
@@ -181,7 +205,8 @@ budget answers `Unavailable` rather than 429, and an endpoint on an unbaked tile
 | `ControlCenter` | `net10.0`, web | Contracts, ServiceClients, MapAssets | the central UI (Phase 2) |
 | `MapAssets` | `net10.0`, Razor class library | nothing | the Leaflet map's scripts, libraries and styles, static files only |
 | `ServiceTests` | `net10.0` | the above | xUnit, runs on Linux |
-| `BotManager` | `net10.0`, web | Contracts, ServiceClients | Phase 3 |
+| `BotManager` | `net10.0`, web | Contracts, ServiceClients | the Bot Manager (Phase 3, port 5030) |
+| `AgentTests` | the Windows TFM | Core | xUnit for what needs Core; runs on Linux too |
 
 Dependency rules:
 - Services never reference `Core`, `Game`, `WinAPI` or `Frontend`.

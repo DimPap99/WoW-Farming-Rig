@@ -323,3 +323,6 @@ PPather/MPQ/libstorm.so
 
 # Rendered route pictures from `run.ps1 routegen --output`. Regenerated in seconds.
 CoreTests/routegen-out/
+
+# The Bot Manager's bots, assignments and run history (its Data setting)
+BotManager/data/

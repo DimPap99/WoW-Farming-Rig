@@ -1,3 +1,4 @@
+using Contracts;
 using Contracts.Pathing;
 
 using Core;
@@ -27,6 +28,8 @@ using SharedLib.Converters;
 using System;
 using System.IO;
 using System.Threading;
+
+using Yarp.ReverseProxy.Transforms;
 
 namespace BlazorServer;
 
@@ -199,9 +202,16 @@ public static class Program
 
         app.UseAntiforgery();
 
-        // No service running answers 502, which the map reports as "offline".
+        // No service running answers 502, which the map reports as "offline". The service's key,
+        // when it has one, goes on every forwarded request, so the browser never holds it.
         PathingServiceOptions pathing = app.Services.GetRequiredService<PathingServiceOptions>();
-        app.MapForwarder($"{PathingApi.Root}/{{**catch-all}}", pathing.Url.GetLeftPart(UriPartial.Authority));
+        app.MapForwarder($"{PathingApi.Root}/{{**catch-all}}", pathing.Url.GetLeftPart(UriPartial.Authority), transforms =>
+        {
+            if (!string.IsNullOrEmpty(pathing.ApiKey))
+            {
+                transforms.AddRequestHeader(ServiceKey.Header, pathing.ApiKey, append: false);
+            }
+        });
 
         return app;
     }

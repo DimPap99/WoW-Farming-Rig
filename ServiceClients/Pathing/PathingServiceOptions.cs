@@ -2,15 +2,19 @@ using Contracts.Pathing;
 
 using Microsoft.Extensions.Configuration;
 
+using ServiceClients.Security;
+
 using System;
 
 namespace ServiceClients.Pathing;
 
 /// <summary>
 /// Where a host finds the Pathing Service: <c>PathingService:Url</c> in its configuration,
-/// <see cref="PathingApi.DefaultUrl"/> when that is not set.
+/// <see cref="PathingApi.DefaultUrl"/> when that is not set; and the key it sends
+/// (<c>PathingService:ApiKey</c>, else the shared <c>ApiKey</c>), which a service on another
+/// machine needs.
 /// </summary>
-public sealed record PathingServiceOptions(Uri Url)
+public sealed record PathingServiceOptions(Uri Url, string? ApiKey = null)
 {
     public const string Position = "PathingService";
 
@@ -26,6 +30,12 @@ public sealed record PathingServiceOptions(Uri Url)
             throw new InvalidOperationException($"{UrlKey} must be an http or https URL, not '{url}'.");
         }
 
-        return new PathingServiceOptions(uri);
+        return new PathingServiceOptions(uri, ServiceKeyConfig.For(configuration, Position));
+    }
+
+    /// <summary>The address only: the key never reaches a log.</summary>
+    public override string ToString()
+    {
+        return Url.ToString();
     }
 }

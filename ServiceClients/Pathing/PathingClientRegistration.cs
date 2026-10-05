@@ -2,6 +2,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
+using ServiceClients.Security;
+
 using System;
 
 namespace ServiceClients.Pathing;
@@ -34,18 +36,23 @@ public static class PathingClientRegistration
     public static IHttpClientBuilder AddPathingClient(this IServiceCollection services)
     {
         services.AddPathingServiceOptions();
-        return services.AddPathingClient((sp, client) => client.BaseAddress = sp.GetRequiredService<PathingServiceOptions>().Url);
+        return services.AddPathingClient((sp, client) => client.BaseAddress = sp.GetRequiredService<PathingServiceOptions>().Url,
+            sp => sp.GetRequiredService<PathingServiceOptions>().ApiKey);
     }
 
-    /// <summary>Registers <see cref="IPathingClient"/> for the service at <paramref name="baseAddress"/>.</summary>
-    public static IHttpClientBuilder AddPathingClient(this IServiceCollection services, Uri baseAddress)
+    /// <summary>Registers <see cref="IPathingClient"/> for the service at <paramref name="baseAddress"/>, sending <paramref name="apiKey"/>.</summary>
+    public static IHttpClientBuilder AddPathingClient(this IServiceCollection services, Uri baseAddress, string? apiKey = null)
     {
-        return services.AddPathingClient((_, client) => client.BaseAddress = baseAddress);
+        return services.AddPathingClient((_, client) => client.BaseAddress = baseAddress, _ => apiKey);
     }
 
-    private static IHttpClientBuilder AddPathingClient(this IServiceCollection services, Action<IServiceProvider, System.Net.Http.HttpClient> configure)
+    private static IHttpClientBuilder AddPathingClient(this IServiceCollection services, Action<IServiceProvider, System.Net.Http.HttpClient> configure,
+        Func<IServiceProvider, string?> apiKey)
     {
         IHttpClientBuilder builder = services.AddHttpClient<IPathingClient, PathingClient>(configure);
+
+        // Set on the request itself, so a retry carries it too.
+        builder.AddHttpMessageHandler(sp => new ApiKeyHandler(apiKey(sp)));
 
         builder.AddStandardResilienceHandler(options =>
         {
