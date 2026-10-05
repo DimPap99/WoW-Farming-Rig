@@ -426,7 +426,20 @@ public static class DependencyInjection
 
         var sp = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true });
+        try
+        {
+            return ProbeWoWProcess(services, log, sp, out isForever);
+        }
+        finally
+        {
+            // This probe's WowProcess polls on its own foreground thread until its token is
+            // cancelled; left running it kept the process alive after the bot stopped.
+            sp.GetRequiredService<CancellationTokenSource>().Cancel();
+        }
+    }
 
+    private static bool ProbeWoWProcess(IServiceCollection services, ILogger log, ServiceProvider sp, out bool isForever)
+    {
         WowProcess process = sp.GetRequiredService<WowProcess>();
         isForever = process.FileVersion is { Major: 1, Minor: >= 60 };
         if (log.IsEnabled(LogLevel.Information))

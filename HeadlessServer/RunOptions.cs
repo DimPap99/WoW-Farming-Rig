@@ -8,9 +8,26 @@ public sealed class RunOptions
 {
     [Value(0,
         MetaName = "ClassConfig file",
-        Required = true,
-        HelpText = "ClassConfiguration file found in 'Json\\class\\'\nexample: Warrior_1.json")]
+        Required = false,
+        HelpText = "ClassConfiguration file found in 'Json\\class\\', started at once; required unless --agent\nexample: Warrior_1.json")]
     public string? ClassConfig { get; set; }
+
+    [Option("agent",
+        Required = false,
+        Default = false,
+        HelpText = "Stay resident as this PC's bot agent: dial out to the Bot Manager (--manager, or BotManager:Url) " +
+        "and run what it assigns. A class profile given too starts at once.")]
+    public bool Agent { get; set; }
+
+    [Option("manager",
+        Required = false,
+        HelpText = "The Bot Manager to dial out to (BotManager:Url), for example http://botbox:5030")]
+    public string? Manager { get; set; }
+
+    [Option("name",
+        Required = false,
+        HelpText = "What the Bot Manager calls this agent (Agent:Name); the machine's name unless given")]
+    public string? Name { get; set; }
 
     [Option('m',
         "mode",
@@ -107,4 +124,23 @@ public sealed class RunOptions
         Default = false,
         HelpText = $"Loads the class profile then exists")]
     public bool LoadOnly { get; set; }
+
+    /// <summary>Why these options cannot run, or null: a class profile, or --agent, is needed.</summary>
+    public string? Problem => ClassConfig is null && !Agent
+        ? "Give a class profile (Warrior_1.json), or --agent to stay resident and run what the Bot Manager assigns."
+        : LoadOnly && ClassConfig is null ? "--loadonly needs a class profile." : null;
+
+    /// <summary>What the options set in the configuration: the manager and the agent's name.</summary>
+    public IEnumerable<KeyValuePair<string, string?>> ConfigurationValues()
+    {
+        if (!string.IsNullOrWhiteSpace(Manager))
+        {
+            yield return new(ServiceClients.Bots.BotManagerOptions.UrlKey, Manager);
+        }
+
+        if (!string.IsNullOrWhiteSpace(Name))
+        {
+            yield return new(BotAgent.AgentOptions.NameKey, Name);
+        }
+    }
 }

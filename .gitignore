@@ -304,6 +304,8 @@ BlazorServer/data_config.json
 HeadlessServer/frame_config.json
 HeadlessServer/addon_config.json
 HeadlessServer/data_config.json
+# The resident agent's id (BotAgent): one per PC, never shared
+**/agent_identity.json
 
 # BenchmarkDotNet artifacts
 **/BenchmarkDotNet.Artifacts/

@@ -206,7 +206,9 @@ budget answers `Unavailable` rather than 429, and an endpoint on an unbaked tile
 | `MapAssets` | `net10.0`, Razor class library | nothing | the Leaflet map's scripts, libraries and styles, static files only |
 | `ServiceTests` | `net10.0` | the above | xUnit, runs on Linux |
 | `BotManager` | `net10.0`, web | Contracts, ServiceClients | the Bot Manager (Phase 3, port 5030) |
-| `AgentTests` | the Windows TFM | Core | xUnit for what needs Core; runs on Linux too |
+| `BotAgent` | `net10.0` | Contracts, ServiceClients | the agent's link, run host, telemetry and log stream, without Core |
+| `HeadlessServer` | the Windows TFM | Core, BotAgent | the bot, and with `--agent` the resident agent (Classic and Forever runtimes) |
+| `AgentTests` | the Windows TFM | Core, HeadlessServer | xUnit for what needs Core; runs on Linux too |
 
 Dependency rules:
 - Services never reference `Core`, `Game`, `WinAPI` or `Frontend`.

@@ -116,7 +116,13 @@ public sealed class WowProcess
         return null;
     }
 
-    private (string path, Version version) GetProcessInfo()
+    private (string path, Version version) GetProcessInfo() => ReadInfo(process);
+
+    /// <summary>
+    /// Where <paramref name="process"/>'s executable is and its file version, corrected where
+    /// Blizzard shipped a broken one; an empty version when the file has none.
+    /// </summary>
+    public static (string Path, Version Version) ReadInfo(Process process)
     {
         string path = WinAPI.ExecutablePath.Get(process)
             ?? throw new NullReferenceException("Unable to identify World of Warcraft process path!");

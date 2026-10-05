@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The resident bot agent's machinery, without the bot (docs/service-architecture.md): its
+       identity, the link it dials out to the Bot Manager over, the run host (one run at a time,
+       stop releases input first), telemetry and its log stream. Plain net10.0 and no Core, so
+       ServiceTests runs it on Linux against fake runtimes; HeadlessServer gives it Core's. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Protocols.MessagePack" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Serilog" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contracts\Contracts.csproj" />
+    <ProjectReference Include="..\ServiceClients\ServiceClients.csproj" />
+  </ItemGroup>
+
+</Project>

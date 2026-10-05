@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Serilog" />
     <PackageReference Include="SixLabors.ImageSharp" />
     <PackageReference Include="System.Drawing.Common" />
   </ItemGroup>
