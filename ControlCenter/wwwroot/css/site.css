@@ -1091,6 +1091,185 @@ kbd {
     }
 }
 
+/* --- workspaces: a header over a list and its detail (Forever routes, fleet, bot console) --- */
+
+.pa-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    height: 100%;
+    padding: var(--pa-gap);
+    overflow: hidden;
+}
+
+.pa-workspace-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.pa-workspace-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.pa-workspace-body {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: var(--pa-gap);
+    flex: 1;
+    min-height: 0;
+}
+
+.pa-card {
+    min-height: 0;
+    padding: 12px 14px;
+    overflow-y: auto;
+    background: var(--pa-surface);
+    border: 1px solid var(--pa-border);
+    border-radius: var(--pa-radius);
+}
+
+.pa-dot--ok {
+    background: var(--pa-ok);
+}
+
+.pa-dot--warn {
+    background: var(--pa-warn);
+}
+
+.pa-dot--error {
+    background: var(--pa-error);
+}
+
+.pa-dot--busy {
+    background: var(--pa-accent);
+    animation: pa-pulse 0.9s ease-in-out infinite;
+}
+
+.pa-code {
+    width: 100%;
+    min-height: 240px;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    resize: none;
+    background: var(--pa-bg);
+    border: 1px solid var(--pa-border);
+    border-radius: var(--pa-radius-sm);
+    color: var(--pa-text);
+    font: 12.5px/1.55 var(--pa-mono);
+    tab-size: 2;
+    white-space: pre;
+}
+
+.pa-code:focus {
+    border-color: var(--pa-accent);
+    outline: none;
+}
+
+/* --- Forever routes -------------------------------------------------------------- */
+
+.pa-routes {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+}
+
+.pa-route {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 7px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--pa-radius-sm);
+    background: none;
+    color: var(--pa-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.pa-route:hover {
+    background: var(--pa-surface-3);
+}
+
+.pa-route.is-selected {
+    border-color: var(--pa-border-strong);
+    background: var(--pa-accent-soft);
+}
+
+.pa-route-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.pa-route-title,
+.pa-route-file {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pa-route-file {
+    color: var(--pa-text-faint);
+    font-size: 12px;
+}
+
+.pa-route-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.pa-route-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.pa-route-name {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.pa-route-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: var(--pa-gap);
+    flex: 1;
+    min-height: 0;
+}
+
+.pa-route-check {
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.pa-steps {
+    margin: 4px 0 10px;
+    padding-left: 22px;
+}
+
+.pa-steps li {
+    margin: 0 0 4px;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 1000px) {
+    .pa-workspace-body,
+    .pa-route-columns {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 /* --- toast and errors ------------------------------------------------------------ */
 
 #pa-toast {

@@ -1,0 +1,370 @@
+@page "/forever-routes"
+@page "/forever-routes/{Route}"
+
+@inherits ControlCenterComponent
+
+@inject IPathingClient pathing
+@inject PathingStatus status
+@inject IJSRuntime js
+
+<PageTitle>Forever routes · Control Center</PageTitle>
+
+@* WoW: Forever's route files, the agenda a run is assigned. Each is checked as a run loads it, and
+   saved as text, so the comments that document a route survive; a route a run would refuse is
+   never saved. *@
+
+@if (!status.Online)
+{
+    <OfflineNotice Reason="@status.Error" />
+}
+else
+{
+    <div class="pa-workspace">
+        <header class="pa-workspace-header">
+            <h1 class="pa-workspace-title">Forever routes</h1>
+            <span class="pa-faint">@routes.Length route files, each checked as a run loads it</span>
+            <span class="pa-spacer"></span>
+            <div class="pa-input-group">
+                <input class="pa-input" placeholder="new_route.json" aria-label="New route file name" @bind="newName" @bind:event="oninput" />
+                <button class="pa-btn" type="button" disabled="@(string.IsNullOrWhiteSpace(newName) || busy)" @onclick="NewAsync">
+                    <span class="oi oi-plus" aria-hidden="true"></span> New
+                </button>
+            </div>
+        </header>
+
+        <div class="pa-workspace-body">
+            <nav class="pa-card pa-routes" aria-label="Route files">
+                @if (routes.Length == 0)
+                {
+                    <p class="pa-faint">No route files yet: start one with a name above.</p>
+                }
+                @foreach (ForeverRouteInfo route in routes)
+                {
+                    <button type="button" class="pa-route @(route.Name == selected ? "is-selected" : null)"
+                            title="@(route.Problem ?? string.Join("\n", route.Steps))" @onclick="() => OpenAsync(route.Name)">
+                        <span class="pa-dot @(route.Problem is null ? "pa-dot--ok" : "pa-dot--error")" aria-hidden="true"></span>
+                        <span class="pa-route-text">
+                            <span class="pa-route-title">@route.Title</span>
+                            <span class="pa-route-file">
+                                @route.Name ·
+                                @(route.Problem is null ? $"{route.Steps.Length} {(route.Steps.Length == 1 ? "step" : "steps")}{(route.Repeat ? ", repeats" : string.Empty)}" : "refused")
+                            </span>
+                        </span>
+                    </button>
+                }
+            </nav>
+
+            <section class="pa-card pa-route-editor" aria-label="Route file">
+                @if (selected is null)
+                {
+                    <ResultLine Text="@result" Kind="@resultKind" />
+                    <p class="pa-faint">Choose a route, or start a new one with a file name above.</p>
+                }
+                else
+                {
+                    <div class="pa-route-head">
+                        <h2 class="pa-route-name">@(check?.Title ?? selected)</h2>
+                        <span class="pa-faint">@selected@(isNew ? " (new)" : string.Empty)</span>
+                        @if (Dirty)
+                        {
+                            <span class="pa-chip pa-chip--warn" title="The text differs from the saved file">unsaved</span>
+                        }
+                        <span class="pa-spacer"></span>
+                        <BusyButton Icon="check" Busy="@busy" OnClick="CheckAsync" Title="What a run would make of this text, without saving it">
+                            Check
+                        </BusyButton>
+                        <button class="pa-btn" type="button" disabled="@(busy || !Dirty || isNew)" @onclick="RevertAsync" title="Throw the edits away and read the file again">
+                            Revert
+                        </button>
+                        <BusyButton Class="pa-btn--primary" Icon="data-transfer-upload" Busy="@busy" Disabled="@(!Dirty && !isNew)" OnClick="SaveAsync"
+                                    Title="Save the text as it is, once a run would load it">
+                            Save
+                        </BusyButton>
+                        <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" disabled="@(busy || isNew)" title="Delete this route file" @onclick="DeleteAsync">
+                            <span class="oi oi-trash" aria-hidden="true"></span>
+                        </button>
+                    </div>
+
+                    <ResultLine Text="@result" Kind="@resultKind" />
+
+                    <div class="pa-route-columns">
+                        @* Bound as you type, so Save knows of an edit before the text box loses focus. *@
+                        <textarea class="pa-code" spellcheck="false" aria-label="The route file's text" @bind="text" @bind:event="oninput"></textarea>
+                        <aside class="pa-route-check" aria-label="What a run does">
+                            <h3 class="pa-list-heading">What a run does</h3>
+                            @if (check is null)
+                            {
+                                <p class="pa-faint">Check the text to see its steps.</p>
+                            }
+                            else if (check.Problem is string problem)
+                            {
+                                <p class="pa-result pa-result--error">A run would refuse it: @problem</p>
+                            }
+                            else
+                            {
+                                <ol class="pa-steps">
+                                    @foreach (string step in check.Steps)
+                                    {
+                                        <li>@step</li>
+                                    }
+                                </ol>
+                                <p class="pa-faint">
+                                    @(check.Repeat ? "Then it starts over, until the run's time bound." : "Then the run is complete.")
+                                </p>
+                            }
+                            <div class="pa-divider"></div>
+                            <p class="pa-faint">
+                                Coordinates are the zone map's, 0 to 100. A step is a <code>Travel</code> (to <code>To</code>, through
+                                <code>Via</code>) or a <code>Roam</code> (inside <code>Area</code> until <code>Until</code> holds:
+                                <code>Kills</code>, <code>Minutes</code> or <code>Level</code>). See <code>docs/forever-routes.md</code>.
+                            </p>
+                        </aside>
+                    </div>
+                }
+            </section>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>The route to open, by file name.</summary>
+    [Parameter] public string? Route { get; set; }
+
+    private const string Template = """
+        {
+          // What this route does, for whoever runs it next. Coordinates are the zone
+          // map's, 0 to 100, as the game shows them; "UIMapId" names the map (1411 is
+          // Durotar), and a step may name another with its own "UIMapId". A step is a
+          // Travel (walk to "To", through the "Via" points) or a Roam (hunt inside
+          // "Area" until "Until" holds: "Kills", "Minutes" or "Level").
+          "Name": "New route",
+          "UIMapId": 1411,
+          "Steps": [
+            { "Travel": { "To": [52.5, 44.5] } }
+          ],
+          "Repeat": false
+        }
+        """;
+
+    private ForeverRouteInfo[] routes = [];
+    private string? selected;
+    private string text = string.Empty;
+    private string saved = string.Empty;
+    private ForeverRouteInfo? check;
+    private bool isNew;
+    private string newName = string.Empty;
+    private bool busy;
+    private string? result;
+    private ResultKind resultKind;
+
+    private bool Dirty => text != saved;
+
+    protected override void OnInitialized()
+    {
+        Subscribe(() => status.Changed += Redraw, () => status.Changed -= Redraw);
+        Subscribe(() => status.Reconnected += Reload, () => status.Reconnected -= Reload);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await ListAsync();
+        if (!string.IsNullOrEmpty(Route) && Route != selected)
+        {
+            await OpenAsync(Uri.UnescapeDataString(Route));
+        }
+    }
+
+    private async Task ListAsync()
+    {
+        try
+        {
+            ServiceResult<ForeverRouteInfo[]> listed = await pathing.ListForeverRoutesAsync(Token);
+            routes = listed.Value ?? [];
+            if (!listed.Ok)
+            {
+                Show($"The route library is not available: {listed.Error}", ResultKind.Error);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void Reload()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await ListAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task OpenAsync(string name)
+    {
+        if (name != selected && !await MayLeaveAsync())
+        {
+            return;
+        }
+
+        await ReadAsync(name);
+    }
+
+    // Edits are not thrown away without asking.
+    private async Task<bool> MayLeaveAsync()
+    {
+        return !Dirty || selected is null ||
+               await js.InvokeAsync<bool>("confirm", Token, $"Leave {selected} without saving your edits?");
+    }
+
+    private async Task ReadAsync(string name)
+    {
+        try
+        {
+            ServiceResult<ForeverRouteDocument> read = await pathing.GetForeverRouteAsync(name, Token);
+            if (!read.Ok)
+            {
+                Show(read.Status == 404 ? $"{name} is not in the library" : read.Error, ResultKind.Error);
+                return;
+            }
+
+            selected = name;
+            isNew = false;
+            text = saved = read.Value.Text;
+            check = read.Value.Info;
+            Show(null, ResultKind.Info);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task NewAsync()
+    {
+        string name = newName.Trim();
+        if (!name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            name += ".json";
+        }
+
+        if (routes.Any(route => route.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+        {
+            await OpenAsync(routes.First(route => route.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).Name);
+            return;
+        }
+
+        if (!await MayLeaveAsync())
+        {
+            return;
+        }
+
+        selected = name;
+        isNew = true;
+        text = Template;
+        saved = string.Empty;
+        check = null;
+        newName = string.Empty;
+        Show("A new route: edit it, then Save.", ResultKind.Info);
+    }
+
+    private async Task CheckAsync()
+    {
+        if (selected is null)
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            ServiceResult<ForeverRouteInfo> checkedText = await pathing.CheckForeverRouteAsync(new ForeverRouteDraft(selected, text), Token);
+            if (!checkedText.Ok)
+            {
+                Show(checkedText.Error, ResultKind.Error);
+                return;
+            }
+
+            check = checkedText.Value;
+            Show(check.Problem is null ? $"A run would load it: {check.Steps.Length} steps" : "A run would refuse it", check.Problem is null ? ResultKind.Ok : ResultKind.Error);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (selected is null)
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            ServiceResult stored = await pathing.SaveForeverRouteAsync(selected, text, Token);
+            if (!stored.Ok)
+            {
+                Show(stored.Status == 400 ? $"Not saved: {stored.Error}" : stored.Error, ResultKind.Error);
+                return;
+            }
+
+            saved = text;
+            isNew = false;
+            await ListAsync();
+            check = routes.FirstOrDefault(route => route.Name == selected) ?? check;
+            Show($"{selected} saved", ResultKind.Ok);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task RevertAsync()
+    {
+        if (selected is not null)
+        {
+            await ReadAsync(selected);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (selected is null || !await js.InvokeAsync<bool>("confirm", Token, $"Delete {selected}?"))
+        {
+            return;
+        }
+
+        try
+        {
+            ServiceResult deleted = await pathing.DeleteForeverRouteAsync(selected, Token);
+            if (!deleted.Ok)
+            {
+                Show(deleted.Error, ResultKind.Error);
+                return;
+            }
+
+            Show($"{selected} deleted", ResultKind.Ok);
+            selected = null;
+            text = saved = string.Empty;
+            check = null;
+            await ListAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void Show(string? message, ResultKind kind)
+    {
+        result = message;
+        resultKind = kind;
+    }
+}

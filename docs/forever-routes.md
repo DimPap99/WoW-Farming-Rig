@@ -4,7 +4,8 @@ A route file is the WoW: Forever bot's agenda written as data: steps in
 order, each a `Travel` or a `Roam`, on a zone map in the coordinates a player
 reads. It loads into the same tasks the [`ForeverTasks` API](forever-tasks.md)
 builds, so a route written by hand and one built in code run the same way.
-Code: `Core/Forever/Tasks/ForeverRouteFile.cs`.
+Code: `SharedLib/Forever/ForeverRouteFile.cs`, beside the task records it loads
+into, so the bot and the Pathing Service read routes with the same rules.
 
 ## Where they live
 
@@ -12,6 +13,11 @@ Code: `Core/Forever/Tasks/ForeverRouteFile.cs`.
 takes a path as given when it exists, else a file of that name in that
 folder. Comments (`//`) are allowed. `durotar_example.json` ships as a
 commented example.
+
+The Pathing Service lists, checks and serves them (`/api/v1/forever/routes`),
+whatever client it serves, and the Control Center's **Forever routes** page
+edits them as text: a save keeps the comments, and a route a run would refuse
+is not saved, with the step that is wrong.
 
 ## Format
 

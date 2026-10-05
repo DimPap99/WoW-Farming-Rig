@@ -31,6 +31,20 @@ public interface IPathingClient
 
     Task<ServiceResult<AreaAtPoint>> GetAreaAsync(int mapId, float worldX, float worldY, CancellationToken token = default);
 
+    /// <summary>Every WoW: Forever route file, each checked as a run would load it.</summary>
+    Task<ServiceResult<ForeverRouteInfo[]>> ListForeverRoutesAsync(CancellationToken token = default);
+
+    /// <param name="name">A file name in the route folder, ending in <c>.json</c>.</param>
+    Task<ServiceResult<ForeverRouteDocument>> GetForeverRouteAsync(string name, CancellationToken token = default);
+
+    /// <summary>Creates or replaces a route file with <paramref name="text"/>; refused (400, with the step) when a run would refuse it.</summary>
+    Task<ServiceResult> SaveForeverRouteAsync(string name, string text, CancellationToken token = default);
+
+    Task<ServiceResult> DeleteForeverRouteAsync(string name, CancellationToken token = default);
+
+    /// <summary>What a run would make of <paramref name="draft"/>, without saving it.</summary>
+    Task<ServiceResult<ForeverRouteInfo>> CheckForeverRouteAsync(ForeverRouteDraft draft, CancellationToken token = default);
+
     Task<ServiceResult<CostZoneSet>> GetCostZonesAsync(string continent, CancellationToken token = default);
 
     Task<ServiceResult> SaveRoadsAsync(string continent, int uiMapId, RoadZones roads, CancellationToken token = default);

@@ -4,7 +4,8 @@ How the WoW: Forever bot gets from one place to another and hunts an area,
 the way a person at the keyboard would: forward held, steered with the mouse,
 a camera that turns at a steady speed, and no tapping. Code lives in
 `Core/Forever/ForeverNavigator.cs` and `Core/Forever/Tasks/` (`ForeverWalker`,
-`ForeverTravel`, `ForeverRoamArea`, `ForeverSpotPicker`, `ForeverArea`). The
+`ForeverTravel`, `ForeverRoamArea`, `ForeverSpotPicker`), with `ForeverArea` in
+`SharedLib/Forever/`. The
 task API that uses it is in [forever-tasks.md](forever-tasks.md).
 
 ## The navigator's primitives

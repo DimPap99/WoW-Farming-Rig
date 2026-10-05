@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging;
 
+using SharedLib.Forever;
+
 using static System.Diagnostics.Stopwatch;
 
 namespace Core.Forever;

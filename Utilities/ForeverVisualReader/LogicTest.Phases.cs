@@ -8,6 +8,7 @@ using Game;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using SharedLib;
+using SharedLib.Forever;
 
 using System;
 using System.Diagnostics;

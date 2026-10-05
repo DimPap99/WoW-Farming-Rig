@@ -36,6 +36,18 @@ public static class PathingApi
     public const string Area = Root + "/area";
 
     /// <summary>
+    /// The WoW: Forever route library: <c>GET</c> lists <see cref="ForeverRouteInfo"/>; <c>GET</c>
+    /// (a <see cref="ForeverRouteDocument"/>), <c>PUT</c> (a <see cref="ForeverRouteText"/>) and
+    /// <c>DELETE</c> under <c>{ForeverRoutes}/{name}</c> work on one route file, where <c>name</c> is
+    /// a file name in the route folder. Routes are checked against Forever's map data whatever
+    /// client the service serves.
+    /// </summary>
+    public const string ForeverRoutes = Root + "/forever/routes";
+
+    /// <summary><c>POST</c> a <see cref="ForeverRouteDraft"/>: what a run makes of the text, without saving it.</summary>
+    public const string ForeverRouteCheck = ForeverRoutes + "/check";
+
+    /// <summary>
     /// <c>GET {CostZones}/{continent}</c> answers a <see cref="CostZoneSet"/>;
     /// <c>PUT {CostZones}/{continent}/{Roads|Danger}/{uiMapId}</c> saves one map's zones.
     /// </summary>

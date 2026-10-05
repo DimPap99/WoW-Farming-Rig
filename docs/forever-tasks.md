@@ -2,8 +2,11 @@
 
 The API for telling the WoW: Forever bot what to do: travel somewhere, roam
 an area until enough is killed, hunt where it stands. Tasks are data; code
-and [route files](forever-routes.md) build the same tasks. Code lives in
-`Core/Forever/Tasks/` and `Core/Forever/Activities/ForeverTaskActivity.cs`;
+and [route files](forever-routes.md) build the same tasks. The task records,
+`ForeverUntil` and the map points and areas are data in `SharedLib/Forever/`,
+which the services read too; the runners, the agenda and whether an `Until`
+holds (`ForeverUntilChecks`) live in `Core/Forever/Tasks/` and
+`Core/Forever/Activities/ForeverTaskActivity.cs`;
 how the run interleaves tasks with fighting, looting and resting is in
 [forever-activities.md](forever-activities.md), and how it walks in
 [forever-movement.md](forever-movement.md).
@@ -226,7 +229,7 @@ walkable ground inside. It is asked until it passes once.
 ## Writing a new kind of task
 
 1. A record deriving from `ForeverTask`, with a factory method in
-   `ForeverTasks`.
+   `ForeverTasks` (both in `SharedLib/Forever/ForeverTask.cs`).
 2. A runner implementing `IForeverTaskRunner`:
    - `Enter(bars, facts)`: first start, and every resume after a fight or a
      rest; resume from where the character is.
@@ -239,7 +242,7 @@ walkable ground inside. It is asked until it passes once.
    - `Allowed` and `Status`: from the runner's own state machine.
 3. A case in `ForeverTaskActivity.StartCurrent` that builds the runner, and
    one in `TryPreflight` if the task can be checked before the run moves.
-4. For route files, a step kind in `ForeverRouteFile` (see
+4. For route files, a step kind in `ForeverRouteFile` (`SharedLib/Forever`; see
    [forever-routes.md](forever-routes.md)).
 5. Logic checks beside `LogicTest.Travel.cs` and `LogicTest.Roam.cs`.
 

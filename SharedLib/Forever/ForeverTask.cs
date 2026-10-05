@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Core.Forever;
+namespace SharedLib.Forever;
 
 /// <summary>
 /// Something the agenda has the run do. A task is data only, so code and

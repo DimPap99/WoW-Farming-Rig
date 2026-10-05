@@ -1,12 +1,10 @@
 using Newtonsoft.Json;
 
-using SharedLib;
-
 using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace Core.Forever;
+namespace SharedLib.Forever;
 
 /// <summary>A route loaded from a file: its tasks in order, and whether it starts over after the last.</summary>
 public sealed record ForeverRoute(string Name, IReadOnlyList<ForeverTask> Tasks, bool Repeat);
@@ -35,14 +33,35 @@ public static class ForeverRouteFile
 
     public static bool TryLoad(string path, WorldMapAreaDB maps, out ForeverRoute route, out string error)
     {
+        string text;
+        try
+        {
+            text = File.ReadAllText(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            route = null!;
+            error = $"{Path.GetFileName(path)}: {ex.Message}";
+            return false;
+        }
+        return TryParse(text, Path.GetFileName(path), maps, out route, out error);
+    }
+
+    /// <summary>
+    /// Reads a route from <paramref name="text"/>, the contents of the file
+    /// <paramref name="fileName"/>, exactly as <see cref="TryLoad"/> reads the file: a
+    /// route the Control Center is about to save is checked by the same rules a run applies.
+    /// </summary>
+    public static bool TryParse(string text, string fileName, WorldMapAreaDB maps, out ForeverRoute route, out string error)
+    {
         route = null!;
-        string file = Path.GetFileName(path);
+        string file = Path.GetFileName(fileName);
         RouteFile? parsed;
         try
         {
-            parsed = JsonConvert.DeserializeObject<RouteFile>(File.ReadAllText(path), Settings);
+            parsed = JsonConvert.DeserializeObject<RouteFile>(text, Settings);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        catch (JsonException ex)
         {
             error = $"{file}: {ex.Message}";
             return false;
@@ -52,7 +71,7 @@ public static class ForeverRouteFile
             error = $"{file} has no steps";
             return false;
         }
-        string name = string.IsNullOrWhiteSpace(parsed.Name) ? Path.GetFileNameWithoutExtension(path) : parsed.Name;
+        string name = string.IsNullOrWhiteSpace(parsed.Name) ? Path.GetFileNameWithoutExtension(file) : parsed.Name;
         List<ForeverTask> tasks = new(steps.Count);
         for (int i = 0; i < steps.Count; i++)
         {

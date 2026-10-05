@@ -1,9 +1,7 @@
-using SharedLib;
-
 using System.Globalization;
 using System.Numerics;
 
-namespace Core.Forever;
+namespace SharedLib.Forever;
 
 /// <summary>
 /// A point on a zone map in the coordinates a player reads, 0 to 100 across

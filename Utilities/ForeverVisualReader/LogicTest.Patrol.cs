@@ -1,6 +1,8 @@
 using Core;
 using Core.Forever;
 
+using SharedLib.Forever;
+
 using System;
 using System.Diagnostics;
 using System.Numerics;

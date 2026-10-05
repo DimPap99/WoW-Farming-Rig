@@ -36,6 +36,8 @@ Routes/RouteEndpoints.cs           POST /api/v1/routes/find
 Paths/PathName.cs                  the one check every path name passes
 Paths/RecordedPathStore.cs         Json/path library, formats exactly as before
 Paths/PathEndpoints.cs             /api/v1/paths, /api/v1/area
+Forever/ForeverRouteLibrary.cs     Json/path/_forever: Forever route files, checked as a run loads them
+Forever/ForeverRouteEndpoints.cs   /api/v1/forever/routes
 CostZones/CostZoneStore.cs         Json/road/<era>: roads and dangerzone/ per uiMap
 CostZones/CostZoneMapping.cs       wire shapes <-> PPather's RoadData / DangerZoneData
 CostZones/CostZoneEndpoints.cs     /api/v1/costzones
@@ -119,6 +121,12 @@ resets the engine, so a continent's triangle cache (gigabytes) never stays resid
 in `.json`, and never under `_forever/` (Forever route files, a different format). The old
 controller joined any name onto the folder. Continent names in the cost-zone and navmesh routes
 are the client's own continents only, for the same reason.
+
+**Forever route files are text, checked against Forever's map data.** The library reads and writes
+them as text, so the `//` comments that document a route survive a save, and it checks each with
+`ForeverRouteFile.TryParse` (SharedLib), the loader a run uses, against `dbc/forever` whatever
+`--exp` the instance serves (`WorldMapAreaDB` is per instance; `ContinentDB` is not involved). A
+route a run would refuse is never written. Names are one plain file name: no subfolders.
 
 **A cost-zone save reloads the planner's zones at once.** The `CostZoneWatcher` would reload
 too, half a second later; the second reload is harmless. A save is validated with
