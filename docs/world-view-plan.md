@@ -1,6 +1,6 @@
 # World view - moving the Control Center off Leaflet and Babylon
 
-**Status (2026-10-05):** agreed with the user and under way; steps 1 to 6 are done, the look (step 7) is next. The user found the Leaflet map and the
+**Status (2026-10-06):** done: steps 1 to 7, the look included (see the last section). The user found the Leaflet map and the
 Babylon 3D view buggy and hard to use, and asked to move everything to the new map, keep the
 drawing tools (polygons and the rest), then improve the look. Phase 3 step 6 and the Windows
 checklist are parked for another session ([phase3-plan.md](phase3-plan.md)).
@@ -93,64 +93,85 @@ which it always is.
 6. **Done.** Babylon (`pathing-scene.js`, `Viewport3D`) and Leaflet are out of the Control Center:
    the Map page, the MapAssets scripts and its project reference, `SearchPanel`, and the browser's
    SignalR client (hubs are followed from the server). MapAssets stays, BlazorServer's own map.
-   Bootstrap's reset stays under the theme for now.
-7. The look: an aesthetics pass over the world view and the pages on it. Not started; see the
-   handoff below.
+   Bootstrap's reset stayed under the theme until step 7.
+7. **Done.** The look: a shaded relief, routes and roads over a casing, outlined zone names thinned
+   where they would collide, lists that use a tall panel's height, the pointer's zone and map
+   coordinates, and Bootstrap gone. What and why below.
 
 Each step is checked in Chrome with Playwright (screenshots, interactions) before the next.
 
-## Handoff: step 7, the look (2026-10-06)
+## Step 7: the look (2026-10-06)
 
-Steps 1 to 6 are on `origin/main` (4e9ebc8f to 64aa9c22). Nothing of step 7 is written yet. The
-user's words for it: once everything works, "see how we can improve it aesthetically".
+The user's words: once everything works, "see how we can improve it aesthetically". Every page
+was photographed before and after; what is here was clearly better, what was not is said too.
 
-What I would do, most visible first:
+1. **A shaded relief, flat.** Zoomed out, the ground was one flat colour per 133-yard tile: a block
+   map. It is now one picture (`reliefImage` in `world-view.js`) drawn as a `BitmapLayer` over the
+   relief cells, which stay under it for the heights a hover or a click picks (`pickable: '3d'`);
+   tilted, the cells show as before, as steps, now lit by their slope too.
+   - Four pixels to a tile. A pixel per tile, as first planned, blurred into soft staircases at a
+     zone's zoom, so the heights are smoothed between tile middles in the script.
+   - The smoothing is a Mitchell cubic: a B-spline made Alterac's hills blobs, Catmull-Rom brought
+     out tile-to-tile noise in Winterspring's snow.
+   - Each pixel is lit from the north-west, slopes three times as steep as they are; the light
+     stays within 0.6 to 1.3, and lit snow under white (232), so white markers show on it.
+   - Where nothing is baked, the picture darkens, then clears, along a smoothed mask: inner holes
+     (a tile with nothing walkable) are soft hollows, not black squares.
+   - Where a tile shows its polygons, a dark square (`relief-holes`) under them keeps what is not
+     walkable dark, as without the picture. Only while tiles show: an emptied `SolidPolygonLayer`
+     kept drawing its squares (in `ControlCenter/CLAUDE.md`).
+   - Kalimdor's picture (800 x 880) takes about 60 ms when the continent loads.
+2. **Casings.** Every route, dashed ones too (a dash's casing a dash as long), and every drawn line
+   (roads) over a dark path 3 px wider; all casings under all routes. A green route on green
+   ground now reads.
+3. **Zone names** in a distance-field font with a dark outline, light text. Where two would
+   overlap, the larger zone's shows (`WorldLabel.Size`, the side of its map's square) and the other
+   waits for a closer look; the script measures each name in the labels' font (`apart`). deck.gl's
+   `CollisionFilterExtension` was tried first and did not work on this view. Waypoint numbers are
+   outlined too, beside their dot instead of boxed over it: the boxes hid dots and legs.
+4. **Panels.** A tall panel's last list fills the panel and scrolls in it (`pa-fill`: Cost zones,
+   so the selected zone and Save stay in view); a list in the middle of one grows with the window
+   (`max(240px, 36vh)`: the designer's waypoints, the Live view's routes). Sticky list headings are
+   solid (rows showed through), scrollbars thin, and the Navmesh page's "no game files" is a notice,
+   not console text.
+5. **The pointer readout** names the zone and its map coordinates: "Durotar 46.0, 41.7", brighter,
+   then world yards and the height (water too, on a tile's polygons). The browser reads the zones
+   from `/api/v1/world` and the zone at a point from the area grid (`/api/v1/area`) once the
+   pointer rests, kept per 16-yard cell. The ground lost its tooltip, which followed the pointer
+   everywhere: the readout says it.
+6. **Bootstrap is gone.** Only its 4.3.1 reboot was used; the theme carries a small reset in its
+   place (top of `site.css`). Fleet, Forever routes, the error pages and the API page came out
+   pixel-identical. Two things differ on purpose: a button clicked with the mouse shows no focus
+   ring (the reboot drew one; keyboard focus still shows the theme's), and a label no longer keeps
+   an 8 px margin a span label did not have, so every field spaces its label by its 6 px gap.
 
-1. **A shaded relief for the flat view.** Zoomed out, the ground is one flat colour per 133-yard
-   tile, so a continent reads as a block map. Draw it instead as one image: a canvas with one pixel
-   per tile, its colour the height ramp (`heightColor`) times a hillshade (light from the
-   north-west; slope from the four neighbours, about three times exaggerated; a missing neighbour
-   counts as level), as a `deck.BitmapLayer` with linear filtering. Orientation, from
-   `overviewOf`: view X = -world y and tile x runs along world y, so column = maxTx - tx; view Y =
-   world x and tile z runs along it, so row = maxTz - tz (north up). Bounds `[left, bottom, right,
-   top]` = `[-(origin + (maxTx + 1) * size), origin + minTz * size, -(origin + minTx * size),
-   origin + (maxTz + 1) * size]`. Draw it after the relief cells with `parameters: {depthCompare:
-   'always', depthWriteEnabled: false}`: the cells stay underneath, pickable for the readout's and
-   the tools' heights (`pickable: '3d'`), and the detail polygons still draw over it (the cells
-   under shown detail tiles are already left out). Tilted keeps the stepped cells: a flat image
-   would lose the heights.
-2. **Routes with a casing**: a wider dark path (about 3 px more) under each solid route, so a
-   route reads over any ground.
-3. **Outlined names**: zone labels in an SDF font with an outline (`fontSettings: {sdf: true}`,
-   `outlineWidth`, `outlineColor`) instead of bare light text.
-4. **Panels**: `.pa-waypoints` stops at 240 px even in a tall panel whose body already scrolls;
-   let lists grow there. Check spacing and section headings across Routes, Map, Cost zones,
-   Navmesh and Forever routes.
-5. **The pointer readout** could add the zone and its map coordinates (the zones are known only
-   server-side today: `ZoneLookup`).
-6. **Bootstrap** is loaded only for its reset now; try without it and compare every page.
-
-Screenshot every page before and after; keep what is clearly better.
+Not changed: marker and shape names keep their boxes (they read well); the relief's colours by
+height are as they were, which paints low land as sea (known issue 29).
 
 How to check:
-- `dotnet test`: 278 tests, one skipped (minimap art). `ServiceTests/Api/ControlCenterTests`
-  renders the world view pages offline.
-- In a browser: a Playwright .NET harness drove `designer`, `live`, `npc`, `map`, `zones`,
-  `navmesh` and `forever` checks against the Pathing Service and Control Center on side ports
-  (5110, 5120). It is not in the repository (Windows PC: `local/browser-checks/`). Each check
-  waits on `worldView.describe()` (continent, layers, routes, markers with screen positions,
-  the tools' state and handles), clicks and drags on the canvas, and takes screenshots.
+- `dotnet test`: 278 tests (none skipped where the minimap art is downloaded).
+  `ServiceTests/Api/ControlCenterTests` renders the world view pages offline.
+- In a browser, on Linux: `local/browser-checks/` (not in the repository) holds `shots.mjs`, a
+  Node script on `playwright-core` driving the installed Chrome headless (WebGL through
+  SwiftShader), with `restart-cc.sh` (rebuild the Control Center and serve it on 5120, against the
+  Pathing Service on 5110) and `fleet-up.sh` (the Bot Manager on 5130 and two simulated agents).
+  `node shots.mjs shots/<name> [scenario ...]` puts every page in a fixed state - a test route
+  run, Durotar's layers on, a recorded path opened, a failing route asked for - and photographs
+  it; `shots/before` holds the pictures from before step 7. The Windows PC's Playwright .NET
+  checks are in its own `local/browser-checks/`.
 
 What bites:
 - `wwwroot` scripts and styles are fingerprinted and compressed at build time: build the Control
   Center again after changing them, or the browser gets the old ones.
-- The cost zone check saves into `Json/road`. It deletes its zone again and the files come back
-  byte-identical, but look at `git status` after it.
+- The cost zone check (Windows) saves into `Json/road`. It deletes its zone again and the files
+  come back byte-identical, but look at `git status` after it.
 - Never press "Clear the cache" on the Navmesh page in a check: it deletes the baked navmesh.
 - deck.gl 9.4 (luma.gl 9) names the GPU parameters `depthCompare` and `depthWriteEnabled`.
+- Headless Chrome hides scrollbars unless told not to (`ignoreDefaultArgs: ['--hide-scrollbars']`).
 
-Open for the user, not for step 7:
+Open for the user:
 - The Babylon view's terrain toggle (the game geometry under tiles, needing game files where the
   service runs) has no home in the Control Center now. deck.gl could draw it as a mesh, if wanted.
 - Swimming costs 1.3 times walking (known issue 28): it is why a continent route from Durotar to
   Tanaris runs on the sea floor. Changing it changes how the bot walks.
+- Low land drawn as sea (known issue 29) needs a water share per tile in the overview.

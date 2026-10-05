@@ -37,6 +37,8 @@
     const FILL = { 'adt-whole': 10, 'adt-part': 22, 'adt-chosen': 60, resident: 40 };
     const DEFAULT_COLOR = [235, 240, 246];
     const DRAFT_COLOR = [240, 178, 50];
+    const CASING = [8, 12, 16, 210];   // the dark under a line, as under a route (world-view.js)
+    const CASING_PX = 3;
     const MIN_VERTICES = { line: 2, polygon: 3, points: 1 };
     const FINISH_PX = 9;        // a click this close to the draft's last (or a polygon's first) vertex finishes it
     const MAX_NUMBERED = 60;    // waypoints beyond this many are numbered first and last only
@@ -124,10 +126,18 @@
 
         // Waypoints are joined by the legs planned between them, not by a line of their own.
         const lines = edit.shapes.filter(s => (s.type === 'line' || (s.type === 'points' && s.kind !== 'waypoints')) && s.vertices.length > 1);
+        const lineWidth = s => (isSelected(s) ? 3 : 2) + (s.type === 'line' ? 1 : 0);
+        // A line over a dark casing, as a route is, so a road reads over any ground.
+        result.push(new deck.PathLayer({
+            id: 'line-casings', data: lines.filter(s => s.type === 'line'), getPath: s => s.vertices,
+            getColor: CASING, widthUnits: 'pixels', getWidth: s => lineWidth(s) + CASING_PX,
+            capRounded: true, jointRounded: true, updateTriggers: { getWidth: edit.selected },
+            parameters: over,
+        }));
         result.push(new deck.PathLayer({
             id: 'shape-lines', data: lines, pickable: true,
             getPath: s => s.vertices, getColor: s => colorOf(s.kind, s.type === 'points' ? 130 : 235),
-            widthUnits: 'pixels', getWidth: s => (isSelected(s) ? 3 : 2) + (s.type === 'line' ? 1 : 0),
+            widthUnits: 'pixels', getWidth: lineWidth,
             capRounded: true, jointRounded: true,
             getDashArray: s => s.type === 'points' ? [4, 4] : [0, 0], dashJustified: true,
             extensions: deck.PathStyleExtension ? [new deck.PathStyleExtension({ dash: true })] : [],
@@ -149,21 +159,30 @@
         // Names show close in, or on the selected shape: zoomed out over a continent they only pile up.
         const close = edit.helpers.closeIn();
         const labels = [];
+        const numbers = [];
         edit.shapes.forEach(s => {
             if (s.label && s.vertices.length > 0 && (close || isSelected(s))) labels.push({ text: s.label, position: labelPosition(s) });
             if (s.type === 'points' && s.kind === 'waypoints') {
                 const n = s.vertices.length;
                 s.vertices.forEach((p, i) => {
-                    if (n <= FEW_NUMBERED || (close && n <= MAX_NUMBERED) || i === 0 || i === n - 1) labels.push({ text: String(i + 1), position: p, small: true });
+                    if (n <= FEW_NUMBERED || (close && n <= MAX_NUMBERED) || i === 0 || i === n - 1) numbers.push({ text: String(i + 1), position: p });
                 });
             }
         });
         result.push(new deck.TextLayer({
             id: 'shape-labels', data: labels, getPosition: l => l.position, getText: l => l.text,
-            getSize: l => l.small ? 11 : 13, sizeUnits: 'pixels', getColor: [230, 237, 243],
-            getPixelOffset: l => l.small ? [0, -15] : [0, 0], background: true,
+            getSize: 13, sizeUnits: 'pixels', getColor: [230, 237, 243], background: true,
             getBackgroundColor: [16, 22, 30, 215], backgroundPadding: [4, 2], fontWeight: 600,
             fontFamily: FONT, parameters: over,
+        }));
+        // Waypoint numbers outlined beside their dot, as zone names are, rather than boxed over the
+        // route: a box hid the dots and legs next to it.
+        result.push(new deck.TextLayer({
+            id: 'shape-numbers', data: numbers, getPosition: l => l.position, getText: l => l.text,
+            getSize: 11, sizeUnits: 'pixels', getColor: [235, 240, 246], getTextAnchor: 'start',
+            getPixelOffset: [7, -9], fontWeight: 700, fontFamily: FONT,
+            fontSettings: { sdf: true, buffer: 12, radius: 16 }, outlineWidth: 12, outlineColor: [10, 14, 19, 230],
+            parameters: over,
         }));
 
         return result;

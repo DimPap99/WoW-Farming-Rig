@@ -102,7 +102,7 @@
                 }
                 else
                 {
-                    <ul class="pa-waypoints" aria-label="Roads and danger zones">
+                    <ul class="pa-waypoints pa-fill" aria-label="Roads and danger zones">
                         @foreach (Zone zone in zones.OrderBy(z => ZoneName(z.UiMapId)).ThenBy(z => z.Name))
                         {
                             <li class="pa-waypoint @(zone.Id == selected ? "is-selected" : null)">

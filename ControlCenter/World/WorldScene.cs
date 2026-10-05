@@ -43,7 +43,9 @@ public sealed record WorldMarker(string Id, string Kind, float X, float Y, float
 }
 
 /// <summary>A name shown at a place while the view is zoomed out, such as a zone's.</summary>
-public sealed record WorldLabel(string Text, float X, float Y);
+/// <param name="Size">How much ground it names, in yards (a zone's: the side of a square as large as
+/// its map). Where two names would overlap on the screen, the larger shows.</param>
+public sealed record WorldLabel(string Text, float X, float Y, float Size = 0);
 
 /// <summary>
 /// A shape on the view: an area, a line or points. While it is the scene's selected shape and

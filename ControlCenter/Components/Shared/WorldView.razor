@@ -77,11 +77,14 @@
     /// <summary>Panels shown over the view.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
-    // The service's routes the view fetches its ground from, forwarded by this host.
+    // The service's routes the view fetches its ground from, and what it names the pointer's place
+    // with (the zone maps, the area grid), forwarded by this host.
     private static readonly object Urls = new
     {
         overview = $"{PathingApi.Navmesh}/{{continent}}/{PathingApi.Overview}",
         tile = $"{PathingApi.Navmesh}/{{continent}}/{PathingApi.Tiles}/{{x}}/{{z}}",
+        world = PathingApi.World,
+        area = $"{PathingApi.Area}?mapId={{mapId}}&x={{x}}&y={{y}}",
     };
 
     // Not a tool: the page's tool differs from it, so it is sent on the next render.

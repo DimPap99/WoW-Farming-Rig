@@ -26,7 +26,7 @@ public static class ZoneLabels
                 .Select(z =>
                 {
                     Point3 middle = ZoneMath.ToWorld(z, new Point3(50, 50, 0));
-                    return new WorldLabel(z.Name, middle.X, middle.Y);
+                    return new WorldLabel(z.Name, middle.X, middle.Y, MathF.Sqrt(MathF.Abs((z.LocLeft - z.LocRight) * (z.LocTop - z.LocBottom))));
                 })];
     }
 
