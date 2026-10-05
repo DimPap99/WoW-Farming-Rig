@@ -1,0 +1,463 @@
+@page "/cost-zones"
+
+@inherits ControlCenterComponent
+
+@inject IPathingClient pathing
+@inject WorldCache worldCache
+@inject PathingStatus status
+@inject ZoneLookup zoneLookup
+@inject IJSRuntime js
+
+<PageTitle>Cost zones · Control Center</PageTitle>
+
+@* Roads routes are drawn towards, and danger zones they avoid or never cross, drawn on the world
+   view. Each is kept in the file of the zone it was drawn in; changes collect until Save writes
+   those zones' files, which the Pathing Service checks with the loader's own rules and applies to
+   the next route at once - no rebake. *@
+
+<WorldView @ref="view" Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="DrawnAsync" OnEdited="Edited" OnSelected="ShapeSelected">
+    <Panel Title="Cost zones" Icon="warning" Position="top-left" Class="pa-panel--tall">
+        @if (world is null)
+        {
+            <ResultLine Text="@(status.Online ? "Loading the world..." : "Waiting for the Pathing Service")" Kind="ResultKind.Info" />
+        }
+        else
+        {
+            <div class="pa-form">
+                <div class="pa-field">
+                    <label class="pa-label" for="pa-zones-continent">Continent</label>
+                    <select class="pa-select" id="pa-zones-continent" value="@continent" @onchange="ChangeContinentAsync"
+                            disabled="@(dirty.Count > 0)" title="@(dirty.Count > 0 ? "Save or revert the changes first" : null)">
+                        @foreach (ContinentInfo c in world.World.Continents)
+                        {
+                            <option value="@c.Name">@c.Name@(c.Tiles > 0 ? null : " (no tiles)")</option>
+                        }
+                    </select>
+                </div>
+
+                <p class="pa-tip">@Tip</p>
+
+                @if (Selected is Zone shape)
+                {
+                    <section class="pa-zone-editor" aria-label="The selected zone">
+                        <div class="pa-row">
+                            <div class="pa-field pa-grow2">
+                                <label class="pa-label" for="pa-zone-name">@(shape.IsRoad ? "Road" : "Danger zone") in @ZoneName(shape.UiMapId)</label>
+                                <input class="pa-input" id="pa-zone-name" @bind="shape.Name" @bind:event="oninput" @bind:after="() => Touch(shape)" />
+                            </div>
+                            @if (shape.IsRoad)
+                            {
+                                <div class="pa-field pa-grow">
+                                    <label class="pa-label" for="pa-zone-width" title="Corridor width, in 33-yard chunks either side of the line">Width</label>
+                                    <input class="pa-input" id="pa-zone-width" type="number" min="1" max="64" @bind="shape.Width" @bind:after="() => Touch(shape)" />
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="pa-field pa-grow">
+                                    <label class="pa-label" for="pa-zone-penalty" title="How much dearer a route finds it: 500 is about six times">Penalty</label>
+                                    <input class="pa-input" id="pa-zone-penalty" type="number" min="0" step="50" @bind="shape.Penalty" @bind:after="() => Touch(shape)" />
+                                </div>
+                            }
+                        </div>
+                        @if (!shape.IsRoad)
+                        {
+                            <div class="pa-segmented" role="group" aria-label="What a route does about it">
+                                <button class="pa-toggle" type="button" aria-pressed="@Aria.State(shape.Mode == ZoneMode.Avoid)" @onclick="() => SetMode(shape, ZoneMode.Avoid)"
+                                        title="Priced up: a route crosses it only when there is no reasonable way round">Avoid</button>
+                                <button class="pa-toggle" type="button" aria-pressed="@Aria.State(shape.Mode == ZoneMode.Block)" @onclick="() => SetMode(shape, ZoneMode.Block)"
+                                        title="Impassable: a destination behind it can become unreachable">Block</button>
+                            </div>
+                        }
+                        <div class="pa-actions">
+                            <button class="pa-btn pa-btn--ghost" type="button" @onclick="() => Remove(shape)">
+                                <span class="oi oi-trash" aria-hidden="true"></span> Delete
+                            </button>
+                        </div>
+                    </section>
+                }
+
+                <div class="pa-route-summary">
+                    @if (dirty.Count > 0)
+                    {
+                        <ResultLine Text="@($"Not saved: {string.Join(", ", dirty.Select(ZoneName))}")" Kind="ResultKind.Warn" />
+                    }
+                    <ResultLine Text="@result" Kind="@resultKind" />
+                </div>
+                <div class="pa-actions">
+                    <BusyButton Class="pa-btn--primary pa-grow" Icon="data-transfer-upload" Busy="@busy" Disabled="@(dirty.Count == 0)" OnClick="SaveAsync"
+                                Title="Write the changed zones' files; the next route uses them">
+                        Save
+                    </BusyButton>
+                    <button class="pa-btn" type="button" disabled="@(dirty.Count == 0 || busy)" title="Throw the changes away and read the files again" @onclick="RevertAsync">
+                        Revert
+                    </button>
+                </div>
+
+                <div class="pa-divider"></div>
+
+                @if (zones.Count == 0)
+                {
+                    <span class="pa-faint">No roads or danger zones on @continent yet.</span>
+                }
+                else
+                {
+                    <ul class="pa-waypoints" aria-label="Roads and danger zones">
+                        @foreach (Zone zone in zones.OrderBy(z => ZoneName(z.UiMapId)).ThenBy(z => z.Name))
+                        {
+                            <li class="pa-waypoint @(zone.Id == selected ? "is-selected" : null)">
+                                <span class="pa-dot @(zone.IsRoad ? "pa-dot--ok" : zone.Mode == ZoneMode.Block ? "pa-dot--error" : "pa-dot--warn")" aria-hidden="true"></span>
+                                <button class="pa-waypoint-at" type="button" title="Select it" @onclick="() => FocusAsync(zone)">@zone.Name</button>
+                                <span class="pa-waypoint-leg">@ZoneName(zone.UiMapId)</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
+    </Panel>
+</WorldView>
+
+@if (!status.Online)
+{
+    <OfflineNotice Service="@status.Service" Reason="@status.Error" />
+}
+
+@code {
+    /// <summary>A new road's corridor, in 33-yard chunks either side; a new danger zone's penalty (about six times the cost).</summary>
+    public const int DefaultWidth = 2;
+    public const float DefaultPenalty = 500;
+
+    private static readonly WorldTool[] Tools =
+    [
+        new(WorldShapes.Line, "Draw a road: click along it, then the last point again (or Enter)"),
+        new(WorldShapes.Circle, "Draw a danger zone: its centre, then a point on its edge"),
+        new(WorldShapes.Rectangle, "Draw a rectangular danger zone: two opposite corners"),
+    ];
+
+    /// <summary>One road or danger zone, as the page edits it; points in world yards.</summary>
+    private sealed class Zone
+    {
+        public required string Id { get; init; }
+
+        /// <summary><see cref="WorldShapes.Line"/> for a road, <see cref="WorldShapes.Circle"/> or <see cref="WorldShapes.Rectangle"/>.</summary>
+        public required string Shape { get; init; }
+
+        /// <summary>The zone file it is kept in.</summary>
+        public required int UiMapId { get; init; }
+
+        public string Name { get; set; } = string.Empty;
+
+        public int Width { get; set; } = DefaultWidth;
+
+        public float Penalty { get; set; } = DefaultPenalty;
+
+        public ZoneMode Mode { get; set; } = ZoneMode.Avoid;
+
+        /// <summary>A road's centreline, a rectangle's two opposite corners, a circle's centre.</summary>
+        public Point3[] Points { get; set; } = [];
+
+        public float Radius { get; set; }
+
+        public bool IsRoad => Shape == WorldShapes.Line;
+    }
+
+    private WorldView? view;
+    private WorldSnapshot? world;
+    private string continent = string.Empty;
+    private WorldScene scene = WorldScene.Empty(string.Empty);
+    private string? tool;
+    private string? selected;
+    private List<Zone> zones = [];
+    private readonly HashSet<int> dirty = [];
+    private int drawn;
+    private bool busy;
+    private string? result;
+    private ResultKind resultKind;
+
+    private Zone? Selected => zones.Find(z => z.Id == selected);
+
+    private int MapId => world?.Continent(continent)?.MapId ?? -1;
+
+    private string Tip => tool switch
+    {
+        WorldShapes.Line => "Click along the road, then the last point again (or Enter). Esc cancels.",
+        WorldShapes.Circle => "Click the danger zone's centre, then a point on its edge.",
+        WorldShapes.Rectangle => "Click two opposite corners of the danger zone.",
+        _ => "Draw with the tools at the top right. Click a zone to change it: drag its handles, set its values, then Save.",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Subscribe(() => status.Changed += Redraw, () => status.Changed -= Redraw);
+        Subscribe(() => status.Reconnected += Reload, () => status.Reconnected -= Reload);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        world = status.Online ? await worldCache.GetAsync() : null;
+        if (world is null)
+        {
+            return;
+        }
+
+        if (world.Continent(continent) is null)
+        {
+            continent = world.World.Continents.FirstOrDefault(c => c.Tiles > 0)?.Name ?? world.World.Continents.FirstOrDefault()?.Name ?? string.Empty;
+        }
+
+        await ReadAsync();
+    }
+
+    private void Reload()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (dirty.Count == 0)
+            {
+                await LoadAsync();
+                StateHasChanged();
+            }
+        });
+    }
+
+    // The continent's zones as the files hold them; unsaved changes are dropped.
+    private async Task ReadAsync()
+    {
+        zones = [];
+        dirty.Clear();
+        selected = null;
+        try
+        {
+            ServiceResult<CostZoneSet> read = await pathing.GetCostZonesAsync(continent, Token);
+            if (!read.Ok)
+            {
+                Say($"The cost zones of {continent} could not be read: {read.Error}", ResultKind.Error);
+            }
+            else
+            {
+                Take(read.Value);
+                Say(null, ResultKind.Info);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        Show(frame: true);
+    }
+
+    private void Take(CostZoneSet set)
+    {
+        foreach ((int uiMapId, RoadZones roads) in set.Roads)
+        {
+            foreach (RoadLine road in roads.Roads)
+            {
+                zones.Add(new Zone
+                {
+                    Id = $"road-{++drawn}", Shape = WorldShapes.Line, UiMapId = uiMapId, Name = road.Name, Width = road.Width,
+                    Points = [.. road.Points.Select(p => new Point3(p.X, p.Y, 0))],
+                });
+            }
+        }
+
+        foreach ((int uiMapId, DangerZones danger) in set.Danger)
+        {
+            foreach (DangerCircle c in danger.Circles)
+            {
+                zones.Add(new Zone
+                {
+                    Id = $"circle-{++drawn}", Shape = WorldShapes.Circle, UiMapId = uiMapId, Name = c.Name, Penalty = c.Penalty, Mode = c.Mode,
+                    Points = [new Point3(c.CenterX, c.CenterY, 0)], Radius = c.Radius,
+                });
+            }
+
+            foreach (DangerRectangle r in danger.Rectangles)
+            {
+                zones.Add(new Zone
+                {
+                    Id = $"rect-{++drawn}", Shape = WorldShapes.Rectangle, UiMapId = uiMapId, Name = r.Name, Penalty = r.Penalty, Mode = r.Mode,
+                    Points = [new Point3(r.MinX, r.MinY, 0), new Point3(r.MaxX, r.MaxY, 0)],
+                });
+            }
+        }
+    }
+
+    private async Task ChangeContinentAsync(ChangeEventArgs e)
+    {
+        continent = e.Value?.ToString() ?? string.Empty;
+        tool = null;
+        await ReadAsync();
+    }
+
+    // --- the map's events -------------------------------------------------------------------
+
+    // A new zone goes in the file of the zone it was drawn in, as the area grid has it.
+    private async Task DrawnAsync(WorldDrawn shape)
+    {
+        if (world is null)
+        {
+            return;
+        }
+
+        Point3 anchor = shape.Shape == WorldShapes.Rectangle
+            ? new Point3((shape.Points[0].X + shape.Points[1].X) / 2, (shape.Points[0].Y + shape.Points[1].Y) / 2, 0)
+            : shape.Points[0];
+        try
+        {
+            await zoneLookup.LearnAsync(MapId, [anchor], Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (zoneLookup.Known(world, MapId, anchor) is not ZoneInfo home)
+        {
+            Say("That is outside every zone's map: drawn shapes are kept per zone", ResultKind.Error);
+            return;
+        }
+
+        bool road = shape.Shape == WorldShapes.Line;
+        Zone zone = new()
+        {
+            Id = $"{(road ? "road" : shape.Shape)}-{++drawn}",
+            Shape = shape.Shape,
+            UiMapId = home.UiMapId,
+            Name = road ? $"Road {drawn}" : $"Danger {drawn}",
+            Points = shape.Points,
+            Radius = shape.Radius,
+        };
+        zones.Add(zone);
+        selected = zone.Id;
+        tool = null;
+        Touch(zone);
+    }
+
+    private void Edited(WorldEdited edited)
+    {
+        if (zones.Find(z => z.Id == edited.Id) is Zone zone)
+        {
+            zone.Points = edited.Points;
+            zone.Radius = edited.Radius;
+            Touch(zone);
+        }
+    }
+
+    private void ShapeSelected(string? id)
+    {
+        selected = id;
+        Show();
+    }
+
+    // --- the panel ----------------------------------------------------------------------------
+
+    private void Touch(Zone zone)
+    {
+        dirty.Add(zone.UiMapId);
+        Say(null, ResultKind.Info);
+        Show();
+    }
+
+    private void SetMode(Zone zone, ZoneMode mode)
+    {
+        zone.Mode = mode;
+        Touch(zone);
+    }
+
+    private void Remove(Zone zone)
+    {
+        zones.Remove(zone);
+        selected = null;
+        Touch(zone);
+    }
+
+    private async Task FocusAsync(Zone zone)
+    {
+        selected = zone.Id;
+        Show();
+        if (view is not null)
+        {
+            await view.CenterOnAsync(new Point3(zone.Points.Average(p => p.X), zone.Points.Average(p => p.Y), 0));
+        }
+    }
+
+    // Each changed zone's two files, roads and danger; a refusal names the zone and why.
+    private async Task SaveAsync()
+    {
+        busy = true;
+        List<string> refused = [];
+        try
+        {
+            foreach (int uiMapId in dirty.ToArray())
+            {
+                Zone[] mine = [.. zones.Where(z => z.UiMapId == uiMapId)];
+                RoadZones roads = new([.. mine.Where(z => z.IsRoad).Select(z =>
+                    new RoadLine(z.Name, z.Width, [.. z.Points.Select(p => new Point2(p.X, p.Y))]))]);
+                DangerZones danger = new(
+                    [.. mine.Where(z => z.Shape == WorldShapes.Circle).Select(z =>
+                        new DangerCircle(z.Name, z.Points[0].X, z.Points[0].Y, z.Radius, z.Penalty, z.Mode))],
+                    [.. mine.Where(z => z.Shape == WorldShapes.Rectangle).Select(Rectangle)]);
+
+                ServiceResult savedRoads = await pathing.SaveRoadsAsync(continent, uiMapId, roads, Token);
+                ServiceResult savedDanger = await pathing.SaveDangerAsync(continent, uiMapId, danger, Token);
+                if (savedRoads.Ok && savedDanger.Ok)
+                {
+                    dirty.Remove(uiMapId);
+                }
+                else
+                {
+                    refused.Add($"{ZoneName(uiMapId)}: {savedRoads.Error ?? savedDanger.Error}");
+                }
+            }
+
+            Say(refused.Count == 0 ? "Saved: the next route uses them" : $"Not saved - {string.Join("; ", refused)}",
+                refused.Count == 0 ? ResultKind.Ok : ResultKind.Error);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private static DangerRectangle Rectangle(Zone zone)
+    {
+        Point3 a = zone.Points[0];
+        Point3 b = zone.Points[^1];
+        return new DangerRectangle(zone.Name, MathF.Min(a.X, b.X), MathF.Min(a.Y, b.Y), MathF.Max(a.X, b.X), MathF.Max(a.Y, b.Y),
+            zone.Penalty, zone.Mode);
+    }
+
+    private async Task RevertAsync()
+    {
+        if (await js.ConfirmAsync("Throw away the changes not saved?", Token))
+        {
+            await ReadAsync();
+        }
+    }
+
+    private string ZoneName(int uiMapId)
+    {
+        return world?.Zone(uiMapId)?.Name ?? $"map {uiMapId}";
+    }
+
+    private void Say(string? text, ResultKind kind)
+    {
+        result = text;
+        resultKind = kind;
+    }
+
+    // Roads as lines, danger zones in the colour of their mode; each one editable.
+    private void Show(bool frame = false)
+    {
+        WorldShape[] shapes = [.. zones.Select(z => WorldShape.Of(z.Id, z.Shape,
+            z.IsRoad ? WorldKinds.Road : z.Mode == ZoneMode.Block ? WorldKinds.DangerBlock : WorldKinds.DangerAvoid,
+            z.Points, editable: true, label: z.Name, radius: z.Radius))];
+        scene = new WorldScene(continent, [], [], ZoneLabels.Of(world, continent), frame && zones.Count > 0, shapes, selected);
+    }
+}

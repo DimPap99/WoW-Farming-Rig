@@ -47,6 +47,24 @@ public sealed class ControlCenterTests
     }
 
     [Fact]
+    public async Task The_world_view_pages_wait_for_the_service()
+    {
+        using ControlCenterFactory factory = new();
+        await factory.Services.GetRequiredService<PathingStatus>().RefreshAsync(TestContext.Current.CancellationToken);
+
+        string zones = await factory.RenderAsync<CostZones>();
+        string live = await factory.RenderAsync<LiveView>();
+        string npcs = await factory.RenderAsync<NpcRoutes>();
+
+        Assert.Contains("Waiting for the Pathing Service", zones);
+        Assert.All(new[] { zones, live, npcs }, page =>
+        {
+            Assert.Contains("pa-world", page);
+            Assert.Contains("The Pathing Service is offline", page);
+        });
+    }
+
+    [Fact]
     public void The_api_the_hub_and_every_world_data_prefix_are_forwarded()
     {
         Assert.Contains(PathingApi.Root, ServiceProxy.PathingPrefixes);

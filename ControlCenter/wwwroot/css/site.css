@@ -1909,3 +1909,14 @@ kbd {
     color: var(--pa-info);
     font-size: 12.5px;
 }
+
+/* The cost zone being changed: its values, over the list of every zone. */
+.pa-zone-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--pa-border-strong);
+    border-radius: var(--pa-radius-sm);
+    background: var(--pa-surface-2);
+}
