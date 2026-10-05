@@ -64,6 +64,93 @@
         <member name="M:PathingAPI.AnTcp.AnTcpPathServer.NoPath">
             <summary>One all-zero Vector3 - AmeisenNavigation's failure reply, which the client tests for.</summary>
         </member>
+        <member name="T:PathingAPI.Catalog.NamedLocation">
+            <summary>A place the search panel can route from or to.</summary>
+        </member>
+        <member name="M:PathingAPI.Catalog.NamedLocation.#ctor(System.String,System.Numerics.Vector4)">
+            <summary>A place the search panel can route from or to.</summary>
+        </member>
+        <member name="T:PathingAPI.Catalog.ContinentChoice">
+            <summary>A continent with at least one known location.</summary>
+        </member>
+        <member name="M:PathingAPI.Catalog.ContinentChoice.#ctor(System.Single,System.String,System.Int32)">
+            <summary>A continent with at least one known location.</summary>
+        </member>
+        <member name="T:PathingAPI.Catalog.LocationCatalog">
+            <summary>
+            The search panel's From/To list: hand-picked test spots plus every named
+            teleport in <c>wwwroot/teleport_locations.txt</c>. Read once and shared; each page
+            used to re-read and re-parse the 1500-line file on its first render.
+            </summary>
+        </member>
+        <member name="P:PathingAPI.Catalog.LocationCatalog.Continents">
+            <summary>Continents (not instances) that have locations, by map id.</summary>
+        </member>
+        <member name="M:PathingAPI.Catalog.LocationCatalog.Curated">
+            <summary>Spots used while tuning the engine: towns, choke points and known trouble.</summary>
+        </member>
+        <member name="T:PathingAPI.Catalog.RecordedPaths">
+            <summary>
+            The recorded grind paths under <see cref="P:DataConfig.Path"/>: listing, reading,
+            the screenshot a recording may have beside it, and a guess at its zone.
+            </summary>
+        </member>
+        <member name="M:PathingAPI.Catalog.RecordedPaths.#ctor(DataConfig,SharedLib.WorldMapAreaDB)">
+            <summary>
+            The recorded grind paths under <see cref="P:DataConfig.Path"/>: listing, reading,
+            the screenshot a recording may have beside it, and a guess at its zone.
+            </summary>
+        </member>
+        <member name="F:PathingAPI.Catalog.RecordedPaths.RequestPath">
+            <summary>Static route Frontend serves <see cref="P:DataConfig.Path"/> on.</summary>
+        </member>
+        <member name="M:PathingAPI.Catalog.RecordedPaths.Files">
+            <summary>Paths relative to the folder, '/'-separated, naturally ordered.</summary>
+        </member>
+        <member name="M:PathingAPI.Catalog.RecordedPaths.Read(System.String)">
+            <summary>
+            The points as recorded: zone map coordinates (0-100, z = 0) for most files,
+            world coordinates for the few recorded with a height.
+            </summary>
+        </member>
+        <member name="M:PathingAPI.Catalog.RecordedPaths.Thumbnail(System.String)">
+            <summary>The URL of the screenshot saved with the recording, if there is one.</summary>
+        </member>
+        <member name="M:PathingAPI.Catalog.RecordedPaths.GuessZone(System.String)">
+            <summary>The zone whose name the file name contains (the longest match), e.g. "16_Loch Modan".</summary>
+        </member>
+        <member name="M:PathingAPI.Catalog.RecordedPaths.Resolve(System.String)">
+            <summary>Resolves under the folder only: the name comes from the browser.</summary>
+        </member>
+        <member name="T:PathingAPI.Catalog.TestRoute">
+            <summary>
+            One request against the HTTP API, with the map it is on so the UI can tell
+            whether this install has tiles for it. <see cref="P:PathingAPI.Catalog.TestRoute.UiMap"/> is set when the route
+            is in zone coordinates and <see cref="P:PathingAPI.Catalog.TestRoute.MapId"/> when it is in world coordinates.
+            </summary>
+        </member>
+        <member name="M:PathingAPI.Catalog.TestRoute.#ctor(System.String,System.String,System.String,System.String,System.Nullable{System.Int32},System.Nullable{System.Int32})">
+            <summary>
+            One request against the HTTP API, with the map it is on so the UI can tell
+            whether this install has tiles for it. <see cref="P:PathingAPI.Catalog.TestRoute.UiMap"/> is set when the route
+            is in zone coordinates and <see cref="P:PathingAPI.Catalog.TestRoute.MapId"/> when it is in world coordinates.
+            </summary>
+        </member>
+        <member name="T:PathingAPI.Catalog.TestRoutes">
+            <summary>
+            Known-trouble routes collected while tuning the engine ("Z ..." = start or end
+            without a height). Each one is a plain API call, so running it exercises
+            exactly what the bot does - the gate, the 429, the response - and the result
+            shows in every viewer.
+            </summary>
+        </member>
+        <member name="M:PathingAPI.Controllers.PPatherController.Route(System.Numerics.Vector4,System.Numerics.Vector4,PathingAPI.Pathing.RouteOptions,System.Func{System.Numerics.Vector3,System.Numerics.Vector3})">
+            <summary>
+            Every route endpoint: search, persist the spot graph, answer the points
+            (projected when <paramref name="project"/> is given) or an empty array.
+            [RateLimit] holds the gate for the whole action.
+            </summary>
+        </member>
         <member name="M:PathingAPI.Controllers.PPatherController.MapRoute(System.Int32,System.Single,System.Single,System.Int32,System.Single,System.Single,System.Nullable{System.Single})">
              <summary>
              Allows a route to be calculated from one point to another using only minimap coords.
@@ -237,10 +324,6 @@
         </member>
         <member name="M:PathingAPI.Controllers.PPatherController.SelfTest">
             <summary>
-            Returns true to indicate that the server is listening.
-            </summary>
-            <returns></returns>
-            <summary>
             Whether this server can actually answer route requests, and why. For the navmesh
             engine that means baked tiles for the active era - game archives are optional, so
             the old MPQ-only check reported a failure on every tiles-only or CASC install.
@@ -319,42 +402,362 @@
             
             </summary>
         </member>
-        <member name="M:PathingAPI.Pages.Index.WR(System.Double,System.Double,System.Double,System.Double,System.Double,System.Double,System.Int32,System.Boolean)">
-            <summary>WorldRoute: coordinates + mapId</summary>
-        </member>
-        <member name="M:PathingAPI.Pages.Index.WR2(System.Double,System.Double,System.Double,System.Double,System.Double,System.Double,System.Int32,System.Nullable{System.Int32},System.Boolean)">
-            <summary>WorldRoute2: coordinates + uiMap</summary>
-        </member>
-        <member name="M:PathingAPI.Pages.Index.MR(System.Int32,System.Double,System.Double,System.Int32,System.Double,System.Double)">
-            <summary>MapRoute: uiMap coordinates</summary>
-        </member>
-        <member name="P:PathingAPI.Pages.SearchParameters.ParsedSeed">
-            <summary>Empty or non-numeric text means "random seed" (null).</summary>
-        </member>
-        <member name="M:PathingAPI.Pages.SearchParameters.RollSeed">
+        <member name="T:PathingAPI.ComponentWithCancellationToken">
             <summary>
-            Rolls a fresh seed into the visible field, so a "random" run is still
-            reproducible: the value used is on screen and can be re-searched.
+            The base of every PathingAPI component: Frontend's subscription and redraw
+            plumbing plus a <see cref="P:PathingAPI.ComponentWithCancellationToken.Token"/> cancelled when the component goes away.
+            A component that awaits JS teardown implements <c>IAsyncDisposable</c> and must
+            call <see cref="M:Frontend.Shared.SubscribingComponentBase.Dispose"/> itself (Blazor then calls
+            only <c>DisposeAsync</c>).
             </summary>
         </member>
-        <member name="M:PathingAPI.Pages.SearchParameters.AddCustomPoi(System.Single,System.Single,System.Single,System.Single,System.String)">
+        <member name="F:PathingAPI.Hosting.PathingServiceCollectionExtensions.DefaultAnTcpPort">
+            <summary>The AnTCP port the bot's shipped <c>Pathing:portv3</c> expects; AmeisenNavigation's own default is 47110.</summary>
+        </member>
+        <member name="M:PathingAPI.Hosting.PathingServiceCollectionExtensions.AddPathing(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration,PathingAPI.Hosting.ServerArguments)">
             <summary>
-            Adds a map-authored point to the From/To autocomplete. Called from the
-            Leaflet page when a custom POI is placed or restored.
+            The engine, the gate every caller shares, the watch stream and the UI's data.
             </summary>
         </member>
-        <member name="F:PathingAPI.Pages.Watch.loggedNoGeometry">
+        <member name="M:PathingAPI.Hosting.PathingServiceCollectionExtensions.AddAnTcpListener(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration)">
             <summary>
-            Reported once per page so a disk-only install does not spam the log every frame.
+            Speaks AmeisenNavigation's binary protocol so a <c>RemoteV3</c> bot can use this
+            server. Off by default: it opens a socket, which a plain HTTP install should not.
             </summary>
         </member>
-        <member name="M:PathingAPI.Pages.Watch.SendNavmeshTile(System.Int32,System.Int32,DotRecast.Detour.DtMeshData,System.Threading.CancellationToken)">
+        <member name="M:PathingAPI.Hosting.PathingServiceCollectionExtensions.AddPathingConverters(System.Text.Json.JsonSerializerOptions)">
+            <summary>The converters both the minimal JSON options and MVC's need.</summary>
+        </member>
+        <member name="M:PathingAPI.Hosting.PathingServiceCollectionExtensions.ForeverGameFiles(Microsoft.Extensions.Configuration.IConfiguration,System.String)">
             <summary>
-            Converts a Detour tile into a renderable triangle soup: fan-triangulate
-            each polygon and split indices by area (ground vs liquid). Vertices are
-            converted rc -> wow ({z, x, y}) - the js side applies the same axis
-            mapping as every other mesh.
+            WoW: Forever geometry comes from the installed client's local CASC storage, for
+            on-demand bakes. Without an install the engine serves baked tiles only.
             </summary>
+        </member>
+        <member name="T:PathingAPI.Hosting.ServerArguments">
+            <summary>
+            The command line (or same-named environment variables), read in one place.
+            <c>--exp</c> used to be resolved twice with its own default each time.
+            </summary>
+        </member>
+        <member name="M:PathingAPI.Hosting.ServerArguments.#ctor(System.String,System.Nullable{SharedLib.PathingEngine},System.String,System.String)">
+            <summary>
+            The command line (or same-named environment variables), read in one place.
+            <c>--exp</c> used to be resolved twice with its own default each time.
+            </summary>
+        </member>
+        <member name="F:PathingAPI.Hosting.ServerArguments.DefaultExp">
+            <summary>Classic is the default client; only the data folders depend on it.</summary>
+        </member>
+        <member name="M:PathingAPI.Hosting.ServerArguments.Continent(System.String)">
+            <summary><c>all</c> or <c>*</c> means every continent (null); otherwise the continent named.</summary>
+        </member>
+        <member name="T:PathingAPI.WatchHub">
+            <summary>
+            Pushes searches, paths and geometry to the 3D view and the map. Clients only
+            listen; <see cref="T:PathingAPI.Watch.WatchBroadcaster"/> does the sending. Connections are counted
+            so the broadcaster does no work while nobody is watching.
+            </summary>
+        </member>
+        <member name="M:PathingAPI.WatchHub.#ctor(PathingAPI.Watch.WatchSettings)">
+            <summary>
+            Pushes searches, paths and geometry to the 3D view and the map. Clients only
+            listen; <see cref="T:PathingAPI.Watch.WatchBroadcaster"/> does the sending. Connections are counted
+            so the broadcaster does no work while nobody is watching.
+            </summary>
+        </member>
+        <member name="T:PathingAPI.Pathing.PatherGate">
+            <summary>
+            The one lock over <see cref="T:PPather.PPatherService"/>. Its search is two calls
+            (<c>SetLocations</c> then <c>DoSearch</c>) over shared state, so two callers
+            interleaving return each other's routes - and before this gate the HTTP API, the
+            AnTCP listener and the web UI each guarded it differently (a racy static flag,
+            a private semaphore, nothing), so they could still interleave with one another.
+            <para>
+            Every entry point takes the same gate and only differs in what it does when the
+            gate is held: HTTP answers 429 (<see cref="M:PathingAPI.Pathing.PatherGate.TryEnter(System.IDisposable@)"/>, the V1 client contract),
+            AnTCP and the UI wait (<see cref="M:PathingAPI.Pathing.PatherGate.Enter"/>, <see cref="M:PathingAPI.Pathing.PatherGate.EnterAsync(System.Threading.CancellationToken)"/>).
+            </para>
+            </summary>
+        </member>
+        <member name="E:PathingAPI.Pathing.PatherGate.BusyChanged">
+            <summary>Raised when the gate is taken or released, for status displays.</summary>
+        </member>
+        <member name="M:PathingAPI.Pathing.PatherGate.TryEnter(System.IDisposable@)">
+            <summary>Takes the gate if it is free; never waits.</summary>
+        </member>
+        <member name="T:PathingAPI.Pathing.RouteOptions">
+            <summary>
+            Per-request route tuning. Applied to the engine on every search, so one
+            request's jitter or edge margin never leaks into the next one - the engine
+            keeps them as mutable state, and endpoints that did not set them used to
+            inherit whatever the previous caller left there.
+            </summary>
+            <param name="JitterYards">Random corner offset in yards; 0 disables it.</param>
+            <param name="JitterSeed">Seeds the jitter; null draws a fresh seed.</param>
+            <param name="EdgeMarginYards">Edge margin override; null keeps the engine default.</param>
+        </member>
+        <member name="M:PathingAPI.Pathing.RouteOptions.#ctor(System.Single,System.Nullable{System.Int32},System.Nullable{System.Single})">
+            <summary>
+            Per-request route tuning. Applied to the engine on every search, so one
+            request's jitter or edge margin never leaks into the next one - the engine
+            keeps them as mutable state, and endpoints that did not set them used to
+            inherit whatever the previous caller left there.
+            </summary>
+            <param name="JitterYards">Random corner offset in yards; 0 disables it.</param>
+            <param name="JitterSeed">Seeds the jitter; null draws a fresh seed.</param>
+            <param name="EdgeMarginYards">Edge margin override; null keeps the engine default.</param>
+        </member>
+        <member name="P:PathingAPI.Pathing.RouteOptions.JitterYards">
+            <summary>Random corner offset in yards; 0 disables it.</summary>
+        </member>
+        <member name="P:PathingAPI.Pathing.RouteOptions.JitterSeed">
+            <summary>Seeds the jitter; null draws a fresh seed.</summary>
+        </member>
+        <member name="P:PathingAPI.Pathing.RouteOptions.EdgeMarginYards">
+            <summary>Edge margin override; null keeps the engine default.</summary>
+        </member>
+        <member name="T:PathingAPI.Pathing.SearchOutcome">
+            <summary>What an interactive search found, for the page that asked.</summary>
+        </member>
+        <member name="M:PathingAPI.Pathing.SearchOutcome.#ctor(System.Int32,System.Double,System.String)">
+            <summary>What an interactive search found, for the page that asked.</summary>
+        </member>
+        <member name="T:PathingAPI.Pathing.RouteSearch">
+            <summary>
+            The only code that drives <see cref="T:PPather.PPatherService"/>'s two-call search. The
+            synchronous members expect the caller to hold the <see cref="T:PathingAPI.Pathing.PatherGate"/>
+            (HTTP and AnTCP take it their own way); the async ones take it themselves and
+            run off the caller's thread, for the web UI.
+            </summary>
+        </member>
+        <member name="M:PathingAPI.Pathing.RouteSearch.#ctor(PPather.PPatherService,PathingAPI.Pathing.PatherGate,PathingAPI.Watch.WatchBroadcaster)">
+            <summary>
+            The only code that drives <see cref="T:PPather.PPatherService"/>'s two-call search. The
+            synchronous members expect the caller to hold the <see cref="T:PathingAPI.Pathing.PatherGate"/>
+            (HTTP and AnTCP take it their own way); the async ones take it themselves and
+            run off the caller's thread, for the web UI.
+            </summary>
+        </member>
+        <member name="F:PathingAPI.Pathing.RouteSearch.DefaultStrategy">
+            <summary>The only strategy the navmesh engine has; SpotAStar honours the others.</summary>
+        </member>
+        <member name="M:PathingAPI.Pathing.RouteSearch.Find(System.Numerics.Vector4,System.Numerics.Vector4,PathingAPI.Pathing.RouteOptions,PPather.SearchStrategy,System.Nullable{PathingAPI.Watch.PathStyle})">
+            <summary>Searches from <paramref name="from"/> to <paramref name="to"/>. Caller holds the gate.</summary>
+        </member>
+        <member name="M:PathingAPI.Pathing.RouteSearch.Draw(System.Single,System.ReadOnlySpan{System.Numerics.Vector3},System.Nullable{PathingAPI.Watch.PathStyle})">
+            <summary>Shows <paramref name="points"/> as a path without searching. Caller holds the gate.</summary>
+        </member>
+        <member name="M:PathingAPI.Pathing.RouteSearch.ResetAsync(System.Threading.CancellationToken)">
+            <summary>Drops the engine's resident state so a fresh 3D view receives every chunk again.</summary>
+        </member>
+        <member name="M:PathingAPI.Pathing.RouteSearch.SetEngineAsync(SharedLib.PathingEngine,System.Threading.CancellationToken)">
+            <summary>Switches engine at runtime (A/B without a restart), like <c>POST Engine</c>.</summary>
+        </member>
+        <member name="M:PathingAPI.Pathing.RouteSearch.RunAsync(System.Action,System.Threading.CancellationToken)">
+            <summary>
+            Runs <paramref name="action"/> under the gate on a pool thread. False when
+            <paramref name="token"/> was cancelled before the gate came free; exceptions
+            from the action itself are the caller's.
+            </summary>
+        </member>
+        <member name="T:PathingAPI.RateLimit.RateLimitFilter">
+            <summary>
+            Holds the <see cref="T:PathingAPI.Pathing.PatherGate"/> for the whole action, or answers 429 when
+            another caller - HTTP, AnTCP or the web UI - has it. The V1 client turns a 429
+            into an empty route, so this is one-at-a-time, not a queue. It used to be a
+            static bool tested and set in two steps, which two requests could pass together.
+            </summary>
+        </member>
+        <member name="M:PathingAPI.RateLimit.RateLimitFilter.#ctor(PathingAPI.Pathing.PatherGate)">
+            <summary>
+            Holds the <see cref="T:PathingAPI.Pathing.PatherGate"/> for the whole action, or answers 429 when
+            another caller - HTTP, AnTCP or the web UI - has it. The V1 client turns a 429
+            into an empty route, so this is one-at-a-time, not a queue. It used to be a
+            static bool tested and set in two steps, which two requests could pass together.
+            </summary>
+        </member>
+        <member name="T:PathingAPI.Shared.ResultKind">
+            <summary>How a <see cref="T:PathingAPI.Shared.ResultLine"/> is coloured.</summary>
+        </member>
+        <member name="P:PathingAPI.Shared.Panel.Position">
+            <summary>bottom-left, top-left or bottom-right.</summary>
+        </member>
+        <member name="P:PathingAPI.Shared.SearchPanel.Continent">
+            <summary>The continent to start on; otherwise the first with tiles.</summary>
+        </member>
+        <member name="P:PathingAPI.Shared.SearchPanel.Locked">
+            <summary>Keeps the panel on <see cref="P:PathingAPI.Shared.SearchPanel.Continent"/>: the map can only show its own.</summary>
+        </member>
+        <member name="M:PathingAPI.Shared.SearchPanel.AddCustom(PathingAPI.Catalog.NamedLocation)">
+            <summary>A map-authored point; the map page mirrors its custom POIs here.</summary>
+        </member>
+        <member name="P:PathingAPI.Shared.Viewport3D.ChildContent">
+            <summary>Panels shown over the view.</summary>
+        </member>
+        <member name="P:PathingAPI.Shared.Viewport3D.ResetOnOpen">
+            <summary>
+            Drops the engine's resident state when the view opens, so every chunk and
+            tile is streamed to it afresh. Off for a view that only watches.
+            </summary>
+        </member>
+        <member name="M:PathingAPI.Startup.StartRequestedBakes(PPather.PPatherService)">
+            <summary>
+            <c>--bake=&lt;continent&gt;</c> starts a background navmesh bake as the server comes
+            up (progress on GET api/PPather/Bake/Status); <c>--bake-area=&lt;continent&gt;</c>
+            extracts the standalone area-id grid so area lookups need no game files.
+            Either takes <c>all</c> for every continent. The API serves immediately.
+            </summary>
+        </member>
+        <member name="T:PathingAPI.Status.StatusSnapshot">
+            <summary>What the status bar shows, read in one go.</summary>
+        </member>
+        <member name="M:PathingAPI.Status.StatusSnapshot.#ctor(System.String,System.String,SharedLib.PathingEngine,System.Int32,System.Collections.Generic.IReadOnlyList{PPather.PPatherService.NavmeshCoverage},PPather.PPatherService.NavmeshBakeStatus,System.Boolean,System.Int32,System.Double,System.Int32)">
+            <summary>What the status bar shows, read in one go.</summary>
+        </member>
+        <member name="M:PathingAPI.Status.StatusSnapshot.CanRoute(System.String)">
+            <summary>
+            Whether a route on <paramref name="continent"/> can be answered. Only the
+            navmesh engine has a tile cache to judge by; SpotAStar is not second-guessed.
+            </summary>
+        </member>
+        <member name="T:PathingAPI.Status.ServerStatus">
+            <summary>
+            Server state for the UI. The tile count walks the cache directories, so it is
+            cached briefly; everything else is read live and costs nothing.
+            </summary>
+        </member>
+        <member name="M:PathingAPI.Status.ServerStatus.#ctor(PPather.PPatherService,DataConfig,PathingAPI.Pathing.PatherGate,PathingAPI.Watch.WatchSettings)">
+            <summary>
+            Server state for the UI. The tile count walks the cache directories, so it is
+            cached briefly; everything else is read live and costs nothing.
+            </summary>
+        </member>
+        <member name="M:PathingAPI.Status.ServerStatus.Invalidate">
+            <summary>Drops the cached tile count, e.g. after a bake or a cache clear.</summary>
+        </member>
+        <member name="T:PathingAPI.Watch.NavmeshTileMesh">
+            <summary>A Detour tile as a renderable triangle soup, ground and liquid apart.</summary>
+        </member>
+        <member name="M:PathingAPI.Watch.NavmeshTileMesh.#ctor(System.Single[],System.Int32[],System.Int32[])">
+            <summary>A Detour tile as a renderable triangle soup, ground and liquid apart.</summary>
+        </member>
+        <member name="M:PathingAPI.Watch.NavmeshTileMesh.From(DotRecast.Detour.DtMeshData)">
+            <summary>
+            Fan-triangulates each polygon and splits the indices by area. Vertices go
+            rc -> wow ({z, x, y}); the 3D view applies the same axis mapping as every
+            other mesh.
+            </summary>
+        </member>
+        <member name="T:PathingAPI.Watch.WatchColor">
+            <summary>Colour codes the hub sends; the 3D view and the map both decode them.</summary>
+        </member>
+        <member name="T:PathingAPI.Watch.PathStyle">
+            <summary>
+            How a finished path is drawn. The name is also the mesh/layer id, so a later
+            path with the same name replaces the earlier one.
+            </summary>
+        </member>
+        <member name="M:PathingAPI.Watch.PathStyle.#ctor(PathingAPI.Watch.WatchColor,System.String)">
+            <summary>
+            How a finished path is drawn. The name is also the mesh/layer id, so a later
+            path with the same name replaces the earlier one.
+            </summary>
+        </member>
+        <member name="F:PathingAPI.Watch.PathStyle.Api">
+            <summary>Routes requested over the HTTP or AnTCP API.</summary>
+        </member>
+        <member name="F:PathingAPI.Watch.PathStyle.Draft">
+            <summary>Straight lines and recorded paths drawn without searching.</summary>
+        </member>
+        <member name="M:PathingAPI.Watch.PathStyle.For(PPather.SearchStrategy)">
+            <summary>A search from the web UI, coloured by strategy so A/B runs stay apart.</summary>
+        </member>
+        <member name="T:PathingAPI.Watch.GeometryMode">
+            <summary>How much client geometry the 3D view receives alongside a search.</summary>
+        </member>
+        <member name="F:PathingAPI.Watch.GeometryMode.SparseFromSpots">
+            <summary>Only triangles under explored spots (70-90% fewer).</summary>
+        </member>
+        <member name="F:PathingAPI.Watch.GeometryMode.WalkableOnly">
+            <summary>Walkable areas near explored spots (50-80% fewer).</summary>
+        </member>
+        <member name="F:PathingAPI.Watch.GeometryMode.ExploredArea">
+            <summary>The bounding box of explored spots (30-70% fewer).</summary>
+        </member>
+        <member name="F:PathingAPI.Watch.GeometryMode.All">
+            <summary>The full mesh.</summary>
+        </member>
+        <member name="T:PathingAPI.Watch.WatchBroadcaster">
+            <summary>
+            Streams what the engine does - search progress, finished paths, geometry and
+            navmesh tiles - to every watch-hub viewer. It subscribes to the engine once for
+            the whole server. That used to be done by each open page's watch component,
+            and since each of them broadcast to all viewers, N open tabs sent every message
+            N times to N clients, each with its own 50 ms polling thread.
+            <para>
+            Engine events fire on the searching thread. They only queue work here; one loop
+            runs it in order, so the search never waits on a socket and a finished path is
+            never drawn before the progress that preceded it. With no viewer connected,
+            nothing is queued at all, so the API pays nothing for the visualiser.
+            </para>
+            </summary>
+        </member>
+        <member name="M:PathingAPI.Watch.WatchBroadcaster.#ctor(PPather.PPatherService,Microsoft.AspNetCore.SignalR.IHubContext{PathingAPI.WatchHub},PathingAPI.Watch.WatchSettings,Microsoft.Extensions.Logging.ILogger{PathingAPI.Watch.WatchBroadcaster})">
+            <summary>
+            Streams what the engine does - search progress, finished paths, geometry and
+            navmesh tiles - to every watch-hub viewer. It subscribes to the engine once for
+            the whole server. That used to be done by each open page's watch component,
+            and since each of them broadcast to all viewers, N open tabs sent every message
+            N times to N clients, each with its own 50 ms polling thread.
+            <para>
+            Engine events fire on the searching thread. They only queue work here; one loop
+            runs it in order, so the search never waits on a socket and a finished path is
+            never drawn before the progress that preceded it. With no viewer connected,
+            nothing is queued at all, so the API pays nothing for the visualiser.
+            </para>
+            </summary>
+        </member>
+        <member name="M:PathingAPI.Watch.WatchBroadcaster.Log(System.String)">
+            <summary>Shows a message in every viewer's status line.</summary>
+        </member>
+        <member name="M:PathingAPI.Watch.WatchBroadcaster.ShowPath(System.Numerics.Vector3[],PathingAPI.Watch.PathStyle)">
+            <summary>Draws <paramref name="points"/> as a finished path, for a draw the engine cannot do.</summary>
+        </member>
+        <member name="M:PathingAPI.Watch.WatchBroadcaster.ShowMarker(System.String,System.Numerics.Vector3,PathingAPI.Watch.WatchColor)">
+            <summary>Marks a point with a sphere, e.g. a generated start position.</summary>
+        </member>
+        <member name="M:PathingAPI.Watch.WatchBroadcaster.Clear">
+            <summary>Wipes every viewer's scene and forgets what was already sent.</summary>
+        </member>
+        <member name="M:PathingAPI.Watch.WatchBroadcaster.SendTestPointsAsync(System.Boolean,System.Threading.CancellationToken)">
+            <summary>SpotAStar's explored and blocked points, when the toolbar asks for them.</summary>
+        </member>
+        <member name="M:PathingAPI.Watch.WatchBroadcaster.SpotsNear(WowTriangles.TriangleCollection)">
+            <summary>Explored, unblocked spots inside (or just outside) the chunk's bounds.</summary>
+        </member>
+        <member name="T:PathingAPI.Watch.WatchSettings">
+            <summary>
+            What the server streams to every viewer. These used to live on each open page's
+            own copy of the watch component, but every copy broadcast to every viewer, so a
+            toggle in one tab was overridden by any other tab. One shared set is what
+            actually happens on the wire, so that is what the toolbar now edits.
+            </summary>
+        </member>
+        <member name="P:PathingAPI.Watch.WatchSettings.TestPoints">
+            <summary>SpotAStar debug points; only produced while <c>PathGraph.DelayMs</c> slows the search.</summary>
+        </member>
+        <member name="P:PathingAPI.Watch.WatchSettings.Viewers">
+            <summary>Open watch-hub connections. Nothing is streamed while this is 0.</summary>
+        </member>
+        <member name="M:PathingAPI.Pages.CloseNPC.ListNpcs">
+            <summary>NPCs of the chosen type whose first spawn lies inside the zone.</summary>
+        </member>
+        <member name="T:PathingAPI.Pages.Index.ApiResult">
+            <summary>What a test route's call returned, as reported by pathingUi.callApi.</summary>
+        </member>
+        <member name="M:PathingAPI.Pages.Index.ApiResult.#ctor(System.Int32,System.Int32,System.Int32)">
+            <summary>What a test route's call returned, as reported by pathingUi.callApi.</summary>
         </member>
     </members>
 </doc>

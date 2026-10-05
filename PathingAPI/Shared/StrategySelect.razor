@@ -1,0 +1,28 @@
+@* SpotAStar's search strategy. The navmesh engine has one strategy and ignores it. *@
+
+<select class="pa-select" id="@Id" value="@Value" @onchange="Change">
+    @foreach ((SearchStrategy strategy, string label) in Strategies)
+    {
+        <option value="@strategy">@label</option>
+    }
+</select>
+
+@code {
+    private static readonly (SearchStrategy Strategy, string Label)[] Strategies =
+    [
+        (SearchStrategy.Original, "Original"),
+        (SearchStrategy.A_Star, "A*"),
+        (SearchStrategy.A_Star_With_Model_Avoidance, "A* avoiding models"),
+    ];
+
+    [Parameter] public string? Id { get; set; }
+
+    [Parameter] public SearchStrategy Value { get; set; }
+
+    [Parameter] public EventCallback<SearchStrategy> ValueChanged { get; set; }
+
+    private Task Change(ChangeEventArgs e) =>
+        Enum.TryParse(e.Value?.ToString(), out SearchStrategy strategy)
+            ? ValueChanged.InvokeAsync(strategy)
+            : Task.CompletedTask;
+}

@@ -1,0 +1,36 @@
+@* A floating card over the 3D view or the map. Collapses to its header. *@
+
+<section class="pa-panel pa-panel--@Position @(collapsed ? "is-collapsed" : null) @Class" aria-label="@Title">
+    <header class="pa-panel-header">
+        @if (!string.IsNullOrEmpty(Icon))
+        {
+            <span class="oi oi-@Icon pa-panel-icon" aria-hidden="true"></span>
+        }
+        <h2 class="pa-panel-title">@Title</h2>
+        @Actions
+        <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" @onclick="() => collapsed = !collapsed"
+                title="@(collapsed ? "Expand" : "Collapse")" aria-expanded="@(!collapsed)">
+            <span class="oi @(collapsed ? "oi-chevron-top" : "oi-chevron-bottom")" aria-hidden="true"></span>
+        </button>
+    </header>
+    <div class="pa-panel-body">
+        @ChildContent
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public string? Icon { get; set; }
+
+    /// <summary>bottom-left, top-left or bottom-right.</summary>
+    [Parameter] public string Position { get; set; } = "bottom-left";
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool collapsed;
+}

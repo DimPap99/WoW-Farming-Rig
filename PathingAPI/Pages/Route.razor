@@ -1,327 +1,212 @@
-﻿@page "/Route"
+@page "/Route"
 
-@inject IJSRuntime jsRuntime
-@inject PPatherService pPatherService
-@inject DataConfig dataConfig
-@inject WorldMapAreaDB worldMapAreaDb
+@inject RecordedPaths recorded
+@inject RouteSearch routes
+@inject PPatherService service
+@inject WorldMapAreaDB worldMapAreas
+@inject ServerStatus status
 
-<Watch PathColour="@pathColour" Name="@name" ClearPath=@clearPath />
+<Viewport3D>
+    <Panel Title="Recorded paths" Icon="map-marker">
+        <div class="pa-form">
+            <div class="pa-field">
+                <label class="pa-label" for="pa-path-file">Path file</label>
+                <input class="pa-input" id="pa-path-file" list="pa-path-files" autocomplete="off"
+                       placeholder="Type to search @files.Count files" @bind="file" @bind:after="FileChosen" />
+                <datalist id="pa-path-files">
+                    @foreach (string f in files)
+                    {
+                        <option value="@f"></option>
+                    }
+                </datalist>
+            </div>
 
-<style>
-
-    .mat-autocomplete-list-popup > .mdc-list {
-        position: absolute;
-        bottom: 60px;
-    }
-
-    .thumbnail {
-        position: relative;
-        z-index: 0;
-        text-decoration: none;
-    }
-
-        .thumbnail:hover {
-            background-color: transparent;
-            z-index: 50;
-        }
-
-        .thumbnail .thumbnail-img {
-            /*CSS for enlarged image*/
-            position: absolute;
-            padding: 5px;
-            visibility: hidden;
-            text-decoration: none;
-        }
-
-            .thumbnail .thumbnail-img img {
-                padding: 2px;
+            @if (thumbnail != null)
+            {
+                <a class="pa-thumb" href="@thumbnail" target="_blank" title="Screenshot saved with the recording">
+                    <img src="@thumbnail" alt="Screenshot of @file" loading="lazy" />
+                </a>
             }
 
-        .thumbnail:hover .thumbnail-img {
-            /*CSS for enlarged image on hover*/
-            visibility: visible;
-            transform: scale(2);
-            transform-origin: top left;
-            position: fixed;
-            top: 5px;
-            left: 5px;
-            pointer-events: none;
-        }
-
-    #controlPanel {
-        position: fixed;
-        bottom: 0;
-        width: 100%;
-        height: 30px;
-        z-index: 1000;
-        background-color: black;
-        color: white;
-        padding: 0 10px;
-        text-align: center;
-        display: flex;
-    }
-
-</style>
-
-<div id="controlPanel">
-    <label>Zone:</label>
-    <select disabled="@IsDisabled" @bind="UIMapId">
-        @foreach (var wma in wmas)
-        {
-            <option value="@wma.UIMapId">@wma.AreaName - @wma.UIMapId</option>
-        }
-    </select>
-
-    <MatAutocompleteList Items="@Files" TItem="string" Label="Path" ValueChanged="OnSelectedPathChanged"
-                         ShowClearButton="true" NumberOfElementsInPopup="@VisibleNum" OnTextChanged="OnTextChanged">
-        <ItemTemplate>
-            <div class="mat-autocomplete-list-popup-element" style="display: flex; width: 100%; font-size: 0.75vw">
-                @{
-                    string imgFile = @context.Replace("json", "jpg");
-                }
-                @if (System.IO.Path.Exists(System.IO.Path.Combine(dataConfig.Path, imgFile)))
-                {
-                    <a class="thumbnail">
-                        <span class="oi oi-image" aria-hidden="true"> </span>
-                        <span class="thumbnail-img">
-                            <img src="./path/@imgFile" />
-                        </span>
-                    </a>
-                }
-                @context
+            <div class="pa-field">
+                <label class="pa-label" for="pa-path-zone" title="Converts zone coordinates to world ones and picks the continent">Zone</label>
+                <select class="pa-select" id="pa-path-zone" @bind="uiMap">
+                    <option value="0" disabled>Choose a zone</option>
+                    @foreach (WorldMapArea area in zones)
+                    {
+                        <option value="@area.UIMapId">@area.AreaName (@area.Continent)</option>
+                    }
+                </select>
             </div>
-        </ItemTemplate>
-    </MatAutocompleteList>
 
-    <button type="button" disabled="@IsDisabled" class="btn btn-primary" @onclick="StartDraw">
-        @if (IsDisabled)
-        {
-            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-        }
-        Draw Path
-    </button>
+            <BusyButton Class="pa-btn--primary" Icon="eye" Busy="@busy" Disabled="@(file.Length == 0 || uiMap == 0)" OnClick="DrawAsync">
+                Load and draw
+            </BusyButton>
 
-    <label>Start:</label>
-    <InputNumber @bind-Value="StartIndex" style="width: 60px"></InputNumber>
-    <label>End:</label>
-    <InputNumber @bind-Value="EndIndex" style="width: 60px"></InputNumber>
+            @if (points.Length > 1)
+            {
+                <div class="pa-divider"></div>
+                <div class="pa-field">
+                    <span class="pa-label">Leg to search (of @points.Length points)</span>
+                    <div class="pa-stepper">
+                        <button class="pa-btn pa-btn--icon" type="button" title="Previous leg" @onclick="() => Step(-1)">
+                            <span class="oi oi-chevron-left" aria-hidden="true"></span>
+                        </button>
+                        <input class="pa-input" type="number" min="0" max="@(points.Length - 1)" aria-label="Start point" @bind="Start" />
+                        <span class="pa-faint">to</span>
+                        <input class="pa-input" type="number" min="0" max="@(points.Length - 1)" aria-label="End point" @bind="End" />
+                        <button class="pa-btn pa-btn--icon" type="button" title="Next leg" @onclick="() => Step(1)">
+                            <span class="oi oi-chevron-right" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                </div>
 
-    <button type="button" disabled="@IsDisabled" class="btn btn-primary" @onclick="DoPrev">
-        --
-    </button>
-    <button type="button" disabled="@IsDisabled" class="btn btn-primary" @onclick="DoNext">
-        ++
-    </button>
-    <button type="button" disabled="@IsDisabled" class="btn btn-primary" @onclick="DoSearch">
-        @if (IsDisabled)
-        {
-            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-        }
-        Search
-    </button>
+                @if (snapshotEngine == PathingEngine.SpotAStar)
+                {
+                    <div class="pa-field">
+                        <label class="pa-label" for="pa-path-strategy">Strategy</label>
+                        <StrategySelect Id="pa-path-strategy" @bind-Value="strategy" />
+                    </div>
+                }
 
-    <!-- Search Type Combo -->
-    <label>Search:</label>
-    <select disabled="@IsDisabled" @bind="SearchType">
-        <option value="0">Original</option>
-        <option value="1">A*</option>
-        <option value="2">A* avoid models</option>
-    </select>
+                <BusyButton Class="pa-btn--primary" Icon="media-play" Busy="@busy" OnClick="SearchLegAsync">
+                    Search leg
+                </BusyButton>
+            }
 
-</div>
+            <ResultLine Text="@result" Kind="@resultKind" />
+        </div>
+    </Panel>
+</Viewport3D>
 
 @code {
-    private bool IsDisabled { get; set; } = true;
+    private IReadOnlyList<string> files = [];
+    private WorldMapArea[] zones = [];
 
-    private int VisibleNum { get; set; } = 10;
-    private string Selected { get; set; } = string.Empty;
+    private string file = string.Empty;
+    private string? thumbnail;
+    private int uiMap;
+    private float mapId;
+    private Vector3[] points = [];
+    private int start;
+    private int end = 1;
+    private SearchStrategy strategy = RouteSearch.DefaultStrategy;
+    private PathingEngine snapshotEngine;
+    private bool busy;
+    private string? result;
+    private ResultKind resultKind;
 
-    private Vector3[] path { get; set; } = Array.Empty<Vector3>();
-
-    private int UIMapId { get; set; }
-
-    private IEnumerable<WorldMapArea> wmas { get; set; }
-    private IEnumerable<string> Files { get; set; }
-
-    private int startIndex = 0;
-    private int StartIndex
+    private int Start
     {
-        get => startIndex;
-        set
-        {
-            startIndex = Math.Min(Math.Max(value, 0), path.Length - 1);
-        }
+        get => start;
+        set => start = Clamp(value);
     }
 
-    private int endIndex = 1;
-    private int EndIndex
+    private int End
     {
-        get => endIndex;
-        set
-        {
-            endIndex = Math.Min(Math.Max(value, 0), path.Length - 1);
-        }
+        get => end;
+        set => end = Clamp(value);
     }
 
-    System.Threading.Thread searchPathThread;
-
-    private int SearchType { get; set; } =
-        (int)SearchStrategy.A_Star_With_Model_Avoidance;
-
-    private int pathColour { get; set; } = (int)Watch.Color.Orange;
-    private string name { get; set; } = "test";
-    private bool clearPath { get; set; } = false;
+    private int Clamp(int index) => Math.Clamp(index, 0, Math.Max(0, points.Length - 1));
 
     protected override void OnInitialized()
     {
-        wmas = worldMapAreaDb.Values.OrderBy(x => x.AreaName);
-        Files = PathFiles();
+        files = recorded.Files();
+        zones = worldMapAreas.Values.OrderBy(w => w.AreaName).ToArray();
+        snapshotEngine = status.Read().Engine;
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    private void FileChosen()
     {
-        if (firstRender)
+        thumbnail = null;
+        if (!files.Contains(file))
+            return;
+
+        thumbnail = recorded.Thumbnail(file);
+        if (recorded.GuessZone(file) is WorldMapArea zone)
+            uiMap = zone.UIMapId;
+    }
+
+    private async Task DrawAsync()
+    {
+        if (!files.Contains(file) || !worldMapAreas.TryGet(uiMap, out WorldMapArea zone) ||
+            !ContinentDB.NameToId.TryGetValue(zone.Continent, out mapId))
         {
-            await jsRuntime.InvokeVoidAsync("createScene");
-            pPatherService.Reset();
-
-            IsDisabled = false;
-            await InvokeAsync(StateHasChanged);
+            Show("Choose a path file and its zone.", ResultKind.Error);
+            return;
         }
-    }
 
-    private async Task DoSearch()
-    {
-        IsDisabled = true;
-
-        await InvokeAsync(StateHasChanged);
-
-        searchPathThread = new Thread(SearchPathThread);
-        searchPathThread.Start();
-    }
-
-    public async void SearchPathThread()
-    {
+        busy = true;
         try
         {
-            worldMapAreaDb.TryGet(UIMapId, out var wma);
-            float mapId = ContinentDB.NameToId[wma.Continent];
+            Vector3[] read = recorded.Read(file);
+            int zoneMap = uiMap;
 
-            Vector3 s = path[StartIndex];
-            Vector4 start = new Vector4(s.X, s.Y, s.Z, mapId);
-
-            Vector3 e = path[EndIndex];
-            Vector4 end = new Vector4(e.X, e.Y, e.Z, mapId);
-
-            pathColour = (int)Watch.Color.Red;
-            name = "test";
-            clearPath = true;
-            await InvokeAsync(StateHasChanged);
-
-            pPatherService.SetLocations(start, end);
-
-            var patherPath = pPatherService.DoSearch((SearchStrategy)SearchType);
-
-            IsDisabled = false;
-        }
-        catch (Exception ex)
-        {
-            await jsRuntime.InvokeVoidAsync("log", ex.Message);
-        }
-
-        await InvokeAsync(StateHasChanged);
-    }
-
-    public void DoNext()
-    {
-        StartIndex++;
-        EndIndex++;
-    }
-
-    public void DoPrev()
-    {
-        StartIndex--;
-        EndIndex--;
-    }
-
-
-    private void OnSelectedPathChanged(string pick)
-    {
-        Selected = pick;
-        if (string.IsNullOrEmpty(Selected) || Selected == Files.First())
-        {
-            Selected = string.Empty;
-        }
-
-        //ValidateLoadButton();
-        base.InvokeAsync(StateHasChanged);
-    }
-
-    private void OnTextChanged(string text)
-    {
-        VisibleNum = string.IsNullOrEmpty(text) ? 10 : 20;
-    }
-
-    private void OnChanged(object sender, System.IO.FileSystemEventArgs e)
-    {
-        base.InvokeAsync(StateHasChanged);
-    }
-
-    private void StartDraw()
-    {
-        worldMapAreaDb.TryGet(UIMapId, out var wma);
-        float mapId = ContinentDB.NameToId[wma.Continent];
-
-        path = GetPath(Selected);
-
-        static bool Z_Zero(Vector3 v) => v.Z == 0;
-        if (path.All(Z_Zero))
-        {
-            for (int i = 0; i < path.Length; i++)
+            // Zone coordinates get their world position (and a height) from the engine,
+            // each point guessing its z from the one before.
+            bool converted = await routes.RunAsync(() =>
             {
-                var row = path[i];
+                if (!read.All(p => p.Z == 0))
+                    return;
 
-                // try to guess Z component by looking at the previous path point
                 float lastZ = 0;
-                if (i > 0)
-                    lastZ = path[i - 1].Z;
+                for (int i = 0; i < read.Length; i++)
+                {
+                    read[i] = service.ToWorld(zoneMap, read[i].X, read[i].Y, lastZ).AsVector3();
+                    lastZ = read[i].Z;
+                }
+            }, Token);
 
-                Vector4 world = pPatherService.ToWorld(UIMapId, row.X, row.Y, lastZ);
+            if (!converted)
+                return;
 
-                path[i] = world.AsVector3();
-            }
+            points = read;
+            start = 0;
+            end = Clamp(1);
+
+            await routes.DrawAsync(mapId, points, PathStyle.Draft, Token);
+            Show($"{points.Length} points on {zone.Continent}", ResultKind.Ok);
         }
-
-        pathColour = (int)Watch.Color.Orange;
-        name = "route";
-        clearPath = false;
-        StateHasChanged();
-
-        pPatherService.DrawPath(mapId, path);
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            Show(e.Message, ResultKind.Error);
+        }
+        finally
+        {
+            busy = false;
+        }
     }
 
-    public Vector3[] GetPath(string path)
+    private void Step(int by)
     {
-        return Newtonsoft.Json.JsonConvert
-            .DeserializeObject<Vector3[]>(
-            System.IO.File.ReadAllText(RelativeFilePath(dataConfig, path)))!;
+        if (start + by < 0 || end + by > points.Length - 1)
+            return;
+
+        start += by;
+        end += by;
     }
 
-    private string RelativeFilePath(DataConfig dataConfig, string path)
+    private async Task SearchLegAsync()
     {
-        return !path.Contains(dataConfig.Path)
-            ? Join(dataConfig.Path, path)
-            : path;
+        busy = true;
+        Show($"Searching {start} to {end}...", ResultKind.Info);
+        try
+        {
+            SearchOutcome outcome = await routes.FindAsync(
+                new Vector4(points[start], mapId), new Vector4(points[end], mapId), strategy, default, Token);
+            Show($"Leg {start}-{end}: {outcome.Summary}",
+                outcome.Error != null ? ResultKind.Error : outcome.Found ? ResultKind.Ok : ResultKind.Warn);
+        }
+        finally
+        {
+            busy = false;
+        }
     }
 
-    public IEnumerable<string> PathFiles()
+    private void Show(string text, ResultKind kind)
     {
-        var root = Join(
-            dataConfig.Path, DirectorySeparatorChar.ToString());
-
-        return EnumerateFiles(root, "*.json*", System.IO.SearchOption.AllDirectories)
-            .Select(path => path.Replace(root, string.Empty))
-            .OrderBy(x => x, new NaturalStringComparer());
+        result = text;
+        resultKind = kind;
     }
-
 }

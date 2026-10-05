@@ -386,12 +386,10 @@
     {
         if (host is not { IsRunning: true, CurrentTask: > 0 } || host.Route != route.File)
             return string.Empty;
-        return (index + 1).CompareTo(host.CurrentTask) switch
-        {
-            < 0 => "done",
-            0 => "current",
-            _ => string.Empty
-        };
+        // Not a relational switch: a line opening with '<' inside @code is read
+        // as markup by some Razor compilers (10.0.1xx on Linux).
+        int order = (index + 1).CompareTo(host.CurrentTask);
+        return order == 0 ? "current" : order < 0 ? "done" : string.Empty;
     }
 
     protected override void OnInitialized()

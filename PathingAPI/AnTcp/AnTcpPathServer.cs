@@ -1,8 +1,9 @@
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+using PathingAPI.Pathing;
+
 using PPather;
-using PPather.Graph;
 
 using System;
 using System.Buffers.Binary;
@@ -60,24 +61,23 @@ public sealed class AnTcpPathServer : BackgroundService
         ConfigureFilter = 7,
     }
 
-    private const SearchStrategy Search = SearchStrategy.A_Star_With_Model_Avoidance;
-
     private readonly ILogger<AnTcpPathServer> logger;
     private readonly PPatherService service;
+    private readonly RouteSearch routes;
+    // Shared with the HTTP API and the web UI, so an AnTCP search never interleaves
+    // with theirs. AnTCP waits for it instead of rejecting: a warm navmesh query is
+    // single-digit milliseconds, so waiting beats the HTTP API's 429 (which the V1
+    // client cannot distinguish from "no path exists").
+    private readonly PatherGate gate;
     private readonly IPEndPoint endpoint;
 
-    // PPatherService is a singleton whose search is a SetLocations-then-DoSearch
-    // sequence over shared state, so two clients interleaving would return each
-    // other's routes. Serialize instead of rejecting: a warm navmesh query is
-    // single-digit milliseconds, so waiting beats the HTTP API's 429 (which the
-    // V1 client cannot distinguish from "no path exists").
-    private readonly SemaphoreSlim searchLock = new(1, 1);
-
     public AnTcpPathServer(ILogger<AnTcpPathServer> logger, PPatherService service,
-        string ip, int port)
+        RouteSearch routes, PatherGate gate, string ip, int port)
     {
         this.logger = logger;
         this.service = service;
+        this.routes = routes;
+        this.gate = gate;
         endpoint = new IPEndPoint(IPAddress.Parse(ip), port);
     }
 
@@ -255,15 +255,14 @@ public sealed class AnTcpPathServer : BackgroundService
 
     private byte[] FindPath(int mapId, int flags, Vector3 start, Vector3 end, EndPoint? remote)
     {
-        searchLock.Wait();
+        using IDisposable lease = gate.Enter();
         try
         {
             start = SnapImplausibleZ(mapId, start, "start", remote);
             end = SnapImplausibleZ(mapId, end, "end", remote);
 
-            service.SetLocations(new(start, mapId), new(end, mapId));
             // Fully qualified: System.IO.Path is in scope for the stream code above.
-            PPather.Graph.Path? path = service.DoSearch(Search);
+            PPather.Graph.Path? path = routes.Find(new(start, mapId), new(end, mapId), default);
 
             if (path == null || path.locations.Count == 0)
             {
@@ -297,18 +296,8 @@ public sealed class AnTcpPathServer : BackgroundService
                 remote, mapId, start, end);
             return NoPath();
         }
-        finally
-        {
-            searchLock.Release();
-        }
     }
 
     /// <summary>One all-zero Vector3 - AmeisenNavigation's failure reply, which the client tests for.</summary>
     private static byte[] NoPath() => new byte[Vector3Size];
-
-    public override void Dispose()
-    {
-        searchLock.Dispose();
-        base.Dispose();
-    }
 }

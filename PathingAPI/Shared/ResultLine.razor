@@ -1,0 +1,12 @@
+@* The outcome of the last action in a panel. *@
+
+@if (!string.IsNullOrEmpty(Text))
+{
+    <p class="pa-result pa-result--@Kind.ToString().ToLowerInvariant()" role="status">@Text</p>
+}
+
+@code {
+    [Parameter] public string? Text { get; set; }
+
+    [Parameter] public ResultKind Kind { get; set; }
+}

@@ -15,69 +15,7 @@
 
 @implements IAsyncDisposable
 
-<style>
-    .adtText {
-    color: white;
-    background-color: #00000099;
-    width: 50px;
-    text-align: center;
-    }
-
-    .leaflet-container canvas {
-        pointer-events: auto !important;
-    }
-
-    .poiatlas {
-    background-image: url('_content/Frontend/img/atlas.png');
-    background-repeat: no-repeat;
-    background-position: 32px 32px;
-    }
-
-    .flash {
-    animation: flash-effect 0.3s ease-in-out;
-    }
-
-    @@keyframes flash-effect {
-    0% {
-    background-color: #ffff99;
-    }
-
-    100% {
-    background-color: transparent;
-    }
-    }
-
-    .specText {
-    opacity: 0.8;
-    background-color: #222;
-    border-radius: 4px;
-    color: #fff;
-    height: 26px;
-    left: 60px;
-    padding: 2px;
-    position: absolute;
-    text-align: center;
-    z-index: 1000;
-    font-size: 16px;
-    }
-
-    #adtClick {
-    top: 20px;
-    }
-
-    #worldClick {
-    top: 60px;
-    }
-
-    #mapClick {
-    top: 100px;
-    }
-
-    #subZoneName {
-    top: 140px;
-    }
-
-</style>
+@* Its CSS is wwwroot/css/leaflet-map.css, shared with PathingAPI. *@
 
 
 <Card>

@@ -2,150 +2,224 @@
 <#
 .SYNOPSIS
   Download pre-generated Leaflet minimap tiles from the CDN into the local cache -
-  no WoW client or MPQ extraction needed. Zero dependencies (built-in PowerShell).
+  no WoW client or MPQ extraction needed. Zero dependencies (built-in PowerShell,
+  5.1 or 7 on Windows, Linux and macOS).
 
 .DESCRIPTION
-  Destination is taken from DataConfig: reads data_config.json (Root) and writes to
-  <Root>/leaflet/<era>, so a customized Root is honored. Layout is era-partitioned
-  (precata/cata/mop) exactly like DataConfig.ClientEra groups clients, so one era's
-  art never overwrites another's.
+  Only the download scope in download-common.ps1 is fetched: WoW Classic
+  (precata Azeroth + Kalimdor) and WoW: Forever.
 
-  Unlike the navmesh bundles - one zip per continent+settings-hash - leaflet ships a
-  single <era>-tiles.zip per era, because the tiles are pure art with no bake
-  parameters to vary. That is also why there is no -Continent switch: the whole era
-  is one object. Northrend and Outland are absent from the cata bundle on purpose;
-  the frontend serves those from precata (see DataConfig.TileEra), so -Era cata
-  needs -Era precata too for full coverage.
+  The CDN ships one <era>-tiles.zip per era holding every continent of that era
+  (precata also carries Outland and Northrend). Rather than pull the whole
+  bundle, this reads the zip's directory with two small range requests and then
+  fetches only the byte span of each continent in scope - the bundle stores
+  each continent's tiles contiguously, so that is one request per continent and
+  nothing outside the scope is downloaded.
+
+  Destination is taken from DataConfig: reads data_config.json (Root) and writes
+  to <Root>/leaflet/<era>/<Continent>, so a customized Root is honored and one
+  era's art never overwrites another's.
 
 .EXAMPLE
-  .\download-leaflet.ps1                 # every era published on the CDN
-  .\download-leaflet.ps1 -Era mop
-  .\download-leaflet.ps1 -Force          # re-download even if tiles are present
+  ./download-leaflet.ps1                 # everything in scope
+  ./download-leaflet.ps1 -Continent Azeroth
+  ./download-leaflet.ps1 -Force          # re-download even if tiles are present
 #>
 [CmdletBinding()]
 param(
-    [string]$Era = "",           # e.g. mop; empty = all published eras
+    [string]$Era = "",           # precata or forever; empty = both
+    [string]$Continent = "",     # e.g. Azeroth; empty = all in scope
     [string]$DataConfig = "",    # explicit data_config.json path
     [switch]$Force               # re-download even if the cache looks populated
 )
 
-$ErrorActionPreference = "Stop"
-$ProgressPreference = "SilentlyContinue"   # ~10x faster Invoke-WebRequest
+. (Join-Path $PSScriptRoot "download-common.ps1")
 
-$Base = "https://bot.tortoiseclothing.org"
-$UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+Assert-ScopeArguments $Era $Continent
 
-# Fallback when the CDN has no leaflet/index.json yet. Mirrors
-# DataConfig.LeafletEras and the Configs blocks in leaflet-watch.js.
-$KnownEras = @("precata", "cata", "mop")
+# --- zip reading over HTTP ranges --------------------------------------------
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$ZipEndRecordSize = 22                       # end-of-central-directory record
+$ZipMaxTail = $ZipEndRecordSize + 65535      # ... plus the longest comment
+$ZipCentralSignature = 0x02014b50
+$ZipLocalSignature = 0x04034b50
+$ZipLocalHeaderSize = 30
+$ZipStored = 0
+$ZipDeflated = 8
 
-function Resolve-LeafletDest {
-    # data_config.json -> Root -> <Root>/leaflet (honoring DataConfig).
-    $candidates = @()
-    if ($DataConfig) { $candidates += $DataConfig }
-    $candidates += (Join-Path (Get-Location) "data_config.json")
-    $candidates += (Join-Path $repoRoot "data_config.json")
+# Lists a remote zip's entries without downloading it. Returns $null on 404.
+function Read-RemoteZipDirectory([string]$url) {
+    try {
+        $probe = Invoke-CdnGet $url -From 0 -To 0
+    }
+    catch {
+        if ($_.Exception.Message -match 'HTTP 404') { return $null }
+        throw
+    }
+    $total = [long]$probe.Content.Headers.ContentRange.Length
+    $probe.Dispose()
 
-    $dataRoot = $null
-    $cfgFile = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-    if ($cfgFile) {
-        $root = (Get-Content $cfgFile -Raw | ConvertFrom-Json).Root
-        if ($root) {
-            if ([System.IO.Path]::IsPathRooted($root)) {
-                $dataRoot = $root
+    $tailLength = [Math]::Min($total, [long]$ZipMaxTail)
+    $tail = Get-CdnBytes $url ($total - $tailLength) ($total - 1)
+
+    $end = -1
+    for ($i = $tail.Length - $ZipEndRecordSize; $i -ge 0; $i--) {
+        if ($tail[$i] -eq 0x50 -and $tail[$i + 1] -eq 0x4b -and $tail[$i + 2] -eq 5 -and $tail[$i + 3] -eq 6) {
+            $end = $i
+            break
+        }
+    }
+    if ($end -lt 0) { throw "$url is not a zip archive." }
+
+    $count = [BitConverter]::ToUInt16($tail, $end + 10)
+    $size = [BitConverter]::ToUInt32($tail, $end + 12)
+    $offset = [BitConverter]::ToUInt32($tail, $end + 16)
+    if ($count -eq 0xFFFF -or $size -eq 0xFFFFFFFF -or $offset -eq 0xFFFFFFFF) {
+        throw "$url is a ZIP64 archive, which this script does not read."
+    }
+
+    $directory = Get-CdnBytes $url $offset ($offset + $size - 1)
+    $entries = New-Object System.Collections.Generic.List[object]
+    $p = 0
+    for ($n = 0; $n -lt $count; $n++) {
+        if ([BitConverter]::ToUInt32($directory, $p) -ne $ZipCentralSignature) {
+            throw "$url has a damaged central directory (entry $n)."
+        }
+        $nameLength = [BitConverter]::ToUInt16($directory, $p + 28)
+        $entries.Add([pscustomobject]@{
+                Name   = [Text.Encoding]::UTF8.GetString($directory, $p + 46, $nameLength)
+                Method = [BitConverter]::ToUInt16($directory, $p + 10)
+                Size   = [long][BitConverter]::ToUInt32($directory, $p + 20)
+                Offset = [long][BitConverter]::ToUInt32($directory, $p + 42)
+            })
+        $p += 46 + $nameLength + [BitConverter]::ToUInt16($directory, $p + 30) + [BitConverter]::ToUInt16($directory, $p + 32)
+    }
+
+    $sorted = @($entries | Sort-Object Offset)
+    return [pscustomobject]@{ Entries = $sorted; CentralOffset = [long]$offset }
+}
+
+function Read-Exact([System.IO.Stream]$stream, [int]$count) {
+    $buffer = New-Object byte[] $count
+    $read = 0
+    while ($read -lt $count) {
+        $n = $stream.Read($buffer, $read, $count - $read)
+        if ($n -le 0) { throw "Unexpected end of downloaded data." }
+        $read += $n
+    }
+    return , $buffer   # keep it a byte[] (see Get-CdnBytes)
+}
+
+# Writes the given entries out of a downloaded byte span that starts at $spanStart.
+function Expand-ZipSpan([string]$spanFile, [long]$spanStart, $entries, [string]$root) {
+    $made = New-Object 'System.Collections.Generic.HashSet[string]'
+    $stream = [System.IO.File]::OpenRead($spanFile)
+    try {
+        foreach ($e in $entries) {
+            $segments = $e.Name -split '/'
+            if ($segments -contains '..') { throw "Refusing entry with a parent path: $($e.Name)" }
+
+            $stream.Position = $e.Offset - $spanStart
+            $header = Read-Exact $stream $ZipLocalHeaderSize
+            if ([BitConverter]::ToUInt32($header, 0) -ne $ZipLocalSignature) {
+                throw "Damaged local header for $($e.Name)."
+            }
+            $stream.Position += [BitConverter]::ToUInt16($header, 26) + [BitConverter]::ToUInt16($header, 28)
+            $data = Read-Exact $stream $e.Size
+
+            $out = Join-Segments $root $segments
+            $dir = Split-Path -Parent $out
+            if ($made.Add($dir)) { [void][System.IO.Directory]::CreateDirectory($dir) }
+
+            if ($e.Method -eq $ZipStored) {
+                [System.IO.File]::WriteAllBytes($out, $data)
+            }
+            elseif ($e.Method -eq $ZipDeflated) {
+                $inflate = New-Object System.IO.Compression.DeflateStream(
+                    (New-Object System.IO.MemoryStream(, $data)), [System.IO.Compression.CompressionMode]::Decompress)
+                $file = [System.IO.File]::Create($out)
+                try { $inflate.CopyTo($file) } finally { $file.Dispose(); $inflate.Dispose() }
             }
             else {
-                $cfgDir = Split-Path -Parent (Resolve-Path $cfgFile)
-                $try = [System.IO.Path]::GetFullPath((Join-Path $cfgDir $root))
-                if (Test-Path $try) { $dataRoot = $try }
+                throw "$($e.Name) uses zip method $($e.Method), which this script does not read."
             }
         }
     }
-
-    # Fallback: the repo's Json dir (where the relative "..\json" points in dev).
-    if (-not $dataRoot) { $dataRoot = Join-Path $repoRoot "Json" }
-
-    return (Join-Path $dataRoot "leaflet")
-}
-
-function Get-RemoteSize([string]$url) {
-    # A range GET, NOT a HEAD: R2 answers HEAD on these zips with an empty status
-    # in PowerShell, while a 0-0 range returns 206 + Content-Range "bytes 0-0/<total>".
-    try {
-        $r = Invoke-WebRequest -Uri $url -Method Get -UserAgent $UA `
-            -Headers @{ Range = "bytes=0-0" } -ErrorAction Stop
-        $cr = $r.Headers['Content-Range']
-        if ($cr -and ($cr -join '') -match '/(\d+)\s*$') { return [int64]$Matches[1] }
+    finally {
+        $stream.Dispose()
     }
-    catch { }
-    return 0
 }
 
-$dest = Resolve-LeafletDest
+# --- main ----------------------------------------------------------------------
+
+$dest = Join-Segments (Resolve-DataRoot $DataConfig) @("leaflet")
 Write-Host "leaflet destination: $dest"
+Write-Host "scope: $(Format-Scope)"
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 
-# Prefer a published index (era -> tiles/bytes) so "already complete" is exact;
-# fall back to probing the known era bundles when it is absent.
-$entries = @()
-try {
-    $index = Invoke-RestMethod -Uri "$Base/leaflet/index.json" -UserAgent $UA `
-        -Headers @{ "Cache-Control" = "no-cache" } -ErrorAction Stop
-    foreach ($e in $index.eras) {
-        $entries += [pscustomobject]@{ era = $e.era; zip = $e.zip; tiles = $e.tiles; bytes = $e.bytes }
-    }
-    Write-Host ("index: {0} era(s) published" -f $entries.Count)
-}
-catch {
-    Write-Host "no leaflet/index.json on the CDN - probing known era bundles"
-    foreach ($e in $KnownEras) {
-        $size = Get-RemoteSize "$Base/$e-tiles.zip"
-        if ($size -gt 0) {
-            $entries += [pscustomobject]@{ era = $e; zip = "$e-tiles.zip"; tiles = 0; bytes = $size }
-        }
-    }
-}
+# The index names each era's bundle; without one, try the conventional name.
+$index = Get-CdnJson "leaflet/index.json"
 
-if ($Era) { $entries = @($entries | Where-Object { $_.era -eq $Era }) }
-if (-not $entries) { throw "no leaflet bundle for era '$Era'. Known: $($KnownEras -join ', ')" }
+foreach ($scopeEra in $DownloadScope.Keys) {
+    if ($Era -and $scopeEra -ne $Era) { continue }
 
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-
-foreach ($it in $entries) {
-    $targetDir = Join-Path $dest $it.era
-
-    $have = 0
-    if (Test-Path $targetDir) {
-        $have = @(Get-ChildItem $targetDir -Filter *.webp -File -Recurse -ErrorAction SilentlyContinue).Count
+    $zip = "$scopeEra-tiles.zip"
+    if ($index) {
+        $published = @($index.eras | Where-Object { $_.era -eq $scopeEra }) | Select-Object -First 1
+        $zip = if ($published) { $published.zip } else { $null }
     }
 
-    # With an index we can tell "complete" from "partial"; without one, any tiles
-    # at all count as present, since re-downloading ~100 MB to top up a few files
-    # is the worse default. -Force overrides either way.
-    $complete = if ($it.tiles -gt 0) { $have -ge $it.tiles } else { $have -gt 0 }
-    if (-not $Force -and $complete) {
-        Write-Host ("  {0}: present ({1} tiles), skipping" -f $it.era, $have)
+    $bundle = if ($zip) { Read-RemoteZipDirectory (Get-CdnUrl $zip) } else { $null }
+    if (-not $bundle) {
+        Write-Host "  ${scopeEra}: no tiles published on the CDN yet."
         continue
     }
 
-    $mb = [math]::Round($it.bytes / 1MB)
-    $zip = Join-Path $env:TEMP ("leaflet-{0}.zip" -f $it.era)
-    Write-Host ("  {0}: downloading {1} MB ..." -f $it.era, $mb)
-    Invoke-WebRequest -Uri "$Base/$($it.zip)" -OutFile $zip -UserAgent $UA
+    $files = @($bundle.Entries | Where-Object { -not $_.Name.EndsWith('/') })
+    $byContinent = $files | Group-Object { ($_.Name -split '/')[1] }
 
-    # Extract cannot merge into existing files, so clear the era dir first. This
-    # discards locally generated tiles for that era - which is the point of
-    # -Force, and the skip above keeps it from happening unasked.
-    if (Test-Path $targetDir) { Remove-Item $targetDir -Recurse -Force }
-    Write-Host "  extracting ..."
-    # zip arcnames are <era>/<Continent>/*.webp, so extract at the leaflet root.
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $dest)
-    Remove-Item $zip -Force
+    $outOfScope = @($byContinent | Where-Object { -not (Test-InScope $scopeEra $_.Name) } | ForEach-Object Name)
+    if ($outOfScope) { Write-Host ("  {0}: skipping {1} (outside the scope)" -f $scopeEra, ($outOfScope -join ", ")) }
 
-    $now = @(Get-ChildItem $targetDir -Filter *.webp -File -Recurse -ErrorAction SilentlyContinue).Count
-    Write-Host ("  -> {0} ({1} tiles)" -f $targetDir, $now)
+    foreach ($group in $byContinent) {
+        $name = $group.Name
+        if (-not (Test-InScope $scopeEra $name)) { continue }
+        if ($Continent -and $name -ne $Continent) { continue }
+
+        $wanted = @($group.Group)
+        $targetDir = Join-Segments $dest @($scopeEra, $name)
+        $have = 0
+        if (Test-Path $targetDir) {
+            $have = @(Get-ChildItem $targetDir -Filter *.webp -File -Recurse -ErrorAction SilentlyContinue).Count
+        }
+        if (-not $Force -and $have -ge $wanted.Count) {
+            Write-Host ("  {0}/{1}: present ({2} tiles), skipping" -f $scopeEra, $name, $have)
+            continue
+        }
+
+        # The continent's span: its first entry up to whatever follows its last.
+        $first = $wanted[0].Offset
+        $last = $wanted[-1]
+        $afterLast = @($bundle.Entries | Where-Object { $_.Offset -gt $last.Offset } | Select-Object -First 1)
+        $spanEnd = if ($afterLast) { $afterLast[0].Offset } else { $bundle.CentralOffset }
+
+        $span = New-ScratchFile ("leaflet-{0}-{1}.part" -f $scopeEra, $name)
+        Write-Host ("  {0}/{1}: downloading {2} tiles, {3:N1} MB ..." -f $scopeEra, $name, $wanted.Count, (($spanEnd - $first) / 1MB))
+        try {
+            Save-CdnFile (Get-CdnUrl $zip) $span ($spanEnd - $first) -From $first -To ($spanEnd - 1)
+
+            # Replace the continent wholesale so no stale tile survives a refresh;
+            # this discards locally generated tiles for it, which is what -Force is for.
+            if (Test-Path $targetDir) { Remove-Item $targetDir -Recurse -Force }
+            Write-Host "  extracting ..."
+            # arcnames are <era>/<Continent>/*.webp, so extract at the leaflet root.
+            Expand-ZipSpan $span $first $wanted $dest
+        }
+        finally {
+            Remove-Item $span -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host ("  -> {0} ({1} tiles)" -f $targetDir, $wanted.Count)
+    }
 }
 
 Write-Host "Done."

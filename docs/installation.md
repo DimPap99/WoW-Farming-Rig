@@ -36,7 +36,7 @@ The in-process navmesh engine is the default, and its tiles come from
 the CDN. If you have not already:
 
 ```powershell
-.\scripts\download-navmesh.ps1 -Era precata     # or cata / mop
+.\scripts\download-navmesh.ps1 -Era precata     # Classic; scope: docs/navigation.md
 ```
 
 The older backends (V1 Local/Remote with MPQ archives, and the external V3

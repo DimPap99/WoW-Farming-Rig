@@ -47,7 +47,7 @@
 - If running multiple WoW clients, use the `-p` parameter to specify the process ID
 
 **Q: Path not found / navigation errors**
-- Download the navmesh tiles for your era: `.\scripts\download-navmesh.ps1 -Era precata` (or `cata` / `mop`). This is all that is needed — no game files, no external service.
+- Download the navmesh tiles for your era: `.\scripts\download-navmesh.ps1 -Era precata` (the scripts are scoped to Classic and Forever; see [navigation](navigation.md)). This is all that is needed — no game files, no external service.
 - Check the startup log for `disk-only, no game files` per continent. If a continent is missing entirely, its tiles were not downloaded.
 - If you baked your own tiles, the bot must run with the **same** bake settings that produced them. Bake settings name the cache directory, so a mismatch makes every baked tile invisible rather than wrong. Outland is the usual case: it needs `Navmesh:Bake:MinWorldZ: { "Expansion01": -700 }`, which is the shipped default.
 - `Json\MPQ` is only needed to *bake* tiles yourself or to run the legacy `Pathing:Engine=SpotAStar`.
