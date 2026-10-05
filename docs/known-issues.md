@@ -116,7 +116,15 @@ caller between queries (now in `NavmeshQueryMemory`). Two jobs depend on them:
   - **Forever leaves it to the pathfinder.** The navigator asks for paths without a height on
     purpose, and the kept floor stops it flipping between a mountain top and the ground below
     ([forever-movement.md](forever-movement.md), "Which floor", tested live). When it walks a
-    route, it passes the route's own heights instead.
+    route, `ForeverWalker` passes the route's own heights instead.
+    - When it chases a mob or a body, `WalkToward` passes `UnitPosition`'s Z of 0 to the path
+      request and to the steering checks (`TryWalkStraight`). Both use and update the same
+      memory, so they agree on the floor.
+    - Nothing in the API prevents carrying the floor in the bot, as Classic does. Take it from
+      each answer (the first point of a returned path is the floor the pathfinder chose) and
+      drop it after a jump in position, as the 80-yard rule does.
+    - Stateless remote planning needs exactly that (Phase 4). It changes how the Forever bot
+      walks, so it waits for a live test.
 - **Repeat requests (speed).** The follower asks for the same destination every few seconds.
   - The sticky corridor keeps a band it already widened, so the tiles it loaded are reused.
   - The stall memo skips re-walking a dead end's whole escalation for 30 seconds or
