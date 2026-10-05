@@ -1,7 +1,8 @@
+using ControlCenter.Hosting;
+
 using Contracts.Pathing;
 
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 using ServiceClients;
@@ -14,104 +15,40 @@ using System.Threading.Tasks;
 namespace ControlCenter.Pathing;
 
 /// <summary>
-/// The Pathing Service's state for every page and the status bar: read every
-/// <see cref="Interval"/> by this one poller, rather than by each open page. A page shows
-/// "offline" from <see cref="Online"/> instead of waiting on a call that cannot succeed.
+/// The Pathing Service's state for every page and the status bar (see <see cref="ServiceStatus"/>),
+/// with what it serves and its health.
 /// </summary>
-public sealed class PathingStatus(IServiceProvider services, ILogger<PathingStatus> logger) : BackgroundService
+public sealed class PathingStatus(IServiceProvider services, PathingServiceOptions options, ILogger<PathingStatus> logger)
+    : ServiceStatus(Describe(options), logger)
 {
-    public static readonly TimeSpan Interval = TimeSpan.FromSeconds(2);
-
-    private readonly SemaphoreSlim polling = new(1, 1);
-
-    /// <summary>Whether the last poll reached the service.</summary>
-    public bool Online { get; private set; }
-
-    /// <summary>Why the last poll failed; null while online.</summary>
-    public string? Error { get; private set; } = "not asked yet";
-
     /// <summary>What the service serves; read when it is first reached, and again when it comes back.</summary>
     public PathingCapabilities? Capabilities { get; private set; }
 
     public PathingHealth? Health { get; private set; }
 
-    /// <summary>Raised after every poll, on the poller's thread.</summary>
-    public event Action? Changed;
-
-    /// <summary>Raised when the service is reached after being down (or for the first time).</summary>
-    public event Action? Reconnected;
-
-    /// <summary>Polls now, for a page that just changed something (a bake, a cache clear).</summary>
-    public async Task RefreshAsync(CancellationToken token = default)
-    {
-        await polling.WaitAsync(token);
-        try
-        {
-            await PollAsync(token);
-        }
-        finally
-        {
-            polling.Release();
-        }
-    }
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        using PeriodicTimer timer = new(Interval);
-        try
-        {
-            do
-            {
-                await RefreshAsync(stoppingToken);
-            }
-            while (await timer.WaitForNextTickAsync(stoppingToken));
-        }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-        {
-            // Shutdown.
-        }
-    }
-
-    private async Task PollAsync(CancellationToken token)
+    protected override async Task<string?> ReadAsync(bool wasOnline, CancellationToken token)
     {
         IPathingClient client = services.GetRequiredService<IPathingClient>();
-        bool wasOnline = Online;
 
         ServiceResult<PathingHealth> health = await client.GetHealthAsync(token);
-        if (health.Ok)
+        if (!health.Ok)
         {
-            if (!wasOnline || Capabilities is null)
-            {
-                ServiceResult<PathingCapabilities> capabilities = await client.GetCapabilitiesAsync(token);
-                Capabilities = capabilities.Value ?? Capabilities;
-            }
-
-            Health = health.Value;
-            Online = true;
-            Error = null;
-        }
-        else
-        {
-            Online = false;
-            Error = health.Error;
+            return health.Error ?? "it answered without its health";
         }
 
-        if (wasOnline != Online && logger.IsEnabled(LogLevel.Information))
+        if (!wasOnline || Capabilities is null)
         {
-            logger.LogInformation("Pathing Service {State}{Reason}", Online ? "online" : "offline",
-                Online ? string.Empty : $": {Error}");
+            ServiceResult<PathingCapabilities> capabilities = await client.GetCapabilitiesAsync(token);
+            Capabilities = capabilities.Value ?? Capabilities;
         }
 
-        Changed?.Invoke();
-        if (Online && !wasOnline)
-        {
-            Reconnected?.Invoke();
-        }
+        Health = health.Value;
+        return null;
     }
 
-    public override void Dispose()
+    private static ServiceDescription Describe(PathingServiceOptions options)
     {
-        polling.Dispose();
-        base.Dispose();
+        return new ServiceDescription("Pathing Service", options.Url, PathingServiceOptions.UrlKey,
+            "PathingService/run.sh", "add --exp=forever for WoW: Forever");
     }
 }

@@ -1,0 +1,34 @@
+@* A terminal window for log-like output, with the look of BlazorServer's (Frontend's
+   Shared/Terminal, which this host may not reference): a title bar with optional tools on the
+   right, and a dark monospace body. The lines are the caller's; site.css styles the pa-line
+   classes they use. With StickToBottom the body keeps its newest line in view, for output written
+   oldest first. *@
+
+<div class="pa-terminal @Class">
+    <div class="pa-terminal-bar">
+        <span class="pa-terminal-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="pa-terminal-title">@Title</span>
+        @if (Tools is not null)
+        {
+            <span class="pa-terminal-tools">@Tools</span>
+        }
+    </div>
+    <div class="pa-terminal-body @(StickToBottom ? "pa-terminal-tail" : null)" role="log">
+        <div>
+            @ChildContent
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = string.Empty;
+
+    /// <summary>Controls for the title bar's right end.</summary>
+    [Parameter] public RenderFragment? Tools { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public bool StickToBottom { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+}

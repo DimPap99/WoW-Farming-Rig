@@ -9,7 +9,7 @@
         <h2 class="pa-panel-title">@Title</h2>
         @Actions
         <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" @onclick="() => collapsed = !collapsed"
-                title="@(collapsed ? "Expand" : "Collapse")" aria-expanded="@(!collapsed)">
+                title="@(collapsed ? "Expand" : "Collapse")" aria-expanded="@Aria.State(!collapsed)">
             <span class="oi @(collapsed ? "oi-chevron-top" : "oi-chevron-bottom")" aria-hidden="true"></span>
         </button>
     </header>

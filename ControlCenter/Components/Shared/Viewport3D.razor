@@ -14,9 +14,9 @@
     <div class="pa-toolbar">
         <div class="pa-group" role="group" aria-label="Layers in this view">
             <span class="pa-group-label" title="What this view shows">Show</span>
-            <button class="pa-toggle" type="button" aria-pressed="@navmesh" @onclick="ToggleNavmesh"
+            <button class="pa-toggle" type="button" aria-pressed="@Aria.State(navmesh)" @onclick="ToggleNavmesh"
                     title="The navmesh tiles the planner holds: what every route is planned on">Navmesh</button>
-            <button class="pa-toggle" type="button" aria-pressed="@terrain" disabled="@(terrainBusy || !GameFiles)"
+            <button class="pa-toggle" type="button" aria-pressed="@Aria.State(terrain)" disabled="@(terrainBusy || !GameFiles)"
                     title="@TerrainHint" @onclick="ToggleTerrain">
                 @if (terrainBusy)
                 {
@@ -28,11 +28,11 @@
             {
                 @foreach ((int kind, string label) in TerrainKinds)
                 {
-                    <button class="pa-toggle" type="button" aria-pressed="@(!hiddenKinds.Contains(kind))"
+                    <button class="pa-toggle" type="button" aria-pressed="@Aria.State(!hiddenKinds.Contains(kind))"
                             @onclick="() => ToggleKind(kind)">@label</button>
                 }
             }
-            <button class="pa-toggle" type="button" aria-pressed="@wireframe" @onclick="ToggleWireframe">Wireframe</button>
+            <button class="pa-toggle" type="button" aria-pressed="@Aria.State(wireframe)" @onclick="ToggleWireframe">Wireframe</button>
         </div>
 
         <span class="pa-spacer"></span>
@@ -45,14 +45,14 @@
             <button class="pa-toggle" type="button" @onclick="ClearAsync" title="Empty this view; the service and other viewers keep theirs">
                 Clear
             </button>
-            <button class="pa-toggle" type="button" aria-pressed="@inspector" @onclick="ToggleInspector"
+            <button class="pa-toggle" type="button" aria-pressed="@Aria.State(inspector)" @onclick="ToggleInspector"
                     title="Babylon's scene inspector">Inspector</button>
         </div>
     </div>
 
     @if (!status.Online)
     {
-        <OfflineNotice Reason="@status.Error" />
+        <OfflineNotice Service="@status.Service" Reason="@status.Error" />
     }
 
     @ChildContent

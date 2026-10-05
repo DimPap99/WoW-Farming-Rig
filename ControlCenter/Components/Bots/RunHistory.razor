@@ -1,0 +1,96 @@
+@* A bot's ended runs, newest first: read from the manager, then each run's end as the fleet hub
+   reports it. Read again after the feed reconnects. One instance per bot. *@
+
+@inherits ControlCenterComponent
+
+@inject FleetFeed feed
+@inject IBotManagerClient manager
+
+@if (error is not null)
+{
+    <ResultLine Text="@error" Kind="ResultKind.Error" />
+}
+
+@if (runs.Count == 0)
+{
+    <p class="pa-faint">No runs yet.</p>
+}
+else
+{
+    <ol class="pa-runs">
+        @foreach (RunReport run in runs)
+        {
+            <li class="pa-run" @key="run.Run.RunId">
+                <div class="pa-run-head">
+                    <span class="pa-run-outcome pa-result--@BotFormat.Outcome(run.Outcome).ToString().ToLowerInvariant()">@run.Outcome</span>
+                    <span class="pa-run-summary" title="Run @run.Run.RunId">@run.Run.Summary</span>
+                </div>
+                <span class="pa-faint">
+                    @BotFormat.Time(run.Run.StartedAt) to @BotFormat.Time(run.EndedAt) (@BotFormat.Duration(run.EndedAt - run.Run.StartedAt))
+                    @if (run.ExitCode is int exit)
+                    {
+                        <span>&#32;· exit @exit</span>
+                    }
+                </span>
+                <span class="pa-run-message">@run.Message</span>
+                @if (run.Progress is BotProgress progress)
+                {
+                    <span class="pa-faint">@BotFormat.Progress(progress)</span>
+                }
+            </li>
+        }
+    </ol>
+}
+
+@code {
+    [Parameter, EditorRequired] public string AgentId { get; set; } = string.Empty;
+
+    private List<RunReport> runs = [];
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Subscribe(() => feed.RunEnded += OnRunEnded, () => feed.RunEnded -= OnRunEnded);
+        Subscribe(() => feed.Resynced += OnResynced, () => feed.Resynced -= OnResynced);
+        await ReadAsync();
+    }
+
+    private void OnRunEnded(RunRecord record)
+    {
+        if (record.AgentId == AgentId)
+        {
+            _ = InvokeAsync(() =>
+            {
+                runs.RemoveAll(run => run.Run.RunId == record.Report.Run.RunId);
+                runs.Insert(0, record.Report);
+                StateHasChanged();
+            });
+        }
+    }
+
+    private void OnResynced()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await ReadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task ReadAsync()
+    {
+        try
+        {
+            ServiceResult<RunRecord[]> read = await manager.GetRunsAsync(AgentId, Token);
+            error = read.Ok ? null : $"The runs could not be read: {read.Error}";
+            if (read.Ok)
+            {
+                // A run that ended while this was read is kept, newest first.
+                runs = [.. read.Value.Select(record => record.Report).UnionBy(runs, run => run.Run.RunId).OrderByDescending(run => run.EndedAt)];
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+}

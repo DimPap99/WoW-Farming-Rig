@@ -1,7 +1,7 @@
 @inherits ControlCenterComponent
 
 @inject PathingStatus status
-@inject PathingServiceOptions pathing
+@inject BotManagerStatus manager
 
 <header class="pa-statusbar">
     @if (status.Capabilities is PathingCapabilities caps)
@@ -63,16 +63,31 @@
         }
     }
 
+    @if (manager.Online && manager.Health is ManagerHealth fleet)
+    {
+        <a class="pa-chip pa-chip--ok pa-chip--link" href="fleet" title="@($"Bot Manager at {manager.Service.Url}: {fleet.Online} of {fleet.Bots} bots online")">
+            <span class="pa-dot" aria-hidden="true"></span>
+            Bots <strong>@fleet.Online.ToString(CultureInfo.InvariantCulture)</strong> <span class="pa-faint">of @fleet.Bots.ToString(CultureInfo.InvariantCulture) online</span>
+        </a>
+    }
+    else
+    {
+        <span class="pa-chip pa-chip--warn" title="@($"{manager.Service.Url}: {manager.Error}")">
+            <span class="pa-dot" aria-hidden="true"></span>
+            Bot Manager offline
+        </span>
+    }
+
     @if (status.Online)
     {
-        <span class="pa-chip pa-chip--ok" title="@pathing.Url">
+        <span class="pa-chip pa-chip--ok" title="@status.Service.Url">
             <span class="pa-dot" aria-hidden="true"></span>
             Pathing Service
         </span>
     }
     else
     {
-        <span class="pa-chip pa-chip--warn" title="@($"{pathing.Url}: {status.Error}")">
+        <span class="pa-chip pa-chip--warn" title="@($"{status.Service.Url}: {status.Error}")">
             <span class="pa-dot" aria-hidden="true"></span>
             Pathing Service offline
         </span>
@@ -83,6 +98,7 @@
     protected override void OnInitialized()
     {
         Subscribe(() => status.Changed += Redraw, () => status.Changed -= Redraw);
+        Subscribe(() => manager.Changed += Redraw, () => manager.Changed -= Redraw);
     }
 
     private static string CoverageTitle(PathingHealth health)

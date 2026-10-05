@@ -150,6 +150,13 @@ commit that fixed it.
     (`UnknownOptionError`). `HeadlessArguments` now gives `--Section:Key` arguments to the
     configuration only and the rest to the parser.
 
+26. **The Control Center's toggles never looked pressed** (Phase 3, step 5). Blazor writes a
+    `bool` attribute as present or absent, `true` as an empty value, so `aria-pressed="@navmesh"`
+    came out as `aria-pressed=""`: the 3D view's toggles never matched the pressed style
+    (`[aria-pressed="true"]`), and screen readers got an invalid state; `aria-expanded` on the
+    rail and the panels likewise. Found by the fleet pages' browser checks; `Aria.State`
+    (`Components/Shared`) writes "true" or "false".
+
 8. **The dashboard needed a running game** (Phase 2, 32ce9d46). The Control Center is the central
    UI and needs no client. `BlazorServer` still cannot start without one (`AddWoWProcess`
    throws); it stays the PC's setup UI.

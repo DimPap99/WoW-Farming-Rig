@@ -20,7 +20,22 @@ because the old binary ran and fell through to a different code path.
 | `ForeverVisualReader` | read-only WGC capture and status-bar percentage diagnostic for the Forever port |
 | `ForeverCasc` | read-only, local-only CASC geometry source and file probe for the Forever port |
 | `ForeverControllerTrial` | the Forever trial runner: a command line over Core's `ForeverRun` (arguments, the route, Ctrl+C, `--listen`); BlazorServer's Forever runs page starts its newest build |
+| `SimAgent` | a simulated bot agent (BotAgent's `AddBotAgent` with made-up runtimes) for the Control Center's fleet pages without a game; see below |
 | `PathMaker`, `ReadItems` | loose scripts, no csproj |
+
+## SimAgent
+
+```powershell
+dotnet build Utilities/SimAgent -c Release
+dotnet Utilities/SimAgent/bin/Release/net10.0/SimAgent.dll --BotManager:Url=http://localhost:5030 --Agent:Name=Sim-1 --Agent:IdentityFile=sim-1.json
+```
+
+Run two or three, each with its own name and identity file. It registers, streams snapshots
+and its log, and obeys Start and Stop: a run "waits for a click" for `--Sim:ClickSeconds` (5),
+then walks a circle in Durotar, fighting, looting and resting by the clock, a log line a second,
+until it is stopped or its time bound is up. `--Sim:Client=som` reports a Classic client, and a
+Forever assignment is then refused, as the real agent refuses it. **On a game PC never fake bots
+with `HeadlessServer --agent`:** it sees the WoW client and would start a real run.
 
 ## BakeTool
 
