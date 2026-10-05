@@ -199,8 +199,10 @@ Forever code:
   `ForeverReaderFeed` (feeds each capture tick to the shared readers),
   `ForeverFrame` (which inputs a frame must carry and the resource levels),
   `ForeverBinding(s)` (the bindings checked and pressed), `ForeverNavmesh`,
-  `ForeverVerifiedSetup` (the verified profiles, map and classes) and
-  `ForeverProfileRules` (what a Forever profile may use).
+  `ForeverVerifiedSetup` (the verified profiles, map and classes),
+  `ForeverProfileRules` (what a Forever profile may use), and `ForeverRun` with
+  `ForeverRunRequest`: one bounded, gated run of the normal controller, as the
+  trial runner (now a command line over it) and the resident agent start it.
 - `SharedLib/Forever/` - the route model, data only: `ForeverRouteFile` (route
   files), the task records and the `ForeverTasks` API, `ForeverUntil`,
   `ForeverMapPoint` and `ForeverArea`. The Pathing Service reads it to check and

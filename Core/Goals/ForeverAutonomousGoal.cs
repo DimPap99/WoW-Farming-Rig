@@ -24,7 +24,8 @@ namespace Core.Goals;
 /// </summary>
 public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
 {
-    private enum RunState { Start, Running, Complete, Failed }
+    /// <summary>Where the run is: <see cref="Complete"/> and <see cref="Failed"/> end it.</summary>
+    public enum RunState { Start, Running, Complete, Failed }
 
     // Without a readable frame the run pauses, its keys released, and says
     // why after this long, then again at this interval while it lasts.
@@ -64,6 +65,9 @@ public sealed class ForeverAutonomousGoal : GoapGoal, IGoapEventListener
 
     public override float Cost => 1;
     public override bool CanRun() => machine.State != RunState.Failed && !stopped;
+
+    /// <summary>The run's state as a type: what <see cref="Status"/> names when the run is not under way.</summary>
+    public RunState State => machine.State;
 
     /// <summary>Start, Complete or Failed; while running, the current activity and its step.</summary>
     public string Status => machine.State == RunState.Running

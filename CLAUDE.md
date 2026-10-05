@@ -20,8 +20,9 @@ pathing, the hosts or the authoring endpoints, and add to it.
 ## Build & Test Commands
 ```bash
 dotnet build WoWFarmingRig.sln
-dotnet test                                   # Microsoft.Testing.Platform (global.json); runs ServiceTests
+dotnet test                                   # Microsoft.Testing.Platform (global.json); ServiceTests and AgentTests
 dotnet test --project ServiceTests            # just the service tests
+dotnet test --project AgentTests              # the tests that need Core (Windows TFM; runs on Linux too)
 dotnet run --project BlazorServer
 PathingService/run.sh                         # the Pathing Service on :5010, Swagger at /swagger
 ControlCenter/run.sh                          # the Control Center on :5020 (start the Pathing Service first)
@@ -65,6 +66,8 @@ before working in one.
 - `ServiceClients/` - Typed clients for the services (`IPathingClient`), shared by UI and agent, plus the
   path editing model (`PathEditor`) and map-world arithmetic (`ZoneMath`)
 - `ServiceTests/` - xUnit tests for the services, the planner and the stores; runs on Linux
+- `AgentTests/` - xUnit tests that need Core (Forever's run, the agent's runtimes); the Windows TFM,
+  but nothing in it attaches to a game, so it runs on Linux too
 - `DataConfig/` ✎ - Every on-disk path; era vs client partitioning
 - `Benchmarks/` ✎ - BenchmarkDotNet + the `--bake-profile` byte-identity gate
 - `CoreTests/` ✎ - Integration test suites
@@ -89,7 +92,7 @@ Central package management via `Directory.Packages.props`:
 
 ## Testing
 - Service code is tested with xUnit v3 in `ServiceTests` (`dotnet test`); tests that need the baked navmesh
-  skip themselves when the tiles are not downloaded
+  skip themselves when the tiles are not downloaded. A test that needs Core goes in `AgentTests`
 - Run benchmarks in Release mode: `dotnet run --project Benchmarks -c Release`
 - Use BenchmarkDotNet `[Benchmark]` attributes for performance testing
 

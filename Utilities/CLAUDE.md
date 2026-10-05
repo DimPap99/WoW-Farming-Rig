@@ -19,6 +19,7 @@ because the old binary ran and fell through to a different code path.
 | `DangerZoneGenerator` | authored danger-zone data |
 | `ForeverVisualReader` | read-only WGC capture and status-bar percentage diagnostic for the Forever port |
 | `ForeverCasc` | read-only, local-only CASC geometry source and file probe for the Forever port |
+| `ForeverControllerTrial` | the Forever trial runner: a command line over Core's `ForeverRun` (arguments, the route, Ctrl+C, `--listen`); BlazorServer's Forever runs page starts its newest build |
 | `PathMaker`, `ReadItems` | loose scripts, no csproj |
 
 ## BakeTool
