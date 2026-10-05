@@ -2,12 +2,15 @@
 
 Everything here produces or moves the data the bot needs at runtime. Nothing here is
 built by the solution; Python scripts need `pip install`, PowerShell ones are
-dependency-free by design (users double-click the `.bat` wrappers in `.bat/`).
+dependency-free by design (users double-click the `.bat` wrappers in `.bat/`) and run
+on Windows PowerShell 5.1 and PowerShell 7 alike - on Linux/macOS `pwsh` comes from
+`dotnet tool install --global PowerShell`.
 
 | script | what it does |
 |---|---|
 | `download-navmesh.ps1` | pull pre-baked navmesh tiles from the CDN into `<Root>/PathInfo/navmesh/<era>` |
-| `download-leaflet.ps1` | pull minimap tiles into `<Root>/leaflet/<era>` |
+| `download-leaflet.ps1` | pull minimap tiles into `<Root>/leaflet/<era>/<Continent>`, range-requesting only the continents in scope |
+| `download-common.ps1` | dot-sourced by both: `$DownloadScope`, data-root lookup, the CDN `HttpClient` |
 | `upload-navmesh-r2.py` | zip + upload navmesh bundles, maintain `navmesh/index.json` |
 | `upload-leaflet-r2.py` | per-tile or `--zip` bundle upload, maintain `leaflet/index.json` |
 | `extract-minimap.py` | generate leaflet tiles from a client's minimap BLPs (needs Pillow + StormLib) |
@@ -25,6 +28,26 @@ Uploads read **env vars only** — `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_
 line. `--dry-run` needs no credentials.
 
 ## Things that will bite you
+
+**The downloads only fetch `$DownloadScope`** (`download-common.ps1`): WoW Classic -
+`precata` Azeroth and Kalimdor - and WoW: Forever. Outland and Northrend share the
+precata era but are skipped, and `cata`/`mop` are refused with a pointer to that table.
+It is the one place an era or continent is named; widen it there, not per script.
+
+**A PowerShell function that `return`s a `byte[]` hands back an `object[]`.** The
+pipeline unrolls the array and re-collects it boxed, and every later `BitConverter`
+call converts it back - the leaflet zip directory (1.5 MB) took half a second per
+field that way. Return byte arrays as `return , $bytes`.
+
+**PowerShell variables are case-insensitive.** `foreach ($era in ...)` in a script with
+an `-Era` parameter overwrites the parameter: the navmesh download filtered everything
+out after the loop and the leaflet `-Era` filter never applied. Loop with `$scopeEra`.
+
+**The leaflet bundle is read by range, so its layout matters.** `<era>-tiles.zip` is
+*stored* (webp is already compressed) and each continent's entries are contiguous, so
+one range request per continent fetches exactly its tiles. A re-zipped bundle that
+interleaves continents still extracts correctly but downloads the bytes in between;
+ZIP64 is refused outright.
 
 **An index describes the whole bucket, not your run.** Both uploaders GET and *merge*
 `index.json` before writing it. Publishing `--era mop` with a wholesale rewrite would
@@ -118,7 +141,7 @@ concluding a zone is missing.
 
 **`teleport_locations.txt` exists twice and both are tracked.** `Frontend/wwwroot` is
 served to the Leaflet page, `PathingAPI/wwwroot` is read from disk by
-`SearchParameters.razor`; they are kept byte-identical and a glob turns up ~25 more
+`Catalog/LocationCatalog.cs`; they are kept byte-identical and a glob turns up ~25 more
 copies that are all `bin/` artefacts. The format is positional -
 `id x y z orientation mapId name` - and both readers use only x, y, z, mapId and name,
 but `id` and `orientation` must stay present or the fields shift. **The files are CRLF**:
@@ -133,5 +156,5 @@ from a WotLK DB truncated at `LIMIT 1000` (Northrend had 2 entries); SkyFire 5.4
 the old coordinates are pre-Shattering and that is what pre-Cata users need.
 
 **Downloads delete the target dir before extracting.** `.NET`'s `ExtractToDirectory`
-cannot merge, so `-Force` discards locally generated tiles for that era. The
-already-present skip is what keeps that from happening unasked.
+cannot merge, so `-Force` discards locally generated tiles for that continent (navmesh:
+that settings hash). The already-present skip is what keeps that from happening unasked.

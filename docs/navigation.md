@@ -27,6 +27,11 @@ The engine answers from the downloaded tiles alone.
 | Mists **5.4.8** | `mop` | `download-navmesh.ps1 -Era mop` | Navmesh (default) |
 | MoP **Classic 5.5.x** | `mop` | `download-navmesh.ps1 -Era mop` | Navmesh (default) |
 
+> **The download scripts are scoped to WoW Classic and WoW: Forever for now.** They fetch
+> `precata` Azeroth and Kalimdor, plus the `forever` era once the CDN publishes it, and
+> refuse anything else. To download Outland, Northrend, `cata` or `mop` again, add it to
+> `$DownloadScope` in `scripts/download-common.ps1` - nothing else names an era.
+
 **Every client uses the same navmesh engine.** An original client and its modern
 re-release are the same world, so they share one era and one set of tiles: `cata` covers
 4.3.4 and Cata Classic 4.4.x, `mop` covers 5.4.8 and MoP Classic 5.5.x. Verified with a
@@ -77,7 +82,7 @@ Recommended for every playable client and available for Mists navigation work. M
 ```powershell
 .\scripts\download-navmesh.ps1 -Force
 ```
-Pulls the pre-baked tiles from the CDN into `Json\PathInfo\navmesh\<era>\` (destination honors your `data_config.json` `Root`). Options: `-Continent Northrend`, `-Era precata` / `-Era cata` / `-Era mop`. If you run a custom agent config (different settings hash), bake instead (see [navmesh bake skill](../.claude/skills/navmesh-bake-upload/SKILL.md)).
+Pulls the pre-baked tiles from the CDN into `Json\PathInfo\navmesh\<era>\` (destination honors your `data_config.json` `Root`). Options: `-Continent Kalimdor`, `-Era precata` / `-Era forever` (the scripts' download scope, see above). If you run a custom agent config (different settings hash), bake instead (see [navmesh bake skill](../.claude/skills/navmesh-bake-upload/SKILL.md)).
 
 Downloaded tiles are enough on their own: with no `Json\MPQ\` at all, the navmesh
 engine runs **disk-only** - it answers path and height queries from the baked tiles

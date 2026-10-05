@@ -33,12 +33,18 @@
     <PackageReference Include="Microsoft.AspNetCore.JsonPatch" />
   </ItemGroup>
 
+  <!-- The add-ons ship beside the binary. MSBuild's Copy rather than xcopy, which
+       exists only on Windows and failed every Linux/macOS solution build. -->
+  <ItemGroup>
+    <AddonFiles Include="$(MSBuildProjectDirectory)/../Addons/**/*" />
+  </ItemGroup>
+
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="xcopy /s /Y /i &quot;$(ProjectDir)..\Addons&quot; &quot;$(TargetDir)Addons&quot;" />
+    <Copy SourceFiles="@(AddonFiles)" DestinationFiles="@(AddonFiles->'$(TargetDir)Addons/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="CopyCustomContentOnPublish" AfterTargets="Publish">
-    <Exec Command="xcopy /s /Y /i &quot;$(ProjectDir)..\Addons&quot; &quot;$(PublishDir)Addons&quot;" />
+    <Copy SourceFiles="@(AddonFiles)" DestinationFiles="@(AddonFiles->'$(PublishDir)Addons/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

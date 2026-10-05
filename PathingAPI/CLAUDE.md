@@ -10,6 +10,11 @@ map you open at `/Leaflet`.
 dotnet run --project PathingAPI -c Release -- --exp=cata
 ```
 
+On Linux/macOS, `PathingAPI/run.sh --exp=som` (it `cd`s into the project first, because
+`data_config.json` and `wwwroot` resolve from the working directory). The project is
+`net10.0-windows` like the rest of the solution; `Directory.Packages.props` turns on
+`EnableWindowsTargeting` off Windows so it compiles, and nothing it runs touches Windows APIs.
+
 | Argument | Meaning |
 |---|---|
 | `--exp=<client>` | `som`/`tbc`/`wrath`/`cata`/`mop`/`legacy_*`. Defaults to `som`. Decides `/dbc`, `/tiles` and the navmesh era. |
@@ -23,23 +28,57 @@ dotnet run --project PathingAPI -c Release -- --exp=cata
 ```
 Controllers/PPatherController.cs  the whole HTTP surface (routes, bake, stats, viz)
 AnTcp/AnTcpPathServer.cs          AmeisenNavigation binary protocol, opt-in
-RateLimit/                        one-at-a-time filter (see below)
-Pages/Leaflet.razor               the map page
-Hubs/                             SignalR for live route drawing
-Startup.cs                        DI, era selection, startup bake hooks
+Pathing/PatherGate.cs             the one lock every caller takes (see below)
+Pathing/RouteSearch.cs            the only code that runs the two-call search
+RateLimit/                        [RateLimit] = hold the gate or answer 429
+Watch/WatchBroadcaster.cs         engine events -> watch hub, once for the server
+Watch/WatchSettings.cs            what is streamed (navmesh, geometry, test points)
+Hubs/WatchHub.cs                  the hub; counts viewers so an idle server streams nothing
+Status/ServerStatus.cs            the status bar's snapshot (tile count cached 15 s)
+Catalog/                          search-panel places, test routes, recorded path files
+Hosting/                          CLI arguments, DI registration, JSON converters
+Startup.cs                        composition: logging, MVC, SignalR, Swagger
+Shared/                           shell (MainLayout, NavMenu, StatusBar) and the tools:
+                                  Viewport3D, Panel, SearchPanel, BusyButton, ...
+Pages/                            Index (live view + test routes), Leaflet (map), Search,
+                                  Route (recorded paths), CloseNPC (NPC routes), Swagger
+wwwroot/css/site.css              the whole theme; pa- prefixed so the map keeps Bootstrap
+wwwroot/js/pathing-scene.js       the Babylon 3D view; Babylon itself is fetched on demand
+wwwroot/js/pathing-ui.js          script loader, test-route fetch, toast
 ```
 
 ## Things that will bite you
 
-**One client at a time.** `RateLimitFilter` is a `static bool isBusy` that answers a
-concurrent request with **429**, and the V1 client turns that into an empty route —
-indistinguishable from "no path exists". It dates from the SpotAStar era when a search
-cost seconds. Do not point several bots at one instance; see the README's
+**One client at a time.** `[RateLimit]` holds the `PatherGate` for the whole action and
+answers a concurrent request with **429**, and the V1 client turns that into an empty
+route — indistinguishable from "no path exists". It dates from the SpotAStar era when a
+search cost seconds. Do not point several bots at one instance; see the README's
 "Running multiple bots".
 
 **The service is a singleton with a two-call search.** `SetLocations` then `DoSearch`
 over shared state, plus `PathJitterYards` / `PathEdgeMarginYards` / `lastStartIndoors`.
-Anything new that searches must serialize (`AnTcpPathServer` uses a `SemaphoreSlim`).
+Search only through `RouteSearch`, under the `PatherGate`: HTTP takes it via
+`[RateLimit]` (429 when held), AnTCP with `Enter()` (waits), the web UI with
+`FindAsync`/`RunAsync` (waits, off the circuit thread). Before the gate, the three each
+guarded the search their own way - a racy static bool, a private semaphore, nothing -
+so they could still interleave with each other. `RouteSearch.Find` sets jitter and edge
+margin on **every** call; endpoints that did not used to inherit the previous caller's.
+
+**The watch stream is one broadcaster, not one per page.** `WatchBroadcaster` subscribes
+to the engine once and sends to every hub client; engine events only queue work, so the
+search thread never waits on a socket. Each open page used to subscribe and broadcast
+itself, so N tabs sent everything N times to N clients. With no hub connection it queues
+nothing. The 3D toolbar's "Stream" group edits `WatchSettings`, which apply to all
+viewers - that is what the wire always did.
+
+**Opening a 3D page resets the engine** (`Viewport3D ResetOnOpen`), so its chunks and
+tiles stream to the new view; the live view (`/`) and the map do not, so watching never
+disturbs a bot. A reset drops resident tiles and the next query reloads them from disk.
+
+**"Clear spot cache" keeps the navmesh.** `DataConfig.DeletePPatherCache` deleted every
+folder under `PathInfo`, `navmesh` included - one click away in the old toolbar, it wiped
+the downloaded tiles. It now skips `PathInfo/navmesh`; removing tiles is
+`DELETE Bake/Cache`.
 
 **Switching continent disposes the engine.** `Initialise(mapId)` calls `Reset()` on a
 different map, dropping resident tiles. Two callers on different continents thrash.
@@ -47,7 +86,14 @@ different map, dropping resident tiles. Two callers on different continents thra
 **The era comes from `DataConfig.Exp`, never from the URL.** `Pages/Leaflet.razor` used
 to trust the `{expansion}` route segment (defaulting to `"som"`), which rendered one
 era's art against another's data. It now overrides from the server and logs the
-mismatch.
+mismatch. The continent does come from the URL - the map's own selector reloads the page
+at `/Leaflet/<exp>/<continent>` - so the map's search panel is locked to it.
+
+**Only the pages that draw in 3D load Babylon.js** (~8.6 MB, `pathing-scene.js`
+fetches it on the first `create`). Each `Viewport3D` creates one engine and disposes it
+when the page goes; the old script built a new engine, render loop and set of document
+listeners per visit and kept them all. It also defined globals (`removeMesh`, `clear`)
+that overwrote the map's; everything now hangs off `window.pathingScene`.
 
 **`Json/MPQ` is not era-aware** — it is one directory for whatever client you point it
 at. Running `--exp=cata` with wrath archives in there silently loads wrath geometry and

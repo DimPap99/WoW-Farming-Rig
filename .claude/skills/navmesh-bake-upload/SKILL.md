@@ -97,7 +97,7 @@ End users get pre-baked navmesh with **no client, no bake** via a zero-install
 PowerShell script (public bucket → no creds):
 ```
 .bat\download-navmesh.bat            # double-click: all continents
-scripts\download-navmesh.ps1 -Continent Northrend
+scripts\download-navmesh.ps1 -Continent Kalimdor   # only $DownloadScope (Classic + Forever)
 ```
 It resolves the destination from **DataConfig** (`data_config.json` Root →
 `<Root>/PathInfo/navmesh`), reads `index.json` for the hash, downloads + extracts,

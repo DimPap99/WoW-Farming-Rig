@@ -84,14 +84,15 @@ latency - not a prerequisite.
 
 **Download them for offline use:**
 ```powershell
-.\scripts\download-leaflet.ps1               # every published era
-.\scripts\download-leaflet.ps1 -Era mop
+.\scripts\download-leaflet.ps1                       # everything in scope
+.\scripts\download-leaflet.ps1 -Continent Kalimdor
 ```
-Pulls one `<era>-tiles.zip` per era into `<Root>/leaflet/<era>` (destination
-honors your `data_config.json` `Root`). `.bat\download-leaflet.bat` is a
-double-click wrapper. There is no `-Continent` switch: unlike the navmesh, which
-is bundled per continent and settings-hash, leaflet art has no bake parameters,
-so an era is a single object.
+Writes `<Root>/leaflet/<era>/<Continent>` (destination honors your
+`data_config.json` `Root`). `.bat\download-leaflet.bat` is a double-click
+wrapper. Only the download scope is fetched (Classic's Azeroth and Kalimdor, and
+Forever - see [navigation](navigation.md)): the CDN ships one `<era>-tiles.zip`
+per era, and the script reads its directory and range-requests just the
+continents in scope instead of the whole bundle.
 
 | era | clients | tiles | bundle |
 |---|---|---|---|

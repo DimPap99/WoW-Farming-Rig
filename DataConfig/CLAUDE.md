@@ -4,7 +4,8 @@ One class, and it is the single source of truth for **every** on-disk location t
 reads or writes. Change a path here, not at a call site.
 
 `Root` comes from `data_config.json` in the **process working directory** (default
-`..\json`), so which file wins depends on which project you run. There is no env-var
+`../Json`, spelled as the folder is - `json` only resolved on case-insensitive
+filesystems), so which file wins depends on which project you run. There is no env-var
 override; `BakeTool --root` exists precisely because of that.
 
 ## Partitioning — three different keys, on purpose

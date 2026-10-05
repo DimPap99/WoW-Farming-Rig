@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
+using PathingAPI.Pathing;
 using PathingAPI.RateLimit;
 
 using PPather;
@@ -12,7 +13,6 @@ using SharedLib;
 using SharedLib.Data;
 
 using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Text.Json;
@@ -25,20 +25,36 @@ namespace PathingAPI.Controllers;
 public sealed class PPatherController : ControllerBase
 {
     private readonly PPatherService service;
+    private readonly RouteSearch routes;
     private readonly JsonSerializerOptions options;
-
-    private readonly JsonResult emptyVector3;
-
-    private const SearchStrategy eSearch = SearchStrategy.A_Star_With_Model_Avoidance;
 
     private const double BytesPerMegabyte = 1024d * 1024d;
 
-    public PPatherController(PPatherService service, JsonSerializerOptions options)
+    public PPatherController(PPatherService service, RouteSearch routes, JsonSerializerOptions options)
     {
         this.service = service;
+        this.routes = routes;
         this.options = options;
+    }
 
-        emptyVector3 = new JsonResult(Array.Empty<Vector3>(), options);
+    /// <summary>
+    /// Every route endpoint: search, persist the spot graph, answer the points
+    /// (projected when <paramref name="project"/> is given) or an empty array.
+    /// [RateLimit] holds the gate for the whole action.
+    /// </summary>
+    private JsonResult Route(Vector4 from, Vector4 to, RouteOptions routeOptions = default,
+        Func<Vector3, Vector3>? project = null)
+    {
+        Path? path = routes.Find(from, to, routeOptions);
+        if (path == null)
+        {
+            return new JsonResult(Array.Empty<Vector3>(), options);
+        }
+
+        service.Save();
+
+        List<Vector3> points = project == null ? path.locations : path.locations.ConvertAll(p => project(p));
+        return new JsonResult(points, options);
     }
 
     /// <summary>
@@ -71,27 +87,14 @@ public sealed class PPatherController : ControllerBase
     public JsonResult MapRoute(int uimap1, float x1, float y1, int uimap2, float x2, float y2,
         float? edgeMargin = null)
     {
-        service.PathEdgeMarginYards = edgeMargin;
+        Vector4 from = service.ToWorld(uimap1, x1, y1);
+        Vector4 to = service.ToWorld(uimap2, x2, y2);
 
-        service.SetLocations(service.ToWorld(uimap1, x1, y1), service.ToWorld(uimap2, x2, y2));
-        Path path = service.DoSearch(eSearch);
-        if (path == null)
-        {
-            return emptyVector3;
-        }
-
-        service.Save();
-
-        ArrayPool<Vector3> pool = ArrayPool<Vector3>.Shared;
-        var array = pool.Rent(path.locations.Count);
-
-        for (int i = 0; i < path.locations.Count; i++)
-        {
-            array[i] = service.ToLocal(path.locations[i], (int)service.SearchFrom.W, uimap1);
-        }
-
-        pool.Return(array);
-        return new JsonResult(new ArraySegment<Vector3>(array, 0, path.locations.Count), options);
+        // Projected into the start zone's map coordinates. This used to rent the
+        // array from the pool and return it before the result was serialised, so a
+        // concurrent renter could overwrite the response.
+        return Route(from, to, new RouteOptions(EdgeMarginYards: edgeMargin),
+            p => service.ToLocal(p, from.W, uimap1));
     }
 
     /// <summary>
@@ -213,26 +216,14 @@ public sealed class PPatherController : ControllerBase
     public JsonResult WorldRoute(float x1, float y1, float z1, float x2, float y2, float z2, float mapid, bool reverse,
         float jitter = 0f, int? seed = null, float? edgeMargin = null)
     {
+        Vector4 from = new(x1, y1, z1, mapid);
+        Vector4 to = new(x2, y2, z2, mapid);
         if (reverse)
         {
-            (x1, y1, z1, x2, y2, z2) = (x2, y2, z2, x1, y1, z1);
+            (from, to) = (to, from);
         }
 
-        service.PathJitterYards = jitter;
-        service.PathJitterSeed = seed;
-        service.PathEdgeMarginYards = edgeMargin;
-
-        service.SetLocations(new(x1, y1, z1, mapid), new(x2, y2, z2, mapid));
-
-        var path = service.DoSearch(eSearch);
-        if (path == null)
-        {
-            return emptyVector3;
-        }
-
-        service.Save();
-
-        return new JsonResult(path.locations, options);
+        return Route(from, to, new RouteOptions(jitter, seed, edgeMargin));
     }
 
     /// <summary>
@@ -258,18 +249,9 @@ public sealed class PPatherController : ControllerBase
     [RateLimit]
     public JsonResult WorldRoute2(float x1, float y1, float z1, float x2, float y2, float z2, int uimap, bool? startindoors = null)
     {
-        service.SetLocations(
+        return Route(
             service.ToWorldZ(uimap, x1, y1, z1, startindoors),
             service.ToWorldZ(uimap, x2, y2, z2, null));
-
-        Path path = service.DoSearch(eSearch);
-        if (path == null)
-        {
-            return emptyVector3;
-        }
-        service.Save();
-
-        return new JsonResult(path.locations, options);
     }
 
     /// <summary>
@@ -294,15 +276,7 @@ public sealed class PPatherController : ControllerBase
     [RateLimit]
     public JsonResult MapToWorldRoute(float x1, float y1, float z1, float x2, float y2, float z2, int uimap)
     {
-        service.SetLocations(service.ToWorld(uimap, x1, y1, z1), service.ToWorld(uimap, x2, y2, z2));
-        Path path = service.DoSearch(eSearch);
-        if (path == null)
-        {
-            return emptyVector3;
-        }
-        service.Save();
-
-        return new JsonResult(path.locations, options);
+        return Route(service.ToWorld(uimap, x1, y1, z1), service.ToWorld(uimap, x2, y2, z2));
     }
 
     /// <summary>
@@ -379,10 +353,6 @@ public sealed class PPatherController : ControllerBase
         return Accepted();
     }
 
-    /// <summary>
-    /// Returns true to indicate that the server is listening.
-    /// </summary>
-    /// <returns></returns>
     /// <summary>
     /// Whether this server can actually answer route requests, and why. For the navmesh
     /// engine that means baked tiles for the active era - game archives are optional, so
@@ -567,7 +537,7 @@ public sealed class PPatherController : ControllerBase
             new(-5782.00f, -394.00f, 366.09f)
         ];
 
-        service.DrawPath(mapId, coords);
+        routes.Draw(mapId, coords);
 
         return Accepted();
     }
@@ -590,7 +560,7 @@ public sealed class PPatherController : ControllerBase
     [RateLimit]
     public IActionResult DrawPath(DrawWorldPathRequest r)
     {
-        service.DrawPath(r.mapId, r.path.AsSpan());
+        routes.Draw(r.mapId, r.path.AsSpan());
 
         return Accepted();
     }
@@ -615,7 +585,7 @@ public sealed class PPatherController : ControllerBase
     {
         float mapId = service.TransformMapToWorld(r.uiMapId, r.path);
 
-        service.DrawPath(mapId, r.path.AsSpan());
+        routes.Draw(mapId, r.path.AsSpan());
 
         return Accepted();
     }

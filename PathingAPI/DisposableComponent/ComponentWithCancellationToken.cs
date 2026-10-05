@@ -1,27 +1,36 @@
-﻿using Microsoft.AspNetCore.Components;
+using Frontend.Shared;
 
-using System;
 using System.Threading;
 
 #nullable enable
 
 namespace PathingAPI;
 
-public abstract class ComponentWithCancellationToken : ComponentBase, IDisposable
+/// <summary>
+/// The base of every PathingAPI component: Frontend's subscription and redraw
+/// plumbing plus a <see cref="Token"/> cancelled when the component goes away.
+/// A component that awaits JS teardown implements <c>IAsyncDisposable</c> and must
+/// call <see cref="SubscribingComponentBase.Dispose"/> itself (Blazor then calls
+/// only <c>DisposeAsync</c>).
+/// </summary>
+public abstract class ComponentWithCancellationToken : SubscribingComponentBase
 {
-    private CancellationTokenSource? _cts;
+    private CancellationTokenSource? cts;
 
-    protected CancellationToken Token => (_cts ??= new()).Token;
-
-    public virtual void Dispose()
+    protected CancellationToken Token
     {
-        if (_cts == null)
-            return;
+        get
+        {
+            if (cts == null)
+            {
+                // Cancelled but not disposed: a continuation that reads Token after
+                // the component is gone gets a cancelled token, not an exception.
+                CancellationTokenSource created = new();
+                cts = created;
+                OnDispose(created.Cancel);
+            }
 
-        _cts.Cancel();
-        _cts.Dispose();
-        _cts = null;
-
-        GC.SuppressFinalize(this);
+            return cts.Token;
+        }
     }
 }

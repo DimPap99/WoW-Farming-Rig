@@ -59,6 +59,15 @@ cd C:\WoW-Farming-Rig\PathingAPI
 dotnet run --configuration Release
 ```
 
+PathingAPI also runs on **Linux and macOS** (the bot does not: it needs Windows screen
+capture and input). With the .NET 10 SDK installed:
+
+```bash
+pwsh scripts/download-navmesh.ps1     # pwsh: dotnet tool install --global PowerShell
+pwsh scripts/download-leaflet.ps1
+PathingAPI/run.sh                     # add e.g. --exp=forever
+```
+
 Then in a browser go to http://localhost:5001
 
 **Startup arguments**
@@ -86,20 +95,31 @@ on a continent Wrath does not have.
 falls back to checking the archives. It used to check the archives unconditionally and
 so reported failure on every tiles-only install even though pathing worked.
 
-There are 3 pages:
+The status bar across the top shows the client data and era (`--exp`), the engine
+(switchable), how many navmesh tiles are on disk and for which continents, a running
+bake's progress, the last route's time, and whether a search holds the gate. The pages:
 
-* Watch API Calls
-* Search
-* Route
-* Swagger
+| page | what it is for |
+|---|---|
+| **Live view** (`/`) | 3D view of every route the server answers, the bot's included, plus a filterable list of known-trouble **test routes**. Each runs as a real API call and shows its result; routes on continents with no tiles are struck through. |
+| **Map** (`/Leaflet`) | The minimap with spawns, zones, navmesh coverage and bake controls, and a route search on the map's continent. |
+| **Route search** | Search between named places: curated spots plus every `.tele` location, filtered as you type. Options: jitter and seed (and the strategy, under SpotAStar). |
+| **Recorded paths** | Load a recorded path file (its zone is guessed from the name, its screenshot shown), draw it, and step through its legs searching each. |
+| **NPC routes** | Pick a zone and an NPC type, roll a random start and route to the NPC. |
+| **API** | Swagger: every endpoint with examples. |
 
-Requests to the API can be done in a new browser tab like this or via the Swagger tab. You can then view the result in the Watch API calls viewer.
+In the 3D views, **Show** toggles what this tab draws, **Stream** what the server sends to
+every viewer (navmesh tiles, client geometry, SpotAStar test points). **Reset** clears
+every viewer's scene and drops the engine's resident tiles; **Clear spot cache** deletes
+the legacy engine's spot cache and keeps the navmesh tiles. Babylon.js is only fetched
+when a 3D page first opens.
+
+Requests to the API can be done in a new browser tab like this or via the API page; the
+result shows in the live view.
 
 ```
-http://localhost:5001/api/PPather/MapRoute?map1=1446&x1=51.0&y1=29.3&map2=1446&x2=38.7&y2=20.1
+http://localhost:5001/api/PPather/MapRoute?uimap1=1446&x1=51.0&y1=29.3&uimap2=1446&x2=38.7&y2=20.1
 ```
-
-Search gives some predefined locations to search from and to.
 
 ## Running it along side the bot
 

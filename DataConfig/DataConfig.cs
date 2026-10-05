@@ -14,8 +14,12 @@ public static class DataConfigMeta
 
 public sealed class DataConfig
 {
+    /// <summary>The navmesh tile folder under <see cref="PathInfo"/>.</summary>
+    public const string NavmeshFolder = "navmesh";
+
     public int Version = DataConfigMeta.Version;
-    public string Root { get; set; } = Join("..", "json");
+    // Spelled as the repo folder is: "json" only resolves on a case-insensitive filesystem.
+    public string Root { get; set; } = Join("..", "Json");
 
     [JsonIgnore]
     public string Class => Join(Root, "class");
@@ -26,7 +30,7 @@ public sealed class DataConfig
     [JsonIgnore]
     public string PathInfo => Join(Root, "PathInfo");
     [JsonIgnore]
-    public string Navmesh => Join(Root, "PathInfo", "navmesh", ClientEra(Exp));
+    public string Navmesh => Join(Root, "PathInfo", NavmeshFolder, ClientEra(Exp));
     [JsonIgnore]
     public string MPQ => Join(Root, "MPQ");
     [JsonIgnore]
@@ -194,6 +198,12 @@ public sealed class DataConfig
         return this;
     }
 
+    /// <summary>
+    /// Deletes the spot-graph cache (<c>PathInfo/&lt;era&gt;/&lt;continent&gt;</c>), which the
+    /// legacy engine rebuilds as it searches. The navmesh tiles beside it are kept:
+    /// they took hours to bake or a download to get, and deleting them is the bake
+    /// API's explicit <c>DELETE Bake/Cache</c>, not a cache clear.
+    /// </summary>
     public void DeletePPatherCache()
     {
         if (!Directory.Exists(PathInfo))
@@ -201,9 +211,13 @@ public sealed class DataConfig
             return;
         }
 
-        var directories = Directory.GetDirectories(PathInfo);
-        foreach (string directory in directories)
+        foreach (string directory in Directory.GetDirectories(PathInfo))
         {
+            if (GetFileName(directory).Equals(NavmeshFolder, System.StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             Directory.Delete(directory, true);
         }
     }

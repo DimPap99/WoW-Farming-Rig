@@ -30,7 +30,7 @@ wwwroot/script/
   leaflet-navmesh.js     navmesh tile overlay
   leaflet-bake.js        bake controls
   leaflet-zones.js       zone polygons
-  babylonjs.js           3D route view (PathingAPI only)
+wwwroot/css/leaflet-map.css  the map's own rules, linked by both hosts
 ```
 
 ## Things that will bite you

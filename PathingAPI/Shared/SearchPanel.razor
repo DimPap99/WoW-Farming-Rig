@@ -1,0 +1,224 @@
+@* From/To route search between named places. Runs the search itself, so a page
+   only places it. *@
+
+@inject LocationCatalog catalog
+@inject RouteSearch routes
+@inject ServerStatus status
+
+<div class="pa-form">
+    <div class="pa-field">
+        <label class="pa-label" for="@Id("continent")">Continent</label>
+        @if (Locked)
+        {
+            <span class="pa-input pa-readout" id="@Id("continent")" title="The map's continent; switch it with the map's own selector">
+                @ContinentDB.IdToName.GetValueOrDefault(mapId, Format(mapId))
+            </span>
+        }
+        else
+        {
+            <select class="pa-select" id="@Id("continent")" value="@Format(mapId)" @onchange="ChangeContinent">
+                @foreach (ContinentChoice c in catalog.Continents)
+                {
+                    <option value="@Format(c.MapId)">@c.Name@(snapshot.CanRoute(c.Name) ? null : " (no tiles)")</option>
+                }
+            </select>
+        }
+    </div>
+
+    <div class="pa-endpoints">
+        <div class="pa-field">
+            <label class="pa-label" for="@Id("from")">From</label>
+            <input class="pa-input" id="@Id("from")" list="@Id("places")" autocomplete="off"
+                   placeholder="@Placeholder" @bind="from" @bind:event="oninput" />
+        </div>
+        <button class="pa-btn pa-btn--ghost pa-btn--icon pa-swap" type="button" title="Swap From and To" @onclick="Swap">
+            <span class="oi oi-elevator" aria-hidden="true"></span>
+        </button>
+        <div class="pa-field">
+            <label class="pa-label" for="@Id("to")">To</label>
+            <input class="pa-input" id="@Id("to")" list="@Id("places")" autocomplete="off"
+                   placeholder="@Placeholder" @bind="to" @bind:event="oninput" />
+        </div>
+    </div>
+
+    <details class="pa-details">
+        <summary>Options</summary>
+        <div class="pa-row">
+            <div class="pa-field" title="Randomly offsets each corner by up to this many yards. 0 disables it.">
+                <label class="pa-label" for="@Id("jitter")">Jitter (yd)</label>
+                <input class="pa-input" id="@Id("jitter")" type="number" min="0" max="10" step="0.5" @bind="jitter" />
+            </div>
+            <div class="pa-field" title="Seeds the jitter so a route is reproducible. Empty draws a new seed each search.">
+                <label class="pa-label" for="@Id("seed")">Seed</label>
+                <div class="pa-input-group">
+                    <input class="pa-input" id="@Id("seed")" placeholder="random" @bind="seed" />
+                    <button class="pa-btn pa-btn--icon" type="button" title="Roll a seed" @onclick="RollSeed">
+                        <span class="oi oi-random" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        @if (snapshot.Engine == PathingEngine.SpotAStar)
+        {
+            <div class="pa-field">
+                <label class="pa-label" for="@Id("strategy")">Strategy</label>
+                <StrategySelect Id="@Id("strategy")" @bind-Value="strategy" />
+            </div>
+        }
+    </details>
+
+    <div class="pa-actions">
+        <button class="pa-btn" type="button" disabled="@busy" title="Draw a straight line between the two places"
+                @onclick="DrawAsync">
+            <span class="oi oi-minus" aria-hidden="true"></span> Line
+        </button>
+        <BusyButton Class="pa-btn--primary pa-grow" Icon="media-play" Busy="@busy" OnClick="FindAsync">
+            Find path
+        </BusyButton>
+    </div>
+
+    <ResultLine Text="@result" Kind="@resultKind" />
+</div>
+
+<datalist id="@Id("places")">
+    @foreach (NamedLocation place in Places)
+    {
+        <option value="@place.Name"></option>
+    }
+</datalist>
+
+@code {
+    /// <summary>The continent to start on; otherwise the first with tiles.</summary>
+    [Parameter] public string? Continent { get; set; }
+
+    /// <summary>Keeps the panel on <see cref="Continent"/>: the map can only show its own.</summary>
+    [Parameter] public bool Locked { get; set; }
+
+    private readonly string instance = Guid.NewGuid().ToString("N")[..8];
+    private readonly List<NamedLocation> custom = [];
+
+    private StatusSnapshot snapshot = null!;
+    private float mapId;
+    private string from = string.Empty;
+    private string to = string.Empty;
+    private float jitter;
+    private string seed = string.Empty;
+    private SearchStrategy strategy = RouteSearch.DefaultStrategy;
+    private bool busy;
+    private string? result;
+    private ResultKind resultKind;
+
+    private IEnumerable<NamedLocation> Places =>
+        custom.Where(l => l.MapId == mapId).Concat(catalog.On(mapId));
+
+    private string Placeholder => $"Type to search {Places.Count():N0} places";
+
+    private string Id(string part) => $"pa-{part}-{instance}";
+
+    private static string Format(float value) => value.ToString(CultureInfo.InvariantCulture);
+
+    protected override void OnInitialized()
+    {
+        snapshot = status.Read();
+        mapId = !string.IsNullOrEmpty(Continent) && ContinentDB.NameToId.TryGetValue(Continent, out float given)
+            ? given
+            : catalog.Continents.FirstOrDefault(c => snapshot.CanRoute(c.Name))?.MapId
+                ?? catalog.Continents.FirstOrDefault()?.MapId
+                ?? 0;
+    }
+
+    /// <summary>A map-authored point; the map page mirrors its custom POIs here.</summary>
+    public void AddCustom(NamedLocation place)
+    {
+        if (custom.Any(l => l.Name == place.Name))
+            return;
+
+        custom.Add(place);
+        Redraw();
+    }
+
+    public void RemoveCustom(string name)
+    {
+        custom.RemoveAll(l => l.Name == name);
+        Redraw();
+    }
+
+    private void ChangeContinent(ChangeEventArgs e)
+    {
+        if (!float.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float id))
+            return;
+
+        mapId = id;
+        from = to = string.Empty;
+        Show(null, ResultKind.Info);
+    }
+
+    private void Swap() => (from, to) = (to, from);
+
+    private void RollSeed() => seed = Random.Shared.Next(1_000_000).ToString(CultureInfo.InvariantCulture);
+
+    private NamedLocation? Resolve(string name) =>
+        custom.FirstOrDefault(l => l.MapId == mapId && l.Name == name) ?? catalog.Find(mapId, name);
+
+    private bool TryEndpoints(out NamedLocation start, out NamedLocation end)
+    {
+        start = Resolve(from.Trim())!;
+        end = Resolve(to.Trim())!;
+
+        string? missing = (start, end) switch
+        {
+            (null, null) => "Pick a From and a To place from the list.",
+            (null, _) => "Pick a From place from the list.",
+            (_, null) => "Pick a To place from the list.",
+            _ => null
+        };
+
+        if (missing != null)
+            Show(missing, ResultKind.Error);
+
+        return missing == null;
+    }
+
+    private async Task FindAsync()
+    {
+        if (!TryEndpoints(out NamedLocation start, out NamedLocation end))
+            return;
+
+        busy = true;
+        Show("Searching...", ResultKind.Info);
+        try
+        {
+            int? parsedSeed = int.TryParse(seed, NumberStyles.Integer, CultureInfo.InvariantCulture, out int s) ? s : null;
+            SearchOutcome outcome = await routes.FindAsync(start.World, end.World, strategy,
+                new RouteOptions(jitter, parsedSeed), Token);
+
+            Show(outcome.Summary, outcome.Error != null ? ResultKind.Error : outcome.Found ? ResultKind.Ok : ResultKind.Warn);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task DrawAsync()
+    {
+        if (!TryEndpoints(out NamedLocation start, out NamedLocation end))
+            return;
+
+        try
+        {
+            await routes.DrawAsync(mapId, [start.World.AsVector3(), end.World.AsVector3()], PathStyle.Draft, Token);
+            Show("Straight line drawn", ResultKind.Info);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            Show(e.Message, ResultKind.Error);
+        }
+    }
+
+    private void Show(string? text, ResultKind kind)
+    {
+        result = text;
+        resultKind = kind;
+    }
+}
