@@ -13,4 +13,6 @@ public sealed record RecordedPathInfo(string Name, long Bytes, DateTimeOffset Mo
 public sealed record RecordedPath(string Name, Point3[] Points);
 
 /// <summary>The area id and walkable height at a world point; 0 for what is not baked.</summary>
-public sealed record AreaAtPoint(int AreaId, float Z);
+/// <param name="AreaId">The finest area the baked grid knows there: a zone, or a sub-area such as a town.</param>
+/// <param name="UiMapId">The zone map the area lies in - its own, or a sub-area's parent zone's; 0 when not known.</param>
+public sealed record AreaAtPoint(int AreaId, float Z, int UiMapId = 0);

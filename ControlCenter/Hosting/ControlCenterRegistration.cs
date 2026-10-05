@@ -36,6 +36,12 @@ public static class ControlCenterRegistration
         services.AddSingleton<PathingStatus>();
         services.AddHostedService(sp => sp.GetRequiredService<PathingStatus>());
         services.AddSingleton<WorldCache>();
+        services.AddSingleton(sp =>
+        {
+            ZoneLookup zones = new(sp);
+            sp.GetRequiredService<PathingStatus>().Reconnected += zones.Forget;
+            return zones;
+        });
         // Connected only while a page watches the routes the service plans.
         services.AddSingleton<IWatchConnectionFactory, WatchConnectionFactory>();
         services.AddSingleton<WatchFeed>();

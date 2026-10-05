@@ -7,6 +7,7 @@
 @inject WorldCache worldCache
 @inject PathingStatus status
 @inject WatchFeed feed
+@inject ZoneLookup zoneLookup
 
 <PageTitle>Live view · Control Center</PageTitle>
 
@@ -204,6 +205,7 @@
         bool frame = shown is not null && shown != framed;
         framed = shown ?? framed;
         scene = new WorldScene(continent, [.. drawn], [.. markers], ZoneLabels.Of(world, continent), frame);
+        LearnZones();
     }
 
     private string Ends(WatchRoute route)
@@ -217,7 +219,42 @@
 
     private string ZoneName(int mapId, Point3 at)
     {
-        return world is not null && ZoneMath.ZoneAt(world.World.Zones, mapId, at.X, at.Y) is ZoneInfo zone ? zone.Name : "?";
+        return world is not null && zoneLookup.Known(world, mapId, at) is ZoneInfo zone ? zone.Name : "?";
+    }
+
+    // The zones the routes start and end in, from the service's area grid; the list names them again when known.
+    private void LearnZones()
+    {
+        if (world is null)
+        {
+            return;
+        }
+
+        WorldSnapshot snapshot = world;
+        (int MapId, Point3[] Ends)[] wanted = [.. routes
+            .GroupBy(r => r.Continent)
+            .Select(g => (snapshot.Continent(g.Key)?.MapId ?? -1, g.SelectMany(r => new[] { r.From, r.To }).ToArray()))
+            .Where(w => w.Item1 >= 0)];
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                bool learned = false;
+                foreach ((int mapId, Point3[] ends) in wanted)
+                {
+                    learned |= await zoneLookup.LearnAsync(mapId, ends, Token);
+                }
+
+                if (learned)
+                {
+                    StateHasChanged();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // The page went away.
+            }
+        });
     }
 
     private static string Title(WatchRoute route)

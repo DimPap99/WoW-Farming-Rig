@@ -30,10 +30,10 @@ public static class ZoneLabels
                 })];
     }
 
-    /// <summary>A world point as a player reads it: its zone's name and map coordinates.</summary>
-    public static string Where(WorldSnapshot? world, int mapId, Point3 at)
+    /// <summary>A world point as a player reads it: its zone's name and map coordinates (<see cref="ZoneLookup"/>).</summary>
+    public static string Where(ZoneInfo? zone, Point3 at)
     {
-        if (world is null || ZoneMath.ZoneAt(world.World.Zones, mapId, at.X, at.Y) is not ZoneInfo zone)
+        if (zone is null)
         {
             return FormattableString.Invariant($"x {at.X:F0}, y {at.Y:F0}");
         }

@@ -35,6 +35,12 @@ public sealed class ForeverExportTests
         return ZoneMath.ToWorld(Zones.Single(z => z.UiMapId == uiMapId), new Point3(x, y, 0));
     }
 
+    // The zone maps' guess, as the Control Center falls back to without the service's area grid.
+    private static ZoneInfo? Guess(Point3 p)
+    {
+        return ZoneMath.ZoneAt(Zones, Kalimdor, p.X, p.Y);
+    }
+
     private static ForeverRoute Load(string text)
     {
         Assert.True(ForeverRouteFile.TryParse(text, "designed.json", Maps, out ForeverRoute route, out string error), error + "\n" + text);
@@ -46,7 +52,7 @@ public sealed class ForeverExportTests
     {
         Point3[] waypoints = [On(Durotar, 50, 40), On(Durotar, 45, 45), On(Barrens, 60, 30), On(Barrens, 55, 35)];
 
-        Assert.True(ForeverExport.TryBuild("Across", waypoints, [], ForeverExport.DefaultKills, Zones, Kalimdor, out string text, out string error), error);
+        Assert.True(ForeverExport.TryBuild("Across", waypoints, [], ForeverExport.DefaultKills, Guess, Zones, Kalimdor, out string text, out string error), error);
         ForeverRoute route = Load(text);
 
         Assert.Equal("Across", route.Name);
@@ -66,12 +72,30 @@ public sealed class ForeverExportTests
     }
 
     [Fact]
+    public void A_waypoint_is_named_on_the_zone_it_is_in_when_that_zones_map_holds_it()
+    {
+        ZoneInfo durotar = Zones.Single(z => z.UiMapId == Durotar);
+        ZoneInfo tanaris = Zones.Single(z => z.Name == "Tanaris");
+        // South Durotar lies inside the Barrens' map too, further than inside Durotar's: the maps alone say the Barrens.
+        Point3 southDurotar = On(Durotar, 48, 85);
+        Assert.Equal("The Barrens", Guess(southDurotar)?.Name);
+
+        Assert.True(ForeverExport.TryBuild("South", [southDurotar], [], 1, _ => durotar, Zones, Kalimdor, out string named, out string error), error);
+        Assert.True(ForeverExport.TryBuild("Wrong", [southDurotar], [], 1, _ => tanaris, Zones, Kalimdor, out string guessed, out error), error);
+
+        ForeverTravelTask travel = Assert.IsType<ForeverTravelTask>(Assert.Single(Load(named).Tasks));
+        Assert.Equal(new ForeverMapPoint(Durotar, 48, 85), travel.To);
+        // A zone whose map does not hold the point is not used: the maps' guess is.
+        Assert.Equal(Barrens, Assert.IsType<ForeverTravelTask>(Assert.Single(Load(guessed).Tasks)).To.UIMapId);
+    }
+
+    [Fact]
     public void An_area_is_roamed_after_the_waypoint_nearest_it()
     {
         Point3[] waypoints = [On(Durotar, 30, 30), On(Durotar, 50, 50), On(Durotar, 70, 70)];
         IReadOnlyList<Point3>[] areas = [[On(Durotar, 51, 51), On(Durotar, 55, 51), On(Durotar, 53, 55)]];
 
-        Assert.True(ForeverExport.TryBuild("Roam on the way", waypoints, areas, 7, Zones, Kalimdor, out string text, out string error), error);
+        Assert.True(ForeverExport.TryBuild("Roam on the way", waypoints, areas, 7, Guess, Zones, Kalimdor, out string text, out string error), error);
         ForeverRoute route = Load(text);
 
         Assert.Collection(route.Tasks,
@@ -85,7 +109,7 @@ public sealed class ForeverExportTests
     {
         IReadOnlyList<Point3>[] areas = [[On(Durotar, 51.5f, 44), On(Durotar, 53.5f, 46)]];
 
-        Assert.True(ForeverExport.TryBuild("Just roam", [], areas, 3, Zones, Kalimdor, out string text, out string error), error);
+        Assert.True(ForeverExport.TryBuild("Just roam", [], areas, 3, Guess, Zones, Kalimdor, out string text, out string error), error);
         ForeverRoute route = Load(text);
 
         ForeverRoamAreaTask roam = Assert.IsType<ForeverRoamAreaTask>(Assert.Single(route.Tasks));
@@ -97,7 +121,7 @@ public sealed class ForeverExportTests
     {
         Point3[] waypoints = [.. Enumerable.Range(0, 20).Select(i => On(Durotar, 40 + i, 40 + (i / 2f)))];
 
-        Assert.True(ForeverExport.TryBuild("Long", waypoints, [], 1, Zones, Kalimdor, out string text, out string error), error);
+        Assert.True(ForeverExport.TryBuild("Long", waypoints, [], 1, Guess, Zones, Kalimdor, out string text, out string error), error);
         ForeverRoute route = Load(text);
 
         ForeverTravelTask travel = Assert.IsType<ForeverTravelTask>(Assert.Single(route.Tasks));
@@ -112,7 +136,7 @@ public sealed class ForeverExportTests
         IReadOnlyList<Point3>[] across = [[On(Durotar, 50, 50), On(tanaris, 50, 50), On(tanaris, 60, 40)]];
         int continentMap = Zones.Single(z => z.Name == "Kalimdor" && z.MapId == Kalimdor).UiMapId;
 
-        Assert.True(ForeverExport.TryBuild("Wide", [], across, 1, Zones, Kalimdor, out string text, out string error), error);
+        Assert.True(ForeverExport.TryBuild("Wide", [], across, 1, Guess, Zones, Kalimdor, out string text, out string error), error);
         ForeverRoute route = Load(text);
 
         ForeverRoamAreaTask roam = Assert.IsType<ForeverRoamAreaTask>(Assert.Single(route.Tasks));
@@ -125,9 +149,9 @@ public sealed class ForeverExportTests
         Point3 nowhere = new(20000, 20000, 0);
         IReadOnlyList<Point3>[] offMap = [[nowhere, new Point3(20010, 20010, 0)]];
 
-        Assert.False(ForeverExport.TryBuild("Lost", [On(Durotar, 50, 50), nowhere], [], 1, Zones, Kalimdor, out _, out string lost));
-        Assert.False(ForeverExport.TryBuild("Off", [], offMap, 1, Zones, Kalimdor, out _, out string off));
-        Assert.False(ForeverExport.TryBuild("Empty", [], [], 1, Zones, Kalimdor, out _, out string empty));
+        Assert.False(ForeverExport.TryBuild("Lost", [On(Durotar, 50, 50), nowhere], [], 1, Guess, Zones, Kalimdor, out _, out string lost));
+        Assert.False(ForeverExport.TryBuild("Off", [], offMap, 1, Guess, Zones, Kalimdor, out _, out string off));
+        Assert.False(ForeverExport.TryBuild("Empty", [], [], 1, Guess, Zones, Kalimdor, out _, out string empty));
 
         Assert.Contains("Waypoint 2 is in no zone", lost);
         Assert.Contains("Area 1 is not inside one zone", off);

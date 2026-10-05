@@ -70,6 +70,23 @@ public sealed class ZoneMathTests
     }
 
     [Theory]
+    [InlineData(14, 1411)]     // Durotar itself
+    [InlineData(362, 1411)]    // Razor Hill, a town of Durotar
+    [InlineData(1637, 1454)]   // Orgrimmar, a zone of its own
+    public void An_area_lies_in_its_own_zone_or_its_parents(int areaId, int uiMapId)
+    {
+        Assert.True(Maps.TryGetZoneOfArea(areaId, out WorldMapArea zone));
+        Assert.Equal(uiMapId, zone.UIMapId);
+    }
+
+    [Fact]
+    public void An_area_the_map_data_does_not_know_lies_in_no_zone()
+    {
+        Assert.False(Maps.TryGetZoneOfArea(0, out _));
+        Assert.False(Maps.TryGetZoneOfArea(987654, out _));
+    }
+
+    [Theory]
     [InlineData("16_Loch Modan", "Loch Modan")]
     [InlineData("_herb/Elwynn Forest Herbs", "Elwynn Forest")]
     [InlineData("crossroads_trip", null)]
