@@ -1,8 +1,10 @@
 @* The world view: one map for every page that shows the world, flat and north-up, tilting into 3D,
-   drawn with deck.gl by wwwroot/js/world-view.js. The page owns what is shown (Scene, sent whole
-   when it changes) and hears clicks on the map while Picking; the ground - the continent's relief,
-   and each tile's walkable polygons when zoomed in - the view fetches itself from the Pathing
-   Service, so it needs no minimap art. Drag pans, the wheel zooms, right-drag turns and tilts. *@
+   drawn with deck.gl by wwwroot/js/world-view.js (and world-edit.js for drawing). The page owns what
+   is shown (Scene, sent whole when it changes), hears clicks on the map while Picking, and offers
+   drawing Tools: what they draw, and what the pointer changes on an editable shape, comes back as
+   events for the page to keep. The ground - the continent's relief, and each tile's walkable
+   polygons when zoomed in - the view fetches itself from the Pathing Service, so it needs no
+   minimap art. Drag pans, the wheel zooms, right-drag turns and tilts. *@
 
 @inherits ControlCenterComponent
 @implements IAsyncDisposable
@@ -18,6 +20,19 @@
                     title="Tilt the map to see heights; right-drag turns and tilts it">3D</button>
             <button class="pa-toggle" type="button" @onclick="FitAsync" title="Frame what this page shows">Fit</button>
         </div>
+
+        @if (Tools is { Length: > 0 })
+        {
+            <div class="pa-group pa-world-draw" role="group" aria-label="Draw">
+                @foreach (WorldTool tool in Tools)
+                {
+                    <button class="pa-toggle pa-world-tool" type="button" aria-pressed="@Aria.State(Tool == tool.Shape)"
+                            title="@tool.Title" aria-label="@tool.Title" data-tool="@tool.Shape" @onclick="() => ChooseAsync(tool.Shape)">
+                        @Icon(tool.Shape)
+                    </button>
+                }
+            </div>
+        }
     </div>
 
     <div class="pa-world-readout" aria-hidden="true"></div>
@@ -39,6 +54,23 @@
 
     [Parameter] public EventCallback<WorldPoint> OnPick { get; set; }
 
+    /// <summary>The drawing tools shown on the map; none when null.</summary>
+    [Parameter] public WorldTool[]? Tools { get; set; }
+
+    /// <summary>The tool in use, one of <see cref="WorldShapes"/>; null for none. Escape on the map drops it.</summary>
+    [Parameter] public string? Tool { get; set; }
+
+    [Parameter] public EventCallback<string?> ToolChanged { get; set; }
+
+    /// <summary>A shape the tool in use finished.</summary>
+    [Parameter] public EventCallback<WorldDrawn> OnDrawn { get; set; }
+
+    /// <summary>An editable shape the pointer changed.</summary>
+    [Parameter] public EventCallback<WorldEdited> OnEdited { get; set; }
+
+    /// <summary>A shape was clicked: its id; null when a click beside every shape lets the selection go.</summary>
+    [Parameter] public EventCallback<string?> OnSelected { get; set; }
+
     /// <summary>Panels shown over the view.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
@@ -49,11 +81,15 @@
         tile = $"{PathingApi.Navmesh}/{{continent}}/{PathingApi.Tiles}/{{x}}/{{z}}",
     };
 
+    // Not a tool: the page's tool differs from it, so it is sent on the next render.
+    private const string ResendTool = "\0";
+
     private ElementReference host;
     private DotNetObjectReference<WorldView>? self;
     private string? id;
     private WorldScene? shown;
     private bool? pickingShown;
+    private string? toolShown;
     private bool tilted;
     private string? failed;
 
@@ -83,6 +119,12 @@
                 pickingShown = Picking;
                 await js.InvokeVoidAsync("worldView.setPicking", Token, id, Picking);
             }
+
+            if (toolShown != Tool)
+            {
+                toolShown = Tool;
+                await js.InvokeVoidAsync("worldView.setTool", Token, id, Tool);
+            }
         }
         catch (JSException e)
         {
@@ -96,11 +138,50 @@
         }
     }
 
-    /// <summary>A click on the map while <see cref="Picking"/>: world yards, and the height of the ground drawn under it, else 0.</summary>
+    /// <summary>Centres the view on a world point, closing in when it is zoomed far out.</summary>
+    public Task CenterOnAsync(Point3 at)
+    {
+        return Js("worldView.centerOn", at.X, at.Y);
+    }
+
+    /// <summary>A click on the map while <see cref="Picking"/>: world yards, and the ground's height under it, else 0.</summary>
     [JSInvokable]
     public Task OnWorldClick(float x, float y, float z)
     {
         return OnPick.InvokeAsync(new WorldPoint(x, y, z));
+    }
+
+    [JSInvokable]
+    public Task OnShapeDrawn(string shape, float[] points, float radius)
+    {
+        return OnDrawn.InvokeAsync(new WorldDrawn(shape, WorldPoints.Unflatten(points), radius));
+    }
+
+    [JSInvokable]
+    public Task OnShapeEdited(string shapeId, float[] points, float radius)
+    {
+        return OnEdited.InvokeAsync(new WorldEdited(shapeId, WorldPoints.Unflatten(points), radius));
+    }
+
+    [JSInvokable]
+    public Task OnShapeSelected(string? shapeId)
+    {
+        return OnSelected.InvokeAsync(shapeId);
+    }
+
+    [JSInvokable]
+    public Task OnToolCleared()
+    {
+        toolShown = ResendTool;
+        return ToolChanged.InvokeAsync(null);
+    }
+
+    // The script switched the tool when the button was pressed; whatever the page makes of it is sent
+    // again after, so the two cannot drift apart.
+    private Task ChooseAsync(string shape)
+    {
+        toolShown = ResendTool;
+        return ToolChanged.InvokeAsync(Tool == shape ? null : shape);
     }
 
     private async Task ToggleTiltAsync()
@@ -129,6 +210,18 @@
         {
         }
     }
+
+    // Each tool's picture: what it draws.
+    private static RenderFragment Icon(string shape) => shape switch
+    {
+        WorldShapes.Point => @<svg class="pa-world-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3.4 4.5 8.5 4.5 8.5s4.5-5.1 4.5-8.5A4.5 4.5 0 0 0 8 1.5z" /><circle cx="8" cy="6" r="1.6" /></svg>,
+        WorldShapes.Line => @<svg class="pa-world-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="2,13 6,5 10,10 14,3" /></svg>,
+        WorldShapes.Polygon => @<svg class="pa-world-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,2 14,6.5 11.5,14 4.5,14 2,6.5" /></svg>,
+        WorldShapes.Points => @<svg class="pa-world-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="2.5,12.5 7,6 13.5,3.5" stroke-dasharray="2 2" /><circle cx="2.5" cy="12.5" r="1.6" /><circle cx="7" cy="6" r="1.6" /><circle cx="13.5" cy="3.5" r="1.6" /></svg>,
+        WorldShapes.Rectangle => @<svg class="pa-world-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="9" /></svg>,
+        WorldShapes.Circle => @<svg class="pa-world-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /></svg>,
+        _ => @<span>@shape</span>,
+    };
 
     public async ValueTask DisposeAsync()
     {

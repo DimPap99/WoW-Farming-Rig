@@ -42,19 +42,31 @@ public sealed class ZoneMathTests
     }
 
     [Fact]
-    public void The_smallest_zone_holding_a_point_wins()
+    public void A_point_is_in_the_zone_whose_map_it_lies_furthest_inside()
     {
         ZoneInfo[] zones = [.. Maps.Values.Select(a => new ZoneInfo(a.UIMapId, a.AreaID, a.AreaName, a.Continent, a.MapID,
             a.LocLeft, a.LocRight, a.LocTop, a.LocBottom))];
+        ZoneInfo durotar = Zone(1411);
+        ZoneInfo barrens = Zone(1413);
 
-        // Stormwind's trade district: inside Elwynn's map and Stormwind City's; the city is smaller.
+        // Stormwind's trade district: inside Elwynn's map and Stormwind City's, well inside the city's.
         ZoneInfo? city = ZoneMath.ZoneAt(zones, 0, -8833f, 628f);
         ZoneInfo? forest = ZoneMath.ZoneAt(zones, 0, -9449f, 64f);
         ZoneInfo? wrongMap = ZoneMath.ZoneAt(zones, 1, -9449f, 64f);
+        // The east of the Barrens lies inside Durotar's map too, near its western edge.
+        Point3 eastBarrens = ZoneMath.ToWorld(barrens, new Point3(55, 35, 0));
+        Point3 westDurotar = ZoneMath.ToWorld(durotar, new Point3(35, 45, 0));
+        // Between Durotar and Tanaris no zone's map holds both: only the continent's.
+        Point3 tanaris = ZoneMath.ToWorld(Zone(1446), new Point3(50, 50, 0));
 
         Assert.Equal("Stormwind City", city?.Name);
         Assert.Equal("Elwynn Forest", forest?.Name);
         Assert.NotEqual("Elwynn Forest", wrongMap?.Name);
+        Assert.True(ZoneMath.Contains(durotar, 1, eastBarrens.X, eastBarrens.Y));
+        Assert.Equal("The Barrens", ZoneMath.ZoneAt(zones, 1, eastBarrens.X, eastBarrens.Y)?.Name);
+        Assert.Equal("Durotar", ZoneMath.ZoneAt(zones, 1, westDurotar.X, westDurotar.Y)?.Name);
+        Assert.Equal("Kalimdor", ZoneMath.ZoneHolding(zones, 1, [westDurotar, tanaris])?.Name);
+        Assert.Null(ZoneMath.ZoneAt(zones, 1, 20000, 20000));
     }
 
     [Theory]

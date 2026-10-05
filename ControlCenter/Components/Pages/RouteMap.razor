@@ -1,20 +1,26 @@
 @page "/routes"
 
+@using System.Numerics
+@using System.Threading
+
 @inherits ControlCenterComponent
 
 @inject IPathingClient pathing
 @inject WorldCache worldCache
 @inject PathingStatus status
+@inject IJSRuntime js
 
 <PageTitle>Routes · Control Center</PageTitle>
 
-@* Plans a route on the world view. From and To are named places, or points clicked on the map. The
-   route is drawn in its status colour; one that stops short shows where, with a dashed line to
-   where it was going. The band search is the bot's own; the whole-continent search finds the way
-   across first. *@
+@* The route designer. Waypoints are clicked on the map, or added from named places, or opened from
+   the path library; every leg between two is planned as the bot would (or across the whole
+   continent) and drawn in its status colour, so a leg that stops short or finds nothing shows
+   where. Dragging a waypoint plans only its two legs again. Areas drawn on the map are the places
+   a Forever route roams. The route is saved to the library as one zone's map coordinates, or as a
+   Forever route file, which the Pathing Service checks as a run loads it. *@
 
-<WorldView Scene="@scene" Picking="@(picking is not null)" OnPick="PickedAsync">
-    <Panel Title="Route" Icon="signpost" Position="top-left">
+<WorldView @ref="view" Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="Drawn" OnEdited="Edited" OnSelected="ShapeSelected">
+    <Panel Title="Route" Icon="signpost" Position="top-left" Class="pa-panel--tall">
         @if (world is null)
         {
             <ResultLine Text="@(status.Online ? "Loading the world..." : "Waiting for the Pathing Service")" Kind="ResultKind.Info" />
@@ -22,48 +28,124 @@
         else
         {
             <div class="pa-form">
-                <div class="pa-field">
-                    <label class="pa-label" for="pa-route-continent">Continent</label>
-                    <select class="pa-select" id="pa-route-continent" value="@continent" @onchange="ChangeContinentAsync">
-                        @foreach (ContinentInfo c in world.World.Continents)
-                        {
-                            <option value="@c.Name">@c.Name@(c.Tiles > 0 ? null : " (no tiles)")</option>
-                        }
-                    </select>
-                </div>
-
-                @EndField(from, "From")
-                @EndField(to, "To")
-                <datalist id="pa-route-places">
-                    @foreach (NamedLocation place in Places)
-                    {
-                        <option value="@place.Name"></option>
-                    }
-                </datalist>
-
-                <div class="pa-field">
-                    <span class="pa-label">Search</span>
-                    <div class="pa-segmented" role="group" aria-label="How far the search looks">
-                        <button class="pa-toggle" type="button" aria-pressed="@Aria.State(!acrossContinent)" @onclick="() => acrossContinent = false"
-                                title="The bot's own search: a band around the straight line. Fast; a route that must stray far from the line stops short.">
-                            Band
-                        </button>
-                        <button class="pa-toggle" type="button" aria-pressed="@Aria.State(acrossContinent)" @onclick="() => acrossContinent = true"
-                                title="Finds the way across the whole continent first, then searches along it. For long routes.">
-                            Whole continent
-                        </button>
+                <div class="pa-row">
+                    <div class="pa-field pa-grow">
+                        <label class="pa-label" for="pa-route-continent">Continent</label>
+                        <select class="pa-select" id="pa-route-continent" value="@continent" @onchange="ChangeContinent"
+                                disabled="@HasDesign" title="@(HasDesign ? "Clear the route to design one on another continent" : null)">
+                            @foreach (ContinentInfo c in world.World.Continents)
+                            {
+                                <option value="@c.Name">@c.Name@(c.Tiles > 0 ? null : " (no tiles)")</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="pa-field">
+                        <span class="pa-label">Search</span>
+                        <div class="pa-segmented" role="group" aria-label="How far each leg's search looks">
+                            <button class="pa-toggle" type="button" aria-pressed="@Aria.State(search == RouteSearch.Band)" @onclick="() => SetSearch(RouteSearch.Band)"
+                                    title="The bot's own search: a band around the straight line. Fast; a leg that must stray far from the line stops short.">
+                                Band
+                            </button>
+                            <button class="pa-toggle" type="button" aria-pressed="@Aria.State(search == RouteSearch.Continent)" @onclick="() => SetSearch(RouteSearch.Continent)"
+                                    title="Finds the way across the whole continent first, then searches along it. For long legs.">
+                                Continent
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <BusyButton Class="pa-btn--primary" Icon="media-play" Busy="@busy" Disabled="@(from.At is null || to.At is null)" OnClick="FindAsync">
-                    Find route
-                </BusyButton>
+                <p class="pa-tip">@Tip</p>
 
-                <ResultLine Text="@result" Kind="@resultKind" />
-                @if (stats is not null)
-                {
-                    <span class="pa-faint">@stats</span>
+                <div class="pa-field">
+                    <label class="pa-label" for="pa-route-place">Add a place</label>
+                    <div class="pa-input-group">
+                        <input class="pa-input" id="pa-route-place" list="pa-route-places" autocomplete="off"
+                               placeholder="A town, a flight master..." @bind="place" @bind:event="oninput" />
+                        <button class="pa-btn pa-btn--icon" type="button" disabled="@(Place is null)" title="Add it as the last waypoint" @onclick="AddPlace">
+                            <span class="oi oi-plus" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                    <datalist id="pa-route-places">
+                        @foreach (NamedLocation location in Places)
+                        {
+                            <option value="@location.Name"></option>
+                        }
+                    </datalist>
+                </div>
+
+                @{
+                    (string summary, ResultKind summaryKind) = Summary();
                 }
+                <div class="pa-route-summary">
+                    <ResultLine Text="@summary" Kind="@summaryKind" />
+                    @if (waypoints.Count > 1)
+                    {
+                        <span class="pa-faint">@Words.Yards(PlannedLength()) planned · @Words.Count(waypoints.Count, "waypoint")</span>
+                    }
+                </div>
+
+                @if (waypoints.Count > 0)
+                {
+                    <ol class="pa-waypoints" aria-label="Waypoints">
+                        @for (int i = 0; i < waypoints.Count; i++)
+                        {
+                            int index = i;
+                            <li class="pa-waypoint">
+                                <span class="pa-waypoint-n">@(index + 1)</span>
+                                <button class="pa-waypoint-at" type="button" title="Show it on the map" @onclick="() => FocusAsync(index)">@Where(waypoints[index])</button>
+                                @if (index + 1 < waypoints.Count)
+                                {
+                                    Leg leg = legs.Get(waypoints[index], waypoints[index + 1], search);
+                                    <span class="pa-waypoint-leg" title="@LegTitle(index, leg)">
+                                        <span class="pa-dot pa-dot--@LegDot(leg)" aria-hidden="true"></span>
+                                        @(leg.Points.Length > 0 ? Words.Yards(leg.Length) : null)
+                                    </span>
+                                }
+                                <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Remove waypoint @(index + 1)" @onclick="() => Remove(index)">
+                                    <span class="oi oi-x" aria-hidden="true"></span>
+                                </button>
+                            </li>
+                        }
+                    </ol>
+
+                    <div class="pa-actions pa-actions--wrap">
+                        <button class="pa-btn" type="button" disabled="@(waypoints.Count < 2)" title="Walk the route the other way" @onclick="Reverse">
+                            <span class="oi oi-loop-circular" aria-hidden="true"></span> Reverse
+                        </button>
+                        <button class="pa-btn" type="button" disabled="@(waypoints.Count < 3)" title="Keep every other waypoint, and the last" @onclick="Halve">Halve</button>
+                        <button class="pa-btn" type="button" disabled="@(waypoints.Count < 2)" title="Add a waypoint halfway between each pair" @onclick="Double">Double</button>
+                        <button class="pa-btn pa-btn--ghost" type="button" title="Remove every waypoint and area" @onclick="ClearAsync">Clear</button>
+                    </div>
+                }
+
+                <div class="pa-divider"></div>
+
+                <div class="pa-field">
+                    <span class="pa-label">Areas to roam</span>
+                    @if (areas.Count == 0)
+                    {
+                        <span class="pa-faint">None. Draw one with the area tools at the top right: a Forever route roams each.</span>
+                    }
+                    else
+                    {
+                        <ul class="pa-waypoints" aria-label="Areas">
+                            @foreach (Area area in areas)
+                            {
+                                <li class="pa-waypoint @(area.Id == selected ? "is-selected" : null)">
+                                    <button class="pa-waypoint-at" type="button" title="Select it to move its corners" @onclick="() => FocusAreaAsync(area)">
+                                        @area.Name · @Words.Count(area.Points.Length, "corner")
+                                    </button>
+                                    <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Remove @area.Name" @onclick="() => RemoveArea(area)">
+                                        <span class="oi oi-x" aria-hidden="true"></span>
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+
+                <RouteLibrary World="@world" Waypoints="@waypoints" Opened="@opened" Dirty="@dirty" OnOpened="Opened" OnSaved="Saved" />
+                <ForeverSave World="@world" Continent="@continent" Waypoints="@waypoints" Areas="@AreaCorners" />
             </div>
         }
     </Panel>
@@ -75,52 +157,81 @@
 }
 
 @code {
-    /// <summary>One end of the route: a named place, or a point clicked on the map.</summary>
-    private sealed class RouteEnd(string kind)
+    /// <summary>The waypoints' shape on the map.</summary>
+    public const string WaypointsId = "waypoints";
+
+    /// <summary>While answers arrive, the map is drawn again at most this often.</summary>
+    private const int RedrawMs = 150;
+
+    /// <summary>Wider than any zone: a map this size is a continent's or the world's, not a zone to name.</summary>
+    private const float MaxZoneSpanYd = 9000;
+
+    private static readonly WorldTool[] Tools =
+    [
+        new(WorldShapes.Point, "Add waypoints: each click adds one at the end; Esc stops"),
+        new(WorldShapes.Polygon, "Draw an area to roam: click its corners, then the first again (or Enter); Esc cancels"),
+        new(WorldShapes.Rectangle, "Draw a rectangular area to roam: click two opposite corners"),
+    ];
+
+    /// <summary>An area drawn on the map: a polygon's corners, or a rectangle's two opposite ones.</summary>
+    private sealed class Area(string id, string name, string type, Point3[] points)
     {
-        public string Kind { get; } = kind;
+        public string Id { get; } = id;
 
-        public string Text { get; set; } = string.Empty;
+        public string Name { get; } = name;
 
-        public Point3? At { get; set; }
+        public string Type { get; } = type;
+
+        public Point3[] Points { get; set; } = points;
     }
 
-    private readonly RouteEnd from = new(WorldKinds.Start);
-    private readonly RouteEnd to = new(WorldKinds.End);
-    private RouteEnd? picking;
-
+    private RouteLegs legs = null!;
+    private CancellationTokenSource plans = new();
+    private WorldView? view;
     private WorldSnapshot? world;
     private string continent = string.Empty;
     private WorldScene scene = WorldScene.Empty(string.Empty);
-    private bool acrossContinent;
-    private bool busy;
-    private string? result;
-    private ResultKind resultKind;
-    private string? stats;
+    private string? tool;
+    private string selected = WaypointsId;
+    private List<Point3> waypoints = [];
+    private readonly List<Area> areas = [];
+    private int areasDrawn;
+    private RouteSearch search = RouteSearch.Band;
+    private bool redrawQueued;
+    private bool dirty;
+    private string? opened;
+    private string place = string.Empty;
+
+    private bool HasDesign => waypoints.Count > 0 || areas.Count > 0;
 
     private IEnumerable<NamedLocation> Places => world?.LocationsOn(continent) ?? [];
 
+    private NamedLocation? Place => Places.FirstOrDefault(p => p.Name == place.Trim());
+
+    private IReadOnlyList<Point3>[] AreaCorners => [.. areas.Select(a => (IReadOnlyList<Point3>)a.Points)];
+
+    private int MapId => world?.Continent(continent)?.MapId ?? -1;
+
+    private string Tip => tool switch
+    {
+        WorldShapes.Point => "Click the map to add waypoints at the end. Esc stops.",
+        WorldShapes.Polygon => "Click the area's corners, then the first one again (or Enter). Backspace takes a corner back; Esc cancels.",
+        WorldShapes.Rectangle => "Click two opposite corners of the area. Esc cancels.",
+        _ when waypoints.Count == 0 => "Turn on Add waypoints (top right) and click the map, add a place, or open a path from the library.",
+        _ => "Drag a waypoint to move it, or the small dot between two to insert one; right-click one to remove it.",
+    };
+
     protected override async Task OnInitializedAsync()
     {
+        legs = new RouteLegs((request, token) => pathing.FindRouteAsync(request, token), Answered);
+        OnDispose(() =>
+        {
+            plans.Cancel();
+            plans.Dispose();
+        });
         Subscribe(() => status.Changed += Redraw, () => status.Changed -= Redraw);
         Subscribe(() => status.Reconnected += Reload, () => status.Reconnected -= Reload);
         await LoadAsync();
-    }
-
-    // One end's field: a place from the list, or the pin that picks a point on the map.
-    private RenderFragment EndField(RouteEnd end, string name)
-    {
-        return @<div class="pa-field">
-            <label class="pa-label" for="@($"pa-route-{end.Kind}")">@name</label>
-            <div class="pa-input-group">
-                <input class="pa-input" id="@($"pa-route-{end.Kind}")" list="pa-route-places" autocomplete="off"
-                       placeholder="A place, or pick one on the map" value="@end.Text" @onchange="e => ChooseAsync(end, e.Value?.ToString())" />
-                <button class="pa-btn pa-btn--icon @(picking == end ? "pa-btn--primary" : null)" type="button" @onclick="() => Pick(end)"
-                        title="@(picking == end ? "Click the map to place it, or click here to stop" : $"Pick {name} on the map")">
-                    <span class="oi oi-map-marker" aria-hidden="true"></span>
-                </button>
-            </div>
-        </div>;
     }
 
     private async Task LoadAsync()
@@ -136,6 +247,7 @@
             continent = world.World.Continents.FirstOrDefault(c => c.Tiles > 0)?.Name ?? world.World.Continents.FirstOrDefault()?.Name ?? string.Empty;
         }
 
+        Plan();
         Show();
     }
 
@@ -148,112 +260,174 @@
         });
     }
 
-    private Task ChangeContinentAsync(ChangeEventArgs e)
+    // --- the route --------------------------------------------------------------------------
+
+    // Asks for every leg not planned yet; each answer redraws the map.
+    private void Plan()
     {
-        continent = e.Value?.ToString() ?? string.Empty;
-        foreach (RouteEnd end in new[] { from, to })
-        {
-            end.Text = string.Empty;
-            end.At = null;
-        }
-
-        picking = null;
-        result = stats = null;
-        Show();
-        return Task.CompletedTask;
-    }
-
-    private Task ChooseAsync(RouteEnd end, string? text)
-    {
-        end.Text = text?.Trim() ?? string.Empty;
-        end.At = Places.FirstOrDefault(p => p.Name == end.Text)?.Position;
-        result = end.At is null && end.Text.Length > 0 ? $"{end.Text} is not a place on {continent}: pick one from the list or on the map" : null;
-        resultKind = ResultKind.Warn;
-        stats = null;
-        Show();
-        return Task.CompletedTask;
-    }
-
-    private void Pick(RouteEnd end)
-    {
-        picking = picking == end ? null : end;
-    }
-
-    private Task PickedAsync(WorldPoint point)
-    {
-        if (picking is RouteEnd end)
-        {
-            end.At = point.ToPoint3();
-            end.Text = point.ToString();
-            picking = null;
-            result = stats = null;
-            Show();
-        }
-
-        return Task.CompletedTask;
-    }
-
-    private async Task FindAsync()
-    {
-        if (world is null || from.At is not Point3 start || to.At is not Point3 end ||
-            world.Continent(continent) is not ContinentInfo info || world.ZoneAt(info.MapId, start) is not ZoneInfo zone)
+        if (world is null || world.Continent(continent) is not ContinentInfo info)
         {
             return;
         }
 
-        busy = true;
-        result = acrossContinent ? "Searching across the continent..." : "Searching...";
-        resultKind = ResultKind.Info;
-        stats = null;
-        try
-        {
-            RouteResponse response = await pathing.FindRouteAsync(new RouteRequest(null, zone.UiMapId, CoordinateSpace.World, start, end,
-                Search: acrossContinent ? RouteSearch.Continent : RouteSearch.Band), Token);
-            (result, resultKind) = RouteResults.Describe(response);
-            Show(response, start, end);
-        }
-        catch (OperationCanceledException)
-        {
-            // The page went away.
-        }
-        finally
-        {
-            busy = false;
-        }
+        WorldSnapshot snapshot = world;
+        legs.Plan(waypoints, search, at => snapshot.ZoneAt(info.MapId, at)?.UiMapId ?? 0, plans.Token);
     }
 
-    // The ends as they are; with a route, the route as far as it goes, and where it stopped short.
-    private void Show(RouteResponse? response = null, Point3? start = null, Point3? end = null)
+    // An answer arrived: the map is drawn again shortly, once for every answer that arrives meanwhile.
+    private void Answered()
     {
-        List<WorldMarker> markers = [];
-        foreach (RouteEnd routeEnd in new[] { from, to })
+        _ = InvokeAsync(async () =>
         {
-            if (routeEnd.At is Point3 at)
+            if (redrawQueued)
             {
-                markers.Add(WorldMarker.At(routeEnd.Kind, routeEnd.Kind, at, routeEnd == from ? "From" : "To"));
+                return;
             }
-        }
 
-        List<WorldRoute> routes = [];
-        if (response is { Points.Length: > 0 } && end is Point3 destination)
-        {
-            Point3[] points = response.Points;
-            routes.Add(WorldRoute.Of("route", response.Status == RouteStatus.Found ? WorldKinds.Found : WorldKinds.Partial, points));
-            stats = string.Create(CultureInfo.InvariantCulture,
-                $"{Length(points):N0} yd · {points.Length:N0} points · {response.ElapsedMs:F0} ms");
-            if (response.Status == RouteStatus.Partial)
+            redrawQueued = true;
+            try
             {
-                Point3 last = points[^1];
-                markers.Add(WorldMarker.At(WorldKinds.Stop, WorldKinds.Stop, last, "Stops here"));
-                routes.Add(WorldRoute.Of("gap", WorldKinds.Gap, [last, destination with { Z = destination.Z == 0 ? last.Z : destination.Z }]));
+                await Task.Delay(RedrawMs, Token);
             }
-        }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
 
-        scene = new WorldScene(continent, [.. routes], [.. markers], Labels(), Frame: response is not null);
+            redrawQueued = false;
+            TakeHeights();
+            Show();
+            StateHasChanged();
+        });
     }
 
-    /// <summary>Wider than any zone: a map this size is a continent's or the world's, not a zone to name.</summary>
-    private const float MaxZoneSpanYd = 9000;
+    // A waypoint placed with no height takes the ground's from a route found through it.
+    private void TakeHeights()
+    {
+        for (int i = 0; i < waypoints.Count; i++)
+        {
+            if (waypoints[i].Z != 0)
+            {
+                continue;
+            }
+
+            Leg next = i + 1 < waypoints.Count ? legs.Get(waypoints[i], waypoints[i + 1], search) : Leg.Pending;
+            Leg previous = i > 0 ? legs.Get(waypoints[i - 1], waypoints[i], search) : Leg.Pending;
+            float ground = next.Points.Length > 0 ? next.Points[0].Z : previous.Found ? previous.Points[^1].Z : 0;
+            if (ground != 0)
+            {
+                waypoints[i] = waypoints[i] with { Z = ground };
+            }
+        }
+    }
+
+    private void Changed()
+    {
+        dirty = true;
+        Plan();
+        Show();
+    }
+
+    // The legs as far as each goes, coloured by how it ended; the waypoints and areas as shapes.
+    private void Show(bool frame = false)
+    {
+        List<WorldRoute> routes = [];
+        List<WorldMarker> markers = [];
+        for (int i = 0; i + 1 < waypoints.Count; i++)
+        {
+            Point3 from = waypoints[i];
+            Point3 to = waypoints[i + 1];
+            Leg leg = legs.Get(from, to, search);
+            string name = $"Leg {i + 1} to {i + 2}";
+            if (leg.Found)
+            {
+                routes.Add(WorldRoute.Of($"leg-{i}", WorldKinds.Found, leg.Points, $"{name}: {Words.Yards(leg.Length)}"));
+            }
+            else if (leg.Partial && leg.Points.Length > 0)
+            {
+                Point3 last = leg.Points[^1];
+                routes.Add(WorldRoute.Of($"leg-{i}", WorldKinds.Partial, leg.Points,
+                    $"{name}: stops {Words.Yards(RouteGeometry.Distance(last, to))} short"));
+                routes.Add(WorldRoute.Of($"gap-{i}", WorldKinds.Gap, [last, to with { Z = to.Z == 0 ? last.Z : to.Z }], $"{name}: no way found here"));
+                markers.Add(WorldMarker.At($"stop-{i}", WorldKinds.Stop, last, $"Leg {i + 1} stops"));
+            }
+            else
+            {
+                routes.Add(WorldRoute.Of($"leg-{i}", leg.Failed ? WorldKinds.Failed : WorldKinds.Pending, [from, to],
+                    leg.Failed ? $"{name}: {leg.Detail ?? leg.Status.ToString()}" : $"{name}: planning"));
+            }
+        }
+
+        List<WorldShape> shapes = [.. areas.Select(a => WorldShape.Of(a.Id, a.Type, WorldKinds.Area, a.Points, editable: true, label: a.Name))];
+        if (waypoints.Count > 0)
+        {
+            shapes.Add(WorldShape.Of(WaypointsId, WorldShapes.Points, WorldKinds.Waypoints, waypoints, editable: true));
+        }
+
+        scene = new WorldScene(continent, [.. routes], [.. markers], Labels(), frame, [.. shapes], selected);
+    }
+
+    private (string Text, ResultKind Kind) Summary()
+    {
+        int count = waypoints.Count - 1;
+        if (count < 1)
+        {
+            return (waypoints.Count == 0 ? "No waypoints yet" : "Add another waypoint to plan the first leg", ResultKind.Info);
+        }
+
+        int partial = 0;
+        int failed = 0;
+        int pending = 0;
+        for (int i = 0; i < count; i++)
+        {
+            Leg leg = legs.Get(waypoints[i], waypoints[i + 1], search);
+            partial += leg.Partial ? 1 : 0;
+            failed += leg.Failed ? 1 : 0;
+            pending += leg.Status is null ? 1 : 0;
+        }
+
+        string legsOf = count == 1 ? "the leg" : $"{count} legs";
+        return pending > 0 ? ($"Planning {pending} of {count} {(count == 1 ? "leg" : "legs")}...", ResultKind.Info)
+            : failed > 0 ? ($"{failed} of {legsOf} {(failed == 1 ? "has" : "have")} no route", ResultKind.Error)
+            : partial > 0 ? ($"{partial} of {legsOf} {(partial == 1 ? "stops" : "stop")} short", ResultKind.Warn)
+            : (count == 1 ? "Route found" : $"All {count} legs found", ResultKind.Ok);
+    }
+
+    private float PlannedLength()
+    {
+        float length = 0;
+        for (int i = 0; i + 1 < waypoints.Count; i++)
+        {
+            length += legs.Get(waypoints[i], waypoints[i + 1], search).Length;
+        }
+
+        return length;
+    }
+
+    private static string LegDot(Leg leg)
+    {
+        return leg.Found ? "ok" : leg.Partial ? "warn" : leg.Failed ? "error" : "busy";
+    }
+
+    private static string LegTitle(int index, Leg leg)
+    {
+        string name = $"Leg {index + 1} to {index + 2}";
+        return leg.Status is null ? $"{name}: planning"
+            : leg.Found ? $"{name}: found, {leg.ElapsedMs:F0} ms"
+            : $"{name}: {leg.Detail ?? leg.Status.ToString()}";
+    }
+
+    // A waypoint as a player reads it: the zone and its map coordinates.
+    private string Where(Point3 at)
+    {
+        if (world is null || ZoneMath.ZoneAt(world.World.Zones, MapId, at.X, at.Y) is not ZoneInfo zone)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"x {at.X:F0}, y {at.Y:F0}");
+        }
+
+        Point3 map = ZoneMath.ToMap(zone, at);
+        return string.Create(CultureInfo.InvariantCulture, $"{zone.Name} {map.X:F1}, {map.Y:F1}");
+    }
 
     // Zone names at their middles, for finding one's way at a glance.
     private WorldLabel[] Labels()
@@ -270,16 +444,192 @@
                 })];
     }
 
-    private static float Length(Point3[] points)
+    // --- the map's events -------------------------------------------------------------------
+
+    private void Drawn(WorldDrawn drawn)
     {
-        float length = 0;
-        for (int i = 1; i < points.Length; i++)
+        if (drawn.Shape == WorldShapes.Point)
         {
-            float dx = points[i].X - points[i - 1].X;
-            float dy = points[i].Y - points[i - 1].Y;
-            length += MathF.Sqrt((dx * dx) + (dy * dy));
+            waypoints.Add(drawn.Points[0]);
+            selected = WaypointsId;
+            Changed();
+            return;
         }
 
-        return length;
+        // One area at a time: the tool goes when it is drawn.
+        Area area = new($"area-{++areasDrawn}", $"Area {areasDrawn}", drawn.Shape, drawn.Points);
+        areas.Add(area);
+        selected = area.Id;
+        tool = null;
+        dirty = true;
+        Show();
+    }
+
+    private void Edited(WorldEdited edited)
+    {
+        if (edited.Id == WaypointsId)
+        {
+            waypoints = [.. edited.Points];
+            Changed();
+        }
+        else if (areas.Find(a => a.Id == edited.Id) is Area area)
+        {
+            area.Points = edited.Points;
+            dirty = true;
+            Show();
+        }
+    }
+
+    private void ShapeSelected(string? id)
+    {
+        selected = id ?? WaypointsId;
+        Show();
+    }
+
+    // --- the panel ----------------------------------------------------------------------------
+
+    private void ChangeContinent(ChangeEventArgs e)
+    {
+        continent = e.Value?.ToString() ?? string.Empty;
+        Reset();
+        Show();
+    }
+
+    private void SetSearch(RouteSearch value)
+    {
+        if (search != value)
+        {
+            search = value;
+            Plan();
+            Show();
+        }
+    }
+
+    private void AddPlace()
+    {
+        if (Place is NamedLocation location)
+        {
+            waypoints.Add(location.Position);
+            place = string.Empty;
+            selected = WaypointsId;
+            Changed();
+        }
+    }
+
+    private async Task FocusAsync(int index)
+    {
+        selected = WaypointsId;
+        Show();
+        if (view is not null)
+        {
+            await view.CenterOnAsync(waypoints[index]);
+        }
+    }
+
+    private async Task FocusAreaAsync(Area area)
+    {
+        selected = area.Id;
+        Show();
+        if (view is not null)
+        {
+            await view.CenterOnAsync(new Point3(area.Points.Average(p => p.X), area.Points.Average(p => p.Y), 0));
+        }
+    }
+
+    private void Remove(int index)
+    {
+        waypoints.RemoveAt(index);
+        Changed();
+    }
+
+    private void RemoveArea(Area area)
+    {
+        areas.Remove(area);
+        if (selected == area.Id)
+        {
+            selected = WaypointsId;
+        }
+
+        dirty = true;
+        Show();
+    }
+
+    private void Reverse()
+    {
+        waypoints.Reverse();
+        Changed();
+    }
+
+    // Every other waypoint, and the last: a route keeps its end.
+    private void Halve()
+    {
+        Point3 last = waypoints[^1];
+        PathEditor editor = new(waypoints.Select(ToVector));
+        editor.Halve();
+        waypoints = [.. editor.Points.Select(ToPoint)];
+        if (waypoints[^1] != last)
+        {
+            waypoints.Add(last);
+        }
+
+        Changed();
+    }
+
+    // A waypoint halfway between each pair; the new ones have no height until a leg finds the ground.
+    private void Double()
+    {
+        PathEditor editor = new(waypoints.Select(ToVector));
+        editor.Double();
+        waypoints = [.. editor.Points.Select(ToPoint)];
+        Changed();
+    }
+
+    private async Task ClearAsync()
+    {
+        if (dirty && !await js.ConfirmAsync("Clear the route? It is not saved.", Token))
+        {
+            return;
+        }
+
+        Reset();
+        Show();
+    }
+
+    // Nothing designed, and no leg kept: answers on their way are dropped.
+    private void Reset()
+    {
+        plans.Cancel();
+        plans.Dispose();
+        plans = new CancellationTokenSource();
+        legs.Clear();
+        waypoints = [];
+        areas.Clear();
+        selected = WaypointsId;
+        tool = null;
+        opened = null;
+        dirty = false;
+    }
+
+    private static Vector3 ToVector(Point3 p) => new(p.X, p.Y, p.Z);
+
+    private static Point3 ToPoint(Vector3 v) => new(v.X, v.Y, v.Z);
+
+    // --- the library --------------------------------------------------------------------------
+
+    // A recorded path replaces the route, on its zone's continent.
+    private void Opened(RouteLibrary.OpenedPath path)
+    {
+        continent = world?.Continent(path.Zone.Continent)?.Name ?? continent;
+        Reset();
+        waypoints = [.. path.Waypoints];
+        opened = path.Name;
+        Plan();
+        Show(frame: true);
+    }
+
+    private void Saved(string name)
+    {
+        opened = name;
+        dirty = false;
     }
 }

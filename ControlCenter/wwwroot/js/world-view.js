@@ -1,10 +1,11 @@
 // The Control Center's world view (Components/Shared/WorldView.razor): one map for every page that
 // shows the world, flat and north-up, tilting into 3D, drawn with deck.gl.
 //
-// The page owns what is shown - routes, markers, labels - and sends it whole as a scene. The ground
-// the view fetches itself from the Pathing Service (forwarded here, same origin): the continent's
-// relief, one height per baked tile, when zoomed out; each visible tile's walkable polygons when
-// zoomed in. So it needs no minimap art and works for every client.
+// The page owns what is shown - routes, markers, labels, shapes - and sends it whole as a scene. The
+// ground the view fetches itself from the Pathing Service (forwarded here, same origin): the
+// continent's relief, one height per baked tile, when zoomed out; each visible tile's walkable
+// polygons when zoomed in. So it needs no minimap art and works for every client. Drawing and
+// editing shapes live in world-edit.js, which this view hands its pointer and keys to.
 //
 // Coordinates: the page speaks WoW world yards (x north, y west, z up). The view draws X = -y (east
 // to the right), Y = x (north up), Z = z.
@@ -19,16 +20,21 @@
     const DETAIL_SPAN = 1600;        // yards across the view below which tiles show their polygons
     const MAX_DETAIL_TILES = 220;    // more than this in view stays on the relief
     const FETCHES = 6;               // tile requests at once
-    const LIFT = 1.5;                // routes and markers float this far above the ground
+    const LIFT = 1.5;                // routes, markers and shapes float this far above the ground
     const TOP_DOWN = 90;             // rotationX looking straight down
     const TILTED = 50;
+    const CENTER_SPAN = 1200;        // yards across the view after centring on a point from far out
+    const CLICK_SLOP_PX = 4;         // a right-button press that moved further turned the map: not a click
     const BACKGROUND = [10 / 255, 14 / 255, 19 / 255, 1];   // --pa-bg
+    const FONT = 'ui-sans-serif, system-ui, Segoe UI, sans-serif';
 
-    // What each kind of thing a page sends looks like.
+    // What each kind of route or marker a page sends looks like.
     const KINDS = {
         found: [63, 185, 80],
         partial: [240, 160, 50],
         gap: [240, 160, 50],
+        failed: [248, 81, 73],
+        pending: [139, 148, 158],
         leg: [88, 166, 255],
         recorded: [210, 168, 255],
         start: [63, 185, 80],
@@ -36,6 +42,8 @@
         stop: [248, 81, 73],
         point: [230, 237, 243],
     };
+    // Kinds drawn dashed: where there is no route, only the straight line it should take.
+    const DASHED = new Set(['gap', 'failed', 'pending']);
     const WATER = [44, 96, 150];
     const OUTLINE = [8, 12, 16, 110];
 
@@ -93,11 +101,14 @@
             viewState: { target: [0, 0, 0], zoom: -4, rotationX: TOP_DOWN, rotationOrbit: 0, minZoom: -7, maxZoom: 5, minRotationX: 5, maxRotationX: TOP_DOWN },
             picking: false,
             readout: host.querySelector('.pa-world-readout'),
+            teardown: [],
+            rightDown: null,
             disposed: false,
         };
+        const canvas = host.querySelector('.pa-world-canvas');
 
         view.deck = new deck.Deck({
-            parent: host.querySelector('.pa-world-canvas'),
+            parent: canvas,
             views: viewOf(false),
             initialViewState: view.viewState,
             controller: { dragMode: 'pan', inertia: 250, scrollZoom: { speed: 0.01, smooth: false }, doubleClickZoom: false },
@@ -107,18 +118,78 @@
                 requestDetail(view);
                 return viewState;
             },
-            onHover: info => showReadout(view, info),
-            onClick: info => picked(view, info),
-            getTooltip: info => tooltip(info),
-            getCursor: ({ isDragging, isHovering }) => isDragging ? 'grabbing' : (view.picking ? 'crosshair' : (isHovering ? 'pointer' : 'grab')),
+            onHover: info => {
+                window.worldEdit.hover(view, info);
+                showReadout(view, info);
+            },
+            onClick: info => {
+                if (!window.worldEdit.click(view, info)) picked(view, info);
+            },
+            // Deck hears a drag before the map's controller does: a drag on a handle stops it there, so
+            // the handle moves and the map stays.
+            onDragStart: (info, event) => {
+                if (event.leftButton && window.worldEdit.dragStart(view, info)) event.stopImmediatePropagation();
+            },
+            onDrag: (info, event) => {
+                if (window.worldEdit.drag(view, info)) event.stopImmediatePropagation();
+            },
+            onDragEnd: (info, event) => {
+                if (window.worldEdit.dragEnd(view, info)) event.stopImmediatePropagation();
+            },
+            // Quiet while drawing: the pointer is placing corners, not asking what is there.
+            getTooltip: info => view.edit.tool ? null : tooltip(info),
+            getCursor: ({ isDragging, isHovering }) => window.worldEdit.cursor(view) ||
+                (isDragging ? 'grabbing' : (view.picking ? 'crosshair' : (isHovering ? 'pointer' : 'grab'))),
             layers: [],
+        });
+
+        window.worldEdit.attach(view, {
+            toView, fromView, lift: LIFT,
+            groundAt: (x, y, info) => groundAt(view, x, y, info),
+            emit: (method, ...args) => view.dotnet.invokeMethodAsync(method, ...args).catch(() => { }),
+            render: () => render(view),
+        });
+
+        // A right-click removes a vertex. A right-drag turns the map, and the browser sends its
+        // context menu event after that too, so only a press that stayed put counts as a click.
+        // deck.gl makes the canvas's element focusable for its own keys (arrows pan); a press on
+        // the map gives it the focus, so the tools' keys (Escape, Enter, Backspace, Delete) work.
+        listen(view, canvas, 'pointerdown', e => {
+            view.rightDown = e.button === 2 ? { x: e.clientX, y: e.clientY } : null;
+            canvas.focus({ preventScroll: true });
+        });
+        listen(view, canvas, 'contextmenu', e => {
+            e.preventDefault();
+            const down = view.rightDown;
+            view.rightDown = null;
+            if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > CLICK_SLOP_PX) return;
+            const box = canvas.getBoundingClientRect();
+            window.worldEdit.contextClick(view, e.clientX - box.left, e.clientY - box.top);
+        });
+        listen(view, canvas, 'keydown', e => {
+            if (window.worldEdit.key(view, e)) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        });
+        // A tool's button switches the tool here at once, so a click on the map right after it is the
+        // new tool's; the page's word on the tool follows over the circuit.
+        listen(view, host, 'click', e => {
+            const button = e.target.closest ? e.target.closest('.pa-world-tool') : null;
+            if (!button) return;
+            window.worldEdit.setTool(view, button.getAttribute('aria-pressed') === 'true' ? null : button.dataset.tool);
         });
 
         instances.set(id, view);
         return id;
     }
 
-    /** Shows a scene: { continent, routes, markers, labels, frame }. */
+    function listen(view, target, type, handler) {
+        target.addEventListener(type, handler);
+        view.teardown.push(() => target.removeEventListener(type, handler));
+    }
+
+    /** Shows a scene: { continent, routes, markers, labels, shapes, selected, frame }. */
     async function setScene(id, scene) {
         const view = instances.get(id);
         if (!view) return;
@@ -127,6 +198,7 @@
             markers: (scene.markers || []).map(m => ({ ...m, position: toView(m.x, m.y, (m.z || 0) + LIFT) })),
             labels: (scene.labels || []).map(l => ({ ...l, position: toView(l.x, l.y, 0) })),
         };
+        window.worldEdit.setShapes(view, scene.shapes, scene.selected);
 
         if (scene.continent && scene.continent !== view.continent) {
             await loadContinent(view, scene.continent);
@@ -148,6 +220,12 @@
         return path;
     }
 
+    /** Names what a click draws: point, line, polygon, points, rectangle or circle; null for none. */
+    function setTool(id, tool) {
+        const view = instances.get(id);
+        if (view) window.worldEdit.setTool(view, tool);
+    }
+
     /** Tilts the map to show heights, or looks straight down again. */
     function setTilt(id, tilted) {
         const view = instances.get(id);
@@ -163,6 +241,15 @@
         frameBounds(view, sceneBounds(view) || (view.overview ? view.overview.bounds : null));
     }
 
+    /** Centres the view on a world point, closing in when it is zoomed far out. */
+    function centerOn(id, x, y) {
+        const view = instances.get(id);
+        if (!view) return;
+        const zoom = viewSpan(view) > CENTER_SPAN * 2 ? zoomFor(view, CENTER_SPAN, CENTER_SPAN) : view.viewState.zoom;
+        const [vx, vy] = toView(x, y, 0);
+        moveTo(view, { target: [vx - beside(view, zoom), vy, 0], zoom });
+    }
+
     /** While on, a click on the map is sent to the page's OnWorldClick. */
     function setPicking(id, on) {
         const view = instances.get(id);
@@ -174,6 +261,7 @@
         if (!view) return;
         view.disposed = true;
         instances.delete(id);
+        view.teardown.forEach(undo => undo());
         view.deck.finalize();
     }
 
@@ -300,6 +388,35 @@
         return polygons;
     }
 
+    function isGround(layerId) {
+        return layerId === 'relief' || layerId.startsWith('tile-');
+    }
+
+    /**
+     * The ground under a screen point, in view coordinates lifted as the scene is. On a tile's
+     * polygons it has their height; on the relief (one height per tile) or off the navmesh it is
+     * marked unknown, which the page hears as height 0: "find the ground here".
+     */
+    function groundAt(view, x, y, info) {
+        let hit = info && info.layer && isGround(info.layer.id) && info.coordinate ? info : null;
+        if (!hit) {
+            const ids = (view.deck.props.layers || []).map(l => l.id).filter(isGround);
+            hit = ids.length ? view.deck.pickObject({ x, y, radius: 0, layerIds: ids, unproject3D: true }) : null;
+        }
+        if (hit && hit.coordinate) {
+            const p = [hit.coordinate[0], hit.coordinate[1], (hit.coordinate[2] || 0) + LIFT];
+            if (hit.layer.id === 'relief') p.unknown = true;
+            return p;
+        }
+
+        const viewport = view.deck.getViewports()[0];
+        if (!viewport) return null;
+        const c = viewport.unproject([x, y]);
+        const p = [c[0], c[1], LIFT];
+        p.unknown = true;
+        return p;
+    }
+
     // --- drawing -------------------------------------------------------------------------------
 
     function render(view) {
@@ -308,10 +425,11 @@
         const detail = detailTiles(view);
         const shown = new Set(detail.filter(c => view.tiles.get(c.key)).map(c => c.key));
 
+        // The ground picks in 3D, so a click or a hover on it knows its height even when tilted.
         if (view.overview) {
             const cells = shown.size ? view.overview.cells.filter(c => !shown.has(c.key)) : view.overview.cells;
             layers.push(new deck.SolidPolygonLayer({
-                id: 'relief', data: cells, _full3d: true, pickable: true, material: false,
+                id: 'relief', data: cells, _full3d: true, pickable: '3d', material: false,
                 getPolygon: c => c.polygon,
                 getFillColor: c => heightColor(c.height),
                 updateTriggers: { getPolygon: shown.size },
@@ -322,7 +440,7 @@
             const polygons = view.tiles.get(cell.key);
             if (!polygons) continue;
             layers.push(new deck.PolygonLayer({
-                id: 'tile-' + cell.key, data: polygons, _full3d: true, pickable: true, material: false,
+                id: 'tile-' + cell.key, data: polygons, _full3d: true, pickable: '3d', material: false,
                 stroked: true, filled: true, lineWidthUnits: 'pixels', getLineWidth: 1,
                 getPolygon: p => p.polygon,
                 getFillColor: p => p.water ? WATER : heightColor(p.height),
@@ -335,18 +453,21 @@
         layers.push(new deck.TextLayer({
             id: 'labels', data: labels, getPosition: l => l.position, getText: l => l.text,
             getSize: 12, sizeUnits: 'pixels', getColor: [200, 210, 222, 190], fontWeight: 600,
-            fontFamily: 'ui-sans-serif, system-ui, Segoe UI, sans-serif', parameters: over,
+            fontFamily: FONT, parameters: over,
         }));
 
-        const routes = view.scene.routes.filter(r => r.kind !== 'gap');
-        const gaps = view.scene.routes.filter(r => r.kind === 'gap');
+        // Shapes under the routes, so a route drawn through an area stays readable.
+        layers.push(...window.worldEdit.shapeLayers(view));
+
+        const solid = view.scene.routes.filter(r => !DASHED.has(r.kind));
+        const dashed = view.scene.routes.filter(r => DASHED.has(r.kind));
         layers.push(new deck.PathLayer({
-            id: 'routes', data: routes, getPath: r => r.path, getColor: r => KINDS[r.kind] || KINDS.point,
+            id: 'routes', data: solid, getPath: r => r.path, getColor: r => KINDS[r.kind] || KINDS.point,
             getWidth: 4, widthUnits: 'pixels', capRounded: true, jointRounded: true, pickable: true, parameters: over,
         }));
         layers.push(new deck.PathLayer({
-            id: 'gaps', data: gaps, getPath: r => r.path, getColor: r => KINDS[r.kind] || KINDS.point,
-            getWidth: 2, widthUnits: 'pixels', getDashArray: [6, 5], dashJustified: true,
+            id: 'gaps', data: dashed, getPath: r => r.path, getColor: r => KINDS[r.kind] || KINDS.point,
+            getWidth: 2, widthUnits: 'pixels', getDashArray: [6, 5], dashJustified: true, pickable: true,
             extensions: deck.PathStyleExtension ? [new deck.PathStyleExtension({ dash: true })] : [],
             parameters: over,
         }));
@@ -359,8 +480,11 @@
             id: 'marker-labels', data: view.scene.markers.filter(m => m.label), getPosition: m => m.position,
             getText: m => m.label, getSize: 13, sizeUnits: 'pixels', getColor: [230, 237, 243],
             getPixelOffset: [0, -18], background: true, getBackgroundColor: [16, 22, 30, 225], backgroundPadding: [6, 3],
-            fontFamily: 'ui-sans-serif, system-ui, Segoe UI, sans-serif', parameters: over,
+            fontFamily: FONT, parameters: over,
         }));
+
+        // Handles and the draft over everything: what the pointer is working on.
+        layers.push(...window.worldEdit.overlayLayers(view));
 
         view.deck.setProps({ layers });
     }
@@ -373,18 +497,51 @@
         };
         view.scene.routes.forEach(r => r.path.forEach(take));
         view.scene.markers.forEach(m => take(m.position));
+        view.edit.shapes.forEach(s => {
+            s.vertices.forEach(take);
+            if (s.type === 'circle' && s.vertices.length > 0) {
+                const [x, y, z] = s.vertices[0];
+                take([x - s.radius, y - s.radius, z]);
+                take([x + s.radius, y + s.radius, z]);
+            }
+        });
         return minX <= maxX ? [minX, minY, maxX, maxY] : null;
+    }
+
+    // The width of the view a tall panel at its side does not cover, as [left, right] pixels: what
+    // the page shows is framed and centred there, not behind the panel.
+    function uncovered(view) {
+        const host = view.host.getBoundingClientRect();
+        let left = 0;
+        let right = host.width;
+        view.host.querySelectorAll('.pa-panel').forEach(panel => {
+            const box = panel.getBoundingClientRect();
+            if (box.width === 0 || box.height < host.height * 0.4) return;
+            if (box.left - host.left < host.width / 2) left = Math.max(left, box.right - host.left);
+            else right = Math.min(right, box.left - host.left);
+        });
+        return right - left > 200 ? [left, right] : [0, host.width];
+    }
+
+    // How far right of the canvas's middle the uncovered width's middle is, in yards at this zoom: the
+    // target moves left by that much for a point to show there.
+    function beside(view, zoom) {
+        const [left, right] = uncovered(view);
+        const width = view.host.clientWidth || 1000;
+        return ((left + right - width) / 2) / Math.pow(2, zoom);
+    }
+
+    function zoomFor(view, spanX, spanY) {
+        const [left, right] = uncovered(view);
+        const height = view.host.clientHeight || 800;
+        return Math.log2(Math.min((right - left) / spanX, height / spanY)) - 0.35;
     }
 
     function frameBounds(view, bounds) {
         if (!bounds) return;
         const [minX, minY, maxX, maxY] = bounds;
-        const width = view.host.clientWidth || 1000;
-        const height = view.host.clientHeight || 800;
-        const spanX = Math.max(maxX - minX, 150);
-        const spanY = Math.max(maxY - minY, 150);
-        const zoom = Math.log2(Math.min(width / spanX, height / spanY)) - 0.35;
-        moveTo(view, { target: [(minX + maxX) / 2, (minY + maxY) / 2, 0], zoom });
+        const zoom = zoomFor(view, Math.max(maxX - minX, 150), Math.max(maxY - minY, 150));
+        moveTo(view, { target: [((minX + maxX) / 2) - beside(view, zoom), (minY + maxY) / 2, 0], zoom });
     }
 
     function moveTo(view, changes) {
@@ -403,27 +560,31 @@
             return;
         }
         const w = fromView(info.coordinate);
-        const height = info.object && info.object.height !== undefined ? info.object.height : null;
-        view.readout.textContent = 'x ' + w.x.toFixed(1) + '   y ' + w.y.toFixed(1) +
-            (height !== null ? '   height ' + height.toFixed(1) : '');
+        const layer = info.layer ? info.layer.id : '';
+        // A tile's polygons have the ground's own height; the relief only the tile's.
+        const height = layer.startsWith('tile-') ? 'height ' + w.z.toFixed(1)
+            : (layer === 'relief' ? 'tile height ' + w.z.toFixed(0) : null);
+        view.readout.textContent = 'x ' + w.x.toFixed(1) + '   y ' + w.y.toFixed(1) + (height ? '   ' + height : '');
     }
 
     function picked(view, info) {
-        if (!view.picking || !info.coordinate) return;
-        const w = fromView(info.coordinate);
-        // Over a polygon its height says which floor; elsewhere 0 lets the service find the ground.
-        const height = info.object && info.object.height !== undefined ? info.object.height : 0;
-        view.dotnet.invokeMethodAsync('OnWorldClick', w.x, w.y, height).catch(() => { });
+        if (!view.picking || info.x === undefined) return;
+        const p = groundAt(view, info.x, info.y, info);
+        if (!p) return;
+        const w = fromView(p);
+        view.dotnet.invokeMethodAsync('OnWorldClick', w.x, w.y, p.unknown ? 0 : w.z - LIFT).catch(() => { });
     }
 
     function tooltip(info) {
         const o = info.object;
         if (!o) return null;
         let text = null;
-        if (info.layer.id === 'routes') {
-            text = (o.label || o.kind) + ' · ' + o.path.length + ' points';
+        if (info.layer.id === 'routes' || info.layer.id === 'gaps') {
+            text = o.label || o.kind;
         } else if (info.layer.id === 'markers') {
             text = o.label || o.kind;
+        } else if (info.layer.id === 'shape-areas' || info.layer.id === 'shape-circles' || info.layer.id === 'shape-lines') {
+            text = o.label || null;
         } else if (info.layer.id === 'relief') {
             text = 'tile ' + o.tx + ', ' + o.tz + ' · walkable height ' + o.height.toFixed(0);
         } else if (o.polygon) {
@@ -432,16 +593,27 @@
         return text ? { text, style: { background: 'rgba(16, 22, 30, 0.95)', color: '#e6edf3', fontSize: '12px', padding: '4px 8px', borderRadius: '6px' } } : null;
     }
 
-    /** What every view holds, for a browser check: its continent, ground and layers. */
+    /** What every view holds, for a browser check: its continent, ground, layers and tools. */
     function describe() {
         return [...instances.values()].map(v => ({
+            id: v.id,
             continent: v.continent,
             reliefTiles: v.overview ? v.overview.cells.length : 0,
             detailTiles: [...v.tiles.values()].filter(t => t).length,
             viewState: { target: v.viewState.target, zoom: v.viewState.zoom, rotationX: v.viewState.rotationX },
             layers: (v.deck.props.layers || []).map(l => l.id + ':' + (Array.isArray(l.props.data) ? l.props.data.length : '?')),
+            edit: window.worldEdit.describe(v),
         }));
     }
 
-    window.worldView = { create, setScene, setTilt, fit, setPicking, dispose, describe };
+    /** Where a world point is on the screen, relative to the view's canvas, for a browser check. */
+    function screenOf(id, x, y, z) {
+        const view = instances.get(id);
+        const viewport = view ? view.deck.getViewports()[0] : null;
+        if (!viewport) return null;
+        const [sx, sy] = viewport.project(toView(x, y, (z || 0) + LIFT));
+        return { x: sx, y: sy };
+    }
+
+    window.worldView = { create, setScene, setTool, setTilt, fit, centerOn, setPicking, dispose, describe, screenOf };
 })();

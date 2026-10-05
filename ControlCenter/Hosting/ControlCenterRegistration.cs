@@ -15,11 +15,19 @@ public static class ControlCenterRegistration
 {
     public const string ErrorPage = "/error";
 
+    /// <summary>
+    /// The largest message a browser may send the circuit. The world view sends a shape the pointer
+    /// edited whole, and a recorded path opened as waypoints can have a few thousand points: more
+    /// than the default 32 KB, which would end the circuit.
+    /// </summary>
+    public const int MaxCircuitMessageBytes = 1024 * 1024;
+
     /// <summary>The pages, the clients of the Pathing Service and the Bot Manager, and the forwarding to the service.</summary>
     public static IServiceCollection AddControlCenter(this IServiceCollection services)
     {
         services.AddRazorComponents()
-            .AddInteractiveServerComponents();
+            .AddInteractiveServerComponents()
+            .AddHubOptions(o => o.MaximumReceiveMessageSize = MaxCircuitMessageBytes);
 
         // Registers PathingServiceOptions too (PathingService:Url).
         services.AddPathingClient();

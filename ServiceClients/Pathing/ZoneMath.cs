@@ -3,6 +3,7 @@ using Contracts.Pathing;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ServiceClients.Pathing;
 
@@ -40,30 +41,54 @@ public static class ZoneMath
     }
 
     /// <summary>
-    /// The smallest zone holding the world point: where zones overlap (Silithus and Feralas, or a
-    /// city inside its zone) the smaller one is the more specific. Null when none does.
+    /// The zone a world point is in, judged from the zone maps alone: of those whose map holds it,
+    /// the one it lies furthest inside. Zone maps overlap a lot - Durotar's covers the east of the
+    /// Barrens, Elwynn's all of Stormwind - and a point lies well inside its own zone's map but
+    /// near the edge of a neighbour's, while a city's streets lie well inside the city's map.
+    /// Continent and world maps (area 0) count only when no zone's map holds the point: the
+    /// continent's own (named as its continent) before any other. Null when no map does.
     /// </summary>
     public static ZoneInfo? ZoneAt(IEnumerable<ZoneInfo> zones, int mapId, float worldX, float worldY)
     {
+        return ZoneHolding(zones, mapId, [new Point3(worldX, worldY, 0)]);
+    }
+
+    /// <summary>
+    /// The zone whose map holds every one of <paramref name="points"/> furthest inside, as
+    /// <see cref="ZoneAt"/> judges one point; null when no map holds them all.
+    /// </summary>
+    public static ZoneInfo? ZoneHolding(IEnumerable<ZoneInfo> zones, int mapId, IReadOnlyCollection<Point3> points)
+    {
         ZoneInfo? best = null;
-        float bestArea = float.MaxValue;
+        int bestRank = -1;
+        float bestScore = float.MinValue;
 
         foreach (ZoneInfo zone in zones)
         {
-            if (!Contains(zone, mapId, worldX, worldY))
+            if (points.Count == 0 || !points.All(p => Contains(zone, mapId, p.X, p.Y)))
             {
                 continue;
             }
 
-            float area = MathF.Abs((zone.LocTop - zone.LocBottom) * (zone.LocLeft - zone.LocRight));
-            if (area < bestArea)
+            // Zones first, by how far inside; then the continent's own map; then any other (the world's).
+            int rank = zone.AreaId != 0 ? 2 : zone.Name.Equals(zone.Continent, StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            float score = rank == 2 ? points.Min(p => Margin(zone, p)) : 0;
+            if (rank > bestRank || (rank == bestRank && score > bestScore))
             {
                 best = zone;
-                bestArea = area;
+                bestRank = rank;
+                bestScore = score;
             }
         }
 
         return best;
+    }
+
+    // How far inside the zone's map a world point lies: map units to the nearest edge.
+    private static float Margin(ZoneInfo zone, Point3 world)
+    {
+        Point3 map = ToMap(zone, world);
+        return MathF.Min(MathF.Min(map.X, MapSize - map.X), MathF.Min(map.Y, MapSize - map.Y));
     }
 
     /// <summary>
