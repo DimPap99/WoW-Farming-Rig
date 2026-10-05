@@ -31,5 +31,17 @@
   },
   "SplineFollower": {
     "Enabled": false
+  },
+  // The resident agent (--agent). Its id is kept in IdentityFile; Name is what the Bot Manager
+  // calls it (the machine name when empty). A stopped run gets StopGraceMs to release and end.
+  "Agent": {
+    "IdentityFile": "agent_identity.json",
+    "Name": "",
+    "StopGraceMs": 10000
+  },
+  // The Bot Manager to dial out to (--manager); empty runs on its own. A manager on another PC
+  // needs the key: "ApiKey" here or in the environment, the same on every service and agent.
+  "BotManager": {
+    "Url": ""
   }
 }

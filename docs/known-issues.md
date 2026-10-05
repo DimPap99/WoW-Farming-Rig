@@ -58,15 +58,12 @@ commit that fixed it.
    - RemoteV1 also turned a 429 or any error into an empty route, which looks exactly like
      "no path".
    - **Fix:** the clients are removed in Phase 4. The new contract types the failure
-     (`RouteStatus`), and the bot's live position comes back through the Bot Manager (Phase 3).
+     (`RouteStatus`). The bot's live position now comes back through the Bot Manager
+     (`BotSnapshot.Position`, Phase 3); drawing it on the 3D view is not done.
 
 7. **A remote pather still loads a local engine.** Even in remote mode the bot builds its own
    `PPatherService`, because `RouteGenerator` samples and floods the navmesh directly.
    - **Fix:** route generation moves server-side in Phase 4.
-
-9. **A Forever run cannot outlive the web UI.** `ForeverRunHost --listen` stops the run when
-   the host's stdio pipe closes.
-   - **Fix:** the resident agent (Phase 3) replaces it.
 
 10. **Duplicated hash code.** `ForeverNavmesh.CacheDirectory` computes the settings hash
     itself instead of calling `NavmeshSettings.CacheDirectory`.
@@ -91,19 +88,49 @@ commit that fixed it.
     has. Nothing visibly breaks; align them (a local 1.9.4 stylesheet) when the map is next
     worked on.
 
-21. **HeadlessServer has no clean stop.**
-    - **Where:** `HeadlessServer/Program.Main`.
-    - **Cause:** it starts the bot and blocks on `Console.ReadKey`. The bot's threads are
-      foreground threads, so a key press does not end the process either. Nothing handles
-      Ctrl+C or process exit, and the `ServiceProvider` is never disposed, so
-      `BotController.Dispose` never runs.
-    - **Effect:** the only way to stop it is to end the process, without the release
-      `Game/CLAUDE.md` requires, which can leave a key held in the game. Found by reading the
-      code, not observed.
-    - **Fix:** the resident agent (Phase 3) runs on the Generic Host and stops by releasing
-      input first.
+23. **A Classic run waits for the addon without listening to its stop.**
+    - **Where:** `Core/BotController`'s constructor, reached from `HeadlessServer/Runtimes/ClassicRuntime`.
+    - **Cause:** it loops on `wait.Update(5000)` until the addon reads the player's class, and checks
+      no token.
+    - **Effect:** a Classic run started while the addon's data is not on screen cannot be stopped by
+      its token. After the grace period the agent releases the keys (none are held yet), reports the
+      run `Abandoned` and restarts (exit code 75). Standalone HeadlessServer always waited the same
+      way, forever. Found by reading the code, not observed.
+    - **Fix:** a stop-aware wait for a readable frame before `BotController` is built, as `ForeverRun`
+      waits for its first frame.
+
+24. **BlazorServer's "Forever runs" page still starts runs as a child process.**
+    - **Where:** `Frontend/ForeverRunHost`, `ForeverRunFiles`, `ForeverRouteCatalog`,
+      `ForeverRunOutput`, `Pages/ForeverRuns.razor`.
+    - **Effect:** a run it starts stops when BlazorServer goes (what item 9 was), and it can start a
+      run on a PC whose agent runs one too. The trial runner it starts is now a command line over
+      `ForeverRun`, so the run itself is the agent's.
+    - **Fix:** delete the page and its host once the agent has passed the Windows checks (Phase 3's
+      decision 7); the Control Center's console replaces it.
 
 ## Fixed
+
+9. **A Forever run could not outlive the web UI** (Phase 3). `ForeverRunHost --listen` stopped the
+   run when the host's stdio pipe closed. The resident agent runs Forever in process through
+   `ForeverRun` and keeps running while the Bot Manager and the Control Center are down. The
+   BlazorServer page that still starts child runs is item 24.
+
+21. **HeadlessServer had no clean stop** (Phase 3).
+    - **Cause:** it started the bot and blocked on `Console.ReadKey`; the bot's foreground threads
+      outlived `Main`, nothing handled Ctrl+C, and the `ServiceProvider` was never disposed.
+      `AddWoWProcess` also left its probe's `WowProcess` polling on a foreground thread whose token
+      nobody cancelled, which alone kept the process alive.
+    - **Fix:** HeadlessServer runs on the Generic Host. Ctrl+C, a logoff or a stop cancels the run's
+      token: the bot is turned off, which releases its input, and only then is the run's composition
+      disposed. `AddWoWProcess` cancels its probe's token, and `Main` ends with `Environment.Exit`, so
+      a run that could not be torn down cannot keep the process alive. Checked on Linux (SIGTERM ends
+      an agent cleanly); on Windows with a game it is on the Phase 3 checklist.
+
+22. **Configuration keys on HeadlessServer's command line failed the parse** (Phase 3).
+    `HeadlessServer/CLAUDE.md` said `--Pathing:Engine=Navmesh` reached the configuration, but
+    CommandLineParser parsed the same arguments and refused the unknown option
+    (`UnknownOptionError`). `HeadlessArguments` now gives `--Section:Key` arguments to the
+    configuration only and the rest to the parser.
 
 8. **The dashboard needed a running game** (Phase 2, 32ce9d46). The Control Center is the central
    UI and needs no client. `BlazorServer` still cannot start without one (`AddWoWProcess`

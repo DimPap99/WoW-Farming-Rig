@@ -23,6 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\BotAgent\BotAgent.csproj" />
     <ProjectReference Include="..\BotManager\BotManager.csproj" />
     <ProjectReference Include="..\Contracts\Contracts.csproj" />
     <ProjectReference Include="..\ControlCenter\ControlCenter.csproj" />

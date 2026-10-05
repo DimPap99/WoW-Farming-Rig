@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 using Serilog.Core;
 using Serilog.Events;
 
-namespace Frontend;
+namespace SharedLib.Logging;
 
 public sealed class ShortSourceContextEnricher : ILogEventEnricher
 {

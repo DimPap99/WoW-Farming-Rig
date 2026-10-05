@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- The tests that need Core, and so the repository's Windows TFM: the agent's runtimes and
-       Forever's run. Everything else lives in ServiceTests, plain net10.0. Nothing here attaches
+  <!-- The tests that need Core, and so the repository's Windows TFM: the agent's runtimes
+       (HeadlessServer) and Forever's run. Everything else lives in ServiceTests, plain net10.0. Nothing here attaches
        to a game: what needs one is on the Windows checklist in docs/service-architecture.md. -->
   <PropertyGroup>
     <Nullable>enable</Nullable>
@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\HeadlessServer\HeadlessServer.csproj" />
   </ItemGroup>
 
 </Project>
