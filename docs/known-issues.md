@@ -137,6 +137,28 @@ commit that fixed it.
     - **Fix (a decision, not started):** price swimming higher, for both the bot and the
       planner, or per request. It changes routes the bot walks, so it needs live runs.
 
+29. **The world view's relief paints land below sea level as sea.**
+    - **Where:** `ControlCenter/wwwroot/js/world-view.js` (`RAMP`, the relief picture), from
+      `navmesh/{continent}/overview`, which gives one walkable height per tile and nothing else.
+    - **Seen:** Thousand Needles and Un'Goro Crater read as lakes (2026-10-06); the flat tiles of
+      the old relief did the same.
+    - **Cause:** the ramp turns blue below height 0, the only hint of water there is. A tile's
+      polygons know their water (`NavmeshTileGeometry.Water`), so zoomed in it is right.
+    - **Fix (not started):** carry a water share per tile in the overview (the tile graph builds
+      it) and colour water by that, height only for land.
+
+30. **The Control Center's log fills while the Bot Manager is down.**
+    - **Where:** `ServiceClients/Bots/BotManagerClientRegistration` (`AddStandardResilienceHandler`),
+      polled every 2 s by `BotManagerStatus`; the Pathing Service's client is built the same way.
+    - **Seen:** 11 minutes with the manager down (2026-10-06): 12,497 lines, 1.6 MB; 829 retry
+      events from Polly, each with the connection's stack trace, the last try of each poll at Error.
+      `appsettings.json` keeps Polly at Warning, which these are.
+    - **Effect:** the daily log file grows by megabytes an hour, and real errors drown. The status
+      bar and the pages already say the manager is offline.
+    - **Fix (not started):** a poll that fails is the poller's news, not an error: quieten the
+      resilience pipeline's logging for the pollers (or give them a client without retries), and
+      log the state change once, as `ServiceStatus` does.
+
 ## Fixed
 
 27. **A route that stopped short was reported as found** (2026-10-05). The band search loads

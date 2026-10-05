@@ -50,7 +50,10 @@
                 <span class="pa-label">Bake</span>
                 @if (!CanBake)
                 {
-                    <ResultLine Text="No game files where the Pathing Service runs: baking needs the client installed there." Kind="ResultKind.Warn" />
+                    <p class="pa-notice" role="status">
+                        <span class="oi oi-warning" aria-hidden="true"></span>
+                        <span>No game files where the Pathing Service runs: baking needs the client installed there.</span>
+                    </p>
                 }
                 <p class="pa-tip">@(adt is (int x, int y) ? $"ADT {x},{y}: {Words.Count(Baked(x, y), "tile")} of {AdtGrid.TilesPerAdt} baked." : "Choose an ADT with the tool at the top right, or click one on the grid.")</p>
                 <div class="pa-actions pa-actions--wrap">

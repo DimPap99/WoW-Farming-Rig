@@ -67,7 +67,7 @@ Components/Pages/                  LiveView (/), WorldMap (/map), RouteMap (/rou
                                    designer), NpcRoutes, CostZones (/cost-zones), Navmesh (/navmesh),
                                    ForeverRoutes (/forever-routes), Fleet (/fleet), BotConsole
                                    (/fleet/{agentId}), ApiReference
-wwwroot/css/site.css               the whole theme, over Bootstrap's reset; pa- prefixed
+wwwroot/css/site.css               the whole theme and its own small reset (no Bootstrap); pa- prefixed
 wwwroot/js/world-view.js           the world view on deck.gl (fetched on demand): flat map, tilts into 3D
 wwwroot/js/world-edit.js           its drawing tools: shapes, drafts, handles, the pointer and keys
 wwwroot/js/pathing-ui.js           script loader, toast, remembered rail state, insert at the cursor
@@ -132,9 +132,18 @@ that awaits JS teardown implements `IAsyncDisposable` and calls `Dispose()` itse
 `wwwroot/js/world-view.js`) is a flat, north-up map that tilts into 3D: drag pans, the wheel zooms,
 right-drag turns and tilts. The page sends a `WorldScene` (routes, markers, labels) whole when it
 changes, and hears clicks while `Picking`; the ground the view fetches itself from the service's
-`navmesh/{continent}/overview` (one height per baked tile, drawn as a relief) and, zoomed in to
-under 1,600 yards across, `navmesh/{continent}/tiles/{x}/{z}` (the walkable polygons). So it needs
-no minimap art and works for Forever too. The page draws WoW's x north and y west as screen up and
+`navmesh/{continent}/overview` (one height per baked tile) and, zoomed in to under 1,600 yards
+across, `navmesh/{continent}/tiles/{x}/{z}` (the walkable polygons). So it needs no minimap art and
+works for Forever too. Flat, the overview is drawn as one shaded picture (`reliefImage`: four
+pixels a tile, the heights smoothed between tile middles, each pixel lit from the north-west, where
+nothing is baked darkened and cleared) over the tiles' cells, which stay under it for the heights a
+hover or a click picks; tilted, the cells themselves show, as steps. Routes and lines are drawn
+over a dark casing, zone names outlined in a distance-field font and thinned where they would
+overlap (`apart`, the larger zone's name first: `WorldLabel.Size`). The readout at the foot names
+the pointer's zone and map coordinates: the zones from `/api/v1/world`, the zone at a point from
+the area grid (`/api/v1/area`, asked once the pointer rests, kept per 16-yard cell as `ZoneLookup`
+keeps it), both called by the browser through `ServiceProxy`. The ground has no tooltip: the
+readout says where and how high. The page draws WoW's x north and y west as screen up and
 left (`X = -y, Y = x`). Flat is orthographic, so ground at different heights lines up; tilted is in
 perspective. The ground is drawn unlit (`material: false`): deck.gl's default lighting turned it
 black once zoomed in. `worldView.describe()` reports each view's continent, ground and layers, for a
@@ -169,6 +178,13 @@ A click goes to the tool in use if there is one, else to picking (`Picking`) wha
 it, else it selects a shape or a marker. A scene's `Frame` and `FrameOn` are kept until a scene is
 actually sent: a page whose answers come quickly replaces a scene before the view has even been
 made (deck.gl loads on first use), and the framing asked for must not be lost with it.
+
+**deck.gl keeps drawing a `SolidPolygonLayer` whose data was emptied.** deck.gl 9.4 drew the last
+polygons of such a layer on: the relief's dark under shown tiles stayed as a black square after
+zooming out. Leave a solid polygon layer out of the list when it has nothing to draw; `PathLayer`,
+`ScatterplotLayer`, `TextLayer` and `PolygonLayer` (which drops its fill when empty) clear as they
+should. deck.gl's `CollisionFilterExtension` did not thin overlapping zone names on this view
+(nothing hidden flat, a few names half faded tilted), so the script thins them itself.
 
 **Static assets are fingerprinted and compressed at build time.** In Release (`MapStaticAssets`),
 a changed `wwwroot` script is served as it was built until the Control Center is built again:

@@ -4,8 +4,9 @@
 // The page owns what is shown - routes, markers, labels, shapes - and sends it whole as a scene. The
 // ground the view fetches itself from the Pathing Service (forwarded here, same origin): the
 // continent's relief, one height per baked tile, when zoomed out; each visible tile's walkable
-// polygons when zoomed in. So it needs no minimap art and works for every client. Drawing and
-// editing shapes live in world-edit.js, which this view hands its pointer and keys to.
+// polygons when zoomed in. So it needs no minimap art and works for every client. The zone maps
+// and the area grid name the pointer's place in the readout. Drawing and editing shapes live in
+// world-edit.js, which this view hands its pointer and keys to.
 //
 // Coordinates: the page speaks WoW world yards (x north, y west, z up). The view draws X = -y (east
 // to the right), Y = x (north up), Z = z.
@@ -26,7 +27,12 @@
     const TILTED = 50;
     const CENTER_SPAN = 1200;        // yards across the view after centring on a point from far out
     const CLICK_SLOP_PX = 4;         // a right-button press that moved further turned the map: not a click
-    const BACKGROUND = [10 / 255, 14 / 255, 19 / 255, 1];   // --pa-bg
+    const GROUND_CLEAR = [10, 14, 19];                      // --pa-bg: where nothing is baked or walkable
+    const BACKGROUND = [...GROUND_CLEAR.map(c => c / 255), 1];
+    const LABEL_PX = 12;             // zone names' size
+    const LABEL_GAP = 3;             // the room a zone name keeps either side: its outline and a space
+    const AREA_CELL = 16;            // yards: points this close share a zone (ZoneLookup.CellYd)
+    const AREA_REST_MS = 120;        // the pointer rests this long before its zone is asked for
     const FONT = 'ui-sans-serif, system-ui, Segoe UI, sans-serif';
 
     // What each kind of route or marker a page sends looks like.
@@ -58,6 +64,10 @@
     const SMALL = new Set(['npc', 'elite', 'herb', 'vein', 'skinnable', 'mailbox', 'place']);
     const WATER = [44, 96, 150];
     const OUTLINE = [8, 12, 16, 110];
+    const CASING = [8, 12, 16, 210];         // the dark under a route
+    const CASING_FAINT = [8, 12, 16, 110];
+    const CASING_PX = 3;                     // how much wider than its route
+    const GAP_DASH = [6, 5];                 // a dashed route's dash and gap, in its widths
 
     // Walkable height to colour: low sea floor to snow, muted for the dark theme.
     const RAMP = [
@@ -65,6 +75,13 @@
         [160, [104, 122, 74]], [300, [128, 112, 80]], [500, [138, 120, 104]], [900, [180, 178, 176]],
         [1600, [226, 228, 232]],
     ];
+    // The relief is lit from the north-west, 45 degrees up, as maps are, with its slopes made three
+    // times as steep as they are: a tile is 133 yards across, so real slopes barely shade.
+    const SUN = [-0.5, 0.5, Math.SQRT1_2];
+    const EXAGGERATION = 3;
+    const RELIEF_PIXELS = 4;         // the flat relief's pixels to a tile's side
+    const UNBAKED = 0.35;            // how bright the relief stays where no tile is baked
+    const LIT_MAX = 232;             // sunlit snow stays under white, so white markers show on it
 
     const instances = new Map();
     let nextId = 1;
@@ -92,13 +109,26 @@
         return RAMP[RAMP.length - 1][1];
     }
 
+    // heightColor by the whole yard, flat (r, g, b, ...) from the ramp's bottom to its top: the relief
+    // picture asks it for every pixel.
+    let rampTable = null;
+    function rampOffset(z) {
+        const bottom = RAMP[0][0];
+        const top = RAMP[RAMP.length - 1][0];
+        if (!rampTable) {
+            rampTable = new Uint8Array((top - bottom + 1) * 3);
+            for (let h = bottom; h <= top; h++) rampTable.set(heightColor(h), (h - bottom) * 3);
+        }
+        return (Math.max(bottom, Math.min(top, Math.round(z))) - bottom) * 3;
+    }
+
     function fill(url, values) {
         return url.replace(/\{(\w+)\}/g, (_, key) => encodeURIComponent(values[key]));
     }
 
     // --- the view ------------------------------------------------------------------------------
 
-    /** Creates a view in host; options.urls name the service's overview and tile routes. */
+    /** Creates a view in host; options.urls name the service's routes it reads: overview, tile, world, area. */
     async function create(host, dotnet, options) {
         await window.pathingUi.loadScript(DECK_URL);
         const id = 'world-' + (nextId++);
@@ -111,8 +141,14 @@
             queue: [], inFlight: 0,
             scene: { routes: [], markers: [], labels: [] },
             viewState: { target: [0, 0, 0], zoom: -4, rotationX: TOP_DOWN, rotationOrbit: 0, minZoom: -7, maxZoom: 5, minRotationX: 5, maxRotationX: TOP_DOWN },
+            tilted: false,
             picking: false,
             readout: host.querySelector('.pa-world-readout'),
+            hover: null,            // what the pointer is over, for the readout to name again
+            world: null,            // { mapIds: continent -> map id, zones: uiMapId -> zone map }
+            areas: new Map(),       // area grid cell -> its zone's uiMapId, 0 for none
+            zone: null,             // the zone last named
+            areaTimer: 0,
             teardown: [],
             rightDown: null,
             disposed: false,
@@ -201,6 +237,7 @@
         });
 
         instances.set(id, view);
+        loadWorld(view);
         return id;
     }
 
@@ -263,8 +300,10 @@
     function setTilt(id, tilted) {
         const view = instances.get(id);
         if (!view) return;
+        view.tilted = !!tilted;
         view.deck.setProps({ views: viewOf(tilted) });
         moveTo(view, { rotationX: tilted ? TILTED : TOP_DOWN, rotationOrbit: tilted ? view.viewState.rotationOrbit : 0 });
+        render(view);
     }
 
     /** Frames what the page shows, or the continent when it shows nothing. */
@@ -293,6 +332,7 @@
         const view = instances.get(id);
         if (!view) return;
         view.disposed = true;
+        clearTimeout(view.areaTimer);
         instances.delete(id);
         view.teardown.forEach(undo => undo());
         view.deck.finalize();
@@ -305,6 +345,8 @@
         view.overview = null;
         view.tiles = new Map();
         view.queue = [];
+        view.areas = new Map();
+        view.zone = null;
         try {
             const response = await fetch(fill(view.urls.overview, { continent }));
             if (!response.ok) throw new Error(response.status + ' ' + response.statusText);
@@ -336,7 +378,180 @@
             minX = Math.min(minX, -(y0 + size)); maxX = Math.max(maxX, -y0);
             minY = Math.min(minY, x0); maxY = Math.max(maxY, x0 + size);
         }
-        return { origin: data.origin, size, cells, byKey, bounds: cells.length ? [minX, minY, maxX, maxY] : null };
+        const overview = { origin: data.origin, size, cells, byKey, bounds: cells.length ? [minX, minY, maxX, maxY] : null, image: null };
+        cells.forEach(c => { c.color = shaded(overview, c); });
+        overview.image = reliefImage(overview);
+        return overview;
+    }
+
+    // How a slope is lit against level ground: it rises `east` and `north` yards a yard.
+    function lightOf(east, north) {
+        const e = east * EXAGGERATION;
+        const n = north * EXAGGERATION;
+        const light = ((-e * SUN[0]) - (n * SUN[1]) + SUN[2]) / Math.sqrt((e * e) + (n * n) + 1) / SUN[2];
+        return Math.max(0.6, Math.min(1.3, light));
+    }
+
+    // A tile's height colour lit by its slope to the four tiles around it, a missing one counting
+    // as level: the tilted view's steps.
+    function shaded(o, cell) {
+        const h = cell.height;
+        const at = (tx, tz) => {
+            const c = o.byKey.get(tx + ',' + tz);
+            return c ? c.height : h;
+        };
+        // Tile x runs along wow y, so view east (-y) is tile x - 1; tile z runs along wow x, north.
+        const light = lightOf((at(cell.tx - 1, cell.tz) - at(cell.tx + 1, cell.tz)) / (2 * o.size),
+            (at(cell.tx, cell.tz + 1) - at(cell.tx, cell.tz - 1)) / (2 * o.size));
+        return heightColor(h).map(c => Math.min(LIT_MAX, Math.round(c * light)));
+    }
+
+    // The relief as one picture for the flat view, north up: RELIEF_PIXELS to a tile's side, the
+    // heights between tile middles smoothed (a Mitchell cubic) and each pixel lit by its own slope,
+    // so a zone's hills read as hills, not as squares. Where no tile is baked - nothing walkable
+    // there, or beyond the bake - the picture darkens, then clears, as smoothly. Column = maxTx - tx
+    // (view X = -wow y, east to the right), row = maxTz - tz (view Y = wow x, north at the top).
+    function reliefImage(o) {
+        if (o.cells.length === 0) return null;
+        let minTx = Infinity, maxTx = -Infinity, minTz = Infinity, maxTz = -Infinity;
+        o.cells.forEach(c => {
+            minTx = Math.min(minTx, c.tx); maxTx = Math.max(maxTx, c.tx);
+            minTz = Math.min(minTz, c.tz); maxTz = Math.max(maxTz, c.tz);
+        });
+        const cols = maxTx - minTx + 1;
+        const rows = maxTz - minTz + 1;
+        const heights = new Float32Array(cols * rows).fill(NaN);
+        const baked = new Float32Array(cols * rows);
+        o.cells.forEach(c => {
+            const i = ((maxTz - c.tz) * cols) + (maxTx - c.tx);
+            heights[i] = c.height;
+            baked[i] = 1;
+        });
+        // A pixel shows up to two tiles from a baked one, and its smoothing reaches two tiles further:
+        // the unbaked tiles that close take the heights around them.
+        for (let pass = 0; pass < 4; pass++) spread(heights, cols, rows);
+
+        const k = RELIEF_PIXELS;
+        const width = cols * k;
+        const height = rows * k;
+        const surface = upsample(heights, cols, rows, k, mitchell);
+        const shown = upsample(baked, cols, rows, k, bSpline);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+        const pixels = context.createImageData(width, height);
+        const run = 2 * (o.size / k);
+        for (let i = 0; i < width * height; i++) {
+            const h = surface[i];
+            if (shown[i] <= 0.01 || Number.isNaN(h)) continue;
+            const x = i % width;
+            // A neighbour beyond the picture, or too far from any baked tile to have a height, is level.
+            const at = j => Number.isNaN(surface[j]) ? h : surface[j];
+            const west = x > 0 ? at(i - 1) : h;
+            const east = x < width - 1 ? at(i + 1) : h;
+            const north = i >= width ? at(i - width) : h;
+            const south = i + width < width * height ? at(i + width) : h;
+            const light = lightOf((east - west) / run, (north - south) / run) * (UNBAKED + ((1 - UNBAKED) * ease(shown[i], 0.2, 0.8)));
+            const c = rampOffset(h);
+            pixels.data[i * 4] = Math.min(LIT_MAX, rampTable[c] * light);
+            pixels.data[(i * 4) + 1] = Math.min(LIT_MAX, rampTable[c + 1] * light);
+            pixels.data[(i * 4) + 2] = Math.min(LIT_MAX, rampTable[c + 2] * light);
+            pixels.data[(i * 4) + 3] = 255 * ease(shown[i], 0, 0.3);
+        }
+        context.putImageData(pixels, 0, 0);
+        return canvas;
+    }
+
+    // A grid of cols x rows samples, k pixels to a sample's side: each pixel a cubic over the four
+    // samples nearest it (the end samples repeated beyond the ends), along the rows, then down the
+    // columns.
+    function upsample(values, cols, rows, k, kernel) {
+        // A pixel lies the same fraction past a sample every k pixels: each phase's weights, once.
+        const phases = [];
+        for (let p = 0; p < k; p++) {
+            const t = ((p + 0.5) / k) - 0.5;
+            const weights = new Float64Array(4);
+            kernel(t - Math.floor(t), weights);
+            phases.push({ first: Math.floor(t) - 1, weights });
+        }
+        const line = (from, start, stride, count, to, toStart, toStride) => {
+            for (let x = 0; x < count * k; x++) {
+                const { first, weights } = phases[x % k];
+                const s = Math.floor(x / k) + first;
+                let sum = 0;
+                for (let n = 0; n < 4; n++) {
+                    sum += weights[n] * from[start + (Math.max(0, Math.min(count - 1, s + n)) * stride)];
+                }
+                to[toStart + (x * toStride)] = sum;
+            }
+        };
+        const width = cols * k;
+        const across = new Float32Array(width * rows);
+        for (let r = 0; r < rows; r++) line(values, r * cols, 1, cols, across, r * width, 1);
+        const result = new Float32Array(width * rows * k);
+        for (let x = 0; x < width; x++) line(across, x, width, rows, result, x, width);
+        return result;
+    }
+
+    // 0 below `from`, 1 above `to`, smoothly between.
+    function ease(v, from, to) {
+        const t = Math.max(0, Math.min(1, (v - from) / (to - from)));
+        return t * t * (3 - (2 * t));
+    }
+
+    // Each unbaked tile beside one with a height takes the mean of the heights around it.
+    function spread(heights, cols, rows) {
+        const filled = heights.slice();
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                if (!Number.isNaN(heights[(r * cols) + c])) continue;
+                let sum = 0;
+                let n = 0;
+                for (let rr = Math.max(0, r - 1); rr <= Math.min(rows - 1, r + 1); rr++) {
+                    for (let cc = Math.max(0, c - 1); cc <= Math.min(cols - 1, c + 1); cc++) {
+                        const v = heights[(rr * cols) + cc];
+                        if (!Number.isNaN(v)) {
+                            sum += v;
+                            n++;
+                        }
+                    }
+                }
+                if (n > 0) filled[(r * cols) + c] = sum / n;
+            }
+        }
+        heights.set(filled);
+    }
+
+    // The four samples' weights for a point a fraction f past the second. Mitchell-Netravali (B = C =
+    // 1/3) keeps a hill's shape without the tile-to-tile noise sharper cubics bring out (Catmull-Rom
+    // does, in Winterspring's snow); the B-spline never passes beyond its samples, softer still: for
+    // how much of a pixel's surroundings is baked.
+    function mitchell(f, w) {
+        w[0] = mitchellAt(1 + f);
+        w[1] = mitchellAt(f);
+        w[2] = mitchellAt(1 - f);
+        w[3] = mitchellAt(2 - f);
+    }
+
+    function mitchellAt(d) {
+        const B = 1 / 3;
+        const C = 1 / 3;
+        const d2 = d * d;
+        const d3 = d2 * d;
+        return d < 1
+            ? (((12 - (9 * B) - (6 * C)) * d3) + ((-18 + (12 * B) + (6 * C)) * d2) + (6 - (2 * B))) / 6
+            : (((-B - (6 * C)) * d3) + (((6 * B) + (30 * C)) * d2) + (((-12 * B) - (48 * C)) * d) + ((8 * B) + (24 * C))) / 6;
+    }
+
+    function bSpline(f, w) {
+        const f2 = f * f;
+        const f3 = f2 * f;
+        w[0] = ((1 - f) ** 3) / 6;
+        w[1] = ((3 * f3) - (6 * f2) + 4) / 6;
+        w[2] = ((-3 * f3) + (3 * f2) + (3 * f) + 1) / 6;
+        w[3] = f3 / 6;
     }
 
     // The baked tiles around the view's target, when it is close enough to draw their polygons.
@@ -464,9 +679,27 @@
             layers.push(new deck.SolidPolygonLayer({
                 id: 'relief', data: cells, _full3d: true, pickable: '3d', material: false,
                 getPolygon: c => c.polygon,
-                getFillColor: c => heightColor(c.height),
+                getFillColor: c => c.color,
                 updateTriggers: { getPolygon: shown.size },
             }));
+
+            // Flat, the relief is drawn smooth: its picture over the cells, which stay under it for the
+            // heights a hover or a click picks. Tilted, the cells show their steps. Where a tile shows its
+            // polygons, the dark under them is what is not walkable, as without the picture.
+            if (!view.tilted && view.overview.image) {
+                const under = { depthCompare: 'always', depthWriteEnabled: false };
+                layers.push(new deck.BitmapLayer({
+                    id: 'relief-image', image: view.overview.image, bounds: view.overview.bounds, parameters: under,
+                }));
+                // Only while tiles show: a SolidPolygonLayer whose data becomes empty keeps drawing its
+                // last polygons (deck.gl 9.4), which left a black square where tiles had shown.
+                if (shown.size) {
+                    layers.push(new deck.SolidPolygonLayer({
+                        id: 'relief-holes', data: detail.filter(c => shown.has(c.key)), material: false,
+                        getPolygon: c => c.polygon, getFillColor: GROUND_CLEAR, parameters: under,
+                    }));
+                }
+            }
         }
 
         for (const cell of detail) {
@@ -482,11 +715,15 @@
         }
 
         const over = { depthCompare: 'always' };
-        const labels = viewSpan(view) > DETAIL_SPAN ? view.scene.labels : [];
+        const labels = viewSpan(view) > DETAIL_SPAN ? apart(view, view.scene.labels) : [];
+        // Zone names outlined in the dark, so they read over snow as over sea. The outline needs a
+        // distance-field font; it reaches 0.75 x outlineWidth atlas pixels past a glyph (64 px glyphs:
+        // about 1.7 px at 12), which the glyphs' buffer must hold.
         layers.push(new deck.TextLayer({
             id: 'labels', data: labels, getPosition: l => l.position, getText: l => l.text,
-            getSize: 12, sizeUnits: 'pixels', getColor: [200, 210, 222, 190], fontWeight: 600,
-            fontFamily: FONT, parameters: over,
+            getSize: LABEL_PX, sizeUnits: 'pixels', getColor: [226, 232, 240], fontWeight: 600,
+            fontFamily: FONT, fontSettings: { sdf: true, buffer: 12, radius: 16 },
+            outlineWidth: 12, outlineColor: [10, 14, 19, 210], parameters: over,
         }));
 
         // Shapes under the routes, so a route drawn through an area stays readable.
@@ -496,16 +733,30 @@
         const dashed = view.scene.routes.filter(r => DASHED.has(r.kind));
         // Faint routes first, so the one that matters is drawn over them.
         solid.sort((a, b) => (b.kind === 'recent') - (a.kind === 'recent'));
+        const faint = r => r.kind === 'recent';
+        const dash = deck.PathStyleExtension ? [new deck.PathStyleExtension({ dash: true })] : [];
+        // Every route over a dark casing a little wider, all casings under all routes, so a route reads
+        // over any ground and where two cross. A dash's casing is a dash as long: dashes are measured in
+        // widths, so the wider casing's are given in its own.
+        layers.push(new deck.PathLayer({
+            id: 'route-casings', data: solid, getPath: r => r.path, getColor: r => faint(r) ? CASING_FAINT : CASING,
+            getWidth: r => (faint(r) ? 2 : 4) + CASING_PX, widthUnits: 'pixels', capRounded: true, jointRounded: true,
+            parameters: over,
+        }));
+        layers.push(new deck.PathLayer({
+            id: 'gap-casings', data: dashed, getPath: r => r.path, getColor: CASING,
+            getWidth: 2 + CASING_PX, widthUnits: 'pixels', dashJustified: true, extensions: dash, parameters: over,
+            getDashArray: GAP_DASH.map(d => (d * 2) / (2 + CASING_PX)),
+        }));
         layers.push(new deck.PathLayer({
             id: 'routes', data: solid, getPath: r => r.path, getColor: r => KINDS[r.kind] || KINDS.point,
-            getWidth: r => r.kind === 'recent' ? 2 : 4, widthUnits: 'pixels', capRounded: true, jointRounded: true,
+            getWidth: r => faint(r) ? 2 : 4, widthUnits: 'pixels', capRounded: true, jointRounded: true,
             pickable: true, parameters: over,
         }));
         layers.push(new deck.PathLayer({
             id: 'gaps', data: dashed, getPath: r => r.path, getColor: r => KINDS[r.kind] || KINDS.point,
-            getWidth: 2, widthUnits: 'pixels', getDashArray: [6, 5], dashJustified: true, pickable: true,
-            extensions: deck.PathStyleExtension ? [new deck.PathStyleExtension({ dash: true })] : [],
-            parameters: over,
+            getWidth: 2, widthUnits: 'pixels', getDashArray: GAP_DASH, dashJustified: true, pickable: true,
+            extensions: dash, parameters: over,
         }));
         layers.push(new deck.ScatterplotLayer({
             id: 'markers', data: view.scene.markers, getPosition: m => m.position,
@@ -525,6 +776,28 @@
         layers.push(...window.worldEdit.overlayLayers(view));
 
         view.deck.setProps({ layers });
+    }
+
+    // The names that fit on the screen as it is drawn now, larger zones first: one that would overlap
+    // a name already placed waits for a closer look. A name's box is its text measured in the labels'
+    // font, around its anchor.
+    let measure = null;
+    function apart(view, labels) {
+        const viewport = view.deck.getViewports()[0];
+        if (!viewport || labels.length < 2) return labels;
+        if (!measure) {
+            measure = document.createElement('canvas').getContext('2d');
+            measure.font = '600 ' + LABEL_PX + 'px ' + FONT;
+        }
+        const placed = [];
+        return [...labels].sort((a, b) => (b.size || 0) - (a.size || 0)).filter(l => {
+            const [x, y] = viewport.project(l.position);
+            const w = (measure.measureText(l.text).width / 2) + LABEL_GAP;
+            const h = LABEL_PX / 2;
+            if (placed.some(b => x - w < b[2] && b[0] < x + w && y - h < b[3] && b[1] < y + h)) return false;
+            placed.push([x - w, y - h, x + w, y + h]);
+            return true;
+        });
     }
 
     function sceneBounds(view) {
@@ -591,8 +864,11 @@
 
     // --- pointer -------------------------------------------------------------------------------
 
+    // Where the pointer is, at the view's foot: the zone and its map coordinates as a player reads
+    // them, world yards, and the ground's height.
     function showReadout(view, info) {
         if (!view.readout) return;
+        view.hover = info.coordinate ? info : null;
         if (!info.coordinate) {
             view.readout.textContent = '';
             return;
@@ -600,9 +876,71 @@
         const w = fromView(info.coordinate);
         const layer = info.layer ? info.layer.id : '';
         // A tile's polygons have the ground's own height; the relief only the tile's.
-        const height = layer.startsWith('tile-') ? 'height ' + w.z.toFixed(1)
+        const height = layer.startsWith('tile-') ? (info.object && info.object.water ? 'water, height ' : 'height ') + w.z.toFixed(1)
             : (layer === 'relief' ? 'tile height ' + w.z.toFixed(0) : null);
-        view.readout.textContent = 'x ' + w.x.toFixed(1) + '   y ' + w.y.toFixed(1) + (height ? '   ' + height : '');
+        const where = whereIs(view, w.x, w.y);
+        const place = document.createElement('span');
+        place.className = 'pa-world-place';
+        place.textContent = where ? where + '   ' : '';
+        view.readout.replaceChildren(place, ['x ' + w.x.toFixed(1) + '  y ' + w.y.toFixed(1), height].filter(part => part).join('   '));
+    }
+
+    // The continents' map ids and every zone map, for naming the pointer's place; without them the
+    // readout gives coordinates only.
+    async function loadWorld(view) {
+        try {
+            const response = await fetch(view.urls.world);
+            if (!response.ok) return;
+            const world = await response.json();
+            view.world = {
+                mapIds: new Map(world.continents.map(c => [c.name, c.mapId])),
+                zones: new Map(world.zones.map(z => [z.uiMapId, z])),
+            };
+        } catch (e) {
+            window.pathingUi.log('Zone names for the pointer could not be read: ' + e.message);
+        }
+    }
+
+    // The zone at a world point as the service's area grid has it (a town in its zone), with the
+    // point in the zone map's coordinates: "Durotar 52.3, 44.1". The grid is asked once the pointer
+    // rests, and the answer kept for its cell (ZoneLookup's); till then the zone last named stands in.
+    function whereIs(view, x, y) {
+        const mapId = view.world ? view.world.mapIds.get(view.continent) : undefined;
+        if (mapId === undefined) return null;
+        const cx = Math.floor(x / AREA_CELL);
+        const cy = Math.floor(y / AREA_CELL);
+        const key = cx + ',' + cy;
+        clearTimeout(view.areaTimer);
+        if (view.areas.has(key)) {
+            view.zone = view.world.zones.get(view.areas.get(key)) || null;
+        } else {
+            view.areaTimer = setTimeout(() => lookUp(view, mapId, key, (cx + 0.5) * AREA_CELL, (cy + 0.5) * AREA_CELL), AREA_REST_MS);
+        }
+        return view.zone ? onMap(view.zone, x, y) : null;
+    }
+
+    async function lookUp(view, mapId, key, x, y) {
+        const continent = view.continent;
+        try {
+            const response = await fetch(fill(view.urls.area, { mapId, x: x.toFixed(1), y: y.toFixed(1) }));
+            if (!response.ok) return;
+            const area = await response.json();
+            if (view.disposed || view.continent !== continent) return;
+            view.areas.set(key, area.uiMapId || 0);
+        } catch {
+            return;   // asked again when the pointer next rests there
+        }
+        if (view.hover) showReadout(view, view.hover);
+    }
+
+    // A world point in a zone map's coordinates, 0 to 100 (ZoneMath.ToMap): map x runs along wow y,
+    // map y along wow x. Off the map, the zone's name alone.
+    function onMap(zone, x, y) {
+        const mapX = 100 - (((y - zone.locRight) * 100) / (zone.locLeft - zone.locRight));
+        const mapY = 100 - (((x - zone.locBottom) * 100) / (zone.locTop - zone.locBottom));
+        return mapX >= 0 && mapX <= 100 && mapY >= 0 && mapY <= 100
+            ? zone.name + ' ' + mapX.toFixed(1) + ', ' + mapY.toFixed(1)
+            : zone.name;
     }
 
     function picked(view, info) {
@@ -623,11 +961,8 @@
             text = o.title || o.label || o.kind;
         } else if (info.layer.id === 'shape-areas' || info.layer.id === 'shape-circles' || info.layer.id === 'shape-lines') {
             text = o.label || null;
-        } else if (info.layer.id === 'relief') {
-            text = 'tile ' + o.tx + ', ' + o.tz + ' · walkable height ' + o.height.toFixed(0);
-        } else if (o.polygon) {
-            text = (o.water ? 'water' : 'ground') + ' · height ' + o.height.toFixed(1);
         }
+        // The ground has none: the readout says where the pointer is and how high.
         return text ? { text, style: { background: 'rgba(16, 22, 30, 0.95)', color: '#e6edf3', fontSize: '12px', padding: '4px 8px', borderRadius: '6px' } } : null;
     }
 
