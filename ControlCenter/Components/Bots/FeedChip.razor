@@ -1,0 +1,18 @@
+@* Whether the fleet pages follow the manager live, or show the last they knew while the feed reconnects. *@
+
+@if (Connected)
+{
+    <span class="pa-chip pa-chip--ok" title="Following the Bot Manager's fleet hub: changes show as they happen">
+        <span class="pa-dot" aria-hidden="true"></span> live
+    </span>
+}
+else
+{
+    <span class="pa-chip pa-chip--warn" title="The fleet hub's connection is down: this shows the last state known until it is back">
+        <span class="pa-dot" aria-hidden="true"></span> reconnecting
+    </span>
+}
+
+@code {
+    [Parameter] public bool Connected { get; set; }
+}

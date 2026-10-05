@@ -1,0 +1,113 @@
+@* What a bot does now, from its latest snapshot: what a person must know first, its vitals, then
+   its activity, agenda, place and progress. Zone names come from the Pathing Service's world. *@
+
+@inherits ControlCenterComponent
+
+@inject WorldCache worldCache
+@inject PathingStatus pathing
+
+@if (BotFormat.WaitingForClick(Bot) is string waiting)
+{
+    <p class="pa-notice" role="status">
+        <span class="oi oi-warning" aria-hidden="true"></span>
+        @waiting
+    </p>
+}
+
+@if (Bot.Online && snapshot?.Message is string message)
+{
+    <p class="pa-notice pa-notice--info">
+        <span class="oi oi-info" aria-hidden="true"></span>
+        @message
+    </p>
+}
+
+@if (snapshot?.Vitals is BotVitals vitals)
+{
+    <div class="pa-vitals" aria-label="Vitals">
+        <span class="pa-vital-label">Health</span>
+        <span class="pa-bar pa-bar--health"><span style="width: @BotFormat.Percent(vitals.Health)"></span></span>
+        <span class="pa-vital-value">@vitals.Health.ToString("F0", CultureInfo.InvariantCulture)%</span>
+
+        <span class="pa-vital-label">Power</span>
+        <span class="pa-bar pa-bar--power"><span style="width: @BotFormat.Percent(vitals.Power)"></span></span>
+        <span class="pa-vital-value">@vitals.Power.ToString("F0", CultureInfo.InvariantCulture)%</span>
+
+        @if (vitals.Target is float target)
+        {
+            <span class="pa-vital-label">Target</span>
+            <span class="pa-bar pa-bar--target"><span style="width: @BotFormat.Percent(target)"></span></span>
+            <span class="pa-vital-value">@target.ToString("F0", CultureInfo.InvariantCulture)%</span>
+        }
+    </div>
+    @if (vitals.InCombat)
+    {
+        <span class="pa-chip pa-chip--warn pa-chip--small">In combat</span>
+    }
+}
+
+<dl class="pa-facts">
+    @if (snapshot?.Character is BotCharacter character)
+    {
+        <dt>Character</dt>
+        <dd>@BotFormat.Character(character)</dd>
+    }
+    @if (Bot.Run is BotRunInfo run)
+    {
+        <dt>Run</dt>
+        <dd title="Run @run.RunId">@run.Summary <span class="pa-faint">since @BotFormat.Time(run.StartedAt)</span></dd>
+    }
+    @if (snapshot?.Activity is string activity)
+    {
+        <dt>Activity</dt>
+        <dd>@activity</dd>
+    }
+    @if (snapshot?.Agenda is string agenda)
+    {
+        <dt>Agenda</dt>
+        <dd>@agenda</dd>
+    }
+    @if (snapshot?.Position is BotPosition position)
+    {
+        <dt>Where</dt>
+        <dd>@BotFormat.Place(position, world)</dd>
+    }
+    @if (snapshot?.Progress is BotProgress progress)
+    {
+        <dt>Progress</dt>
+        <dd>@BotFormat.Progress(progress)</dd>
+    }
+    <dt>Assignment</dt>
+    <dd>@(Bot.Assignment?.ToString() ?? "none")</dd>
+</dl>
+
+@code {
+    [Parameter, EditorRequired] public BotInfo Bot { get; set; } = default!;
+
+    private BotSnapshot? snapshot;
+    private WorldSnapshot? world;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Subscribe(() => pathing.Reconnected += Reload, () => pathing.Reconnected -= Reload);
+        if (pathing.Online)
+        {
+            world = await worldCache.GetAsync();
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        // An offline bot's last snapshot is not what it does now.
+        snapshot = Bot.Online ? Bot.Latest : null;
+    }
+
+    private void Reload()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            world = await worldCache.GetAsync();
+            StateHasChanged();
+        });
+    }
+}

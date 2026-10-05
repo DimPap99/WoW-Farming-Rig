@@ -1,0 +1,65 @@
+@page "/fleet"
+
+@inherits ControlCenterComponent
+
+@inject FleetFeed feed
+@inject BotManagerStatus manager
+
+<PageTitle>Fleet · Control Center</PageTitle>
+
+@* Every bot the Bot Manager knows - one per game PC, its resident agent - online or when it was last
+   seen: what it does, where, its vitals and progress, its assignment, and Start and Stop. The page
+   reads the fleet feed, which follows the manager's fleet hub; nothing here polls. While the
+   manager is down the last fleet known stays, dimmed, under the notice. *@
+
+@{
+    IReadOnlyList<BotInfo> bots = feed.Bots;
+}
+
+@if (manager.Online || bots.Count > 0)
+{
+    <div class="pa-workspace @(manager.Online ? null : "is-stale")">
+        <header class="pa-workspace-header">
+            <h1 class="pa-workspace-title">Fleet</h1>
+            <span class="pa-faint">@bots.Count(bot => bot.Online) of @bots.Count @(bots.Count == 1 ? "bot" : "bots") online</span>
+            <span class="pa-spacer"></span>
+            <FeedChip Connected="@feed.Connected" />
+        </header>
+
+        @if (bots.Count == 0)
+        {
+            <div class="pa-card pa-empty">
+                <p>No bots yet. A bot is a game PC's resident agent, and it appears here when it dials in:</p>
+                <p><code>HeadlessServer\run.bat --agent --manager @manager.Service.Url</code></p>
+                <p class="pa-faint">The agent keeps its id in <code>agent_identity.json</code>, so a PC stays the same bot across restarts.</p>
+            </div>
+        }
+        else
+        {
+            <div class="pa-fleet">
+                @foreach (BotInfo bot in bots)
+                {
+                    <BotCard @key="bot.AgentId" Bot="bot" />
+                }
+            </div>
+        }
+    </div>
+}
+
+@if (!manager.Online)
+{
+    <OfflineNotice Service="@manager.Service" Reason="@manager.Error" />
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        Subscribe(() => manager.Changed += Redraw, () => manager.Changed -= Redraw);
+        Subscribe(() => feed.Changed += OnFleetChanged, () => feed.Changed -= OnFleetChanged);
+    }
+
+    private void OnFleetChanged(string? agentId)
+    {
+        Redraw();
+    }
+}

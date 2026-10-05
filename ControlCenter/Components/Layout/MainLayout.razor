@@ -16,7 +16,7 @@
         <NavMenu />
 
         <button class="pa-rail-toggle" type="button" @onclick="ToggleRail"
-                title="@(collapsed ? "Expand menu" : "Collapse menu")" aria-expanded="@(!collapsed)">
+                title="@(collapsed ? "Expand menu" : "Collapse menu")" aria-expanded="@Aria.State(!collapsed)">
             <span class="oi @(collapsed ? "oi-chevron-right" : "oi-chevron-left")" aria-hidden="true"></span>
             <span class="pa-nav-label">Collapse</span>
         </button>

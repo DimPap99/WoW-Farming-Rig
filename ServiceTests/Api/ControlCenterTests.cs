@@ -2,11 +2,6 @@ using ControlCenter.Hosting;
 
 using Contracts.Pathing;
 
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-
-using ServiceClients.Pathing;
-
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -18,15 +13,6 @@ namespace ServiceTests.Api;
 /// <summary>The Control Center with its Pathing Service down: the pages and the map still load, the forwarding says 502.</summary>
 public sealed class ControlCenterTests
 {
-    private sealed class ControlCenterFactory : WebApplicationFactory<ControlCenter.Program>
-    {
-        protected override void ConfigureWebHost(IWebHostBuilder builder)
-        {
-            builder.UseSetting(ControlCenterLogging.FileKey, string.Empty);
-            builder.UseSetting(PathingServiceOptions.UrlKey, ClosedPort.NewUrl().ToString());
-        }
-    }
-
     [Fact]
     public async Task The_shell_and_the_map_load_while_the_service_is_down()
     {

@@ -2,7 +2,8 @@
 
 **Status:** agreed 2026-10-05. Phases 0 to 2 are done: the Pathing Service and the Control
 Center are built and PathingAPI is gone. See "Phase 1 as built" and "Phase 2 as built". Phase 3
-is under way (steps 1 to 4 of 6): [phase3-plan.md](phase3-plan.md).
+is under way (steps 1 to 5 of 6; the Control Center has its fleet page and a console per bot):
+[phase3-plan.md](phase3-plan.md).
 **Scope:** how the parts of the rig talk to each other, what each one serves, and where things
 are viewed. The bot's play logic (goals, GOAP, readers, input, navigation, the Forever
 activities) is deliberately out of scope and does not change.

@@ -1,0 +1,145 @@
+@page "/fleet/{AgentId}"
+
+@inherits ControlCenterComponent
+
+@inject FleetFeed feed
+@inject BotManagerStatus manager
+@inject IBotManagerClient bots
+@inject NavigationManager navigation
+@inject IJSRuntime js
+
+@{
+    BotInfo? bot = feed.Get(AgentId);
+}
+
+<PageTitle>@(bot?.Name ?? "Bot") · Control Center</PageTitle>
+
+@* One bot's console: what it does now, its log as it is written, what it is assigned, Start and
+   Stop, and how its runs ended. The bot is its PC's agent; it is reached through the Bot Manager,
+   never directly. While the manager is down a bot known before stays, dimmed, under the notice:
+   the log keeps its lines, and what the bot logged meanwhile fills in when the manager is back. *@
+
+@if (bot is null)
+{
+    @if (manager.Online)
+    {
+        <div class="pa-page">
+            @if (feed.Connected)
+            {
+                <h1 class="pa-error-title">No bot @AgentId</h1>
+                <p>The Bot Manager knows no bot by this id: it may have been forgotten. A forgotten bot comes back when its agent dials in again.</p>
+            }
+            else
+            {
+                <h1 class="pa-error-title">Waiting for the fleet</h1>
+                <p>The fleet feed is not connected to the Bot Manager yet; this page fills in by itself when it is.</p>
+            }
+            <p><a href="fleet">Back to the fleet</a></p>
+        </div>
+    }
+}
+else
+{
+    <div class="pa-workspace @(manager.Online ? null : "is-stale")" @key="bot.AgentId">
+        <header class="pa-workspace-header">
+            <a class="pa-btn pa-btn--ghost pa-btn--icon" href="fleet" title="Back to the fleet">
+                <span class="oi oi-arrow-left" aria-hidden="true"></span>
+            </a>
+            <h1 class="pa-workspace-title">@bot.Name</h1>
+            <BotState Bot="bot" />
+            <span class="pa-faint" title="@($"Agent {bot.AgentId} {bot.AgentVersion}, protocol {bot.Protocol}")">
+                @bot.Machine · @BotFormat.Client(bot.Game) · agent @BotFormat.Version(bot.AgentVersion)
+            </span>
+            <span class="pa-spacer"></span>
+            <FeedChip Connected="@feed.Connected" />
+            <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" disabled="@(bot.Online || forgetting)" @onclick="ForgetAsync"
+                    title="@(bot.Online ? "Only an offline bot can be forgotten: stop its agent first" : "Forget this bot and its run history")">
+                <span class="oi oi-trash" aria-hidden="true"></span>
+            </button>
+        </header>
+        <ResultLine Text="@result" Kind="@resultKind" />
+
+        <div class="pa-console">
+            <div class="pa-console-side">
+                <section class="pa-card pa-console-card" aria-label="Now">
+                    <h2 class="pa-card-title">Now</h2>
+                    <BotCommands Bot="bot" />
+                    <BotLive Bot="bot" />
+                </section>
+                <section class="pa-card pa-console-card" aria-label="Assignment">
+                    <h2 class="pa-card-title">Assignment</h2>
+                    <AssignmentForm Bot="bot" />
+                </section>
+                <section class="pa-card pa-console-card" aria-label="Runs">
+                    <h2 class="pa-card-title">Runs</h2>
+                    <RunHistory AgentId="@bot.AgentId" />
+                </section>
+            </div>
+            <BotLog AgentId="@bot.AgentId" Name="@bot.Name" />
+        </div>
+    </div>
+}
+
+@if (!manager.Online)
+{
+    <OfflineNotice Service="@manager.Service" Reason="@manager.Error" />
+}
+
+@code {
+    /// <summary>The bot's id, as its agent keeps it.</summary>
+    [Parameter] public string AgentId { get; set; } = string.Empty;
+
+    private bool forgetting;
+    private string? result;
+    private ResultKind resultKind;
+
+    /// <summary>The console's address for a bot.</summary>
+    public static string Href(string agentId)
+    {
+        return $"fleet/{Uri.EscapeDataString(agentId)}";
+    }
+
+    protected override void OnInitialized()
+    {
+        Subscribe(() => manager.Changed += Redraw, () => manager.Changed -= Redraw);
+        Subscribe(() => feed.Changed += OnFleetChanged, () => feed.Changed -= OnFleetChanged);
+    }
+
+    private void OnFleetChanged(string? agentId)
+    {
+        if (agentId is null || agentId == AgentId)
+        {
+            Redraw();
+        }
+    }
+
+    private async Task ForgetAsync()
+    {
+        if (feed.Get(AgentId) is not BotInfo known ||
+            !await js.InvokeAsync<bool>("confirm", Token, $"Forget {known.Name} and its run history? It comes back if its agent dials in again."))
+        {
+            return;
+        }
+
+        forgetting = true;
+        try
+        {
+            ServiceResult forgotten = await bots.ForgetBotAsync(AgentId, Token);
+            if (forgotten.Ok)
+            {
+                navigation.NavigateTo("fleet");
+                return;
+            }
+
+            result = forgotten.Error;
+            resultKind = ResultKind.Error;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            forgetting = false;
+        }
+    }
+}

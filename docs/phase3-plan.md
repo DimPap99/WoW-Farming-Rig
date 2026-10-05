@@ -1,10 +1,10 @@
 # Phase 3 - plan, progress and what is left
 
-**Status (2026-10-05):** steps 1 to 4 of 6 are on `main` and pushed. Steps 5 and 6, the finishing
-docs, and every check that needs Windows and a game are left. Item 1 of the Windows checklist
-passed. **Next: step 5**, which needs no game; its handoff is in its section below. This file
-holds the whole plan as agreed, what each step delivered and how it was checked, what remains,
-and the list to test on Windows. The design itself is
+**Status (2026-10-05):** steps 1 to 5 of 6 are on `main` (1 to 4 pushed; step 5 was built and
+checked on the Windows PC). Step 6, the finishing docs, and every check that needs Windows and a
+game are left. Item 1 of the Windows checklist passed. **Next: step 6.** This file holds the
+whole plan as agreed, what each step delivered and how it was checked, what remains, and the list
+to test on Windows. The design itself is
 [service-architecture.md](service-architecture.md); what was found along the way is in
 [known-issues.md](known-issues.md).
 
@@ -146,138 +146,71 @@ Phase 3 of the services split (see "Phases" in the design doc): the **Bot Manage
   ("no WoW client is running"), it rejoined a restarted manager, and SIGTERM ended it cleanly.
   **Everything with a game is on the Windows list.**
 
-### Step 5 - the Control Center's fleet, console and assignments - NEXT (handoff 2026-10-05)
+### Step 5 - the Control Center's fleet, console and assignments - DONE
 
 The user's "console per account": one place to see every bot, give it a route or a profile, start
-and stop it, and read its log. **Needs no game**: it is built and verified with simulated agents,
-on Linux or on the Windows PC. On its own branch, merged fast-forward (decision 8).
+and stop it, and read its log. Built and checked on the Windows PC with simulated agents; no game.
+`ControlCenter/CLAUDE.md` has the layout and what bites.
 
-**Read first:** `ControlCenter/CLAUDE.md`, `BotManager/CLAUDE.md`, `BotAgent/CLAUDE.md`, and "Bot
-Manager contracts (v1)" in the design doc.
-
-**Already there; build on it, don't rebuild it:**
-
-- `IBotManagerClient` and `AddBotManagerClient()` (`ServiceClients/Bots`): every REST call. It
-  never throws for a manager that is down; it retries queries and never commands. It reads
-  `BotManager:Url` (default `http://localhost:5030`) and the key from `BotManager:ApiKey`, else
-  `ApiKey`.
-- `AssignmentRules.Problem(assignment)`: the manager's own check. The form calls it before a save
-  and shows its reason.
-- `Contracts/Bots`: `BotInfo` holds all the fleet page shows (`Online`, `LastSeen`, `Game`,
-  `ClassProfiles`, `Assignment`, `Run`, `Latest` snapshot); then `BotSnapshot`, `BotLogLine`,
-  `RunRecord`, `CommandAck` and `FleetHubMethods`.
-- `IPathingClient.ListForeverRoutesAsync` for the form's routes (a `ForeverRouteInfo` with a
-  `Problem` is one a run would refuse: show it, not selectable) and `ListPathsAsync` for a Classic
-  path override.
-- The Control Center's own patterns: `PathingStatus` (a 2 s poller raising `Changed` and
-  `Reconnected`), `ControlCenterComponent` (`Subscribe`, `Redraw`, `Token`), the `StatusBar`
-  chips, `NavMenu`'s sections, `OfflineNotice`, `Panel`, `BusyButton`, `ResultLine`, and the
-  `pa-workspace`, `pa-card` and `pa-dot--*` styles.
-- For tests: `BotManagerFactory` (the manager in memory), `FakeAgent`, `FleetListener`, and
-  `ClosedPort` (a manager that is down).
-
-**Build:**
-
-1. `ControlCenter/Bots/BotManagerStatus.cs`: the manager's health every 2 s, for the status bar
-   and the pages. Don't copy `PathingStatus`: move its loop (poll under a semaphore, `Online`,
-   `Error`, `Changed`, `Reconnected`, a log line when the state flips) into a small base both
-   use; `PathingStatus` keeps its capabilities read.
-2. `ControlCenter/Bots/FleetFeed.cs`: one hosted, server-side SignalR client of `/fleetHub`
-   (MessagePack; `X-Api-Key` from `BotManagerOptions.ApiKey`), reconnecting forever (a retry
-   policy that never gives up).
-   - The hub replays nothing (see `BotManager/Fleet/FleetHub.cs`): after every connect and
-     reconnect, read `ListBotsAsync` and raise one "resynced" event.
-   - It keeps the current `BotInfo` per bot (`BotChanged` replaces, `BotRemoved` removes,
-     `Snapshot` updates `Latest`), so pages read the feed instead of each polling. It raises
-     `Log(agentId, lines)` and `RunEnded(record)` for the console.
-   - The connection comes from an injected factory, so tests use the in-memory server's handler
-     with long polling, as `FakeAgent` does.
-   - Packages: `Microsoft.AspNetCore.SignalR.Client` and
-     `Microsoft.AspNetCore.SignalR.Protocols.MessagePack`, both already pinned in
-     `Directory.Packages.props` (ServiceTests uses them).
-3. `AddControlCenter`: `AddBotManagerClient()`, and the status and the feed as hosted singletons.
-4. Pages, on the `pa-workspace` styles:
-   - **Fleet** (`/fleet`): every bot, online or last seen; client and character; state and
-     activity; vitals; position (zone name from `WorldCache`); kills, deaths and loots; the
-     assignment (`BotAssignment.ToString()`); Start and Stop, refusals shown with `ResultLine`.
-   - **Bot console** (`/fleet/{agentId}`): the live panel (state, message, vitals, position,
-     activity, agenda, progress); the log terminal (the backlog from `GetLogAsync`, then the
-     stream); the assignment form (Forever: a route from the library and 1 to
-     `BotManagerApi.MaxMinutes` minutes; Classic: one of the bot's `ClassProfiles` and an optional
-     path from the path library), with save and clear; Start and Stop; the run history
-     (`GetRunsAsync`, newest first); Forget for an offline bot.
-   - A "Bots" section in `NavMenu`, and a manager chip in the status bar (online, bots online of
-     all).
-   - `OfflineNotice` names the Pathing Service only. Give it the service's name, address and how
-     to start it as parameters and use it for both services, rather than a second copy.
-5. The log terminal: the user likes the terminal look of BlazorServer's logs and run output
-   (`Frontend/Shared/Terminal.razor`, the `rig-*` classes in Frontend's `site.css`). The Control
-   Center may not reference Frontend, so build `ControlCenter/Components/Shared/Terminal.razor`
-   with that look under `pa-` names. The Control Center is its long-term home: BlazorServer's runs
-   page goes (known issue 24), and BlazorServer becomes the PC's setup UI in Phase 4. One shared
-   component library for both hosts would change the Control Center's reference rule, so ask the
-   user before doing that.
-
-**Things that will bite:**
-
-- **`/api/v1` is both services' root.** The Control Center's YARP forwards `/api/v1/*` to the
-  Pathing Service. Pages call the manager server-side through `IBotManagerClient`; never add it to
-  `ServiceProxy` under `/api/v1`.
-- **Commands are never queued or retried.** A bot that is offline answers 409, and one whose agent
-  does not answer within 10 s answers 504. Show the reason; don't retry on the user's behalf.
-- **The fleet hub sends every bot's snapshots and logs to every listener.** A console filters by
-  agent id. It subscribes to the feed before it reads the backlog (the last 500 lines), then drops
-  streamed lines the backlog already holds; `BotLogLine` has no sequence number, so compare the
-  time and the text.
-- **`WaitingForClick` needs a person.** Someone must click into the game window on the bot's PC.
-  Both pages say so in plain words.
-- **Prerendering is off.** A plain `GET /fleet` returns only the shell. Page tests render the
-  components with `HtmlRenderer` (part of ASP.NET Core; the repo has no bUnit).
-- **Feed events arrive on SignalR's threads.** Pages redraw through `Redraw`, and nothing thrown in
-  a handler may escape: an exception ends the page's circuit.
-- **CSS numbers** (the vitals bars' widths) use the invariant culture.
-
-**Tests** (ServiceTests):
-
-- The feed against `BotManagerFactory` and `FakeAgent`: a registered agent appears, a snapshot
-  updates `Latest`, a log batch and a run's end are raised, and a restarted manager is resynced.
-- `BotManagerStatus` online and offline.
-- The pages: with the manager down (`ClosedPort`) they show the offline notice; with a fake client
-  they list a bot, and the form refuses a bad assignment with `AssignmentRules`' reason.
-
-**Verify without a game:**
-
-- Run the Pathing Service (5010), the Bot Manager (5030, `--Data=<scratch>/data`) and the Control
-  Center (5020): `run.sh` on Linux; on Windows `dotnet run -c Release` from each project's folder,
-  where `data_config.json` is read.
-- Agents: a small console, kept out of the solution (`Utilities/SimAgent`), that calls BotAgent's
-  `AddBotAgent(options, sink)` and adds fakes:
-  - an `IBotRuntimeFactory` whose runtime runs until stopped, reports `Running` with changing
-    vitals, position, activity, agenda and kills through `Read()`, and logs a line a second;
-  - an `IGameProbe` that reports a made-up client;
-  - an `IClassProfileCatalog` with a few profile names;
-  - an `IAgentProcess`.
-
-  Run two or three, each with its own `--Agent:IdentityFile=` and `--Agent:Name=`. On the game PC
-  don't use HeadlessServer `--agent` for this: it sees the WoW client and would start a real run.
-- The browser: Playwright .NET with the installed Chrome (`Channel = "chrome"`, headless, no
-  browser download; the Windows PC has Chrome and Node). For Blazor's navigation, wait on
-  `location.pathname`. Check that:
-  - the fleet lists the agents;
-  - the console streams the log and the live panel;
-  - an assignment saves, and a bad one is refused with its reason;
-  - Start and Stop work, and the run appears in the history;
-  - the manager, and an agent, stopped and started again under an open page come back by
-    themselves.
-- Not in this step: a real run driven from the console. That is the Windows checklist (items 5
-  to 7), with the user at the PC.
-
-**Done when:** `dotnet test` and the browser checks pass; `ControlCenter/CLAUDE.md` covers the
-fleet pages, the feed and the manager client; this step is marked DONE here with what was
-verified; and the status line of the design doc is updated. Step 6 is next.
-
-**Later, not in this step:** each bot's position as a marker in the 3D live view (the watch hub can
-draw it; "The bot's live view" in the design doc's Phase 3 starting notes).
+- `Hosting/ServiceStatus`: the polling loop both pollers now share (poll under a semaphore,
+  `Online`, `Error`, `Changed`, `Reconnected`, one log line when the state flips); a subscriber
+  that throws is logged and stops neither the others nor the loop. `PathingStatus` keeps its
+  capabilities and health on it, and `Bots/BotManagerStatus` adds the `ManagerHealth`.
+  `ServiceDescription` names a service, its address and how to start it; `OfflineNotice` takes
+  it, for both services.
+- `Bots/FleetFeed`: the one hosted client of `/fleetHub` (MessagePack, `X-Api-Key`), its
+  connection from an injected `IFleetConnectionFactory`. It reconnects forever through its own
+  loop, as `AgentLink` does, rather than SignalR's retry policy, which only covers a connection
+  that was once up. After every connect it reads the bots over REST and raises `Resynced`; what
+  the hub streams during that read is held and applied after the list. It keeps each `BotInfo`
+  (a snapshot updates `Latest`, `Run` and `Game`) and raises `Changed`, `Log` and `RunEnded`.
+- **Fleet** (`/fleet`): a card per bot with its state, client, vitals, activity, agenda, place
+  (the zone's name from `WorldCache`), progress and assignment, Start and Stop, and the way to its
+  console. **Bot console** (`/fleet/{agentId}`): the same live panel, Start and Stop, the
+  assignment form, the run history, Forget for an offline bot, and the log terminal.
+  `WaitingForClick` is said in plain words on both. A "Bots" section in the rail; a manager chip
+  in the status bar (bots online of all, a link to the fleet).
+- The log: `Components/Shared/Terminal` with BlazorServer's terminal look under `pa-` names, and
+  `BotLogBuffer`, which joins the manager's backlog to the stream (lines held while the backlog
+  is read; a line known by its time and text; a backlog read again after a reconnect fills in
+  what was missed, in time order).
+- The form's fields are `AssignmentDraft`: a choice not made yet, or `AssignmentRules`' reason as
+  you type, keeps Save off, and a save checks again. A route a run would refuse is listed but
+  cannot be chosen. Commands are sent once; 409 and 504 show the manager's reason.
+- `Utilities/SimAgent` (not in the .sln): `AddBotAgent` with a made-up runtime (a wait for the
+  click, then a walk in Durotar with vitals, activity, agenda, progress and a log line a second),
+  client probe, profiles and process. `--Sim:Client=som` is a Classic PC that refuses Forever runs.
+- Decided along the way:
+  - While the manager is down, a page keeps the last fleet it knew, dimmed, under the offline
+    notice, as the 3D view does, instead of replacing it: the first browser run showed a console
+    coming back with only the new manager's few log lines.
+  - The console keys its root by the bot, not each part: two sibling parts keyed alike threw on
+    the first re-render and ended the circuit.
+  - The agent logged a stop as "The manager asks: Stop null"; it now logs "Stop".
+  - Known issue 26 (ARIA states written as empty values, so the 3D view's toggles never looked
+    pressed) was found by these checks and fixed.
+- **Verified on Windows, 2026-10-05:**
+  - Tests: 19 in `ServiceTests/Fleet` - the feed against the in-memory manager and fake agents
+    (an agent appears; snapshots update it; log batches and ended runs are raised; a restarted
+    manager is read again; what streams during a read is applied after the list), both pollers,
+    the log join, the draft, and the pages rendered with the manager down, with a bot, and with a
+    bot known before the manager went down. `ControlCenterTests` moved onto the shared
+    `ControlCenterFactory`. `dotnet test -c Release`: 220 passed, 1 skipped (the minimap tiles).
+  - Browser: Playwright .NET with the installed Chrome (headless) against the Pathing Service,
+    the Bot Manager and the Control Center on side ports, with three simulated agents (two
+    Forever, one Classic); all 12 checks passed. The fleet lists them, with the live chip and the
+    status bar's count. A console shows the agent's backlog. Minutes 0 are refused with the
+    rules' reason, and a route saves. Start asks for the click in plain words, then the bot runs,
+    its zone shows by name and the log streams with no line twice. Start is off while a run is
+    under way, and Stop ends it into the history. The manager stopped under an open console
+    shows the notice over the dimmed console and comes back by itself, its run history kept and
+    every log line once. A Classic bot refuses a bad path, saves a profile, starts and stops. A
+    Forever route on the Classic bot is refused, and the history says why. An agent stopped and
+    started under the open fleet goes offline and comes back. Forget takes an offline bot off the
+    fleet, and it returns when its agent dials in. Start and Stop work from a fleet card.
+- Not in this step: a real run driven from the console (Windows checklist items 5 to 7, with the
+  user at the PC), and each bot's position as a marker in the 3D live view (the watch hub can
+  draw it; "The bot's live view" in the design doc's Phase 3 starting notes).
 
 ### Step 6 - data sync, logon task, restart loop - TO DO
 
@@ -306,8 +239,8 @@ draw it; "The bot's live view" in the design doc's Phase 3 starting notes).
 
 - `docs/service-architecture.md`: "Phase 3 as built" (replacing "Phase 3 starting notes"), the status
   line, the Windows checklist.
-- `docs/known-issues.md`: anything new from steps 5-6; item 24 once the runs page is deleted.
-- CLAUDE.md files: ControlCenter (fleet pages, manager client), PathingService (sync), root.
+- `docs/known-issues.md`: anything new from step 6; item 24 once the runs page is deleted.
+- CLAUDE.md files: PathingService (sync), root (ControlCenter's and Utilities' were done in step 5).
 - `docs/forever-routes.md`: running a route from the Control Center through an agent.
 - README's feature summary if it changes.
 - Merge to `main` and push.
@@ -342,9 +275,11 @@ and `frame_config.json` from BlazorServer.
    released), the window's process exits (it used to hang). A Forever client: refused with "a
    Classic run needs a Classic client".
 5. **The agent with a manager.** Start the manager (`dotnet run --project BotManager`, Swagger at
-   `http://localhost:5030/swagger`), then `HeadlessServer\run.bat --agent --manager http://localhost:5030`.
-   `GET /api/v1/bots` shows the bot with its client. Until step 5's pages exist, drive it from
-   Swagger or PowerShell:
+   `http://localhost:5030/swagger`), the Pathing Service and the Control Center, then
+   `HeadlessServer\run.bat --agent --manager http://localhost:5030`. The fleet page
+   (`http://localhost:5020/fleet`) shows the bot with its client; its console assigns
+   `crossroads_trip.json` for 5 minutes, starts and stops it, and shows the log and the run.
+   Without the Control Center, Swagger or PowerShell do the same:
    ```powershell
    $id = (Invoke-RestMethod http://localhost:5030/api/v1/bots)[0].agentId
    Invoke-RestMethod -Method Put -ContentType application/json -Body '{"kind":"Forever","forever":{"route":"crossroads_trip.json","minutes":5}}' "http://localhost:5030/api/v1/bots/$id/assignment"

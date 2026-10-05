@@ -1,0 +1,100 @@
+@* One bot's log in a terminal: the manager's backlog (its last 500 lines), then the fleet hub's
+   stream, each line once where they meet (BotLogBuffer). After the feed reconnects the backlog is
+   read again, which fills in what streamed while it was away. One instance per bot: the console
+   keys it by the bot's id. *@
+
+@inherits ControlCenterComponent
+
+@inject FleetFeed feed
+@inject IBotManagerClient manager
+
+<Terminal Title="@($"log: {Name}")" StickToBottom="true" Class="pa-console-log">
+    <Tools>
+        <span>@lines.Length lines</span>
+    </Tools>
+    <ChildContent>
+        @if (error is not null)
+        {
+            <div class="pa-line pa-line--err"><span class="pa-line-msg">@error</span></div>
+        }
+        @if (lines.Length == 0)
+        {
+            <div class="pa-terminal-empty">Nothing logged yet: an agent's lines from Information up show here as it logs them.</div>
+        }
+        @foreach (BotLogLine line in lines)
+        {
+            (string tag, string css) = BotFormat.Level(line.Level);
+            <div class="pa-line @css" @key="line">
+                <span class="pa-line-time">@BotFormat.Time(line.At)</span>
+                <span class="pa-line-level">@tag</span>
+                @if (line.Source.Length > 0)
+                {
+                    <span class="pa-line-source">@line.Source</span>
+                }
+                <span class="pa-line-msg">@line.Message</span>
+            </div>
+        }
+    </ChildContent>
+</Terminal>
+
+@code {
+    [Parameter, EditorRequired] public string AgentId { get; set; } = string.Empty;
+
+    /// <summary>The bot's name, for the title bar.</summary>
+    [Parameter] public string Name { get; set; } = string.Empty;
+
+    private readonly BotLogBuffer buffer = new();
+    private BotLogLine[] lines = [];
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Streamed lines are held from before the backlog is asked for, so none falls between them.
+        buffer.BeginBacklog();
+        Subscribe(() => feed.Log += OnLog, () => feed.Log -= OnLog);
+        Subscribe(() => feed.Resynced += OnResynced, () => feed.Resynced -= OnResynced);
+        await ReadBacklogAsync();
+    }
+
+    // On the feed's thread: the buffer takes the lines under its own lock.
+    private void OnLog(string agentId, BotLogLine[] streamed)
+    {
+        if (agentId == AgentId)
+        {
+            buffer.Add(streamed);
+            _ = InvokeAsync(Show);
+        }
+    }
+
+    private void OnResynced()
+    {
+        _ = InvokeAsync(ReadBacklogAsync);
+    }
+
+    private async Task ReadBacklogAsync()
+    {
+        buffer.BeginBacklog();
+        BotLogLine[] backlog = [];
+        try
+        {
+            ServiceResult<BotLogLine[]> read = await manager.GetLogAsync(AgentId, Token);
+            backlog = read.Value ?? [];
+            error = read.Ok ? null : $"The log could not be read: {read.Error}";
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            buffer.Join(backlog);
+        }
+
+        Show();
+    }
+
+    private void Show()
+    {
+        lines = buffer.Lines;
+        StateHasChanged();
+    }
+}

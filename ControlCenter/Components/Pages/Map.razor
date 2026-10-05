@@ -11,7 +11,7 @@
 
 @if (!initialized && (world is null || !status.Online))
 {
-    <OfflineNotice Reason="@status.Error" />
+    <OfflineNotice Service="@status.Service" Reason="@status.Error" />
 }
 else if (!world!.World.HasMap)
 {

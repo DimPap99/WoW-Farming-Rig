@@ -1102,6 +1102,12 @@ kbd {
     overflow: hidden;
 }
 
+/* The last state known while its service is down, under the offline notice. */
+.pa-workspace.is-stale {
+    opacity: 0.45;
+    filter: grayscale(0.4);
+}
+
 .pa-workspace-header {
     display: flex;
     flex-wrap: wrap;
@@ -1147,6 +1153,12 @@ kbd {
 .pa-dot--busy {
     background: var(--pa-accent);
     animation: pa-pulse 0.9s ease-in-out infinite;
+}
+
+/* A bot that plays: green, with a ring that keeps going out. */
+.pa-dot--live {
+    background: var(--pa-ok);
+    animation: pa-ping 1.6s ease-out infinite;
 }
 
 .pa-code {
@@ -1263,10 +1275,466 @@ kbd {
     overflow-wrap: anywhere;
 }
 
+/* --- fleet and bot console ------------------------------------------------------- */
+
+.pa-card-title {
+    margin: 0 0 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--pa-text-muted);
+}
+
+.pa-empty {
+    max-width: 640px;
+}
+
+.pa-empty p {
+    margin: 0 0 8px;
+}
+
+.pa-fleet {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    align-content: start;
+    gap: var(--pa-gap);
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.pa-bot {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: visible;
+}
+
+.pa-bot.is-offline {
+    border-style: dashed;
+}
+
+.pa-bot-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.pa-bot-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--pa-text);
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pa-bot-name:hover {
+    color: var(--pa-accent);
+    text-decoration: none;
+}
+
+.is-offline .pa-bot-name {
+    color: var(--pa-text-muted);
+}
+
+.pa-bot-meta {
+    margin: -6px 0 0;
+    color: var(--pa-text-faint);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.pa-bot-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid var(--pa-border);
+}
+
+.pa-bot-foot .pa-bot-commands {
+    flex: 1;
+}
+
+.pa-bot-commands {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.pa-bot-commands .pa-result {
+    flex-basis: 100%;
+}
+
+.pa-chip--small {
+    align-self: flex-start;
+    height: 22px;
+    padding: 0 9px;
+    font-size: 11.5px;
+}
+
+.pa-chip--link {
+    text-decoration: none;
+}
+
+.pa-chip--link:hover {
+    border-color: var(--pa-border-strong);
+    color: var(--pa-text);
+    text-decoration: none;
+}
+
+/* What a person must know first: the run waits for a click, or why the last one ended. */
+.pa-notice {
+    display: flex;
+    gap: 8px;
+    margin: 0;
+    padding: 8px 10px;
+    border-left: 3px solid var(--pa-warn);
+    border-radius: var(--pa-radius-sm);
+    background: rgba(216, 160, 40, 0.1);
+    color: var(--pa-warn);
+    font-size: 13px;
+}
+
+.pa-notice .oi {
+    flex: none;
+    margin-top: 3px;
+    font-size: 11px;
+}
+
+.pa-notice--info {
+    border-left-color: var(--pa-info);
+    background: rgba(88, 166, 255, 0.08);
+    color: var(--pa-text-muted);
+}
+
+.pa-vitals {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) 3.5em;
+    align-items: center;
+    gap: 5px 10px;
+}
+
+.pa-vital-label {
+    color: var(--pa-text-faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.pa-vital-value {
+    color: var(--pa-text-muted);
+    font: 11.5px var(--pa-mono);
+    text-align: right;
+}
+
+.pa-bar {
+    height: 6px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--pa-surface-3);
+}
+
+.pa-bar > span {
+    display: block;
+    height: 100%;
+    transition: width 0.4s ease;
+}
+
+.pa-bar--health > span {
+    background: var(--pa-ok);
+}
+
+.pa-bar--power > span {
+    background: var(--pa-info);
+}
+
+.pa-bar--target > span {
+    background: var(--pa-error);
+}
+
+.pa-facts {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 4px 12px;
+    margin: 0;
+    font-size: 13px;
+}
+
+.pa-facts dt {
+    color: var(--pa-text-faint);
+    font-weight: normal;
+}
+
+.pa-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.pa-segmented {
+    display: inline-flex;
+    align-self: flex-start;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--pa-border);
+    border-radius: 9px;
+    background: var(--pa-surface-2);
+}
+
+/* The console: its cards on the left, the log filling the rest. */
+.pa-console {
+    display: grid;
+    grid-template-columns: 380px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: var(--pa-gap);
+    flex: 1;
+    min-height: 0;
+}
+
+.pa-console-side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pa-gap);
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.pa-console-card {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 10px;
+    overflow: visible;
+}
+
+.pa-console-card .pa-card-title {
+    margin: 0;
+}
+
+.pa-runs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.pa-run {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border: 1px solid var(--pa-border);
+    border-radius: var(--pa-radius-sm);
+    background: var(--pa-surface-2);
+    font-size: 12.5px;
+}
+
+.pa-run-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.pa-run-outcome {
+    flex: none;
+    font: 700 11px var(--pa-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.pa-run-summary,
+.pa-run-message {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.pa-run-message {
+    color: var(--pa-text-muted);
+}
+
+/* --- terminal: log-like output, with the look of BlazorServer's; dark in any theme ---- */
+
+.pa-terminal {
+    --pa-term-bg: #0d1117;
+    --pa-term-bar: #161b22;
+    --pa-term-border: #30363d;
+    --pa-term-text: #c9d1d9;
+    --pa-term-dim: #7d8590;
+    --pa-term-green: #3fb950;
+    --pa-term-yellow: #d29922;
+    --pa-term-red: #f85149;
+    --pa-term-blue: #58a6ff;
+    --pa-term-cyan: #39c5cf;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--pa-term-bg);
+    border: 1px solid var(--pa-term-border);
+    border-radius: var(--pa-radius);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.pa-terminal-bar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 12px;
+    background: var(--pa-term-bar);
+    border-bottom: 1px solid var(--pa-term-border);
+    color: var(--pa-term-dim);
+    font: 12px var(--pa-mono);
+}
+
+.pa-terminal-lights {
+    display: inline-flex;
+    flex: none;
+    gap: 6px;
+}
+
+.pa-terminal-lights i {
+    display: block;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: #ff5f56;
+}
+
+.pa-terminal-lights i:nth-child(2) {
+    background: #ffbd2e;
+}
+
+.pa-terminal-lights i:nth-child(3) {
+    background: #27c93f;
+}
+
+.pa-terminal-title {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--pa-term-text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pa-terminal-tools {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+}
+
+.pa-terminal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 12px;
+    color: var(--pa-term-text);
+    font: 12.5px/1.5 var(--pa-mono);
+    scrollbar-color: var(--pa-term-border) transparent;
+}
+
+/* Written oldest first: the reversed column keeps the newest line in view. */
+.pa-terminal-tail {
+    display: flex;
+    flex-direction: column-reverse;
+}
+
+.pa-terminal-empty {
+    color: var(--pa-term-dim);
+    font-style: italic;
+}
+
+/* A row of parts - time, level, source, message - spaced by the gap: a flex row also
+   ignores the markup's whitespace between them. The message wraps in its own column. */
+.pa-line {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 10px;
+}
+
+.pa-line-msg {
+    flex: 1 1 0;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.pa-line-time {
+    color: var(--pa-term-dim);
+}
+
+.pa-line-level {
+    font-weight: 600;
+}
+
+.pa-line-source {
+    color: var(--pa-term-cyan);
+}
+
+/* A level tag, and from warnings up the message in its colour. */
+.pa-line--vrb .pa-line-level,
+.pa-line--vrb .pa-line-msg {
+    color: var(--pa-term-dim);
+}
+
+.pa-line--dbg .pa-line-level {
+    color: var(--pa-term-blue);
+}
+
+.pa-line--inf .pa-line-level {
+    color: var(--pa-term-green);
+}
+
+.pa-line--wrn .pa-line-level,
+.pa-line--wrn .pa-line-msg {
+    color: var(--pa-term-yellow);
+}
+
+.pa-line--err .pa-line-level,
+.pa-line--err .pa-line-msg,
+.pa-line--ftl .pa-line-msg {
+    color: var(--pa-term-red);
+}
+
+.pa-line--ftl .pa-line-level {
+    padding: 0 4px;
+    border-radius: 3px;
+    background: var(--pa-term-red);
+    color: #fff;
+}
+
 @media (max-width: 1000px) {
     .pa-workspace-body,
     .pa-route-columns {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .pa-console {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: none;
+        overflow-y: auto;
+    }
+
+    .pa-console-side {
+        overflow: visible;
+    }
+
+    .pa-console .pa-terminal {
+        height: 60vh;
     }
 }
 
@@ -1334,6 +1802,20 @@ kbd {
 @keyframes pa-pulse {
     50% {
         opacity: 0.35;
+    }
+}
+
+@keyframes pa-ping {
+    0% {
+        box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.6);
+    }
+
+    70% {
+        box-shadow: 0 0 0 6px rgba(63, 185, 80, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(63, 185, 80, 0);
     }
 }
 

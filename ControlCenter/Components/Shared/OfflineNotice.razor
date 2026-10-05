@@ -1,24 +1,26 @@
-@* What a page shows instead of its tools while the Pathing Service is down. It recovers by
-   itself: the status poller sees the service come back and the page redraws. *@
-
-@inject PathingServiceOptions pathing
+@* What a page shows instead of its tools while a service it needs is down. It recovers by itself:
+   the service's status poller sees it come back and the page redraws. *@
 
 <div class="pa-offline" role="status">
     <span class="oi oi-warning pa-offline-icon" aria-hidden="true"></span>
-    <h2 class="pa-offline-title">The Pathing Service is offline</h2>
+    <h2 class="pa-offline-title">The @Service.Name is offline</h2>
     <p>
-        This page needs the Pathing Service at <code>@pathing.Url</code>, and it does not answer@(Reason is null ? "." : ":")
+        This page needs the @Service.Name at <code>@Service.Url</code>, and it does not answer@(Reason is null ? "." : ":")
         @if (Reason is not null)
         {
             <span class="pa-faint">&#32;@Reason</span>
         }
     </p>
     <p class="pa-faint">
-        Start it with <code>PathingService/run.sh</code> (add <code>--exp=forever</code> for WoW: Forever);
-        this page comes back by itself. Another address goes in <code>PathingService:Url</code>.
+        Start it with <code>@Service.Start</code>@(Service.StartNote is null ? null : $" ({Service.StartNote})");
+        this page comes back by itself. Another address goes in <code>@Service.UrlKey</code>.
     </p>
 </div>
 
 @code {
+    /// <summary>The service the page needs: its name, its address and how to start it.</summary>
+    [Parameter, EditorRequired] public ServiceDescription Service { get; set; } = default!;
+
+    /// <summary>Why it does not answer, as its status poller last saw it.</summary>
     [Parameter] public string? Reason { get; set; }
 }

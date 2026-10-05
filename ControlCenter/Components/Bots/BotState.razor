@@ -1,0 +1,17 @@
+@* A bot's state as a chip: what it does now, or since when it is offline. *@
+
+<span class="pa-chip pa-bot-state" title="@BotFormat.Seen(Bot)">
+    <span class="pa-dot @state.Dot" aria-hidden="true"></span>
+    @(Bot.Online ? state.Text : BotFormat.Seen(Bot))
+</span>
+
+@code {
+    [Parameter, EditorRequired] public BotInfo Bot { get; set; } = default!;
+
+    private (string Text, string Dot) state;
+
+    protected override void OnParametersSet()
+    {
+        state = BotFormat.State(Bot);
+    }
+}

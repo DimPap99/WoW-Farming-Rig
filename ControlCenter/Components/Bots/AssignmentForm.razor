@@ -1,0 +1,217 @@
+@* What a bot runs when it is told to start: a Forever route from the library and its time bound, or
+   one of the bot's Classic profiles with an optional path from the path library. The manager's own
+   rules (AssignmentRules) are checked as you type, and again before a save; a route a run would
+   refuse is listed but cannot be chosen. *@
+
+@inherits ControlCenterComponent
+
+@inject IBotManagerClient manager
+@inject IPathingClient pathing
+@inject PathingStatus pathingStatus
+
+<div class="pa-form">
+    <div class="pa-segmented" role="group" aria-label="Kind of run">
+        <button class="pa-toggle" type="button" aria-pressed="@Aria.State(draft.Kind == BotRuntimeKind.Forever)"
+                @onclick="() => draft.Kind = BotRuntimeKind.Forever">WoW: Forever</button>
+        <button class="pa-toggle" type="button" aria-pressed="@Aria.State(draft.Kind == BotRuntimeKind.Classic)"
+                @onclick="() => draft.Kind = BotRuntimeKind.Classic">Classic</button>
+    </div>
+
+    @if (draft.Kind == BotRuntimeKind.Forever)
+    {
+        <div class="pa-field">
+            <label class="pa-label" for="pa-assign-route">Route</label>
+            <select class="pa-select" id="pa-assign-route" @bind="draft.Route">
+                <option value="">Choose a route</option>
+                @foreach (ForeverRouteInfo route in routes)
+                {
+                    <option value="@route.Name" disabled="@(route.Problem is not null)" title="@(route.Problem ?? string.Join("\n", route.Steps))">
+                        @route.Title (@route.Name)@(route.Problem is null ? null : ": refused")
+                    </option>
+                }
+                @if (draft.Route.Length > 0 && !routes.Any(route => route.Name == draft.Route))
+                {
+                    <option value="@draft.Route">@draft.Route (not in the library)</option>
+                }
+            </select>
+            @if (routesError is not null)
+            {
+                <span class="pa-faint">@routesError</span>
+            }
+        </div>
+        <div class="pa-field">
+            <label class="pa-label" for="pa-assign-minutes">Time bound (minutes, 1 to @BotManagerApi.MaxMinutes)</label>
+            <input class="pa-input" id="pa-assign-minutes" type="number" min="1" max="@BotManagerApi.MaxMinutes"
+                   @bind="draft.Minutes" @bind:event="oninput" />
+        </div>
+    }
+    else
+    {
+        <div class="pa-field">
+            <label class="pa-label" for="pa-assign-profile">Class profile</label>
+            <select class="pa-select" id="pa-assign-profile" @bind="draft.Profile">
+                <option value="">@(Bot.ClassProfiles.Length == 0 ? "The bot reported no class profiles" : "Choose a profile")</option>
+                @foreach (string profile in Bot.ClassProfiles)
+                {
+                    <option value="@profile">@profile</option>
+                }
+                @if (draft.Profile.Length > 0 && !Bot.ClassProfiles.Contains(draft.Profile))
+                {
+                    <option value="@draft.Profile">@draft.Profile (not on the bot's PC)</option>
+                }
+            </select>
+        </div>
+        <div class="pa-field">
+            <label class="pa-label" for="pa-assign-path">Path (optional: replaces the profile's first)</label>
+            <input class="pa-input" id="pa-assign-path" list="pa-assign-paths" autocomplete="off" placeholder="The profile's own path"
+                   @bind="draft.Path" @bind:event="oninput" />
+            <datalist id="pa-assign-paths">
+                @foreach (RecordedPathInfo path in paths)
+                {
+                    <option value="@path.Name"></option>
+                }
+            </datalist>
+        </div>
+    }
+
+    @if (draft.Missing is string missing)
+    {
+        <ResultLine Text="@missing" Kind="ResultKind.Info" />
+    }
+    else if (draft.Refusal is string refusal)
+    {
+        <ResultLine Text="@($"Not valid: {refusal}")" Kind="ResultKind.Error" />
+    }
+
+    <div class="pa-actions">
+        <BusyButton Class="pa-btn--primary pa-grow" Icon="check" Busy="@busy" Disabled="@(!draft.Valid || !Changed)"
+                    Title="@(Changed ? "Keep this as what the bot runs when it starts" : "This is the bot's assignment")" OnClick="SaveAsync">
+            Save
+        </BusyButton>
+        <button class="pa-btn" type="button" disabled="@(busy || Bot.Assignment is null)" title="The bot keeps no assignment" @onclick="ClearAsync">
+            Clear
+        </button>
+    </div>
+
+    <ResultLine Text="@result" Kind="@resultKind" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public BotInfo Bot { get; set; } = default!;
+
+    private AssignmentDraft draft = new();
+    // The assignment the draft was made from: a change to it from elsewhere replaces an unedited draft.
+    private BotAssignment? basis;
+    private bool started;
+    private ForeverRouteInfo[] routes = [];
+    private string? routesError;
+    private RecordedPathInfo[] paths = [];
+    private bool busy;
+    private string? result;
+    private ResultKind resultKind;
+
+    private bool Changed => draft.Build() != Bot.Assignment;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Subscribe(() => pathingStatus.Reconnected += Reload, () => pathingStatus.Reconnected -= Reload);
+        await LoadLibrariesAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!started)
+        {
+            draft = AssignmentDraft.From(Bot.Assignment, Bot.Game);
+            basis = Bot.Assignment;
+            started = true;
+        }
+        else if (Bot.Assignment != basis)
+        {
+            if (draft == AssignmentDraft.From(basis, Bot.Game))
+            {
+                draft = AssignmentDraft.From(Bot.Assignment, Bot.Game);
+            }
+
+            basis = Bot.Assignment;
+        }
+    }
+
+    private async Task LoadLibrariesAsync()
+    {
+        if (!pathingStatus.Online)
+        {
+            routesError = $"The route library needs the Pathing Service, which is offline: {pathingStatus.Error}";
+            return;
+        }
+
+        try
+        {
+            ServiceResult<ForeverRouteInfo[]> listed = await pathing.ListForeverRoutesAsync(Token);
+            routes = listed.Value ?? [];
+            routesError = listed.Ok ? null : $"The route library is not available: {listed.Error}";
+
+            ServiceResult<RecordedPathInfo[]> recorded = await pathing.ListPathsAsync(token: Token);
+            paths = recorded.Value ?? [];
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void Reload()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadLibrariesAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task SaveAsync()
+    {
+        BotAssignment assignment = draft.Build();
+        if ((draft.Missing ?? AssignmentRules.Problem(assignment)) is string problem)
+        {
+            Show($"Not saved: {problem}", ResultKind.Error);
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            ServiceResult saved = await manager.SetAssignmentAsync(Bot.AgentId, assignment, Token);
+            Show(saved.Ok ? $"Saved: {assignment}" : $"Not saved: {saved.Error}", saved.Ok ? ResultKind.Ok : ResultKind.Error);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task ClearAsync()
+    {
+        busy = true;
+        try
+        {
+            ServiceResult cleared = await manager.ClearAssignmentAsync(Bot.AgentId, Token);
+            Show(cleared.Ok ? "Cleared: the bot has no assignment" : cleared.Error, cleared.Ok ? ResultKind.Ok : ResultKind.Error);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void Show(string? text, ResultKind kind)
+    {
+        result = text;
+        resultKind = kind;
+    }
+}

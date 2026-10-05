@@ -1,0 +1,78 @@
+@* Start and Stop for one bot. A command is sent once and never queued or retried: an offline bot
+   (409), one that refuses (409) and one whose agent does not answer in time (504) are shown with
+   the manager's reason. Stop is never disabled while the bot is online: it releases input. *@
+
+@inherits ControlCenterComponent
+
+@inject IBotManagerClient manager
+
+<div class="pa-bot-commands">
+    <BusyButton Class="pa-btn--primary" Icon="media-play" Busy="@(sending == BotCommandKind.Start)" Disabled="@(StartBlocked is not null || sending is not null)"
+                Title="@(StartBlocked ?? $"Start {Bot.Assignment}")" OnClick="StartAsync">
+        Start
+    </BusyButton>
+    <BusyButton Icon="media-stop" Busy="@(sending == BotCommandKind.Stop)" Disabled="@(!Bot.Online || sending is not null)"
+                Title="@(Bot.Online ? "Stop the run: it releases the keys and the mouse first, then ends" : "The bot is offline")" OnClick="StopAsync">
+        Stop
+    </BusyButton>
+    <ResultLine Text="@result" Kind="@resultKind" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public BotInfo Bot { get; set; } = default!;
+
+    private BotCommandKind? sending;
+    private string? result;
+    private ResultKind resultKind;
+
+    // Why Start is off: the manager would refuse it anyway, and a run already under way is stopped first.
+    private string? StartBlocked => Bot switch
+    {
+        { Online: false } => "The bot is offline",
+        { Assignment: null } => "The bot has no assignment: give it one first",
+        { Run: { } run } => $"A run is under way: {run.Summary}",
+        _ => null,
+    };
+
+    private Task StartAsync()
+    {
+        return SendAsync(BotCommandKind.Start);
+    }
+
+    private Task StopAsync()
+    {
+        return SendAsync(BotCommandKind.Stop);
+    }
+
+    private async Task SendAsync(BotCommandKind kind)
+    {
+        sending = kind;
+        result = null;
+        try
+        {
+            ServiceResult<CommandAck> answer = kind == BotCommandKind.Start
+                ? await manager.StartAsync(Bot.AgentId, Token)
+                : await manager.StopAsync(Bot.AgentId, Token);
+            (result, resultKind) = Describe(kind, answer);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            sending = null;
+        }
+    }
+
+    private static (string Text, ResultKind Kind) Describe(BotCommandKind kind, ServiceResult<CommandAck> answer)
+    {
+        if (!answer.Ok)
+        {
+            return (answer.Error ?? "no answer", answer.Status == 504 ? ResultKind.Warn : ResultKind.Error);
+        }
+
+        return kind == BotCommandKind.Start
+            ? ($"Started: run {answer.Value.RunId}", ResultKind.Ok)
+            : (answer.Value.Reason ?? "Stopping: the run releases the keys first, then ends", ResultKind.Info);
+    }
+}

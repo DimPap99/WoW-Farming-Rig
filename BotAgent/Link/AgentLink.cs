@@ -218,7 +218,15 @@ public sealed partial class AgentLink(AgentIdentity identity, AgentOptions optio
 
     private CommandAck Obey(BotCommand command)
     {
-        LogCommand(logger, command.Kind, command.Assignment);
+        if (command.Assignment is { } assignment)
+        {
+            LogCommand(logger, command.Kind, assignment);
+        }
+        else
+        {
+            LogBareCommand(logger, command.Kind);
+        }
+
         return command.Kind switch
         {
             BotCommandKind.Start => host.Start(command.Assignment),
@@ -310,7 +318,11 @@ public sealed partial class AgentLink(AgentIdentity identity, AgentOptions optio
     static partial void LogRefused(ILogger logger, Uri url, string reason);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The manager asks: {Kind} {Assignment}")]
-    static partial void LogCommand(ILogger logger, BotCommandKind kind, BotAssignment? assignment);
+    static partial void LogCommand(ILogger logger, BotCommandKind kind, BotAssignment assignment);
+
+    // A stop carries no assignment: the console showed "Stop null".
+    [LoggerMessage(Level = LogLevel.Information, Message = "The manager asks: {Kind}")]
+    static partial void LogBareCommand(ILogger logger, BotCommandKind kind);
 
     #endregion
 }

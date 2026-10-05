@@ -1,0 +1,23 @@
+@* One bot on the fleet page: who and where it is, what it does now, Start and Stop, and the way
+   to its console. *@
+
+<article class="pa-card pa-bot @(Bot.Online ? null : "is-offline")" aria-label="@Bot.Name">
+    <header class="pa-bot-head">
+        <a class="pa-bot-name" href="@BotConsole.Href(Bot.AgentId)" title="Open @Bot.Name's console">@Bot.Name</a>
+        <BotState Bot="Bot" />
+    </header>
+    <p class="pa-bot-meta">@Bot.Machine · @BotFormat.Client(Bot.Game)</p>
+
+    <BotLive Bot="Bot" />
+
+    <footer class="pa-bot-foot">
+        <BotCommands Bot="Bot" />
+        <a class="pa-btn pa-btn--ghost" href="@BotConsole.Href(Bot.AgentId)">
+            <span class="oi oi-terminal" aria-hidden="true"></span> Console
+        </a>
+    </footer>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public BotInfo Bot { get; set; } = default!;
+}
