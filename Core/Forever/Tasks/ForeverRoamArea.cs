@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 
 using SharedLib;
+using SharedLib.Forever;
 
 using System;
 using System.Numerics;

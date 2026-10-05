@@ -127,6 +127,15 @@ internal sealed class TempDataRoot : IDisposable
         return new DataConfig { Root = Root, Exp = TestData.Client };
     }
 
+    /// <summary>Copies the repository's <c>Json/<paramref name="relative"/></c> to the same place here; returns the copy.</summary>
+    public string CopyRepoFile(string relative)
+    {
+        string target = Path.Combine(Root, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.Copy(Path.Combine(TestData.RepoJson, relative), target, overwrite: true);
+        return target;
+    }
+
     public void Dispose()
     {
         try

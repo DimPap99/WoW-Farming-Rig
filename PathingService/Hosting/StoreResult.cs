@@ -36,6 +36,11 @@ public readonly record struct StoreResult(StoreOutcome Outcome, string? Error = 
     {
         return new(StoreOutcome.Conflict, error);
     }
+
+    public static StoreResult Unreadable(string error)
+    {
+        return new(StoreOutcome.Unreadable, error);
+    }
 }
 
 /// <summary>The outcome of a store operation that returns a <typeparamref name="T"/>.</summary>

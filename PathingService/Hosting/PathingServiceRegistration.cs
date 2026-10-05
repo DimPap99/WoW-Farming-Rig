@@ -9,6 +9,7 @@ using Microsoft.OpenApi;
 
 using PathingService.Catalog;
 using PathingService.CostZones;
+using PathingService.Forever;
 using PathingService.Navmesh;
 using PathingService.Paths;
 using PathingService.Routes;
@@ -52,6 +53,7 @@ public static class PathingServiceRegistration
 
         services.AddSingleton<RouteHandler>();
         services.AddSingleton<RecordedPathStore>();
+        services.AddSingleton<ForeverRouteLibrary>();
         services.AddSingleton<CostZoneStore>();
         services.AddSingleton<CoverageCache>();
         services.AddSingleton<WorldCatalog>();
@@ -87,6 +89,7 @@ public static class PathingServiceRegistration
         app.MapStatusEndpoints();
         app.MapRouteEndpoints();
         app.MapPathEndpoints();
+        app.MapForeverRouteEndpoints();
         app.MapCostZoneEndpoints();
         app.MapWorldEndpoints();
         app.MapCatalogEndpoints();

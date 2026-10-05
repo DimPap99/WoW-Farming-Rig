@@ -184,8 +184,8 @@ Forever code:
   bounds, release hooks and allowances both Forever goals run on),
   `ForeverSelector` and `ForeverFacts` (which activity runs on a frame),
   `Activities/` (Engage, Threat, Loot, Rest and the agenda's Task),
-  `Tasks/` (`ForeverAgenda`, the `ForeverTasks` API, `ForeverUntil` and the
-  task runners), `ForeverLookAround`, `ForeverCaster` (one
+  `Tasks/` (`ForeverAgenda`, `ForeverUntilChecks` and the task runners),
+  `ForeverLookAround`, `ForeverCaster` (one
   checked keypress per cast),
   `ForeverRotation` (the class profile's Pull, Combat and Adhoc lists),
   `ForeverCorpses` (the bodies of a fight and where they fell), `ForeverLoot`
@@ -201,6 +201,10 @@ Forever code:
   `ForeverBinding(s)` (the bindings checked and pressed), `ForeverNavmesh`,
   `ForeverVerifiedSetup` (the verified profiles, map and classes) and
   `ForeverProfileRules` (what a Forever profile may use).
+- `SharedLib/Forever/` - the route model, data only: `ForeverRouteFile` (route
+  files), the task records and the `ForeverTasks` API, `ForeverUntil`,
+  `ForeverMapPoint` and `ForeverArea`. The Pathing Service reads it to check and
+  serve route files (`PathingService/Forever`), and the Control Center edits them.
 - `Core/Goals/ForeverAutonomousGoal.cs`, `ForeverTrialGoal.cs`,
   `Core/GoalsComponent/ForeverCastGate.cs`, `Core/GOAP/ForeverGoapWorldState.cs`,
   `Core/ForeverDiagnosticController.cs`, `Core/Session/NoGrindSessionHandler.cs`.

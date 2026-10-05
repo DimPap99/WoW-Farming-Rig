@@ -20,6 +20,8 @@ StartupConfig/       DI options bound from configuration
   StartupConfigPathing.cs    "Pathing"         - Engine, RemoteV1/V3 host+port
   StartupClientVersion.cs    which client is running
 Data/                ContinentDB, WorldMapArea(DB), SubZoneArea, Creature, Item, Spell, NpcFlags
+Forever/             WoW: Forever's route model, data only: route files, task records, ForeverUntil,
+                     map points and areas (the bot runs them; the Pathing Service checks and serves them)
 AddonDataProviderType/ClientVersion.cs   the enum everything version-switches on
 NpcFinder/           NPC nameplate detection (colour matching, line segments)
 ImageProvider/, Screen/   capture interfaces only

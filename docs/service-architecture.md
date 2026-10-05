@@ -144,6 +144,9 @@ bot uses, either on the same PC or with changes committed to the repository.
 | `GET /api/v1/health` | | baked tiles per continent and resident lanes |
 | `GET /api/v1/paths?filter=` | | `RecordedPathInfo[]` |
 | `GET/PUT/DELETE /api/v1/paths/{name}` | `Point3[]` on PUT | `RecordedPath` / 204 / 404 |
+| `GET /api/v1/forever/routes` | | `ForeverRouteInfo[]`, each checked as a run loads it |
+| `GET/PUT/DELETE /api/v1/forever/routes/{name}` | `ForeverRouteText` on PUT | `ForeverRouteDocument` (text and check) / 204, or 400 with the step / 404 |
+| `POST /api/v1/forever/routes/check` | `ForeverRouteDraft` | `ForeverRouteInfo`, nothing saved |
 | `GET /api/v1/area?mapId&x&y` | | `AreaAtPoint(AreaId, Z)` |
 | `GET /api/v1/costzones/{continent}` | | `CostZoneSet` (roads and danger zones by uiMap) |
 | `PUT /api/v1/costzones/{continent}/roads/{uiMapId}` | `RoadZones` | 204, or 400 with the reason |

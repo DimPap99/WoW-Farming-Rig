@@ -1,12 +1,10 @@
-using SharedLib;
-
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
 
-namespace Core.Forever;
+namespace SharedLib.Forever;
 
 /// <summary>
 /// An area of one zone map, in the coordinates a player reads (0 to 100): a

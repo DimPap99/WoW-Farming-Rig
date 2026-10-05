@@ -5,6 +5,7 @@ using PathingService.Hosting;
 using PathingService.Paths;
 
 using SharedLib.Converters;
+using SharedLib.Forever;
 
 using System.IO;
 using System.Linq;
@@ -68,7 +69,7 @@ public sealed class RecordedPathStoreTests
     public void Forever_route_files_are_not_recorded_paths()
     {
         using TempDataRoot data = new();
-        string forever = Path.Combine(data.Config().Path, PathName.ForeverRouteFolder);
+        string forever = Path.Combine(data.Config().Path, ForeverRouteFile.Folder);
         Directory.CreateDirectory(forever);
         File.WriteAllText(Path.Combine(forever, "trip.json"), "{}");
         RecordedPathStore store = new(data.Config());

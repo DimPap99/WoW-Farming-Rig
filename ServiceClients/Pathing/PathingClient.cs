@@ -83,6 +83,31 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
         return GetAsync<AreaAtPoint>(uri, token);
     }
 
+    public Task<ServiceResult<ForeverRouteInfo[]>> ListForeverRoutesAsync(CancellationToken token = default)
+    {
+        return GetAsync<ForeverRouteInfo[]>(PathingApi.ForeverRoutes, token);
+    }
+
+    public Task<ServiceResult<ForeverRouteDocument>> GetForeverRouteAsync(string name, CancellationToken token = default)
+    {
+        return GetAsync<ForeverRouteDocument>(ForeverRouteUri(name), token);
+    }
+
+    public Task<ServiceResult> SaveForeverRouteAsync(string name, string text, CancellationToken token = default)
+    {
+        return SendAsync(HttpMethod.Put, ForeverRouteUri(name), new ForeverRouteText(text), token);
+    }
+
+    public Task<ServiceResult> DeleteForeverRouteAsync(string name, CancellationToken token = default)
+    {
+        return SendAsync(HttpMethod.Delete, ForeverRouteUri(name), null, token);
+    }
+
+    public Task<ServiceResult<ForeverRouteInfo>> CheckForeverRouteAsync(ForeverRouteDraft draft, CancellationToken token = default)
+    {
+        return SendAsync<ForeverRouteInfo>(HttpMethod.Post, PathingApi.ForeverRouteCheck, draft, token);
+    }
+
     public Task<ServiceResult<CostZoneSet>> GetCostZonesAsync(string continent, CancellationToken token = default)
     {
         return GetAsync<CostZoneSet>($"{PathingApi.CostZones}/{Uri.EscapeDataString(continent)}", token);
@@ -293,6 +318,11 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
         }
 
         return $"{PathingApi.Paths}/{string.Join('/', segments)}";
+    }
+
+    private static string ForeverRouteUri(string name)
+    {
+        return $"{PathingApi.ForeverRoutes}/{Uri.EscapeDataString(name)}";
     }
 
     private static string NavmeshUri(string continent)

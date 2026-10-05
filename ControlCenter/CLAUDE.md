@@ -31,7 +31,8 @@ Components/Layout/                 MainLayout (rail), NavMenu, StatusBar
 Components/Shared/                 ControlCenterComponent (base), Viewport3D, SearchPanel,
                                    Panel, BusyButton, ResultLine, OfflineNotice, ...
 Components/Pages/                  LiveView (/), Map (/Leaflet/...), Search, PathLibrary (/paths),
-                                   PathEditorPage (/paths/edit/...), NpcRoutes, ApiReference
+                                   PathEditorPage (/paths/edit/...), NpcRoutes, ForeverRoutes
+                                   (/forever-routes), ApiReference
 wwwroot/css/site.css               the whole theme; pa- prefixed so the map keeps Bootstrap
 wwwroot/js/pathing-scene.js        the Babylon 3D view; Babylon itself is fetched on demand
 wwwroot/js/pathing-ui.js           script loader, toast, remembered rail state
@@ -69,6 +70,10 @@ the view is left, so the service streams nothing to a page that has no scene.
 **Terrain needs the game files where the service runs.** The toggle is disabled with the reason
 when `PathingCapabilities.GameFiles` is false. It asks for the 25 tiles nearest the camera; the
 meshes come back to this viewer only, under the four terrain layers.
+
+**Bind text a button depends on with `@bind:event="oninput"`.** A plain `@bind` updates on
+`change`, which fires only when the box loses focus, and clicking a disabled button does not take
+focus away: the Forever routes page's Save and New stayed disabled after typing until it did.
 
 **Format numbers for CSS and SVG with the invariant culture.** A decimal comma makes
 `width: 82,5%` or an SVG coordinate invalid, and it is silently ignored.

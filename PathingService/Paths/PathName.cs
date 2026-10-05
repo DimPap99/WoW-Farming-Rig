@@ -1,3 +1,5 @@
+using SharedLib.Forever;
+
 using System;
 using System.Buffers;
 using System.IO;
@@ -16,12 +18,6 @@ public static class PathName
 
     /// <summary>The screenshot the path recorder saves beside a path.</summary>
     public const string ScreenshotExtension = ".jpg";
-
-    /// <summary>
-    /// Forever route files share the folder in a format of their own
-    /// (<c>Core.Forever.Tasks.ForeverRouteFile.Folder</c>); they are not recorded paths.
-    /// </summary>
-    public const string ForeverRouteFolder = "_forever";
 
     public const int MaxLength = 200;
 
@@ -62,8 +58,7 @@ public static class PathName
         string[] segments = name.Split('/');
         foreach (string segment in segments)
         {
-            if (segment.Length == 0 || segment is "." or ".." || segment.Trim() != segment ||
-                segment.AsSpan().IndexOfAny(ForbiddenChars) >= 0 || HasControlChar(segment))
+            if (!IsPlainSegment(segment))
             {
                 error = $"'{name}' is not a valid path name: use folder/name.json with plain file names";
                 return false;
@@ -76,15 +71,16 @@ public static class PathName
             return false;
         }
 
-        if (segments.Length > 1 && segments[0].Equals(ForeverRouteFolder, StringComparison.OrdinalIgnoreCase))
+        // Forever route files share the folder in a format of their own; they are not recorded paths.
+        if (segments.Length > 1 && segments[0].Equals(ForeverRouteFile.Folder, StringComparison.OrdinalIgnoreCase))
         {
-            error = $"{ForeverRouteFolder}/ holds Forever route files, not recorded paths";
+            error = $"{ForeverRouteFile.Folder}/ holds Forever route files, not recorded paths";
             return false;
         }
 
         string rootFull = Path.GetFullPath(root);
         fullPath = Path.GetFullPath(Path.Join(rootFull, name));
-        if (!fullPath.StartsWith(Path.TrimEndingDirectorySeparator(rootFull) + Path.DirectorySeparatorChar, FileSystemCase))
+        if (!IsUnder(rootFull, fullPath))
         {
             error = $"'{name}' is outside the path folder";
             return false;
@@ -100,10 +96,27 @@ public static class PathName
         return Path.GetRelativePath(root, fullPath).Replace(Path.DirectorySeparatorChar, '/');
     }
 
-    /// <summary>True when a listed file belongs to <see cref="ForeverRouteFolder"/>.</summary>
+    /// <summary>True when a listed file belongs to the Forever route folder (<see cref="ForeverRouteFile.Folder"/>).</summary>
     public static bool IsForeverRoute(string canonical)
     {
-        return canonical.StartsWith(ForeverRouteFolder + "/", StringComparison.OrdinalIgnoreCase);
+        return canonical.StartsWith(ForeverRouteFile.Folder + "/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="segment"/> is one plain file or folder name: not empty, not
+    /// <c>.</c> or <c>..</c>, no surrounding spaces, and no character that is forbidden on
+    /// any OS, so a name means the same file everywhere.
+    /// </summary>
+    public static bool IsPlainSegment(string segment)
+    {
+        return segment.Length > 0 && segment is not ("." or "..") && segment.Trim() == segment &&
+               segment.AsSpan().IndexOfAny(ForbiddenChars) < 0 && !HasControlChar(segment);
+    }
+
+    /// <summary>True when <paramref name="fullPath"/> lies inside <paramref name="root"/> (both full paths).</summary>
+    public static bool IsUnder(string root, string fullPath)
+    {
+        return fullPath.StartsWith(Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar, FileSystemCase);
     }
 
     private static bool HasControlChar(string segment)

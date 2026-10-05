@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using PPather.Navmesh;
 
 using SharedLib;
+using SharedLib.Forever;
 
 using System;
 using System.Collections.Generic;
