@@ -30,6 +30,31 @@ public sealed record WorldInfo(string Client, string Era, bool HasMap, Continent
 /// <summary>An NPC of the requested type and where it first spawns, in world yards.</summary>
 public sealed record NpcInfo(int Entry, string Name, Point3 Position);
 
+/// <summary>One thing at one place in a zone: a creature's spawn, a herb or a vein, a mailbox; in world yards.</summary>
+/// <param name="Id">The creature's or the node's id; 0 for a mailbox.</param>
+/// <param name="Detail">For people: "Elite, level 12-13".</param>
+public sealed record SpawnPoint(int Id, string Name, Point3 At, string? Detail = null);
+
+/// <summary>What <see cref="PathingApi.Spawns"/> lists in a zone.</summary>
+public static class SpawnLayers
+{
+    /// <summary>Elite, rare and boss creatures, every spawn.</summary>
+    public const string Elite = "elite";
+
+    /// <summary>Herb nodes.</summary>
+    public const string Herb = "herb";
+
+    /// <summary>Mining veins.</summary>
+    public const string Vein = "vein";
+
+    /// <summary>Creatures that can be skinned, every spawn.</summary>
+    public const string Skinnable = "skinnable";
+
+    public const string Mailbox = "mailbox";
+
+    public static readonly string[] All = [Elite, Herb, Vein, Skinnable, Mailbox];
+}
+
 /// <summary>A place the route search offers, in world yards on <paramref name="Continent"/>.</summary>
 public sealed record NamedLocation(string Name, string Continent, int MapId, Point3 Position);
 

@@ -134,6 +134,20 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
         return GetAsync<WorldInfo>(PathingApi.World, token);
     }
 
+    public Task<ServiceResult<NpcInfo[]>> SearchNpcsAsync(int mapId, string name, CancellationToken token = default)
+    {
+        string uri = string.Create(CultureInfo.InvariantCulture,
+            $"{PathingApi.NpcSearch}?mapId={mapId}&name={Uri.EscapeDataString(name)}");
+        return GetAsync<NpcInfo[]>(uri, token);
+    }
+
+    public Task<ServiceResult<SpawnPoint[]>> GetSpawnsAsync(int uiMapId, string layer, CancellationToken token = default)
+    {
+        string uri = string.Create(CultureInfo.InvariantCulture,
+            $"{PathingApi.Spawns}?uiMapId={uiMapId}&layer={Uri.EscapeDataString(layer)}");
+        return GetAsync<SpawnPoint[]>(uri, token);
+    }
+
     public Task<ServiceResult<NpcInfo[]>> GetNpcsAsync(int uiMapId, string npcType, CancellationToken token = default)
     {
         string uri = string.Create(CultureInfo.InvariantCulture,

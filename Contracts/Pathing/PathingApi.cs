@@ -68,6 +68,12 @@ public static class PathingApi
     /// <summary><c>GET ?uiMapId=&amp;flag=</c>: the <see cref="NpcInfo"/> of one NPC type whose spawn is in a zone.</summary>
     public const string Npcs = World + "/npcs";
 
+    /// <summary><c>GET ?mapId=&amp;name=</c>: the <see cref="NpcInfo"/> of creatures on a continent whose name holds the text.</summary>
+    public const string NpcSearch = Npcs + "/search";
+
+    /// <summary><c>GET ?uiMapId=&amp;layer=</c>: the <see cref="SpawnPoint"/>s of one of the <see cref="SpawnLayers"/> in a zone.</summary>
+    public const string Spawns = World + "/spawns";
+
     /// <summary><c>GET</c> the <see cref="NamedLocation"/>s the route search offers.</summary>
     public const string Locations = Root + "/catalog/locations";
 

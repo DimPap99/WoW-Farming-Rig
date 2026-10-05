@@ -43,8 +43,9 @@ CostZones/CostZoneStore.cs         Json/road/<era>: roads and dangerzone/ per ui
 CostZones/CostZoneMapping.cs       wire shapes <-> PPather's RoadData / DangerZoneData
 CostZones/CostZoneEndpoints.cs     /api/v1/costzones
 World/WorldDataFiles.cs            the map's static data routes (Contracts' WorldData)
-World/WorldCatalog.cs              zones with bounds, continents, NPC types, NPCs by zone
-World/WorldEndpoints.cs            /api/v1/world, /api/v1/world/npcs
+World/WorldCatalog.cs              zones with bounds, continents, NPC types, NPCs by zone; a zone's layers
+                                   (elites, herbs, veins, skinnable, mailboxes); creatures by name
+World/WorldEndpoints.cs            /api/v1/world, /world/npcs, /world/npcs/search, /world/spawns
 Catalog/LocationCatalog.cs         curated spots + Json/locations/teleport_locations.txt
 Catalog/TestRoutes.cs              known-trouble routes as RouteRequests
 Catalog/CatalogEndpoints.cs        /api/v1/catalog/locations, /testroutes

@@ -75,7 +75,12 @@ which it always is.
      rectangles, avoid or block, each kept in the file of the zone it was drawn in (the area grid's
      zone); changes collect until Save, which the service checks and applies to the next route.
      Names show close in or on the selected shape, so a continent of roads stays readable.
-   - Spawns and search; custom points; navmesh coverage and bakes; the ADT grid and coordinates.
+   - **Done.** The map (`/map`): a zone's layers - NPCs by type, elites, herbs, veins, skinnable
+     creatures (every spawn), mailboxes, places - from new typed service endpoints
+     (`world/spawns`, `world/npcs/search`) instead of the browser reading the data files;
+     creatures found by name on the continent; points marked by clicking, with their zone map
+     coordinates. The Leaflet page stays as "Minimap (old)" for what is left.
+   - Navmesh coverage and bakes; the ADT grid.
 5. Forever routes: the route drawn beside its text; coordinates picked from the map.
 6. Remove Babylon (`pathing-scene.js`, `Viewport3D`) and Leaflet from the Control Center (the Map
    page, the MapAssets scripts in `App.razor`, `SearchPanel`).

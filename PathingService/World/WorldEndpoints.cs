@@ -25,6 +25,18 @@ public static class WorldEndpoints
             .Produces<NpcInfo[]>()
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
+        app.MapGet(PathingApi.NpcSearch, (int mapId, string? name, WorldCatalog world) => world.Search(mapId, name).ToHttp())
+            .WithTags(Tag)
+            .WithSummary("Creatures on a continent (mapId) whose name holds the text, where each first spawns; at most 50")
+            .Produces<NpcInfo[]>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+
+        app.MapGet(PathingApi.Spawns, (int uiMapId, string? layer, WorldCatalog world) => world.Spawns(uiMapId, layer).ToHttp())
+            .WithTags(Tag)
+            .WithSummary("Everything of one layer in a zone (elite, herb, vein, skinnable, mailbox), every spawn or node, in world yards")
+            .Produces<SpawnPoint[]>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+
         return app;
     }
 }

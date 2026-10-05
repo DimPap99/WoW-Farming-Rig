@@ -59,6 +59,12 @@ public interface IPathingClient
     /// <param name="npcType">A key of <see cref="WorldInfo.NpcFlags"/>, such as <c>vendor</c>.</param>
     Task<ServiceResult<NpcInfo[]>> GetNpcsAsync(int uiMapId, string npcType, CancellationToken token = default);
 
+    /// <summary>Creatures on the continent <paramref name="mapId"/> whose name holds <paramref name="name"/>, where each first spawns.</summary>
+    Task<ServiceResult<NpcInfo[]>> SearchNpcsAsync(int mapId, string name, CancellationToken token = default);
+
+    /// <summary>One of the <see cref="SpawnLayers"/> in a zone.</summary>
+    Task<ServiceResult<SpawnPoint[]>> GetSpawnsAsync(int uiMapId, string layer, CancellationToken token = default);
+
     Task<ServiceResult<NamedLocation[]>> GetLocationsAsync(CancellationToken token = default);
 
     Task<ServiceResult<TestRoute[]>> GetTestRoutesAsync(CancellationToken token = default);
