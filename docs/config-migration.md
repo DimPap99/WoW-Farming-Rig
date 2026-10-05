@@ -95,13 +95,13 @@ set `SkipWidenShortRoutes=false`.
 
 | old env var | new config key | default |
 |---|---|---|
-| `PPATHER_LOG_DEBUG` (`1`) — PathingAPI | `Logging:PatherDebug` (`true`) | false |
+| `PPATHER_LOG_DEBUG` (`1`) — the pathing server | `Serilog:MinimumLevel:Override:PPather` (`Debug`) on the Pathing Service | Information |
 
-## PathingAPI startup bake
+## Pathing Service startup bake
 
-`--bake=<continent>` kicks a background navmesh bake as PathingAPI starts, using
-the `--exp` expansion. The API serves immediately; poll
-`GET api/PPather/Bake/Status`. Tiles already on disk are skipped.
+`--bake=<continent>` kicks a background navmesh bake as the Pathing Service starts, using
+the `--exp` expansion. The API serves immediately; poll `GET /api/v1/bake`. Tiles already on
+disk are skipped. It needs the game files (`Json/MPQ`, or `ForeverCasc:Install`).
 
 | flag | effect |
 |---|---|
@@ -109,12 +109,12 @@ the `--exp` expansion. The API serves immediately; poll
 | `--bake=all` (or `--bake=*`) | bake every continent |
 | (omitted) | no startup bake |
 
-```powershell
-dotnet run --project PathingAPI -c Release -- --exp=tbc --bake=Azeroth
+```bash
+PathingService/run.sh --exp=tbc --bake=Azeroth
 ```
 
-The expansion is always the service's `--exp` (a PathingAPI instance loads one
-expansion's data); there is no separate per-bake expansion.
+The expansion is always the service's `--exp` (a Pathing Service instance serves one
+client's data); there is no separate per-bake expansion.
 
 ## Example: reproduce the old in-game bake/tuning session
 

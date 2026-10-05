@@ -48,7 +48,7 @@ For a **supported** client on Windows 10 or later:
 
 3. Build and launch the dashboard with `BlazorServer\build.bat` and `BlazorServer\run.bat`. Start the WoW client, complete the add-on setup in the browser, load a class profile, and press **Start**.
 
-The [installation guide](docs/installation.md) covers display requirements, add-on setup, capture backends, and headless operation. The standalone [pathing server](docs/pathing-api.md) (route viewer, map and API) also runs on Linux and macOS. Already cloned without submodules? Run `git submodule update --init --recursive` before building.
+The [installation guide](docs/installation.md) covers display requirements, add-on setup, capture backends, and headless operation. The [Pathing Service and Control Center](docs/pathing-api.md) (route planning, live 3D view, map, path editing and bakes) also run on Linux and macOS. Already cloned without submodules? Run `git submodule update --init --recursive` before building.
 
 ## Documentation
 

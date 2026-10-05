@@ -1,12 +1,12 @@
 ---
 name: ppather-profile
-description: Attach .NET diagnostics (dotnet-trace / counters / gcdump) or run the Benchmarks harness against PathingAPI or a bake — for CPU and allocation profiling of the navmesh pipeline
+description: Attach .NET diagnostics (dotnet-trace / counters / gcdump) or run the Benchmarks harness against the Pathing Service or a bake — for CPU and allocation profiling of the navmesh pipeline
 user-invocable: true
 ---
 
 # PPather Profile
 
-Attach `dotnet-trace` / `dotnet-counters` / `dotnet-gcdump` to a running `PathingAPI` or `Benchmarks` process to find where navmesh bake and pathing time actually goes, plus a wrapper around the `Benchmarks` project's own harnesses.
+Attach `dotnet-trace` / `dotnet-counters` / `dotnet-gcdump` to a running `PathingService` or `Benchmarks` process to find where navmesh bake and pathing time actually goes, plus a wrapper around the `Benchmarks` project's own harnesses.
 
 Sample **Release builds only**. Debug flattens inlining and turns the flamegraph into stack-frame setup.
 
@@ -19,7 +19,7 @@ Sample **Release builds only**. Debug flattens inlining and turns the flamegraph
 /ppather-profile heap                          # heap snapshot -> trace.gcdump + text report
 /ppather-profile bench --bake [label] [iters]  # 6-tile bake corpus (stage table + tile hashes)
 /ppather-profile bench --throughput            # 40-tile virgin corridor
-/ppather-profile bench --engines Navmesh       # pathing A/B suite (needs PathingAPI running)
+/ppather-profile bench --routes                # route suite (needs the Pathing Service running)
 /ppather-profile bench --filter *Navmesh*      # a BenchmarkDotNet filter
 /ppather-profile pid                           # print the detected PID
 ```
@@ -29,10 +29,10 @@ Sample **Release builds only**. Debug flattens inlining and turns the flamegraph
 | Subcommand | Script |
 |---|---|
 | `install` | `pwsh .claude\skills\ppather-profile\scripts\install.ps1` |
-| `cpu` | `pwsh ...\cpu.ps1 [-Seconds <int>] [-Detailed] [-Target PathingAPI\|Benchmarks] [-TargetPid <int>]` |
+| `cpu` | `pwsh ...\cpu.ps1 [-Seconds <int>] [-Detailed] [-Target PathingService\|Benchmarks] [-TargetPid <int>]` |
 | `counters` | `pwsh ...\counters.ps1 [-Seconds <int>] [-Counters <list>] [-TargetPid <int>]` |
 | `heap` | `pwsh ...\heap.ps1 [-TargetPid <int>]` |
-| `bench` | `pwsh ...\bench.ps1 [-Bake] [-Throughput] [-Engines <list>] [-Filter <pat>] [-Label <s>] [-Iterations <n>] [-Rebuild]` |
+| `bench` | `pwsh ...\bench.ps1 [-Bake] [-Throughput] [-Routes] [-Filter <pat>] [-Label <s>] [-Iterations <n>] [-Rebuild]` |
 | `pid` | `pwsh ...\pid.ps1 [-Target <name>]` |
 
 Output goes to `artifacts/profile/<UTC-timestamp>/`. Benchmark reports go to `local/benchmark_results/`.
@@ -59,8 +59,8 @@ Sanity check by size: Release `DotRecast.Recast.dll` is ~112-113 KB, Debug ~127 
 ## Typical workflows
 
 **Where is bake time going?**
-1. Terminal A: `dotnet run --project PathingAPI -c Release` and start a bake (map sidebar, or `POST /api/PPather/Bake?continent=Azeroth`).
-2. Terminal B: `/ppather-profile cpu 60 -Target PathingAPI`.
+1. Terminal A: `PathingService/run.sh` and start a bake (the map's sidebar in the Control Center, or `POST /api/v1/bake` with `{"continent":"Azeroth"}`).
+2. Terminal B: `/ppather-profile cpu 60 -Target PathingService`.
 3. Open `trace.speedscope.json` at <https://www.speedscope.app>. Sort by self time.
 
 Expect the split to be roughly MPQ/ADT parse versus recast stages. A single ADT is ~9 s, most of it *not* recast — which is why bake throughput improved far more from extraction and worker-count work than from recast micro-optimisation.
@@ -75,7 +75,7 @@ Expect the split to be roughly MPQ/ADT parse versus recast stages. A single ADT 
 
 - **Sampling shows elapsed time, not work.** A thread blocked on file I/O dominates the flamegraph; that is not a bug.
 - **Ambient load on this box swings +-10%**, which is wider than most individual wins. Interleave A and B runs; never compare "before lunch" with "after lunch".
-- **Process-local state contaminates A/B.** Resident navmesh tiles from an earlier query make a later route look faster or even *succeed* where it otherwise fails. Restart the server between arms when tile residency could matter.
+- **Process-local state contaminates A/B.** Resident navmesh tiles from an earlier query make a later route look faster or even *succeed* where it otherwise fails: the Pathing Service's lanes keep their tiles. Restart the service between arms when tile residency could matter.
 - **A first run on a fresh server is not a measurement.** Cold ADT loads and cold tile cache dominate. Warm up, then measure.
 - The corridor throughput bench is noisy (observed 4744 vs 5222 ms back-to-back). Prefer the per-tile corpus numbers for anything subtle.
 

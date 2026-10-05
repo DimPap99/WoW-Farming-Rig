@@ -49,19 +49,19 @@ commit that fixed it.
      error. Nothing reads that way today: path files are read with Newtonsoft.
    - **Fix:** compare the names case-insensitively.
 
-6. **The legacy remote pathing clients.**
-   - RemoteV1 turns a 429 or any error into an empty route, which looks exactly like "no path".
-   - Both remote modes are probed once at startup and fall back to Local with only a log line.
-   - **Fix:** removed in Phase 4. The new contract types the failure (`RouteStatus`).
+6. **The legacy remote pathing clients have no server.**
+   - PathingAPI is gone (Phase 2), and with it `api/PPather/*` and the AnTCP listener. A bot set
+     to `RemoteV1` or `RemoteV3`, or with `Pathing:PathVisualizer` on, finds nothing at startup
+     and falls back to Local (or no visualizer) with only a log line. The shipped configs use
+     Local.
+   - RemoteV1 also turned a 429 or any error into an empty route, which looks exactly like
+     "no path".
+   - **Fix:** the clients are removed in Phase 4. The new contract types the failure
+     (`RouteStatus`), and the bot's live position comes back through the Bot Manager (Phase 3).
 
 7. **A remote pather still loads a local engine.** Even in remote mode the bot builds its own
    `PPatherService`, because `RouteGenerator` samples and floods the navmesh directly.
    - **Fix:** route generation moves server-side in Phase 4.
-
-8. **The dashboard needs a running game.** `BlazorServer` cannot start without a WoW client:
-   `AddWoWProcess` throws.
-   - **Fix:** the Control Center (Phase 2) is the central UI and needs no client. BlazorServer
-     stays as the PC's setup UI.
 
 9. **A Forever run cannot outlive the web UI.** `ForeverRunHost --listen` stops the run when
    the host's stdio pipe closes.
@@ -71,34 +71,72 @@ commit that fixed it.
     itself instead of calling `NavmeshSettings.CacheDirectory`.
     - **Fix:** Phase 4 cleanup.
 
-11. **Everything twice in the two hosts.** `teleport_locations.txt`, the map page and its CSS
-    exist in both BlazorServer/Frontend and PathingAPI.
-    - **Fix:** deleted in Phase 2 with PathingAPI.
+15. **BlazorServer's map does not survive a script error at start.**
+    - **Where:** `Frontend/Pages/LeafletComponent.razor` awaits the map's `init` in
+      `OnAfterRenderAsync` without catching a `JSException`.
+    - **Effect:** a script error there ends the bot UI's Blazor circuit; the page stops
+      updating until reloaded. The Control Center's map page catches it, and since Phase 2 the
+      script itself stops cleanly when its zone data cannot be read, which was the case that
+      failed.
+    - **Fix:** the same guard as `ControlCenter/Components/Pages/Map.razor`; needs a check on
+      Windows, where BlazorServer runs.
 
-12. **A planner lane never notices tiles baked after it looked.**
+16. **A full page load of an unknown Control Center URL is a bare 404.** The `NotFound` page
+    renders for in-app navigation only. Status-code re-execution would also rewrite the 404s the
+    forwarded API answers, so it is left off.
+
+17. **Leaflet's script and stylesheet come from different versions.** Both hosts load
+    `leaflet.js` 1.9.4 from MapAssets and `leaflet.css` 1.7.1 from unpkg, as BlazorServer always
+    has. Nothing visibly breaks; align them (a local 1.9.4 stylesheet) when the map is next
+    worked on.
+
+## Fixed
+
+8. **The dashboard needed a running game** (Phase 2, 32ce9d46). The Control Center is the central
+   UI and needs no client. `BlazorServer` still cannot start without one (`AddWoWProcess`
+   throws); it stays the PC's setup UI.
+
+11. **Everything twice in the two hosts** (Phase 2, 32ce9d46). PathingAPI is deleted. The map's
+    scripts, libraries and styles live once, in `MapAssets`, served by BlazorServer and the
+    Control Center. `teleport_locations.txt` lives once, in `Json/locations`.
+
+12. **A planner lane never noticed tiles baked after it looked** (Phase 2, 31698e77).
     - **Cause:** a disk-only `NavmeshTileCache` records a tile that is not on disk as empty
       (`emptyTiles`) for the cache's lifetime and never looks at it again.
-    - **Effect:** once the Pathing Service bakes (Phase 2), an open `RoutePlanner` lane keeps
-      treating the new tiles as empty. The planner's own check (`File.Exists`) then passes and
-      the route answers `NoPath`.
-    - **Fix:** when a bake finishes, reopen the lanes of the continents it touched.
+    - **Fix:** `RoutePlanner.CloseLanes` takes a lane out of service (a query waiting on it moves
+      to a fresh one). The Pathing Service closes the lanes a bake touched when it ends, and a
+      continent's lane when its tiles are deleted. `ServiceTests` walls a route off with
+      missing tiles, copies them in, and checks that the route arrives only once the lane closed.
 
-## Fixed in the Pathing Service, still in the old code
+13. **File names were not checked** (Phase 2, 32ce9d46). `Frontend/Controllers` are deleted: the
+    map authors through the Pathing Service, which refuses such names (`PathName`) and takes only
+    plain continent names.
+    - The old `PathController.SavePath` joined any name onto `Json/path`, so `../` wrote
+      anywhere; and since its listing returned `/path/<name>`, saving a path the map had loaded
+      wrote to `Json/path/path/<name>` (or failed for want of the folder).
 
-These remain in `Frontend/Controllers` (mounted by BlazorServer and PathingAPI) until Phase 2
-deletes them.
+14. **Cost zones were not validated on save** (Phase 2, 32ce9d46). The service validates with
+    `CostZoneLoader.Problem` and answers 400 with the reason, which the map shows.
 
-13. **File names are not checked.**
-    - `PathController.SavePath` joins any file name onto `Json/path`, so `../` writes anywhere.
-    - `RoadController` and `DangerZoneController` take any continent string as a folder name.
-    - **In the service:** `PathingService` refuses such names (`PathName`) and takes only plain
-      continent names.
+18. **Routes and markers from the watch hub did not draw** (Phase 2, 31698e77). MessagePack
+    writes a `System.Numerics.Vector3` as a map of its fields (`{X, Y, Z}`), while the 3D view
+    and the map read a point as `[x, y, z]`. PathingAPI's broadcaster sent `Vector3`s, so its
+    routes and markers drew at the origin in 3D and threw on the map; only navmesh tiles, sent as
+    flat float arrays, worked. The Pathing Service sends points as float arrays, and
+    `ServiceTests` checks the shape.
+    - PathingAPI also asked for LZ4 compression with a call whose result it dropped, so the
+      setting never applied. Applying it would break the browser: its MessagePack reader does
+      not know MessagePack-CSharp's compression extension.
 
-14. **Cost zones are not validated on save.**
-    - The road and danger-zone controllers write whatever they receive. `CostZoneLoader`
-      later skips an invalid file with only a warning, so a bad save quietly removes zones.
-    - **In the service:** `PathingService` validates with `CostZoneLoader.Problem` and answers
-      400 with the reason.
+19. **BlazorServer's bake buttons called endpoints only PathingAPI had** (Phase 2, 32ce9d46).
+    `api/PPather/Bake*` answered 404 on the bot's dashboard. BlazorServer now forwards `/api/v1`
+    to the Pathing Service, which bakes when its host has the game files and says so otherwise.
+
+20. **`teleport_locations.txt` was loaded as a script** (Phase 2, 32ce9d46). BlazorServer's
+    `App.razor` had a `<script>` tag for it, and Frontend removed it from its static assets
+    (`Content Remove`) while the map fetched it from `_content/Frontend/`. It now lives in
+    `Json/locations`, served at `/locations` by both hosts and read by the Pathing Service's
+    location catalog.
 
 ## Design notes
 

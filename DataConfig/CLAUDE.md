@@ -14,7 +14,7 @@ override; `BakeTool --root` exists precisely because of that.
 |---|---|---|
 | **era** (`ClientEra`) | `Navmesh`, `Leaflet`, `Road`, `AreaGrid` | clients that share a world share these |
 | **client** (`Exp`) | `ExpDbc`, `Subzones`, `ExpArea`, `NpcSpawnLocations`, `ExpHistory`, ... | id spaces and addon mappings differ per client |
-| **neither** | `MPQ`, `Class`, `Path`, `PPather` | one directory, whatever you point it at |
+| **neither** | `MPQ`, `Class`, `Path`, `PPather`, `Locations` | one directory, whatever you point it at |
 
 `ClientEra`: vanilla/tbc/wrath and their `legacy_*` → `precata`; `cata`/`legacy_cata` →
 `cata`; `mop`/`legacy_mop` → `mop`.
@@ -35,10 +35,17 @@ whitelist: its art was never compared. Measure before adding to it, and never tu
 into a blanket "fall back if missing" — that would serve precata *Azeroth* art to a cata
 client, which is a different world.
 
+**`Locations` holds `teleport_locations.txt`, the one copy.** Each line carries its own map id,
+so it serves every client; the map (`/locations`) and the Pathing Service's location catalog
+read it. It used to exist twice, in Frontend's and PathingAPI's `wwwroot`.
+
+**`SharedTileFolders()` is the tile-route list both hosts register.** BlazorServer and the
+Pathing Service serve `/tiles/<continent>` from it before the general `/tiles` route.
+
 **`LeafletEras` / `HasLeaflet` gate the UI.** Gate on these, never on a
 `ClientVersion` list; the map stayed hidden on wrath/cata/mop for exactly that reason.
 
-**Keep the JS in step.** `Frontend/wwwroot/script/leaflet-watch.js` mirrors `ClientEra`,
+**Keep the JS in step.** `MapAssets/wwwroot/script/leaflet-watch.js` mirrors `ClientEra`,
 `TileEra`, `TileSharedContinents` and `LeafletEras`. Changing one without the other
 renders one era's art against another's data.
 

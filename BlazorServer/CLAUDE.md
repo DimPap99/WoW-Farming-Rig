@@ -13,7 +13,7 @@ app.manifest                per-monitor DPI awareness (required for correct capt
 addon_config.json           addon layout, written by the in-app configurator
 frame_config.json           screen frame rectangles, written by the configurator
 data_config.json            DataConfig Root for this host
-appsettings.json            Pathing / Navmesh / SplineFollower options
+appsettings.json            Pathing / Navmesh / SplineFollower options, PathingService:Url
 run.bat / build.bat         opens the browser, then `dotnet run -c Release --no-build`
 ```
 
@@ -51,3 +51,11 @@ Serilog output from previous runs — not fixtures. Ignore them when scanning th
 
 **Stopping must release input before tearing down components.** See `Game/CLAUDE.md` —
 ordering at shutdown is how held movement keys get stranded.
+
+**The map authors through the Pathing Service.** `/api/v1/*` is forwarded (YARP) to
+`PathingService:Url` (default `http://localhost:5010`): recorded paths, cost zones, navmesh
+coverage and bakes on the map are the service's. With no service running the forwarder answers
+502 and those layers say "offline"; the map's tiles and data are served from this host's own
+`Json` folder and keep working. Run the service against the same `Json` the bot reads (same PC,
+or changes committed) until the agent's data sync exists (Phase 3). There are no controllers here
+any more.

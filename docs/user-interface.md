@@ -116,7 +116,7 @@ python scripts/extract-minimap.py
 * Writes `Json\leaflet\<era>\<Continent>\z{z}x{x}y{y}.webp`; pick the era with
   `LEAFLET_ERA` (default `precata`).
 * Prints the `Configs` entry (resX/resY/offset) for each continent, matching
-  `Frontend\wwwroot\script\leaflet-watch.js`.
+  `MapAssets\wwwroot\script\leaflet-watch.js`.
 
 The `/tiles` route resolves to `Json\leaflet\<era>` (`DataConfig.Leaflet`), so
 running the bot as som, tbc or wrath all serve the same `precata` tiles.

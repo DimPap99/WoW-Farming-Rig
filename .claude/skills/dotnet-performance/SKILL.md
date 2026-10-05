@@ -114,7 +114,7 @@ Reference material:
 ## Measurement & Diagnostics
 
 - Measure before optimising — profile first, don't guess. Hot-path means hot in *your* workload
-- For this repo specifically: use the `/ppather-profile` skill (`.claude/skills/ppather-profile/SKILL.md`) — wraps `dotnet-trace` / `dotnet-counters` / `dotnet-gcdump` / `dotnet-dump` and the `Benchmarks` project against a live PathingAPI or bake process
+- For this repo specifically: use the `/ppather-profile` skill (`.claude/skills/ppather-profile/SKILL.md`) — wraps `dotnet-trace` / `dotnet-counters` / `dotnet-gcdump` / `dotnet-dump` and the `Benchmarks` project against a live Pathing Service or bake process
 - `BenchmarkDotNet` with `[MemoryDiagnoser]` — surfaces per-invocation allocation bytes and Gen0/1/2 counts; catches regressions in CI
 - `GC.GetAllocatedBytesForCurrentThread()` to assert zero-allocation in unit tests:
   ```csharp

@@ -139,13 +139,12 @@ Un'Goro, Silithus and Mount Hyjal really are near-empty in SkyFire 5.4.8 (2-5 sp
 each) - confirmed by resolving through the grid, not the rect. Check that way before
 concluding a zone is missing.
 
-**`teleport_locations.txt` exists twice and both are tracked.** `Frontend/wwwroot` is
-served to the Leaflet page, `PathingAPI/wwwroot` is read from disk by
-`Catalog/LocationCatalog.cs`; they are kept byte-identical and a glob turns up ~25 more
-copies that are all `bin/` artefacts. The format is positional -
+**`teleport_locations.txt` lives once, in `Json/locations`.** The map fetches it at
+`/locations/teleport_locations.txt` (both hosts serve that folder) and the Pathing Service's
+location catalog reads it; `extract-tele-sqldump.py` writes it there. The format is positional -
 `id x y z orientation mapId name` - and both readers use only x, y, z, mapId and name,
-but `id` and `orientation` must stay present or the fields shift. **The files are CRLF**:
-reading them in Python text mode and writing back with `\n` rewrites all 1002 existing
+but `id` and `orientation` must stay present or the fields shift. **The file is CRLF**:
+reading it in Python text mode and writing back with `\n` rewrites all 1002 existing
 lines and buries the additions in a whole-file diff.
 
 **A world DB's `game_tele` is a free POI list.** It backs the `.tele` command, so every

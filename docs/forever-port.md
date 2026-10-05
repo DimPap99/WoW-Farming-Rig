@@ -163,12 +163,13 @@ crossed tiles `128,128` and `129,128` with zero bakes. The strict bulk
 bake now reports worker failures; a missing WMO doodad variant is logged and
 uses the root's global set while retaining WMO collision.
 
-`PathingAPI` can use the same local CASC source for on-demand bakes. Set
-`exp=forever`, `ForeverCasc__Install` to the WoW install, and
-`ForeverCasc__Listfile` to the local `id;path` listfile. `ForeverCasc__Product`
-and `ForeverCasc__Cache` are optional. Leave Install and Listfile empty to
-serve only baked tiles. A configured HTTP bake resumed one existing Azeroth
-ADT, and an unconfigured HTTP host returned the disk-only route above.
+The Pathing Service uses the same local CASC source for bakes and for the 3D
+view's terrain. Run it with `--exp=forever` and set `ForeverCasc__Install` to
+the WoW install and `ForeverCasc__Listfile` to the local `id;path` listfile.
+`ForeverCasc__Product` and `ForeverCasc__Cache` are optional. Leave Install and
+Listfile empty to serve only baked tiles. (Under PathingAPI, which the service
+replaced, a configured HTTP bake resumed one existing Azeroth ADT, and an
+unconfigured host returned the disk-only route above.)
 
 ## Code layout
 

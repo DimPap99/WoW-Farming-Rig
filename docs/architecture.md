@@ -6,27 +6,31 @@ one resident bot agent per game PC - is in [service architecture](service-archit
 
 Further detail about the early architecture can be found in [Blog post](http://www.codesin.net/post/wowbot/). The project has evolved significantly since then.
 
-## Solution Structure (17 projects)
+## Solution Structure (18 projects)
 
 ```
 WoWFarmingRig.sln
 │
 ├── Hosts ─────────────────────────────────────────────────────────
-│   ├── BlazorServer/       ASP.NET Core Blazor Server — primary web UI
-│   ├── HeadlessServer/     Console app — CLI automation, no UI
-│   └── PathingAPI/         Legacy pathing server + Blazor route viewer (being replaced)
+│   ├── BlazorServer/       ASP.NET Core Blazor Server — the bot with its web UI
+│   └── HeadlessServer/     Console app — CLI automation, no UI
 │
 ├── Services ──────────────────────────────────────────────────────
-│   ├── PathingService/     Minimal API — concurrent route planning, authoring API
-│   │                       for recorded paths and cost zones (net10.0, any OS)
+│   ├── PathingService/     Minimal API — concurrent route planning, the authoring API
+│   │                       for recorded paths and cost zones, bakes, world data and
+│   │                       the watch hub (net10.0, any OS)
+│   ├── ControlCenter/      Blazor Server — the central UI: live 3D view, map, path
+│   │                       library and editor; a client of the Pathing Service
 │   ├── Contracts/          Wire types and route constants for services and clients
 │   └── ServiceClients/     Typed HTTP clients for the services
 │
 ├── Libraries ─────────────────────────────────────────────────────
 │   ├── Core/               Business logic, bot control, addon readers, databases,
 │   │                       DI orchestration, screen analysis, GPU/CPU NPC detection
-│   ├── Frontend/           Razor component library shared across hosts
-│   │                       (Leaflet maps, keyboard overlay, path recorder, mail UI)
+│   ├── Frontend/           BlazorServer's Razor components
+│   │                       (dashboard, keyboard overlay, path recorder, mail UI)
+│   ├── MapAssets/          The Leaflet map's scripts and styles, served by
+│   │                       BlazorServer and the Control Center (static files only)
 │   ├── Game/               Windows-specific game interaction
 │   │                       (process management, DXGI & WGC screen capture, input)
 │   ├── SharedLib/          Cross-project utilities, NPC finder algorithms,
@@ -53,18 +57,18 @@ so a solution build does not build them.
 ## Dependency Flow
 
 ```
-┌─────────────┐  ┌───────────────┐  ┌────────────┐
-│ BlazorServer│  │ HeadlessServer│  │ PathingAPI │
-└──────┬───┬──┘  └───────┬───────┘  └─────┬──────┘
-       │   │             │                 │
-       │   └──────┬──────┘                 │
-       │          ▼                        │
-       │     ┌──────────┐                  │
-       └────►│ Frontend │                  │
-             └────┬─────┘                  │
-                  ▼                        │
-             ┌──────────┐                  │
-             │   Core   │◄─────────────────┘
+┌─────────────┐  ┌───────────────┐
+│ BlazorServer│  │ HeadlessServer│
+└──────┬───┬──┘  └───────┬───────┘
+       │   │             │
+       │   └──────┬──────┘
+       │          ▼
+       │     ┌──────────┐
+       └────►│ Frontend │
+             └────┬─────┘
+                  ▼
+             ┌──────────┐
+             │   Core   │
              └┬───┬───┬─┘
               │   │   │
      ┌────────┘   │   └────────┐
@@ -80,7 +84,8 @@ so a solution build does not build them.
 ```
 
 The services sit beside this graph, not on top of it: `PathingService` references only
-`Contracts`, `PPather`, `DataConfig` and `SharedLib`, and no service may reference `Core`,
+`Contracts`, `PPather`, `DataConfig`, `SharedLib` and `Utilities/ForeverCasc`, the Control
+Center only `Contracts`, `ServiceClients` and `MapAssets`, and no service may reference `Core`,
 `Game`, `WinAPI` or `Frontend`.
 
 `Game/` and `WinAPI/` are the only Windows-only projects. The pathing chain
@@ -93,7 +98,7 @@ queried on macOS and Linux.
 | Layer | Technology |
 |-------|-----------|
 | **Runtime** | .NET 10 (C# 14 preview) with nullable reference types |
-| **Web** | ASP.NET Core Blazor Server, SignalR (MessagePack + LZ4) |
+| **Web** | ASP.NET Core Blazor Server, minimal APIs, SignalR (MessagePack), YARP |
 | **UI** | Blazor Bootstrap, MatBlazor, Leaflet.js, Pixi.js (WebGL) |
 | **Graphics** | DirectX 11 via Vortice (DXGI Desktop Duplication, Windows Graphics Capture, Compute Shaders) |
 | **Pathfinding** | DotRecast navmesh (in-process, default) with pre-baked tiles; legacy spot-grid A* and out-of-process/AmeisenNavigation backends |
@@ -120,10 +125,8 @@ The host and pathfinder are independently composable — pick one from each colu
 | Host | Pathfinder | Notes |
 |------|-----------|-------|
 | **BlazorServer** | Navmesh (in-process) | **Recommended** - DotRecast navmesh, no external services, every client |
-| **BlazorServer** | PathingAPI (out-of-process) | Offloads pathfinding to the legacy server (one caller at a time) |
 | **BlazorServer** | AmeisenNavigation (external) | Legacy; superseded by the in-process navmesh |
 | **HeadlessServer** | Navmesh (in-process) | **Recommended** - fully headless, single process |
-| **HeadlessServer** | PathingAPI (out-of-process) | Headless with remote pathfinding |
 | **HeadlessServer** | AmeisenNavigation (external) | Legacy; superseded by the in-process navmesh |
 
 **Multi-instance support** — Using Windows Graphics Capture (WGC), each instance captures a specific window rather than the entire desktop. This allows running multiple bot instances on a single machine, each attached to a different game client, with no additional configuration needed.
