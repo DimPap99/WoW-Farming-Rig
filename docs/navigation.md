@@ -54,23 +54,11 @@ BlazorServer / HeadlessServer at the same downloaded tiles (a shared `data_confi
 `Root` is fine, the tile cache is read-only) and run them independently. No pathing
 server, no MPQ, nothing shared at runtime.
 
-The new **Pathing Service** (`PathingService/`) does answer concurrent queries - one lane per
-continent, fresh pathfinder memory per request, no 429 - but it serves the authoring UI;
-bots keep planning in process (see [service architecture](service-architecture.md)).
-
-**Do not point several bots at one `PathingAPI` (V1 Remote).** It serves one search at
-a time: the `RateLimit` filter answers a concurrent request with **HTTP 429**, which the
-V1 client turns into an empty route - indistinguishable from "no path exists", so the
-second bot silently fails to navigate. Measured with two simultaneous `WorldRoute`
-calls: one 200 in 555 ms, the other 429 in 8 ms. V1 Remote is meant for a single client
-plus the route visualiser, not as a shared service.
-
-That limit dates from the `SpotAStar` era, when a search cost seconds and serialising
-made sense; a warm navmesh query is 1-8 ms. Serving N bots from one process is worth
-doing and the per-continent pathfinder cache is already in place, but it needs the
-search made re-entrant first (today it is `SetLocations` then `DoSearch` on singleton
-state, and switching continent disposes the engine). **Until then, one navmesh per bot
-is the supported setup.**
+The **Pathing Service** (`PathingService/`) answers concurrent queries - one lane per
+continent, fresh pathfinder memory per request, no 429 - but it serves the authoring UI, the
+[Control Center](pathing-api.md); bots keep planning in process (see
+[service architecture](service-architecture.md)). The old one-at-a-time remote server,
+PathingAPI, is gone, so **one navmesh per bot is the supported setup.**
 
 Cost of running them separately is small: with disk-only pathing there is **no ADT
 geometry in memory at all**, just the navmesh tile cache - tiles average ~16 KB and only
@@ -127,14 +115,14 @@ Tiles are published per **geometry era**, each complete on its own:
 **Which should you use?**
 - **Everyone**: the default in-process **navmesh** engine - high quality, no external service. Download pre-baked tiles for your era.
 - **Baking your own tiles**: needs the original game archives (Vanilla-Wrath, 4.3.4, 5.4.8). The modern re-releases cannot bake from their own install — download the published bundles, or bake from the matching original client.
-- **Legacy fallbacks**: the grid engine (`Pathing:Engine=SpotAStar`) and V1/V3 Remote remain available; V3 (AmeisenNavigation) is no longer required for anything.
+- **Legacy fallbacks**: the grid engine (`Pathing:Engine=SpotAStar`) remains available. V1 Remote has no server since PathingAPI was removed, and V3 needs an external AmeisenNavigation (see below).
 
 ### Legacy / alternative backends
 
 These predate the navmesh engine and are kept for compatibility. Outdoors the app can discover an available service in this order:
 
-* **V3 Remote**: Out of process [AmeisenNavigation](https://github.com/Xian55/AmeisenNavigation/tree/feature/multi-version-guess-z-coord) - external service, superseded by the in-process navmesh engine on **every** client. Kept for compatibility; `PathingAPI` can also [answer its protocol directly](pathing-api.md#serving-v3-clients-from-pathingapi-antcp) if you want the wire format without the external binary.
-* **V1 Remote**: Out of process [PathingAPI](../PathingAPI/) more info [here](pathing-api.md#v1-remote-pathing---pathingapi) - MPQ-based; can host either engine.
+* **V3 Remote**: Out of process [AmeisenNavigation](https://github.com/Xian55/AmeisenNavigation/tree/feature/multi-version-guess-z-coord) - external service, superseded by the in-process navmesh engine on **every** client. Kept for compatibility until Phase 4 removes it.
+* **V1 Remote**: talked to PathingAPI, which is gone; a bot set to it plans locally instead ([the legacy remote modes](pathing-api.md#the-legacy-remote-modes)). Removed in Phase 4.
 * **V1 Local**: In process [PPather](../PPather/) - MPQ-based. Its legacy spot-grid A* engine (`Pathing:Engine=SpotAStar`) is superseded by the navmesh engine.
 * World map - Indoors pathfinder only works properly if `PathFilename` exists.
 * Dungeons / instances **not** supported!

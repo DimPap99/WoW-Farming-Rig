@@ -32,13 +32,14 @@ the client, then upload the bundles.
   `Navmesh:Bake:MinWorldZ:Expansion01 = -700` (Outland's floating base filter).
   The floor MUST match bake vs run or the hash differs and the tiles are ignored.
 
-**Bake** (background, via PathingAPI CLI):
+**Bake** (background, via the Pathing Service; or `Utilities/BakeTool` for a script):
 ```powershell
-dotnet run -c Release --project PathingAPI -- --exp=wrath --bake=all
+cd PathingService
+dotnet run -c Release -- --exp=wrath --bake=all
 #   all      -> the 4 world continents (PPatherService.WorldContinents), skips instances
 #   or a single continent:  --bake=Northrend
 ```
-- Progress: `GET api/PPather/Bake/Status`. Completion is logged with duration.
+- Progress: `GET /api/v1/bake` (or the Control Center's status bar). Completion is logged with duration.
 - Only present ADTs are baked (WDT grid mask); the geometry cache is LRU-capped
   (~640 MB peak) and freed after each continent.
 - Slow (minutes per continent). Full set ≈ 51k tiles / ~877 MB on disk.

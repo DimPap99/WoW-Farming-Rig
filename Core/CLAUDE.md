@@ -54,8 +54,8 @@ ships as `Local` on both hosts (`BlazorServer/appsettings.json`, and `RunOptions
 `Pathing:Engine=Navmesh`, which needs no game archives — see `PPather/CLAUDE.md`.
 
 The remote modes are opt-in and degrade rather than fail: `RemoteV3` (AmeisenNavigation
-over AnTCP) falls through to `RemoteV1` (PathingAPI over HTTP) and then to `Local` when
-`PingServer` fails. That fallback is silent apart from a log line, so a wrong `hostv3`/
+over AnTCP) falls through to `RemoteV1` (the removed PathingAPI over HTTP, so it always
+fails now) and then to `Local` when `PingServer` fails. That fallback is silent apart from a log line, so a wrong `hostv3`/
 `portv3` presents as "the remote server is being ignored" rather than as an error —
 check the `Using {Type}` line before assuming the remote is broken.
 

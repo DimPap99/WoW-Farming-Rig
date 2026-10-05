@@ -7,7 +7,7 @@ dotnet run --project Benchmarks -c Release                       # BenchmarkDotN
 dotnet run --project Benchmarks -c Release -- --bake-profile <label> [iterations]
 dotnet run --project Benchmarks -c Release -- --alloc-profile
 dotnet run --project Benchmarks -c Release -- --dump-geometry [outdir]
-dotnet run --project Benchmarks -c Release -- --pather-benchmark <baseUrl> [iters] [label] --engines SpotAStar,Navmesh
+dotnet run --project Benchmarks -c Release -- --pather-benchmark [baseUrl] [iters] [label]   # default http://localhost:5010
 ```
 
 ## `--bake-profile` is the byte-identity gate
@@ -37,7 +37,7 @@ Navmesh/BakeProfiler.cs       --bake-profile
 Navmesh/AllocProfiler.cs      --alloc-profile
 Navmesh/GeometryDumper.cs     --dump-geometry (rcdump for external inspection)
 Navmesh/Navmesh_*.cs          BenchmarkDotNet tile extract / bake / MPQ load
-PathingAPIBenchmark.cs        --pather-benchmark, drives a running server over HTTP
+PathingServiceBenchmark.cs    --pather-benchmark, routes against a running Pathing Service
 ```
 
 ## Things that will bite you

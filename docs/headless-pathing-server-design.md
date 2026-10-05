@@ -1,6 +1,8 @@
 # Headless Pathing Server — Design Doc
 
 **Status:** Draft / proposal — compile probe done (§9). macOS bake host scoped (§12).
+The server became the Pathing Service ([service architecture](service-architecture.md)), and
+PathingAPI, which the sections below trim from, was deleted in Phase 2.
 **Scope:** A minimal, standalone server whose only job is to host the DotRecast navmesh pathing engine and answer route requests over the existing RemoteV3 protocol. No MPQ / game files at runtime, no bot, no UI. Cross-platform (`net10.0`), shippable as a **multi-arch Docker image** (linux/amd64 + linux/arm64) published to GHCR, and runnable on Windows/macOS/Linux/arm64.
 
 **Also covered:** §12 extends this to Apple silicon, including running the **bake** natively on

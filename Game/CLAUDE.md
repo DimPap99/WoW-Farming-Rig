@@ -47,7 +47,7 @@ the requested duration. Do not "fix" a flaky timing test by removing that.
 
 **`WowProcess` matches a list of known executable names** and throws at construction when
 none is running, so it is a hard dependency for anything in the bot path — that is why
-`PathingAPI` and the utilities do not reference this project.
+the services and the utilities do not reference this project.
 
 **Screen capture is an interface here, implemented elsewhere.** `IWowScreen` /
 `IGpuTextureProvider` stay abstract so `SharedLib` and the pathing chain remain

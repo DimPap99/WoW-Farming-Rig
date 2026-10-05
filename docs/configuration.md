@@ -44,9 +44,9 @@ run.bat --Reader:Type=WGC --Pathing:Mode=Local --Reader:UseGpu=true
 | `Reader` | `Type` | string | `DXGI` | `DXGI`, `WGC` | Screen reader type. `WGC` = Windows Graphics Capture (supports background window) |
 | `Reader` | `UseGpu` | bool | `false` | `true`, `false` | Use GPU acceleration for screen reading |
 | `Pathing` | `Mode` | string | `Local` | `Local`, `RemoteV1`, `RemoteV3` | Pathfinding mode. `Local` uses the in-process navmesh — no external service, nothing to start. The remote modes are **probed, not required**: if `RemoteV3` gets no answer the bot falls back to `RemoteV1`, then to `Local`, so a misconfigured remote degrades rather than fails. The log line `Using Local(LocalPathingApi) engine Navmesh` confirms what was picked |
-| `Pathing` | `Engine` | string | `Navmesh` | `Navmesh`, `SpotAStar` | In-process engine for `Local` mode (and PathingAPI). `Navmesh` (default) answers queries from pre-baked DotRecast tiles under `Json/PathInfo/navmesh/<era>/`. With `Json\MPQ` present it also bakes missing tiles on demand; without it the engine runs **disk-only** and answers from the downloaded tiles alone. `SpotAStar` is the legacy spot-grid A* and always needs the archives |
+| `Pathing` | `Engine` | string | `Navmesh` | `Navmesh`, `SpotAStar` | In-process engine for `Local` mode. `Navmesh` (default) answers queries from pre-baked DotRecast tiles under `Json/PathInfo/navmesh/<era>/`. With `Json\MPQ` present it also bakes missing tiles on demand; without it the engine runs **disk-only** and answers from the downloaded tiles alone. `SpotAStar` is the legacy spot-grid A* and always needs the archives |
 | `Pathing` | `hostv1` | string | `localhost` | hostname/IP | RemoteV1 pathing server host |
-| `Pathing` | `portv1` | int | `5001` | port number | RemoteV1 pathing server port |
+| `Pathing` | `portv1` | int | `5001` | port number | RemoteV1 pathing server port (that server, PathingAPI, is gone; see [the legacy remote modes](pathing-api.md#the-legacy-remote-modes)) |
 | `Pathing` | `hostv3` | string | `127.0.0.1` | hostname/IP | RemoteV3 pathing server host |
 | `Pathing` | `portv3` | int | `47111` | port number | RemoteV3 pathing server port |
 | `Diagnostics` | `Enabled` | bool | `false` | `true`, `false` | Enable diagnostic mode |

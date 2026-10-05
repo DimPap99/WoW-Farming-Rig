@@ -24,6 +24,7 @@ dotnet test                                   # Microsoft.Testing.Platform (glob
 dotnet test --project ServiceTests            # just the service tests
 dotnet run --project BlazorServer
 PathingService/run.sh                         # the Pathing Service on :5010, Swagger at /swagger
+ControlCenter/run.sh                          # the Control Center on :5020 (start the Pathing Service first)
 dotnet run --project Benchmarks -c Release
 ```
 
@@ -51,14 +52,18 @@ before working in one.
 - `Core/` ✎ - Core business logic (GOAP, goals, requirements, input). WoW: Forever code
   lives mostly in `Core/Forever`; see "Code layout" in `docs/forever-port.md`
 - `Game/` ✎ - WoW process, input (stateful - read before touching), screen contracts
-- `Frontend/` ✎ - Blazor UI shared by BlazorServer and PathingAPI
+- `Frontend/` ✎ - BlazorServer's pages and components (the bot's dashboard, its map page)
+- `MapAssets/` ✎ - The Leaflet map's scripts, libraries and styles, static files only; served by
+  BlazorServer and the Control Center
+- `ControlCenter/` ✎ - The central web UI on :5020: live 3D view, map, route search, path library and
+  editor, NPC routes, bakes; a client of the Pathing Service, references Contracts, ServiceClients and
+  MapAssets only
 - `PPather/` ✎ - Pathfinding (DotRecast navmesh + legacy spot A*, MPQ reading)
-- `PathingAPI/` ✎ - Standalone pathing server, bake host, Leaflet map (legacy; its pages move to the
-  Control Center and its API to PathingService)
-- `PathingService/` ✎ - The Pathing Service: concurrent route planning and the authoring API (paths,
-  cost zones); plain `net10.0`, never references Core/Game/WinAPI/Frontend
+- `PathingService/` ✎ - The Pathing Service: concurrent route planning, the authoring API (paths, cost
+  zones), world data, bakes and the watch hub; plain `net10.0`, never references Core/Game/WinAPI/Frontend
 - `Contracts/` - Wire types and route constants shared by every service and client; no dependencies
-- `ServiceClients/` - Typed clients for the services (`IPathingClient`), shared by UI and agent
+- `ServiceClients/` - Typed clients for the services (`IPathingClient`), shared by UI and agent, plus the
+  path editing model (`PathEditor`) and map-world arithmetic (`ZoneMath`)
 - `ServiceTests/` - xUnit tests for the services, the planner and the stores; runs on Linux
 - `DataConfig/` ✎ - Every on-disk path; era vs client partitioning
 - `Benchmarks/` ✎ - BenchmarkDotNet + the `--bake-profile` byte-identity gate

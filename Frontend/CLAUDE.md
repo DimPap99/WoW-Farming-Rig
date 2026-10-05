@@ -1,14 +1,14 @@
-# Frontend — shared Blazor UI
+# Frontend — the bot's Blazor UI
 
-A razor class library shared by `BlazorServer` (the bot) and `PathingAPI` (the pathing
-server). Both host the same pages, so **anything added here must tolerate the other
-host**: PathingAPI has no `PlayerReader` and no game client, BlazorServer has no bake
-API.
+A razor class library hosted by `BlazorServer`: the bot's dashboard, its configuration pages
+and its map page. The central UI is the Control Center, which does not reference this project;
+the map's scripts live in `MapAssets` (see its CLAUDE.md), which both hosts serve.
 
 ## Layout
 
 ```
-DependencyInjection.cs   static file routes (/path, /tiles, /dbc, /area, ...)
+DependencyInjection.cs   static file routes for the map's data (WorldData: /path, /tiles, /dbc,
+                         /area, /locations, ...), from the bot's own data folder
 Pages/                   Leaflet, RecordPath, ClassConfig, ... (routable)
 Shared/MainLayout.razor  nav menu, incl. which items a client version gets
 Shared/SubscribingComponentBase.cs   event subscriptions + thread-safe redraw
@@ -17,20 +17,12 @@ Shared/WowheadLink.razor an item, spell or NPC linked to the client's Wowhead pa
 Shared/PropertyRows.razor  settings rows by reflection (Class Config, Addon Config)
 Shared/Terminal.razor    the dark log window (Log, Chat, Forever runs); its rig-*
                          classes live in site.css
-Helper/                  Currency, ItemQualityCss, JsonFolderWatcher, JS teardown,
-                         PathEditor (the Path Editor's points and selection)
+Helper/                  Currency, ItemQualityCss, JsonFolderWatcher, JS teardown
 KeyBindings/             the Key Bindings page's checks: KeyboardKeys,
                          KeyBindingCheck (needed vs bound), ActionBarSlotMap
-Controllers/             Road / DangerZone / Path authoring endpoints
 Forever*.cs, Pages/Forever*.razor   WoW: Forever only (see docs/forever-port.md)
-wwwroot/script/
-  leaflet-watch.js       the map, part 1: eras, Configs, tile bases, shared state
-  leaflet-map.js ...     the map's other parts, in load order: map (data, init),
-  ... leaflet-signalr.js layers, coords, spawns, sidebar, paths, signalr
-  leaflet-navmesh.js     navmesh tile overlay
-  leaflet-bake.js        bake controls
-  leaflet-zones.js       zone polygons
-wwwroot/css/leaflet-map.css  the map's own rules, linked by both hosts
+wwwroot/script/          the dashboard's own scripts (route.js, gather.js, ...);
+                         the map's are in MapAssets
 ```
 
 ## Things that will bite you
@@ -58,8 +50,9 @@ with a decimal comma, and `width: 82,5%` or `rotate(-2,41rad)` is silently ignor
 `ForeverStatus` shows how.
 
 **Static file routes are order-sensitive.** `DependencyInjection` registers
-`/tiles/<continent>` for shared-art continents *before* the general `/tiles`. Reversing
-that serves the wrong era's art.
+`/tiles/<continent>` for shared-art continents (`DataConfig.SharedTileFolders`) *before* the
+general `/tiles`. Reversing that serves the wrong era's art. The Pathing Service registers the
+same routes from its own folder (`PathingService/World/WorldDataFiles.cs`).
 
 **`PhysicalFileProvider` throws on a missing directory** — it does not create one. Use
 the `UseDataFolder` helper, which `CreateDirectory`s first. A missing folder here does
@@ -69,36 +62,16 @@ not break one route, it kills host startup.
 (era-derived). The map and its nav entry were stuck on `SoM or TBC` long after wrath,
 cata and mop worked, which is exactly how that goes stale.
 
-**The map script is in pieces.** `leaflet-watch.js` and
-`leaflet-map/layers/coords/spawns/sidebar/paths/signalr.js` are contiguous runs of one
-script, listed in that order in `BlazorServer/App.razor` and
-`PathingAPI/Pages/_Host.cshtml`. They share one global scope, so a function may call
-into any piece, but a load-time statement (`const x = new L.…`) sees only earlier
-pieces. After moving code across a boundary, update the table in
-`scripts/leaflet-pieces.mjs` and run `node scripts/leaflet-pieces.mjs check`; `join`
-prints the whole script. `Configs` stays in `leaflet-watch.js`: `CoreTests` reads it
-from there.
+**The map authors through the Pathing Service.** Recorded paths, cost zones, navmesh coverage
+and bakes are `/api/v1` calls, which BlazorServer forwards to `PathingService:Url`; the
+controllers that used to answer them here are gone. With the service down, those layers say
+"offline" and the rest of the map works. `RecordPath` saves through the bot's own files and
+keeps `PathEditor`, now in `ServiceClients`.
 
-**The JS mirrors `DataConfig` and must be kept in step.** `clientEra()`, `tileEra()`,
-`TILE_SHARED_CONTINENTS` and the `Configs` blocks in `leaflet-watch.js` duplicate
-`ClientEra` / `TileEra` / `TileSharedContinents` / `LeafletEras`. Change one, change both.
-
-**Tiles fall back to the CDN automatically.** `resolveTileBase()` HEAD-probes a few
-low-zoom local tiles per continent and uses `https://bot.tortoiseclothing.org/<era>`
-when they are absent. The candidate list has five entries because offset-cropped
-continents have no `z2x0y0`. The choice is made once at map load —
-`localStorage.leafletTilesLocal = '0'` forces the CDN.
-
-**Area names come from `WorldMapArea.json`, not `AreaTable.json`.** The worldmaparea
-carries subzone rows (name + `ParentAreaId` + bounds) when `Json/subzones/<exp>` existed
-at generation time. `AreaTable` is only a fallback for an era whose file predates that.
-
-**PathingAPI decides the era, not the URL.** `Pages/Leaflet.razor` in this project reads
-`PlayerReader.Version`; PathingAPI's copy reads `DataConfig.Exp`. Neither should trust
-the `{expansion}` route segment.
+**PathingAPI is gone.** Nothing here has to tolerate a second host any more; the Control
+Center has its own pages.
 
 ## Editing JS
 
-`wwwroot/script/*.js` is served straight from disk — no bundler, no build step. A
-browser reload is enough; only C# changes need a rebuild. Cache-bust query strings
-(`?v=…`) are appended by the host.
+`wwwroot/script/*.js` (and MapAssets' scripts) are served straight from disk — no bundler,
+no build step. A browser reload is enough; only C# changes need a rebuild.

@@ -1,5 +1,5 @@
 /* The Leaflet map's own rules, shared by both hosts (BlazorServer's LeafletComponent
-   and PathingAPI's map page), which used to inline a copy each. */
+   and the Control Center's map page), which used to inline a copy each. */
 
 .adtText {
     color: white;

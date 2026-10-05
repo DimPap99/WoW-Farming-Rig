@@ -1,6 +1,6 @@
 # SharedLib — the common bottom layer
 
-Depended on by `Core`, `Game`, `PPather`, `PathingAPI`, `WowheadDB` and most of
+Depended on by `Core`, `Game`, `PPather`, `PathingService`, `WowheadDB` and most of
 `Utilities/`. That breadth is the point and the constraint: **a change here reaches
 everything**, including the tools that regenerate `Json/` data.
 
