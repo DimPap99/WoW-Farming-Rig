@@ -1,0 +1,39 @@
+<nav class="pa-nav">
+    @foreach (NavSection group in Sections)
+    {
+        <div class="pa-nav-section">@group.Title</div>
+        @foreach (NavItem item in group.Items)
+        {
+            <NavLink class="pa-nav-link" href="@item.Href" Match="@item.Match" title="@item.Hint">
+                <span class="oi oi-@item.Icon" aria-hidden="true"></span>
+                <span class="pa-nav-label">@item.Label</span>
+            </NavLink>
+        }
+    }
+</nav>
+
+@code {
+    private sealed record NavItem(string Label, string Href, string Icon, string Hint,
+        NavLinkMatch Match = NavLinkMatch.Prefix);
+
+    private sealed record NavSection(string Title, NavItem[] Items);
+
+    private static readonly NavSection[] Sections =
+    [
+        new("Views",
+        [
+            new("Live view", "", "pulse", "3D view of every route the Pathing Service plans, and the test routes", NavLinkMatch.All),
+            new("Map", "Leaflet", "map", "The minimap with spawns, zones, cost zones, navmesh coverage and bakes"),
+        ]),
+        new("Tools",
+        [
+            new("Route search", "search", "magnifying-glass", "Plan a route between named places"),
+            new("Path library", "paths", "map-marker", "Recorded paths: draw, search their legs, edit and delete"),
+            new("NPC routes", "npc-routes", "people", "Route to an NPC of a type in a zone"),
+        ]),
+        new("Reference",
+        [
+            new("API", "api-reference", "code", "Swagger: every Pathing Service endpoint, with examples"),
+        ]),
+    ];
+}

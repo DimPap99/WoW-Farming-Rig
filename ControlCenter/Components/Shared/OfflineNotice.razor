@@ -1,0 +1,24 @@
+@* What a page shows instead of its tools while the Pathing Service is down. It recovers by
+   itself: the status poller sees the service come back and the page redraws. *@
+
+@inject PathingServiceOptions pathing
+
+<div class="pa-offline" role="status">
+    <span class="oi oi-warning pa-offline-icon" aria-hidden="true"></span>
+    <h2 class="pa-offline-title">The Pathing Service is offline</h2>
+    <p>
+        This page needs the Pathing Service at <code>@pathing.Url</code>, and it does not answer@(Reason is null ? "." : ":")
+        @if (Reason is not null)
+        {
+            <span class="pa-faint">&#32;@Reason</span>
+        }
+    </p>
+    <p class="pa-faint">
+        Start it with <code>PathingService/run.sh</code> (add <code>--exp=forever</code> for WoW: Forever);
+        this page comes back by itself. Another address goes in <code>PathingService:Url</code>.
+    </p>
+</div>
+
+@code {
+    [Parameter] public string? Reason { get; set; }
+}

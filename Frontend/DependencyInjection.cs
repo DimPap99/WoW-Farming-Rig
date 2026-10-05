@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿using Contracts.Pathing;
+
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -38,25 +40,25 @@ public static class DependencyInjection
         });
     }
 
+    /// <summary>
+    /// The world data the map reads (<see cref="WorldData"/>), from the bot's own data folder, so
+    /// the bot's map works without any service. The Pathing Service serves the same routes from
+    /// its folder for the Control Center.
+    /// </summary>
     public static IApplicationBuilder UseCustomStaticFiles(this IApplicationBuilder app, IWebHostEnvironment env)
     {
         DataConfig dataConfig = app.ApplicationServices.GetRequiredService<DataConfig>();
 
-        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.Path), "/path");
+        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.Path), WorldData.RecordedPaths);
 
         // Continents whose art this era shares with an earlier one are served
         // from that era's folder (see DataConfig.TileEra), so Northrend and
         // Outland are not duplicated for Cataclysm. Registered BEFORE the
-        // general /tiles route below: static file middleware runs in order, so
+        // general tile route below: static file middleware runs in order, so
         // the more specific RequestPath has to be first to win.
-        foreach (string continent in DataConfig.TileSharedContinents)
+        foreach ((string continent, string folder) in dataConfig.SharedTileFolders())
         {
-            if (DataConfig.TileEra(dataConfig.Exp, continent) == DataConfig.ClientEra(dataConfig.Exp))
-            {
-                continue;
-            }
-
-            string shared = Path.Combine(env.ContentRootPath, dataConfig.LeafletFor(continent));
+            string shared = Path.Combine(env.ContentRootPath, folder);
             if (!Directory.Exists(shared))
             {
                 continue;
@@ -65,15 +67,16 @@ public static class DependencyInjection
             app.UseStaticFiles(new StaticFileOptions
             {
                 FileProvider = new PhysicalFileProvider(shared),
-                RequestPath = "/tiles/" + continent
+                RequestPath = $"{WorldData.Tiles}/{continent}"
             });
         }
 
-        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.Leaflet), "/tiles");
-        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.ExpDbc), "/dbc");
-        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.ExpArea), "/area");
-        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.NpcSpawnLocations), "/npcspawnlocations");
-        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.MailboxLocations), "/mailboxlocations");
+        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.Leaflet), WorldData.Tiles);
+        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.ExpDbc), WorldData.Dbc);
+        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.ExpArea), WorldData.Area);
+        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.NpcSpawnLocations), WorldData.NpcSpawnLocations);
+        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.MailboxLocations), WorldData.MailboxLocations);
+        UseDataFolder(app, Path.Combine(env.ContentRootPath, dataConfig.Locations), WorldData.Locations);
 
         return app;
     }

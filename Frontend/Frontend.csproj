@@ -6,16 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Remove="wwwroot\teleport_locations.txt" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="wwwroot\teleport_locations.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <ItemGroup>
     <SupportedPlatform Include="browser" />
   </ItemGroup>
 
@@ -27,7 +17,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Contracts\Contracts.csproj" />
     <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\MapAssets\MapAssets.csproj" />
+    <ProjectReference Include="..\ServiceClients\ServiceClients.csproj" />
   </ItemGroup>
 
   <ItemGroup>

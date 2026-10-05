@@ -4,7 +4,7 @@
     Modes:
       -Bake                 the 6-tile bake corpus profile (stage table + tile hashes)
       -Throughput           40-tile virgin Barrens corridor
-      -Engines <list>       pathing A/B suite against a running PathingAPI
+      -Routes               route suite against a running Pathing Service
       -Filter <pattern>     a BenchmarkDotNet filter
 #>
 [CmdletBinding()]
@@ -13,8 +13,8 @@ param(
     [switch]$Throughput,
     [string]$Label = 'run',
     [int]$Iterations = 2,
-    [string]$Engines,
-    [string]$BaseUrl = 'http://localhost:5001',
+    [switch]$Routes,
+    [string]$BaseUrl = 'http://localhost:5010',
     [string]$Filter,
     [switch]$SkipDllCheck,
     [switch]$Rebuild
@@ -48,14 +48,14 @@ try {
     elseif ($Throughput) {
         $args = @('--bake-profile', $Label, 1, '--throughput')
     }
-    elseif ($Engines) {
-        $args = @('--pather-benchmark', $BaseUrl, $Iterations, $Label, '--engines', $Engines)
+    elseif ($Routes) {
+        $args = @('--pather-benchmark', $BaseUrl, $Iterations, $Label)
     }
     elseif ($Filter) {
         $args = @('--filter', $Filter)
     }
     else {
-        Write-Error 'Pick a mode: -Bake, -Throughput, -Engines <list>, or -Filter <pattern>.'
+        Write-Error 'Pick a mode: -Bake, -Throughput, -Routes, or -Filter <pattern>.'
         exit 2
     }
 

@@ -10,13 +10,13 @@ function Get-ProjectRoot {
 
 <#
     Finds the process to attach to. Targets are the two that actually do work:
-    PathingAPI (interactive pathing, bulk bakes) and Benchmarks (the bake
-    profiler / pathing A/B harness).
+    PathingService (route planning, bulk bakes) and Benchmarks (the bake
+    profiler / route harness).
 #>
 function Get-PatherPid {
     param(
         [int]$TargetPid = 0,
-        [string]$Target = 'any'   # any | PathingAPI | Benchmarks | BlazorServer
+        [string]$Target = 'any'   # any | PathingService | Benchmarks | BlazorServer
     )
 
     if ($TargetPid -gt 0) { return $TargetPid }
@@ -30,10 +30,10 @@ function Get-PatherPid {
     }
 
     $names = switch ($Target) {
-        'PathingAPI'   { @('PathingAPI') }
-        'Benchmarks'   { @('Benchmarks') }
-        'BlazorServer' { @('BlazorServer') }
-        default        { @('PathingAPI', 'Benchmarks', 'BlazorServer') }
+        'PathingService' { @('PathingService') }
+        'Benchmarks'     { @('Benchmarks') }
+        'BlazorServer'   { @('BlazorServer') }
+        default          { @('PathingService', 'Benchmarks', 'BlazorServer') }
     }
 
     $found = @()
@@ -58,7 +58,7 @@ function Get-PatherPid {
     }
 
     if ($found.Count -eq 0) {
-        Write-Error "No $Target process found. Start one first (e.g. `dotnet run --project PathingAPI -c Release`)."
+        Write-Error "No $Target process found. Start one first (e.g. PathingService/run.sh)."
         exit 5
     }
     if ($found.Count -gt 1) {

@@ -1,0 +1,125 @@
+@page "/"
+@page "/live"
+
+@inherits ControlCenterComponent
+
+@inject IPathingClient pathing
+@inject WorldCache worldCache
+@inject PathingStatus status
+
+<PageTitle>Live view · Control Center</PageTitle>
+
+@* Watches every route the Pathing Service plans, from any caller. *@
+<Viewport3D>
+    <Panel Title="Test routes" Icon="list" Position="top-left" Class="pa-panel--tall">
+        <Actions>
+            <span class="pa-count">@shown.Count / @All.Length</span>
+        </Actions>
+        <ChildContent>
+            <input class="pa-input" type="search" placeholder="Filter by zone or name" aria-label="Filter test routes"
+                   @bind="filter" @bind:event="oninput" @bind:after="Refilter" />
+            <label class="pa-check" title="Hide routes on continents the Pathing Service has no navmesh tiles for">
+                <input type="checkbox" @bind="onlyRoutable" @bind:after="Refilter" /> Only continents with tiles
+            </label>
+
+            @if (world is null)
+            {
+                <ResultLine Text="@(status.Online ? "Loading..." : "Waiting for the Pathing Service")" Kind="ResultKind.Info" />
+            }
+
+            <div class="pa-list">
+                @foreach (IGrouping<string, TestRoute> zone in shown.GroupBy(r => r.Zone))
+                {
+                    <div class="pa-list-heading">@zone.Key</div>
+                    @foreach (TestRoute route in zone)
+                    {
+                        bool routable = world?.CanRoute(world.ContinentOf(route.Forward.UiMapId)) == true;
+                        <div class="pa-list-item @(routable ? null : "is-unavailable")"
+                             title="@(routable ? Describe(route.Forward) : $"No navmesh tiles for {world?.ContinentOf(route.Forward.UiMapId) ?? "this map"}")">
+                            <span class="pa-list-name">@route.Name</span>
+                            @if (results.TryGetValue(route.Forward, out (string Text, ResultKind Kind) outcome))
+                            {
+                                <ResultLine Text="@outcome.Text" Kind="@outcome.Kind" />
+                            }
+                            <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Run"
+                                    @onclick="() => RunAsync(route.Forward)">
+                                <span class="oi oi-media-play" aria-hidden="true"></span>
+                            </button>
+                            @if (route.Reverse is RouteRequest reverse)
+                            {
+                                <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Run reversed"
+                                        @onclick="() => RunAsync(reverse, route.Forward)">
+                                    <span class="oi oi-loop-circular" aria-hidden="true"></span>
+                                </button>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </ChildContent>
+    </Panel>
+</Viewport3D>
+
+@code {
+    // Keyed by the forward request: a record, so equal requests share their last outcome.
+    private readonly Dictionary<RouteRequest, (string Text, ResultKind Kind)> results = [];
+
+    private WorldSnapshot? world;
+    private string filter = string.Empty;
+    private bool onlyRoutable;
+    private List<TestRoute> shown = [];
+
+    private TestRoute[] All => world?.TestRoutes ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Subscribe(() => status.Reconnected += Reload, () => status.Reconnected -= Reload);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        world = await worldCache.GetAsync();
+        Refilter();
+    }
+
+    private void Reload()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private void Refilter()
+    {
+        shown = All
+            .Where(r => filter.Length == 0 ||
+                        r.Zone.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                        r.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            .Where(r => !onlyRoutable || world?.CanRoute(world.ContinentOf(r.Forward.UiMapId)) == true)
+            .ToList();
+    }
+
+    private async Task RunAsync(RouteRequest request, RouteRequest? key = null)
+    {
+        RouteRequest slot = key ?? request;
+        results[slot] = ("...", ResultKind.Info);
+        try
+        {
+            RouteResponse response = await pathing.FindRouteAsync(request, Token);
+            results[slot] = RouteResults.Brief(response);
+        }
+        catch (OperationCanceledException)
+        {
+            // The page went away.
+        }
+    }
+
+    private static string Describe(RouteRequest request)
+    {
+        return string.Create(CultureInfo.InvariantCulture,
+            $"{request.Space} on map {request.UiMapId}: {request.From.X:F1}, {request.From.Y:F1} to {request.To.X:F1}, {request.To.Y:F1}");
+    }
+}

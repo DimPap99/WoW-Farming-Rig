@@ -19,10 +19,10 @@
 
     <link href="@Assets["_content/Frontend/css/site.css"]" rel="stylesheet" />
     <link rel="stylesheet" href="@Assets["_content/Frontend/css/animate-v4.0.0.min.css"]" />
-    <link rel="stylesheet" href="@Assets["_content/Frontend/leaflet-groupedlayercontrol/leaflet.groupedlayercontrol.min.css"]" />
-    <link rel="stylesheet" href="@Assets["_content/Frontend/leaflet/leaflet.draw.css"]" />
-    <link rel="stylesheet" href="@Assets["_content/Frontend/css/leaflet-sidebar.css"]" />
-    <link rel="stylesheet" href="@Assets["_content/Frontend/css/leaflet-map.css"]" />
+    <link rel="stylesheet" href="@Assets["_content/MapAssets/leaflet-groupedlayercontrol/leaflet.groupedlayercontrol.min.css"]" />
+    <link rel="stylesheet" href="@Assets["_content/MapAssets/leaflet/leaflet.draw.css"]" />
+    <link rel="stylesheet" href="@Assets["_content/MapAssets/css/leaflet-sidebar.css"]" />
+    <link rel="stylesheet" href="@Assets["_content/MapAssets/css/leaflet-map.css"]" />
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
 
@@ -31,8 +31,6 @@
     <HeadOutlet @rendermode="@InteractiveServer" />
 </head>
 <body>
-    <script src="@Assets["_content/Frontend/teleport_locations.txt"]"></script>
-
     <script src="@Assets["_content/Frontend/script/d3.v7.min.js"]"></script>
     <script src="@Assets["_content/Frontend/script/power.js"]" ></script>
     <script src="@Assets["_content/Frontend/script/panzoom.min.js"]"></script>
@@ -41,28 +39,28 @@
     <script src="@Assets["_content/Frontend/script/storage.js"]"></script>
     <script src="@Assets["_content/Frontend/script/autocomplete-image-injector.js"]"></script>
 
-    <script src="@Assets["_content/Frontend/leaflet/leaflet.js"]" ></script>
+    <script src="@Assets["_content/MapAssets/leaflet/leaflet.js"]" ></script>
 
-    <script src="@Assets["_content/Frontend/leaflet-pixi/pixi.min.js"]"></script>
-    <script src="@Assets["_content/Frontend/leaflet-pixi/PixiOverlay.js"]"></script>
+    <script src="@Assets["_content/MapAssets/leaflet-pixi/pixi.min.js"]"></script>
+    <script src="@Assets["_content/MapAssets/leaflet-pixi/PixiOverlay.js"]"></script>
     
-    <script src="@Assets["_content/Frontend/leaflet/leaflet.draw.js"]"></script>
-    <script src="@Assets["_content/Frontend/leaflet-groupedlayercontrol/leaflet.groupedlayercontrol.min.js"]"></script>
+    <script src="@Assets["_content/MapAssets/leaflet/leaflet.draw.js"]"></script>
+    <script src="@Assets["_content/MapAssets/leaflet-groupedlayercontrol/leaflet.groupedlayercontrol.min.js"]"></script>
 
-    <script src="@Assets["_content/Frontend/script/icon_atlas.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/icon_atlas.js"]"></script>
     @* The map, in pieces and in this order: see scripts/leaflet-pieces.mjs. *@
-    <script src="@Assets["_content/Frontend/script/leaflet-watch.js"]"></script>
-    <script src="@Assets["_content/Frontend/script/leaflet-map.js"]"></script>
-    <script src="@Assets["_content/Frontend/script/leaflet-layers.js"]"></script>
-    <script src="@Assets["_content/Frontend/script/leaflet-coords.js"]"></script>
-    <script src="@Assets["_content/Frontend/script/leaflet-spawns.js"]"></script>
-    <script src="@Assets["_content/Frontend/script/leaflet-sidebar.js"]"></script>
-    <script src="@Assets["_content/Frontend/script/leaflet-paths.js"]"></script>
-    <script src="@Assets["_content/Frontend/script/leaflet-signalr.js"]"></script>
-    <script src="@Assets["_content/Frontend/script/leaflet-zones.js"]"></script>
-    <script src="@Assets["_content/Frontend/script/leaflet-poi.js"]"></script>
-    <script src="@Assets["_content/Frontend/script/leaflet-navmesh.js"]"></script>
-    <script src="@Assets["_content/Frontend/script/leaflet-bake.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-watch.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-map.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-layers.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-coords.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-spawns.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-sidebar.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-paths.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-signalr.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-zones.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-poi.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-navmesh.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-bake.js"]"></script>
 
     <div id="blazor-error-ui">
     @if (Env.IsDevelopment())

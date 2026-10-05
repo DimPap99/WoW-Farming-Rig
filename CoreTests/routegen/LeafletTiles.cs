@@ -59,7 +59,7 @@ internal static partial class LeafletTiles
     internal static Config? ReadConfig(string repoRoot, string era, string continent)
     {
         string script = Path.Combine(repoRoot,
-            "Frontend", "wwwroot", "script", "leaflet-watch.js");
+            "MapAssets", "wwwroot", "script", "leaflet-watch.js");
 
         if (!File.Exists(script))
         {

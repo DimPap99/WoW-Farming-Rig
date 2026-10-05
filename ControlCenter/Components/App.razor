@@ -1,0 +1,70 @@
+@* The document. Pages run interactively on the server without prerendering: they call the
+   Pathing Service once, when the circuit is up, not twice. *@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Control Center</title>
+    <base href="/" />
+    <link rel="icon" href="favicon.ico" />
+
+    @* Bootstrap stays for the map: its sidebar and controls are Bootstrap-styled. *@
+    <link rel="stylesheet" href="@Assets["css/bootstrap/bootstrap.min.css"]" />
+
+    @* The map: the same files BlazorServer serves, from MapAssets; the CSS as BlazorServer loads it. *@
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="@Assets["_content/MapAssets/leaflet-groupedlayercontrol/leaflet.groupedlayercontrol.min.css"]" />
+    <link rel="stylesheet" href="@Assets["_content/MapAssets/leaflet/leaflet.draw.css"]" />
+    <link rel="stylesheet" href="@Assets["_content/MapAssets/css/leaflet-sidebar.css"]" />
+    <link rel="stylesheet" href="@Assets["_content/MapAssets/css/leaflet-map.css"]" />
+
+    <script src="@Assets["_content/MapAssets/leaflet/leaflet.js"]"></script>
+    <script src="@Assets["_content/MapAssets/leaflet-pixi/pixi.min.js"]"></script>
+    <script src="@Assets["_content/MapAssets/leaflet-pixi/PixiOverlay.js"]"></script>
+    <script src="@Assets["_content/MapAssets/leaflet/leaflet.draw.js"]"></script>
+    <script src="@Assets["_content/MapAssets/leaflet-groupedlayercontrol/leaflet.groupedlayercontrol.min.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/icon_atlas.js"]"></script>
+    @* The map, in pieces and in this order: see scripts/leaflet-pieces.mjs. *@
+    <script src="@Assets["_content/MapAssets/script/leaflet-watch.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-map.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-layers.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-coords.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-spawns.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-sidebar.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-paths.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-signalr.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-zones.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-poi.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-navmesh.js"]"></script>
+    <script src="@Assets["_content/MapAssets/script/leaflet-bake.js"]"></script>
+
+    <link rel="stylesheet" href="@Assets["css/site.css"]" />
+    <HeadOutlet @rendermode="Interactive" />
+</head>
+<body>
+    <Routes @rendermode="Interactive" />
+
+    <div id="blazor-error-ui" role="alert">
+        An error has occurred. This page may no longer respond until reloaded.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss" aria-label="Dismiss">✕</a>
+    </div>
+
+    <script src="_framework/blazor.web.js"></script>
+
+    @* The watch hub's client: the map's live layer and the 3D view both use it. *@
+    <script src="@Assets["js/signalr.min.js"]"></script>
+    <script src="@Assets["js/signalr-protocol-msgpack.min.js"]"></script>
+
+    @* The 3D view fetches Babylon.js itself, and only on the pages that have one. *@
+    <script src="@Assets["js/pathing-ui.js"]"></script>
+    <script src="@Assets["js/pathing-scene.js"]"></script>
+</body>
+</html>
+
+@code {
+    private static readonly IComponentRenderMode Interactive = new InteractiveServerRenderMode(prerender: false);
+}

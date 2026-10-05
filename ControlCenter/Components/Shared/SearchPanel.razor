@@ -1,0 +1,268 @@
+@* From/To route search between named places. The Pathing Service plans the route and draws it
+   in every viewer, so a page only places this panel. *@
+
+@inherits ControlCenterComponent
+
+@inject IPathingClient pathing
+@inject WorldCache worldCache
+@inject PathingStatus status
+
+<div class="pa-form">
+    @if (world is null)
+    {
+        <ResultLine Text="@(status.Online ? "Loading places..." : "Waiting for the Pathing Service")" Kind="ResultKind.Info" />
+    }
+    else
+    {
+        <div class="pa-field">
+            <label class="pa-label" for="@Id("continent")">Continent</label>
+            @if (Locked)
+            {
+                <span class="pa-input pa-readout" id="@Id("continent")" title="The map's continent; switch it with the map's own selector">
+                    @continent
+                </span>
+            }
+            else
+            {
+                <select class="pa-select" id="@Id("continent")" value="@continent" @onchange="ChangeContinent">
+                    @foreach (ContinentInfo c in world.World.Continents)
+                    {
+                        <option value="@c.Name">@c.Name@(c.Tiles > 0 ? null : " (no tiles)")</option>
+                    }
+                </select>
+            }
+        </div>
+
+        <div class="pa-endpoints">
+            <div class="pa-field">
+                <label class="pa-label" for="@Id("from")">From</label>
+                <input class="pa-input" id="@Id("from")" list="@Id("places")" autocomplete="off"
+                       placeholder="@Placeholder" @bind="from" @bind:event="oninput" />
+            </div>
+            <button class="pa-btn pa-btn--ghost pa-btn--icon pa-swap" type="button" title="Swap From and To" @onclick="Swap">
+                <span class="oi oi-elevator" aria-hidden="true"></span>
+            </button>
+            <div class="pa-field">
+                <label class="pa-label" for="@Id("to")">To</label>
+                <input class="pa-input" id="@Id("to")" list="@Id("places")" autocomplete="off"
+                       placeholder="@Placeholder" @bind="to" @bind:event="oninput" />
+            </div>
+        </div>
+
+        <details class="pa-details">
+            <summary>Options</summary>
+            <div class="pa-row">
+                <div class="pa-field" title="Randomly offsets each corner by up to this many yards. 0 disables it.">
+                    <label class="pa-label" for="@Id("jitter")">Jitter (yd)</label>
+                    <input class="pa-input" id="@Id("jitter")" type="number" min="0" max="10" step="0.5" @bind="jitter" />
+                </div>
+                <div class="pa-field" title="Seeds the jitter so a route is reproducible. Empty draws a new seed each search.">
+                    <label class="pa-label" for="@Id("seed")">Seed</label>
+                    <div class="pa-input-group">
+                        <input class="pa-input" id="@Id("seed")" placeholder="random" @bind="seed" />
+                        <button class="pa-btn pa-btn--icon" type="button" title="Roll a seed" @onclick="RollSeed">
+                            <span class="oi oi-random" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <div class="pa-actions">
+            <button class="pa-btn" type="button" disabled="@busy" title="Draw a straight line between the two places"
+                    @onclick="DrawAsync">
+                <span class="oi oi-minus" aria-hidden="true"></span> Line
+            </button>
+            <BusyButton Class="pa-btn--primary pa-grow" Icon="media-play" Busy="@busy" OnClick="FindAsync">
+                Find path
+            </BusyButton>
+        </div>
+
+        <ResultLine Text="@result" Kind="@resultKind" />
+    }
+</div>
+
+<datalist id="@Id("places")">
+    @foreach (NamedLocation place in Places)
+    {
+        <option value="@place.Name"></option>
+    }
+</datalist>
+
+@code {
+    /// <summary>The continent to start on; otherwise the first with tiles.</summary>
+    [Parameter] public string? Continent { get; set; }
+
+    /// <summary>Keeps the panel on <see cref="Continent"/>: the map can only show its own.</summary>
+    [Parameter] public bool Locked { get; set; }
+
+    private readonly string instance = Guid.NewGuid().ToString("N")[..8];
+    private readonly List<NamedLocation> custom = [];
+
+    private WorldSnapshot? world;
+    private string continent = string.Empty;
+    private string from = string.Empty;
+    private string to = string.Empty;
+    private float jitter;
+    private string seed = string.Empty;
+    private bool busy;
+    private string? result;
+    private ResultKind resultKind;
+
+    private IEnumerable<NamedLocation> Places => world is null
+        ? []
+        : custom.Where(l => l.Continent == continent).Concat(world.LocationsOn(continent));
+
+    private string Placeholder => $"Type to search {Places.Count():N0} places";
+
+    private string Id(string part) => $"pa-{part}-{instance}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Subscribe(() => status.Reconnected += Reload, () => status.Reconnected -= Reload);
+        await LoadAsync();
+    }
+
+    /// <summary>A place the map authored; the map page mirrors its custom points here.</summary>
+    public void AddCustom(NamedLocation place)
+    {
+        if (custom.Any(l => l.Name == place.Name))
+        {
+            return;
+        }
+
+        custom.Add(place);
+        Redraw();
+    }
+
+    public void RemoveCustom(string name)
+    {
+        custom.RemoveAll(l => l.Name == name);
+        Redraw();
+    }
+
+    private async Task LoadAsync()
+    {
+        world = await worldCache.GetAsync();
+        if (world is null)
+        {
+            return;
+        }
+
+        continent = !string.IsNullOrEmpty(Continent) && world.Continent(Continent) is ContinentInfo given
+            ? given.Name
+            : world.World.Continents.FirstOrDefault(c => c.Tiles > 0)?.Name
+              ?? world.World.Continents.FirstOrDefault()?.Name
+              ?? string.Empty;
+    }
+
+    // The service came back: what it serves may have changed.
+    private void Reload()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private void ChangeContinent(ChangeEventArgs e)
+    {
+        continent = e.Value?.ToString() ?? string.Empty;
+        from = to = string.Empty;
+        Show(null, ResultKind.Info);
+    }
+
+    private void Swap()
+    {
+        (from, to) = (to, from);
+    }
+
+    private void RollSeed()
+    {
+        seed = Random.Shared.Next(1_000_000).ToString(CultureInfo.InvariantCulture);
+    }
+
+    private NamedLocation? Resolve(string name)
+    {
+        return Places.FirstOrDefault(l => l.Name == name);
+    }
+
+    private bool TryEndpoints(out NamedLocation start, out NamedLocation end, out ZoneInfo zone)
+    {
+        start = null!;
+        end = null!;
+        zone = null!;
+
+        NamedLocation? first = Resolve(from.Trim());
+        NamedLocation? last = Resolve(to.Trim());
+        if (first is null || last is null)
+        {
+            Show(first is null && last is null ? "Pick a From and a To place from the list."
+                : first is null ? "Pick a From place from the list."
+                : "Pick a To place from the list.", ResultKind.Error);
+            return false;
+        }
+
+        // A world route's zone only picks the continent; the one under the start will do.
+        if (world?.ZoneAt(first.MapId, first.Position) is not ZoneInfo found)
+        {
+            Show($"{continent} has no zone in the map data", ResultKind.Error);
+            return false;
+        }
+
+        (start, end, zone) = (first, last, found);
+        return true;
+    }
+
+    private async Task FindAsync()
+    {
+        if (!TryEndpoints(out NamedLocation start, out NamedLocation end, out ZoneInfo zone))
+        {
+            return;
+        }
+
+        busy = true;
+        Show("Searching...", ResultKind.Info);
+        try
+        {
+            int? parsedSeed = int.TryParse(seed, NumberStyles.Integer, CultureInfo.InvariantCulture, out int s) ? s : null;
+            RouteResponse response = await pathing.FindRouteAsync(new RouteRequest(null, zone.UiMapId, CoordinateSpace.World,
+                start.Position, end.Position, new RouteTuning(jitter, parsedSeed)), Token);
+
+            (result, resultKind) = RouteResults.Describe(response);
+        }
+        catch (OperationCanceledException)
+        {
+            // The page went away.
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task DrawAsync()
+    {
+        if (!TryEndpoints(out NamedLocation start, out NamedLocation end, out ZoneInfo zone))
+        {
+            return;
+        }
+
+        try
+        {
+            ServiceResult drawn = await pathing.DrawPathAsync(new WatchPath(WatchNames.Line, zone.UiMapId, CoordinateSpace.World,
+                [start.Position, end.Position]), Token);
+            Show(drawn.Ok ? "Straight line drawn" : drawn.Error, drawn.Ok ? ResultKind.Info : ResultKind.Error);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void Show(string? text, ResultKind kind)
+    {
+        result = text;
+        resultKind = kind;
+    }
+}

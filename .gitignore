@@ -305,10 +305,6 @@ HeadlessServer/frame_config.json
 HeadlessServer/addon_config.json
 HeadlessServer/data_config.json
 
-PathingAPI/frame_config.json
-PathingAPI/addon_config.json
-PathingAPI/data_config.json
-
 # BenchmarkDotNet artifacts
 **/BenchmarkDotNet.Artifacts/
 # Runtime-baked navmesh tile cache
