@@ -170,13 +170,13 @@ and `ForeverCasc__Cache` are optional. Leave Install and Listfile empty to
 serve only baked tiles. A configured HTTP bake resumed one existing Azeroth
 ADT, and an unconfigured HTTP host returned the disk-only route above.
 
-## Code layout and upstream seams
+## Code layout
 
-The port keeps its logic in Forever-owned files so upstream merges stay
-mechanical (see [upstream-sync.md](upstream-sync.md)). When fixing Forever
-behaviour, change these files rather than shared upstream classes.
+The port's logic lives in its own files, listed below as a map of where
+Forever behaviour is. The repository is no longer a fork, so a shared class
+can be changed directly when that is the cleaner fix.
 
-Forever-owned code:
+Forever code:
 
 - `Core/Forever/` - the guarded runtime: `ForeverGoalFactory` (the session's
   composition root), `ForeverStateMachine` (the declared states, exits, time
@@ -214,7 +214,7 @@ Forever-owned code:
   `ForeverPages.cs` (the pages offered on Forever), `Pages/ForeverRuns.razor`
   and `Pages/ForeverStatus.razor` (the home page card).
 
-Where Forever still touches upstream code:
+Where Forever touches the shared code:
 
 - Client detection: `ClientVersion.Forever`, `StartupClientVersion` (1.60+),
   the `WowB` process name and the `forever` data era.
@@ -236,8 +236,8 @@ Where Forever still touches upstream code:
   its navigation and page gate from `ForeverPages`, and `Screenshot.razor` hides
   `BotHeader`; `BlazorServer/Program.cs` registers `ForeverRunHost` on Forever.
 
-A Forever-owned controller loop would let `BotController`, `GoapAgent`,
-`PlayerReader`, `KeyReader` and `RequirementFactory` return to upstream as well.
+A Forever-owned controller loop would take the Forever guards out of
+`BotController`, `GoapAgent`, `PlayerReader`, `KeyReader` and `RequirementFactory`.
 
 ### Class-agnostic rotation (2026-10-03)
 

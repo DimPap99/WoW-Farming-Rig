@@ -34,7 +34,7 @@ WoW Farming Rig, a World of Warcraft automation tool. If that's not something yo
 project, that's entirely fair — the measurements below stand on their own and
 you're welcome to use them without any attribution or connection.
 
-Diffs, if useful: <https://github.com/Xian55/DotRecast/tree/wow-mods>
+Diffs, if useful: <https://github.com/DimPap99/DotRecast/tree/wow-mods>
 Full write-up with methodology: [DotRecast fork history](dotrecast-fork.md).
 
 ## Correctness
