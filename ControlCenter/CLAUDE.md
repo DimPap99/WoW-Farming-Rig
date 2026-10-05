@@ -35,6 +35,7 @@ Pathing/PathingStatus.cs           the Pathing Service's poller: + capabilities,
 Pathing/WorldCache.cs              zones, continents, places, test routes; reloads on reconnect
 Pathing/WatchFeed.cs               the routes the service plans, as a route watcher of /watchHub,
                                    connected while a page watches; WatchConnectionFactory
+Pathing/ZoneLookup.cs              a point's zone from the service's area grid, kept per cell
 Bots/BotManagerStatus.cs           the Bot Manager's poller: + ManagerHealth (bots, online)
 Bots/FleetFeed.cs                  the one client of the manager's /fleetHub: every BotInfo, kept
                                    current; Changed, Resynced, Log, RunEnded for the pages
@@ -172,9 +173,15 @@ rebuild before a browser check.
 edit replans only the legs whose ends moved. A waypoint with height 0 takes the ground's from the
 first leg found through it. Library files are one zone's map coordinates with no height (as the bot
 records them; a file with heights is world yards); the zone is guessed from the file name.
-`ZoneMath.ZoneAt` names a point's zone from the zone maps alone - the one it lies furthest inside,
-since zone maps overlap (Durotar's covers the east of the Barrens) - which is right in the middle
-of a zone and approximate at its border; continent maps only where no zone's map reaches.
+
+**A point's zone comes from the service's area grid.** Zone maps overlap a lot - Durotar's covers
+the east of the Barrens, the Barrens' the south of Durotar - so no rule on the map rectangles
+names a point's zone right at a border. `ZoneLookup` asks `/api/v1/area` (the baked grid's area,
+a sub-area such as a town resolved to its zone: `AreaAtPoint.UiMapId`) and keeps the answer per
+16-yard cell; a page shows what is `Known` at once and draws again when `LearnAsync` learned
+something. Where the grid is not baked, `ZoneMath.ZoneAt` guesses from the maps: the one the point
+lies furthest inside, continent maps last. The Forever export takes the looked-up zone when its map
+holds the point (a step's points must be 0 to 100 on its map), else the guess.
 
 **The era comes from the service, not the URL.** The map page passes the service's client to
 the map script; the `/Leaflet/{client}` segment is advisory, as the map's own continent selector

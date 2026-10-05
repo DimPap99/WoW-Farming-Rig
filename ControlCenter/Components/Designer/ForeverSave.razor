@@ -5,6 +5,7 @@
 
 @inject IPathingClient pathing
 @inject IJSRuntime js
+@inject ZoneLookup zones
 
 <details class="pa-details">
     <summary>Forever route</summary>
@@ -63,16 +64,22 @@
             file += ".json";
         }
 
-        string title = System.IO.Path.GetFileNameWithoutExtension(file).Replace('_', ' ');
-        if (!ForeverExport.TryBuild(title, Waypoints, Areas, kills, World.World.Zones, continent.MapId, out string text, out string error))
-        {
-            Show(error, ResultKind.Error);
-            return;
-        }
-
         busy = true;
         try
         {
+            // Each point's zone from the service's area grid: a step names its points on that zone's map.
+            int mapId = continent.MapId;
+            Point3[] middles = [.. Areas.Select(a => new Point3(a.Average(p => p.X), a.Average(p => p.Y), 0))];
+            await zones.LearnAsync(mapId, [.. Waypoints, .. middles], Token);
+
+            string title = System.IO.Path.GetFileNameWithoutExtension(file).Replace('_', ' ');
+            if (!ForeverExport.TryBuild(title, Waypoints, Areas, kills, p => zones.Known(World, mapId, p), World.World.Zones, mapId,
+                    out string text, out string error))
+            {
+                Show(error, ResultKind.Error);
+                return;
+            }
+
             ServiceResult<ForeverRouteInfo[]> listed = await pathing.ListForeverRoutesAsync(Token);
             if (listed.Value?.Any(r => r.Name.Equals(file, StringComparison.OrdinalIgnoreCase)) == true &&
                 !await js.ConfirmAsync($"Replace the Forever route {file}?", Token))

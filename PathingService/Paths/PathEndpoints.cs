@@ -9,6 +9,8 @@ using PathingService.Hosting;
 
 using PPather.Planning;
 
+using SharedLib;
+
 namespace PathingService.Paths;
 
 public static class PathEndpoints
@@ -39,7 +41,7 @@ public static class PathEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status404NotFound);
 
-        app.MapGet(PathingApi.Area, (int mapId, float x, float y, RoutePlanner planner) =>
+        app.MapGet(PathingApi.Area, (int mapId, float x, float y, RoutePlanner planner, WorldMapAreaDB maps) =>
             {
                 if (!float.IsFinite(x) || !float.IsFinite(y))
                 {
@@ -47,10 +49,11 @@ public static class PathEndpoints
                 }
 
                 (int areaId, float z) = planner.GetAreaAndHeight(mapId, x, y);
-                return Results.Ok(new AreaAtPoint(areaId, z));
+                int uiMapId = maps.TryGetZoneOfArea(areaId, out WorldMapArea zone) ? zone.UIMapId : 0;
+                return Results.Ok(new AreaAtPoint(areaId, z, uiMapId));
             })
             .WithTags(Tag)
-            .WithSummary("Area id and walkable height at a world point of a continent (mapId), from baked data only")
+            .WithSummary("Area id, its zone map and the walkable height at a world point of a continent (mapId), from baked data only")
             .Produces<AreaAtPoint>();
 
         return app;

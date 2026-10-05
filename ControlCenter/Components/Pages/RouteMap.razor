@@ -9,6 +9,7 @@
 @inject WorldCache worldCache
 @inject PathingStatus status
 @inject IJSRuntime js
+@inject ZoneLookup zoneLookup
 
 <PageTitle>Routes · Control Center</PageTitle>
 
@@ -322,7 +323,34 @@
     {
         dirty = true;
         Plan();
+        LearnZones();
         Show();
+    }
+
+    // The waypoints' zones from the service's area grid; the list names them again when they are known.
+    private void LearnZones()
+    {
+        if (world is null || waypoints.Count == 0)
+        {
+            return;
+        }
+
+        int mapId = MapId;
+        Point3[] points = [.. waypoints];
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                if (await zoneLookup.LearnAsync(mapId, points, Token))
+                {
+                    StateHasChanged();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // The page went away.
+            }
+        });
     }
 
     // The legs as far as each goes, coloured by how it ended; the waypoints and areas as shapes.
@@ -398,7 +426,7 @@
     }
 
     // A waypoint as a player reads it: the zone and its map coordinates.
-    private string Where(Point3 at) => ZoneLabels.Where(world, MapId, at);
+    private string Where(Point3 at) => ZoneLabels.Where(world is null ? null : zoneLookup.Known(world, MapId, at), at);
 
     // --- the map's events -------------------------------------------------------------------
 
@@ -580,6 +608,7 @@
         waypoints = [.. path.Waypoints];
         opened = path.Name;
         Plan();
+        LearnZones();
         Show(frame: true);
     }
 

@@ -14,6 +14,8 @@ public sealed class WorldMapAreaDB
     private readonly FrozenDictionary<int, WorldMapArea> wmas;
     private readonly WorldMapArea[] areasByNameLengthDesc;
     private readonly WorldMapArea[] subzonesByNameLengthDesc;
+    private readonly FrozenDictionary<int, WorldMapArea> zonesByAreaId;
+    private readonly FrozenDictionary<int, WorldMapArea> subzonesByAreaId;
 
     public const int AreaIDOffset = 1000000;
 
@@ -58,6 +60,23 @@ public sealed class WorldMapAreaDB
 
         this.wmas = wmas.ToFrozenDictionary();
         this.AreaHitbox = areahitbox.ToFrozenDictionary();
+
+        Dictionary<int, WorldMapArea> zonesById = [];
+        foreach (WorldMapArea zone in wmas.Values)
+        {
+            if (zone.AreaID > 0)
+            {
+                zonesById.TryAdd(zone.AreaID, zone);
+            }
+        }
+        zonesByAreaId = zonesById.ToFrozenDictionary();
+
+        Dictionary<int, WorldMapArea> subzonesById = [];
+        foreach (WorldMapArea subzone in subzones)
+        {
+            subzonesById.TryAdd(subzone.AreaID, subzone);
+        }
+        subzonesByAreaId = subzonesById.ToFrozenDictionary();
 
         areasByNameLengthDesc = [.. this.wmas.Values
             .Where(static w => w.AreaName.Length > 0)
@@ -224,6 +243,26 @@ public sealed class WorldMapAreaDB
     public WorldMapArea GetByAreaId(int areaId)
     {
         return wmas.Values.FirstOrDefault(x => x.AreaID == areaId);
+    }
+
+    /// <summary>
+    /// The zone an area lies in: the zone itself, or a sub-area's (a town, a cave) parent zone - the
+    /// baked area grid stores the finest id. False for an id the map data does not know.
+    /// </summary>
+    public bool TryGetZoneOfArea(int areaId, out WorldMapArea zone)
+    {
+        // A sub-area's parent can be a sub-area itself; a few steps reach the zone.
+        for (int step = 0; step < 4 && areaId > 0; step++)
+        {
+            if (zonesByAreaId.TryGetValue(areaId, out zone))
+                return true;
+            if (!subzonesByAreaId.TryGetValue(areaId, out WorldMapArea subzone))
+                break;
+            areaId = subzone.ParentAreaId;
+        }
+
+        zone = default;
+        return false;
     }
 
     public WorldMapArea GetByAreaIdHit(int areaIdHit)

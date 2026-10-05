@@ -32,9 +32,11 @@ public static class ForeverExport
     /// route with nothing in it.
     /// </summary>
     /// <param name="areas">Each area's corners: two opposite ones, or three or more in order.</param>
+    /// <param name="zoneOf">The zone a point is in (<c>ZoneLookup</c>); a zone whose map does not hold the point is not used.</param>
+    /// <param name="zones">Every zone map, for a point or an area <paramref name="zoneOf"/> does not place.</param>
     /// <param name="mapId">The continent's instance map, which the zones are looked up on.</param>
     public static bool TryBuild(string title, IReadOnlyList<Point3> waypoints, IReadOnlyList<IReadOnlyList<Point3>> areas,
-        int kills, IReadOnlyList<ZoneInfo> zones, int mapId, out string text, out string error)
+        int kills, Func<Point3, ZoneInfo?> zoneOf, IReadOnlyList<ZoneInfo> zones, int mapId, out string text, out string error)
     {
         text = string.Empty;
         if (waypoints.Count == 0 && areas.Count == 0)
@@ -50,19 +52,21 @@ public static class ForeverExport
         }
 
         // Each waypoint's zone; a travel step stays on one.
-        ZoneInfo[] zoneOf = new ZoneInfo[waypoints.Count];
+        ZoneInfo[] zoneOfWaypoint = new ZoneInfo[waypoints.Count];
         for (int i = 0; i < waypoints.Count; i++)
         {
-            if (ZoneMath.ZoneAt(zones, mapId, waypoints[i].X, waypoints[i].Y) is not ZoneInfo zone)
+            if ((Holding(zoneOf(waypoints[i]), mapId, [waypoints[i]]) ?? ZoneMath.ZoneAt(zones, mapId, waypoints[i].X, waypoints[i].Y))
+                is not ZoneInfo zone)
             {
                 error = $"Waypoint {i + 1} is in no zone: a Forever route names points by their zone map.";
                 return false;
             }
 
-            zoneOf[i] = zone;
+            zoneOfWaypoint[i] = zone;
         }
 
-        // Each area on the zone map holding all its corners furthest inside, roamed after the waypoint nearest its middle.
+        // Each area on the zone its middle is in when that zone's map holds all its corners, else on
+        // the map holding them furthest inside; roamed after the waypoint nearest its middle.
         List<(int After, int Index, ZoneInfo Zone)> roams = [];
         for (int k = 0; k < areas.Count; k++)
         {
@@ -72,25 +76,26 @@ public static class ForeverExport
                 return false;
             }
 
-            if (ZoneMath.ZoneHolding(zones, mapId, [.. areas[k]]) is not ZoneInfo zone)
+            Point3 middle = Middle(areas[k]);
+            if ((Holding(zoneOf(middle), mapId, areas[k]) ?? ZoneMath.ZoneHolding(zones, mapId, [.. areas[k]])) is not ZoneInfo zone)
             {
                 error = $"Area {k + 1} is not inside one zone: a Forever route names its corners by one zone map.";
                 return false;
             }
 
-            roams.Add((Nearest(waypoints, Middle(areas[k])), k, zone));
+            roams.Add((Nearest(waypoints, middle), k, zone));
         }
 
         List<Step> steps = [];
         int next = 0;
         foreach ((int after, int index, ZoneInfo zone) in roams.OrderBy(r => r.After).ThenBy(r => r.Index))
         {
-            AddTravel(steps, waypoints, zoneOf, next, after + 1);
+            AddTravel(steps, waypoints, zoneOfWaypoint, next, after + 1);
             next = Math.Max(next, after + 1);
             steps.Add(new Step(zone, Roam(areas[index], zone, kills)));
         }
 
-        AddTravel(steps, waypoints, zoneOf, next, waypoints.Count);
+        AddTravel(steps, waypoints, zoneOfWaypoint, next, waypoints.Count);
 
         text = Write(title, steps, waypoints.Count, areas.Count);
         error = string.Empty;
@@ -199,6 +204,12 @@ public static class ForeverExport
     private static string Round(float value)
     {
         return Math.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.##", CultureInfo.InvariantCulture);
+    }
+
+    // The zone, when its map holds every point: a step's points must lie on its map, 0 to 100.
+    private static ZoneInfo? Holding(ZoneInfo? zone, int mapId, IReadOnlyList<Point3> points)
+    {
+        return zone is not null && points.All(p => ZoneMath.Contains(zone, mapId, p.X, p.Y)) ? zone : null;
     }
 
     private static Point3 Middle(IReadOnlyList<Point3> corners)

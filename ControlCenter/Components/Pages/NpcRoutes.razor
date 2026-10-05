@@ -5,6 +5,7 @@
 @inject IPathingClient pathing
 @inject WorldCache worldCache
 @inject PathingStatus status
+@inject ZoneLookup zoneLookup
 
 <PageTitle>NPC routes · Control Center</PageTitle>
 
@@ -12,7 +13,7 @@
    marker on the world view, one is chosen in the list or by clicking it, the start is picked on the
    map or rolled at random, and the route is drawn in its status colour. *@
 
-<WorldView Scene="@scene" Picking="@picking" OnPick="Picked" OnMarker="MarkerClicked">
+<WorldView Scene="@scene" Picking="@picking" OnPick="PickedAsync" OnMarker="MarkerClicked">
     <Panel Title="NPC routes" Icon="people" Position="top-left">
         <div class="pa-form">
             <div class="pa-field">
@@ -59,7 +60,7 @@
             <div class="pa-field">
                 <span class="pa-label">Start</span>
                 <div class="pa-input-group">
-                    <span class="pa-input pa-readout">@(start is Point3 s ? ZoneLabels.Where(world, Zone?.MapId ?? -1, s) : "Pick a point or roll one")</span>
+                    <span class="pa-input pa-readout">@StartText</span>
                     <button class="pa-btn pa-btn--icon @(picking ? "pa-btn--primary" : null)" type="button" disabled="@(uiMap == 0)"
                             title="@(picking ? "Click the map to start there, or click here to stop" : "Pick the start on the map")" @onclick="() => picking = !picking">
                         <span class="oi oi-map-marker" aria-hidden="true"></span>
@@ -92,6 +93,9 @@
     private const float MapMargin = 20f;
     private const float MapSpan = 70f;
 
+    // Random points tried before taking one the area grid does not put in the zone.
+    private const int MaxThrows = 8;
+
     public const string DefaultType = "vendor";
 
     private const string NpcPrefix = "npc-";
@@ -119,6 +123,10 @@
     private NpcInfo? Npc => npcs.FirstOrDefault(n => n.Entry == npcEntry);
 
     private bool Ready => start.HasValue && Npc is not null;
+
+    private string StartText => start is Point3 s && world is not null
+        ? ZoneLabels.Where(zoneLookup.Known(world, Zone?.MapId ?? -1, s), s)
+        : "Pick a point or roll one";
 
     protected override async Task OnInitializedAsync()
     {
@@ -211,14 +219,26 @@
         }
     }
 
-    private void Picked(WorldPoint point)
+    private async Task PickedAsync(WorldPoint point)
     {
         start = point.ToPoint3();
         picking = false;
         route = null;
         Draw();
+        if (Zone is ZoneInfo zone)
+        {
+            try
+            {
+                await zoneLookup.LearnAsync(zone.MapId, [start.Value], Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
     }
 
+    // A random point on the zone's map that the area grid puts in the zone, on the ground: a zone's
+    // map holds parts of its neighbours and the sea, so a few throws may miss.
     private async Task RandomStartAsync()
     {
         if (Zone is not ZoneInfo zone)
@@ -226,13 +246,21 @@
             return;
         }
 
-        Point3 map = new((Random.Shared.NextSingle() * MapSpan) + MapMargin, (Random.Shared.NextSingle() * MapSpan) + MapMargin, 0);
-        Point3 at = ZoneMath.ToWorld(zone, map);
         try
         {
-            // The navmesh's height there, so the marker and the route start on the ground.
-            ServiceResult<AreaAtPoint> area = await pathing.GetAreaAsync(zone.MapId, at.X, at.Y, Token);
-            start = at with { Z = area.Value?.Z ?? 0 };
+            for (int throws = 1; throws <= MaxThrows; throws++)
+            {
+                Point3 map = new((Random.Shared.NextSingle() * MapSpan) + MapMargin, (Random.Shared.NextSingle() * MapSpan) + MapMargin, 0);
+                Point3 at = ZoneMath.ToWorld(zone, map);
+                ServiceResult<AreaAtPoint> area = await pathing.GetAreaAsync(zone.MapId, at.X, at.Y, Token);
+                start = at with { Z = area.Value?.Z ?? 0 };
+                if (area.Value is not AreaAtPoint answer || (answer.UiMapId == zone.UiMapId && answer.Z != 0) || answer.UiMapId == 0)
+                {
+                    break;
+                }
+            }
+
+            await zoneLookup.LearnAsync(zone.MapId, [start!.Value], Token);
             route = null;
             Draw();
         }
