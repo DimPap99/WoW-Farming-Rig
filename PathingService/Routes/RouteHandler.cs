@@ -77,7 +77,7 @@ public sealed class RouteHandler(RoutePlanner planner)
         return new Vector3(p.X, p.Y, p.Z);
     }
 
-    private static RouteStatus ToStatus(RoutePlanStatus status)
+    internal static RouteStatus ToStatus(RoutePlanStatus status)
     {
         return status switch
         {

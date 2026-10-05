@@ -1,6 +1,6 @@
 # World view - moving the Control Center off Leaflet and Babylon
 
-**Status (2026-10-05):** agreed with the user and under way; steps 1 and 2 are done. The user found the Leaflet map and the
+**Status (2026-10-05):** agreed with the user and under way; steps 1 to 3 are done. The user found the Leaflet map and the
 Babylon 3D view buggy and hard to use, and asked to move everything to the new map, keep the
 drawing tools (polygons and the rest), then improve the look. Phase 3 step 6 and the Windows
 checklist are parked for another session ([phase3-plan.md](phase3-plan.md)).
@@ -63,7 +63,12 @@ which it always is.
    Forever route (`ForeverExport`: a travel step per zone, each area roamed after the waypoint
    nearest it). Checked in Chrome: placing, dragging (the map stays), inserting, removing, an area,
    the Forever file loading as a run loads it, a recorded path opened on its zone.
-3. Live view and NPC routes on the world view; Route search, Path library and the path editor go.
+3. **Done.** Live view and NPC routes on the world view; Route search, Path library and the path
+   editor went (the designer does all three). The Live view reads a new route-only subscription of
+   the watch hub (`WatchRoutes`/`routePlanned`, with each route's continent), so watching costs the
+   service no tile meshes; NPCs are markers to click. **Open:** the 3D view's Terrain toggle (the
+   game geometry under tiles, needing game files) has no new home; deck.gl could draw it as a mesh
+   if it is still wanted. Its page is gone, its code goes in step 6.
 4. The map page: cost zones (roads, danger zones), spawns and search, custom points, navmesh
    coverage and bakes, the ADT grid.
 5. Forever routes: the route drawn beside its text; coordinates picked from the map.

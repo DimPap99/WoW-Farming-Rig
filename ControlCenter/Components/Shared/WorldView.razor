@@ -71,6 +71,9 @@
     /// <summary>A shape was clicked: its id; null when a click beside every shape lets the selection go.</summary>
     [Parameter] public EventCallback<string?> OnSelected { get; set; }
 
+    /// <summary>A marker was clicked, while not <see cref="Picking"/> and with no tool: its id.</summary>
+    [Parameter] public EventCallback<string> OnMarker { get; set; }
+
     /// <summary>Panels shown over the view.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
@@ -167,6 +170,12 @@
     public Task OnShapeSelected(string? shapeId)
     {
         return OnSelected.InvokeAsync(shapeId);
+    }
+
+    [JSInvokable]
+    public Task OnMarkerClicked(string markerId)
+    {
+        return OnMarker.InvokeAsync(markerId);
     }
 
     [JSInvokable]

@@ -163,9 +163,6 @@
     /// <summary>While answers arrive, the map is drawn again at most this often.</summary>
     private const int RedrawMs = 150;
 
-    /// <summary>Wider than any zone: a map this size is a continent's or the world's, not a zone to name.</summary>
-    private const float MaxZoneSpanYd = 9000;
-
     private static readonly WorldTool[] Tools =
     [
         new(WorldShapes.Point, "Add waypoints: each click adds one at the end; Esc stops"),
@@ -338,24 +335,7 @@
             Point3 from = waypoints[i];
             Point3 to = waypoints[i + 1];
             Leg leg = legs.Get(from, to, search);
-            string name = $"Leg {i + 1} to {i + 2}";
-            if (leg.Found)
-            {
-                routes.Add(WorldRoute.Of($"leg-{i}", WorldKinds.Found, leg.Points, $"{name}: {Words.Yards(leg.Length)}"));
-            }
-            else if (leg.Partial && leg.Points.Length > 0)
-            {
-                Point3 last = leg.Points[^1];
-                routes.Add(WorldRoute.Of($"leg-{i}", WorldKinds.Partial, leg.Points,
-                    $"{name}: stops {Words.Yards(RouteGeometry.Distance(last, to))} short"));
-                routes.Add(WorldRoute.Of($"gap-{i}", WorldKinds.Gap, [last, to with { Z = to.Z == 0 ? last.Z : to.Z }], $"{name}: no way found here"));
-                markers.Add(WorldMarker.At($"stop-{i}", WorldKinds.Stop, last, $"Leg {i + 1} stops"));
-            }
-            else
-            {
-                routes.Add(WorldRoute.Of($"leg-{i}", leg.Failed ? WorldKinds.Failed : WorldKinds.Pending, [from, to],
-                    leg.Failed ? $"{name}: {leg.Detail ?? leg.Status.ToString()}" : $"{name}: planning"));
-            }
+            routes.AddRange(RouteDrawing.Of($"leg-{i}", $"Leg {i + 1} to {i + 2}", leg.Status, leg.Points, from, to, leg.Detail, markers));
         }
 
         List<WorldShape> shapes = [.. areas.Select(a => WorldShape.Of(a.Id, a.Type, WorldKinds.Area, a.Points, editable: true, label: a.Name))];
@@ -364,7 +344,7 @@
             shapes.Add(WorldShape.Of(WaypointsId, WorldShapes.Points, WorldKinds.Waypoints, waypoints, editable: true));
         }
 
-        scene = new WorldScene(continent, [.. routes], [.. markers], Labels(), frame, [.. shapes], selected);
+        scene = new WorldScene(continent, [.. routes], [.. markers], ZoneLabels.Of(world, continent), frame, [.. shapes], selected);
     }
 
     private (string Text, ResultKind Kind) Summary()
@@ -418,31 +398,7 @@
     }
 
     // A waypoint as a player reads it: the zone and its map coordinates.
-    private string Where(Point3 at)
-    {
-        if (world is null || ZoneMath.ZoneAt(world.World.Zones, MapId, at.X, at.Y) is not ZoneInfo zone)
-        {
-            return string.Create(CultureInfo.InvariantCulture, $"x {at.X:F0}, y {at.Y:F0}");
-        }
-
-        Point3 map = ZoneMath.ToMap(zone, at);
-        return string.Create(CultureInfo.InvariantCulture, $"{zone.Name} {map.X:F1}, {map.Y:F1}");
-    }
-
-    // Zone names at their middles, for finding one's way at a glance.
-    private WorldLabel[] Labels()
-    {
-        return world is null
-            ? []
-            : [.. world.World.Zones
-                .Where(z => z.Continent == continent &&
-                            MathF.Abs(z.LocLeft - z.LocRight) < MaxZoneSpanYd && MathF.Abs(z.LocTop - z.LocBottom) < MaxZoneSpanYd)
-                .Select(z =>
-                {
-                    Point3 middle = ZoneMath.ToWorld(z, new Point3(50, 50, 0));
-                    return new WorldLabel(z.Name, middle.X, middle.Y);
-                })];
-    }
+    private string Where(Point3 at) => ZoneLabels.Where(world, MapId, at);
 
     // --- the map's events -------------------------------------------------------------------
 

@@ -32,12 +32,12 @@ public sealed record WorldRoute(string Id, string Kind, float[] Points, string? 
     }
 }
 
-/// <summary>A point marked on the view, with an optional label.</summary>
-public sealed record WorldMarker(string Id, string Kind, float X, float Y, float Z, string? Label = null)
+/// <summary>A point marked on the view, with an optional label always shown, and a title shown on hover.</summary>
+public sealed record WorldMarker(string Id, string Kind, float X, float Y, float Z, string? Label = null, string? Title = null)
 {
-    public static WorldMarker At(string id, string kind, Point3 at, string? label = null)
+    public static WorldMarker At(string id, string kind, Point3 at, string? label = null, string? title = null)
     {
-        return new WorldMarker(id, kind, at.X, at.Y, at.Z, label);
+        return new WorldMarker(id, kind, at.X, at.Y, at.Z, label, title);
     }
 }
 
@@ -155,6 +155,12 @@ public static class WorldKinds
 
     /// <summary>A dashed line where a route is still being planned.</summary>
     public const string Pending = "pending";
+
+    /// <summary>A route shown faintly beside the one that matters, such as the ones planned before it.</summary>
+    public const string Recent = "recent";
+
+    /// <summary>A place to pick, such as an NPC to route to.</summary>
+    public const string Npc = "npc";
 
     public const string Start = "start";
     public const string End = "end";

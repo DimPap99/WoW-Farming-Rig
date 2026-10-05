@@ -33,6 +33,8 @@ Hosting/ServiceStatus.cs           the base of both pollers (2 s): Online, Error
 Hosting/ControlCenterLogging.cs    Serilog to console + daily file
 Pathing/PathingStatus.cs           the Pathing Service's poller: + capabilities, health
 Pathing/WorldCache.cs              zones, continents, places, test routes; reloads on reconnect
+Pathing/WatchFeed.cs               the routes the service plans, as a route watcher of /watchHub,
+                                   connected while a page watches; WatchConnectionFactory
 Bots/BotManagerStatus.cs           the Bot Manager's poller: + ManagerHealth (bots, online)
 Bots/FleetFeed.cs                  the one client of the manager's /fleetHub: every BotInfo, kept
                                    current; Changed, Resynced, Log, RunEnded for the pages
@@ -41,6 +43,8 @@ Bots/BotLogBuffer.cs               a console's log: the backlog joined to the st
 Bots/AssignmentDraft.cs            the assignment form's fields, Missing and Refusal (AssignmentRules)
 World/WorldScene.cs                what a page shows on the world view: routes, markers, labels, shapes;
                                    tools, the drawing events, WorldShapes and WorldKinds
+World/RouteDrawing.cs              a route's lines by how it ended (found, partial + gap, none, planning)
+World/ZoneLabels.cs                zone names on a continent; a point as a player reads it
 Routes/RouteLegs.cs                the route designer's legs: one request per pair of waypoints, kept
                                    by their ends, four at a time
 Routes/ForeverExport.cs            a designed route as a Forever route file (travel per zone, roams)
@@ -55,14 +59,14 @@ Components/Bots/                   BotCard, BotState, BotLive, BotCommands, Assi
 Components/Designer/               the route designer's sections: RouteLibrary (open, save, delete
                                    recorded paths), ForeverSave (the route as a Forever route file);
                                    not Components/Routes, which would clash with the router
-Components/Pages/                  RouteMap (/routes, the route designer), LiveView (/), Map (/Leaflet/...), Search, PathLibrary (/paths),
-                                   PathEditorPage (/paths/edit/...), NpcRoutes, ForeverRoutes
-                                   (/forever-routes), Fleet (/fleet), BotConsole
-                                   (/fleet/{agentId}), ApiReference
+Components/Pages/                  LiveView (/), RouteMap (/routes, the route designer), NpcRoutes,
+                                   Map (/Leaflet/...), ForeverRoutes (/forever-routes), Fleet
+                                   (/fleet), BotConsole (/fleet/{agentId}), ApiReference
 wwwroot/css/site.css               the whole theme; pa- prefixed so the map keeps Bootstrap
 wwwroot/js/world-view.js           the world view on deck.gl (fetched on demand): flat map, tilts into 3D
 wwwroot/js/world-edit.js           its drawing tools: shapes, drafts, handles, the pointer and keys
-wwwroot/js/pathing-scene.js        the Babylon 3D view; Babylon itself is fetched on demand
+wwwroot/js/pathing-scene.js        the Babylon 3D view (Viewport3D), no longer on any page; goes in
+                                   step 6 of docs/world-view-plan.md
 wwwroot/js/pathing-ui.js           script loader, toast, remembered rail state
 ```
 
@@ -130,9 +134,16 @@ no minimap art and works for Forever too. The page draws WoW's x north and y wes
 left (`X = -y, Y = x`). Flat is orthographic, so ground at different heights lines up; tilted is in
 perspective. The ground is drawn unlit (`material: false`): deck.gl's default lighting turned it
 black once zoomed in. `worldView.describe()` reports each view's continent, ground and layers, for a
-browser check to wait on. `RouteMap` (`/routes`, the route designer) is the first page on it; Live
-view, Map, Route search and the path pages still use Leaflet and Babylon until they move
-(`docs/world-view-plan.md`).
+browser check to wait on (with each marker's place on the screen). The Live view, the route designer
+(`RouteMap`, `/routes`) and NPC routes are on it; the Map page still uses Leaflet until it moves
+(`docs/world-view-plan.md`). A click on a marker comes back as `OnMarker` (not while `Picking`).
+
+**The Live view watches routes, not a scene.** `WatchFeed` joins the service's watch hub as a route
+watcher (`WatchHubMethods.WatchRoutes`): it gets each route the planner answers as a `WatchRoute`,
+with its continent, and none of the 3D scene - no tiles, no drawings - so the service builds no
+meshes for it. It is connected only while a page holds a lease (`Watch()`), as the 3D view was; the
+hub replays its last five routes on every join, and the feed keeps each once (by its time and ends),
+the newest 30 across connections.
 
 **The world view's tools edit locally and report the result; the page keeps it.** A page offers
 `Tools` (a `WorldTool`: the shape a click draws and its title) and binds `Tool`; shapes are part of
@@ -169,13 +180,9 @@ of a zone and approximate at its border; continent maps only where no zone's map
 the map script; the `/Leaflet/{client}` segment is advisory, as the map's own continent selector
 writes it. Forever has no minimap art, so its map page says so and points to the 3D view.
 
-**The 3D view replays, it never resets.** On connecting, `pathing-scene.js` calls the hub's
-`Replay`; nothing on the server is reset for a new viewer. The hub connection is stopped when
-the view is left, so the service streams nothing to a page that has no scene.
-
-**Terrain needs the game files where the service runs.** The toggle is disabled with the reason
-when `PathingCapabilities.GameFiles` is false. It asks for the 25 tiles nearest the camera; the
-meshes come back to this viewer only, under the four terrain layers.
+**The 3D view (Babylon, `Viewport3D`) is on no page any more.** It replayed rather than reset, and
+its Terrain toggle (the game geometry under 25 tiles, needing game files where the service runs)
+has no new home yet: whether the world view should draw it is open (`docs/world-view-plan.md`).
 
 **Bind text a button depends on with `@bind:event="oninput"`.** A plain `@bind` updates on
 `change`, which fires only when the box loses focus, and clicking a disabled button does not take

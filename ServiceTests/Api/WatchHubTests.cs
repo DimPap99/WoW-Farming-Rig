@@ -11,6 +11,7 @@ using ServiceClients;
 using ServiceClients.Pathing;
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Xunit;
@@ -92,6 +93,43 @@ public sealed class WatchHubTests
         string? terrain = await watching.InvokeAsync<string?>(WatchHubMethods.Terrain, "Azeroth", AzerothTile,
             TestContext.Current.CancellationToken);
         Assert.Contains("no game files", terrain);
+    }
+
+    [Fact]
+    public async Task A_route_watcher_gets_each_route_with_its_continent_and_none_of_the_scene()
+    {
+        Assert.SkipUnless(TestData.HasPrecataTiles, TestData.NoTiles);
+        using PathingServiceFactory factory = new(TestData.RepoJson);
+        PathingClient client = new(factory.CreateClient());
+
+        await using HubConnection watcher = Connect(factory);
+        TaskCompletionSource<WatchRoute> planned = Completion<WatchRoute>();
+        int scene = 0;
+        watcher.On<WatchRoute>(WatchHubMethods.RoutePlanned, route => planned.TrySetResult(route));
+        watcher.On<float[][], int, string>(WatchHubMethods.DrawPath, (_, _, _) => Interlocked.Increment(ref scene));
+        watcher.On<string, float[], int[], int[]>(WatchHubMethods.AddNavmeshTile, (_, _, _, _) => Interlocked.Increment(ref scene));
+        await watcher.StartAsync(TestContext.Current.CancellationToken);
+        await watcher.InvokeAsync(WatchHubMethods.WatchRoutes, TestContext.Current.CancellationToken);
+
+        RouteResponse found = await client.FindRouteAsync(
+            new RouteRequest(null, 1429, CoordinateSpace.World, ElwynnVendor, ElwynnPath), TestContext.Current.CancellationToken);
+        WatchRoute route = await planned.Task.WaitAsync(Wait, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Azeroth", route.Continent);
+        Assert.Equal(RouteStatus.Found, route.Status);
+        Assert.Equal(found.Points, route.Points);
+        Assert.Equal(ElwynnVendor.X, route.From.X, 1);
+
+        // A watcher joining later is sent the routes it missed.
+        await using HubConnection late = Connect(factory);
+        TaskCompletionSource<WatchRoute> missed = Completion<WatchRoute>();
+        late.On<WatchRoute>(WatchHubMethods.RoutePlanned, r => missed.TrySetResult(r));
+        await late.StartAsync(TestContext.Current.CancellationToken);
+        await late.InvokeAsync(WatchHubMethods.WatchRoutes, TestContext.Current.CancellationToken);
+
+        Assert.Equal(route.At, (await missed.Task.WaitAsync(Wait, TestContext.Current.CancellationToken)).At);
+        await Task.Delay(500, TestContext.Current.CancellationToken);
+        Assert.Equal(0, Volatile.Read(ref scene));
     }
 
     [Fact]
