@@ -24,10 +24,13 @@ namespace Core.Goals;
 /// </summary>
 public sealed class ForeverTrialGoal : GoapGoal, IGoapEventListener
 {
-    private enum Phase { Initial, Stable, VerifyStep, AwaitTarget, AwaitRecovery, Passed, Failed }
+    /// <summary>Where the trial is: <see cref="Passed"/> and <see cref="Failed"/> end it.</summary>
+    public enum Phase { Initial, Stable, VerifyStep, AwaitTarget, AwaitRecovery, Passed, Failed }
 
     public override float Cost => 1;
     public override bool CanRun() => !machine.IsTerminal;
+    /// <summary>The trial's phase as a type; <see cref="TrialStatus"/> names it.</summary>
+    public Phase State => machine.State;
     public string TrialStatus => machine.State.ToString();
     public string LastFailure => machine.LastFailure;
 

@@ -55,6 +55,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MapAssets", "MapAssets\MapA
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlCenter", "ControlCenter\ControlCenter.csproj", "{DB3AAE96-139D-4FEA-B08B-2A2946A9EC2E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentTests", "AgentTests\AgentTests.csproj", "{3B8231F4-BD14-40FA-9472-85568B48D364}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -281,6 +283,18 @@ Global
 		{DB3AAE96-139D-4FEA-B08B-2A2946A9EC2E}.Release|x64.Build.0 = Release|x64
 		{DB3AAE96-139D-4FEA-B08B-2A2946A9EC2E}.Release|x86.ActiveCfg = Release|x86
 		{DB3AAE96-139D-4FEA-B08B-2A2946A9EC2E}.Release|x86.Build.0 = Release|x86
+		{3B8231F4-BD14-40FA-9472-85568B48D364}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3B8231F4-BD14-40FA-9472-85568B48D364}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3B8231F4-BD14-40FA-9472-85568B48D364}.Debug|x64.ActiveCfg = Debug|x64
+		{3B8231F4-BD14-40FA-9472-85568B48D364}.Debug|x64.Build.0 = Debug|x64
+		{3B8231F4-BD14-40FA-9472-85568B48D364}.Debug|x86.ActiveCfg = Debug|x86
+		{3B8231F4-BD14-40FA-9472-85568B48D364}.Debug|x86.Build.0 = Debug|x86
+		{3B8231F4-BD14-40FA-9472-85568B48D364}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3B8231F4-BD14-40FA-9472-85568B48D364}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3B8231F4-BD14-40FA-9472-85568B48D364}.Release|x64.ActiveCfg = Release|x64
+		{3B8231F4-BD14-40FA-9472-85568B48D364}.Release|x64.Build.0 = Release|x64
+		{3B8231F4-BD14-40FA-9472-85568B48D364}.Release|x86.ActiveCfg = Release|x86
+		{3B8231F4-BD14-40FA-9472-85568B48D364}.Release|x86.Build.0 = Release|x86
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

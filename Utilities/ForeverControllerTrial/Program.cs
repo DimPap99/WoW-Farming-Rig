@@ -1,14 +1,6 @@
-using Core;
 using Core.Forever;
-using Core.Goals;
 
-using Game;
-
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-
-using PPather.Navmesh;
 
 using SharedLib;
 using SharedLib.Forever;
@@ -22,8 +14,9 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 
-// The dashboard keeps ForeverDiagnosticController. This explicit command
-// constructs the normal controller for a bounded trial only.
+// The dashboard keeps ForeverDiagnosticController. This explicit command runs
+// the normal controller for a bounded trial only, through Core's ForeverRun:
+// this file is its command line (arguments, the route, Ctrl+C and --listen).
 bool run = args.Contains("--run");
 bool sweep = args.Contains("--sweep");
 // --listen: the host that started this run (the web UI) stops it with a
@@ -64,7 +57,7 @@ if (routeIndex >= 0 && routeName is null)
     Console.Error.WriteLine("Use --route <file>, a route file in Json/path/_forever or a path to one.");
     return ForeverRunProtocol.ExitUsage;
 }
-if (minutes is [] || minutes is [<= 0 or > 600])
+if (minutes is [] || minutes is [<= 0 or > ForeverRunRequest.MaxMinutes])
 {
     Console.Error.WriteLine("Use --minutes <n> with a time bound from 1 to 600 minutes.");
     return ForeverRunProtocol.ExitUsage;
@@ -121,17 +114,6 @@ double[]? NumbersAfter(string flag, int count)
     return numbers;
 }
 
-// The pet as the snapshot shows it: absent, dead, idle, on the target or on another unit.
-static string PetState(VisualBarSample bars) => bars.Pet switch
-{
-    null => "unreadable",
-    { Exists: not true } => "none",
-    { Dead: true } => "dead",
-    { TargetHash1: 0, TargetHash2: 0 } => "idle",
-    { } pet when bars.TargetIdentity is { } target && pet.Attacks(target) => "on the target",
-    _ => "on another unit"
-};
-
 static bool OffMap(double coordinate) => coordinate is < 0 or > ForeverMapPoint.MapSize || !double.IsFinite(coordinate);
 
 int pidIndex = Array.IndexOf(args, "--pid");
@@ -147,12 +129,10 @@ if (pidIndex >= 0)
     requestedPid = id;
 }
 
-Process? wow = Process.GetProcessesByName("WowB")
-    .OrderByDescending(p => p.StartTime)
-    .FirstOrDefault(p => requestedPid is null || p.Id == requestedPid);
+Process? wow = ForeverRun.FindClient(requestedPid);
 if (wow is null)
 {
-    Console.Error.WriteLine("WowB is not running.");
+    Console.Error.WriteLine(ForeverRun.NotRunning);
     return ForeverRunProtocol.ExitRefused;
 }
 
@@ -183,299 +163,33 @@ if (listen)
     { IsBackground = true, Name = "Forever run listener" }.Start();
 }
 
-// Once the controller runs, an error ends a run that may have moved, not a refusal.
-bool started = false;
-try
+ForeverRunMode mode = travel is not null ? ForeverRunMode.Travel
+    : roam is not null ? ForeverRunMode.Roam
+    : route is not null ? ForeverRunMode.Route
+    : sweep ? ForeverRunMode.Sweep
+    : args.Contains("--auto-run") ? ForeverRunMode.AutoRun
+    : args.Contains("--auto-check") ? ForeverRunMode.AutoCheck
+    : run ? ForeverRunMode.Run
+    : ForeverRunMode.Check;
+ForeverRunRequest request = new(mode)
 {
-    WowProcess process = new(cts, Options.Create(new StartupConfigPid { Id = wow.Id }));
-    if (process.FileVersion is not { Major: 1, Minor: >= 60 })
-    {
-        Console.Error.WriteLine("The selected client is not Forever.");
-        return ForeverRunProtocol.ExitRefused;
-    }
-
-    IServiceCollection services = new ServiceCollection();
-    ILoggerFactory loggerFactory = LoggerFactory.Create(b =>
-        b.AddProvider(new TrialLoggerProvider()));
-    ILogger trialLogger = loggerFactory.CreateLogger("ControllerTrial");
-    services.AddSingleton(loggerFactory);
-    services.AddSingleton(trialLogger);
-    services.AddLogging();
-    services.AddSingleton(cts);
-    services.AddSingleton(process);
-    services.AddSingleton(process.FileVersion);
-    // Resolved when the profile loads, after the first frame named the zone
-    // a --travel point lies in.
-    ForeverRunOptions runOptions = new()
-    {
-        StopWhenNoTargets = sweep,
-        MaxCompletedCycles = sweep ? null : 1
-    };
-    services.AddSingleton(_ => runOptions);
-    services.AddSingleton<AddonConfigurator>();
-    services.AddSingleton<IOptions<StartupConfigReader>>(Options.Create(new StartupConfigReader()));
-    services.AddSingleton<IOptions<StartupConfigDiagnostics>>(Options.Create(new StartupConfigDiagnostics()));
-    services.AddSingleton<IOptions<StartupConfigPathing>>(Options.Create(new StartupConfigPathing
-    {
-        Mode = nameof(StartupConfigPathing.Types.Local),
-        PathVisualizer = false
-    }));
-    services.AddSingleton<IOptions<StartupConfigNpcOverlay>>(Options.Create(new StartupConfigNpcOverlay()));
-    services.AddSingleton<IOptions<NavmeshBakeOptions>>(Options.Create(new NavmeshBakeOptions()));
-    services.AddSingleton<IOptions<NavmeshQueryOptions>>(Options.Create(new NavmeshQueryOptions()));
-    services.AddSingleton<IOptions<SplineFollowerOptions>>(Options.Create(new SplineFollowerOptions()));
-    services.AddCoreBase(trialLogger);
-    services.AddSingleton(new DataConfig
-    {
-        Root = Path.GetFullPath("Json"), Exp = "forever"
-    });
-    services.AddCoreNormal(trialLogger);
-
-    using ServiceProvider provider = services.BuildServiceProvider(
-        new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
-
-    IWowScreen screen = provider.GetRequiredService<IWowScreen>();
-    ForeverVisualBarTracker tracker = provider.GetRequiredService<ForeverVisualBarTracker>();
+    TravelTo = travel is [double travelX, double travelY] ? (travelX, travelY) : null,
+    Roam = roam is [double x1, double y1, double x2, double y2, double kills] ? new ForeverRoamRequest(x1, y1, x2, y2, (int)kills) : null,
+    Route = route,
+    Minutes = minutes is [double bound] ? bound : null,
+    DataRoot = Path.GetFullPath("Json"),
     // A capture the bars cannot be read from is kept beside the live logs, when there are any.
-    if (Directory.Exists(Path.Combine("local", "logs")))
-        tracker.UnreadableFrameFolder = Path.GetFullPath(Path.Combine("local", "logs"));
-    bool ready = false;
-    int classId = 0;
-    int uiMapId = 0;
-    // Only this thread captures until BotController starts its addon thread.
-    for (int i = 0; i < 100 && !cts.IsCancellationRequested; i++)
-    {
-        screen.Update();
-        tracker.Update();
-        if (tracker.TryGetLatest(out VisualBarSample bars) &&
-            ForeverFrame.HasTrialInputs(bars))
-        {
-            ready = true;
-            classId = bars.PlayerIdentity?.ClassId ?? 0;
-            uiMapId = bars.Position?.UIMapId ?? 0;
-            break;
-        }
-        Thread.Sleep(100);
-    }
-    if (!ready)
-    {
-        string missing = tracker.TryGetLatest(out VisualBarSample last)
-            ? $"{ForeverFrame.MissingTrialInput(last)} did not read"
-            : tracker.Problem;
-        Console.Error.WriteLine($"No complete fresh Forever trial frame ({missing}); no input sent.");
-        return ForeverRunProtocol.ExitRefused;
-    }
-    if (travel is [double travelX, double travelY])
-    {
-        ForeverMapPoint destination = new(uiMapId, travelX, travelY);
-        runOptions = runOptions with { Tasks = [ForeverTasks.TravelTo(destination)] };
-        Console.WriteLine($"Travelling to {destination}.");
-    }
-    if (roam is [double x1, double y1, double x2, double y2, double kills])
-    {
-        ForeverArea area = ForeverArea.Rectangle(uiMapId, (x1, y1), (x2, y2));
-        runOptions = runOptions with { Tasks = [ForeverTasks.RoamArea(area, ForeverUntil.AfterKills((int)kills))] };
-        Console.WriteLine($"Roaming the {area} until {kills} kills.");
-    }
-    if (route is not null)
-        runOptions = runOptions with { Tasks = route.Tasks, RepeatTasks = route.Repeat };
+    UnreadableFrameFolder = Directory.Exists(Path.Combine("local", "logs")) ? Path.GetFullPath(Path.Combine("local", "logs")) : null,
+};
+ILoggerFactory loggerFactory = LoggerFactory.Create(b => b.AddProvider(new TrialLoggerProvider()));
+return new ForeverRun(request, loggerFactory, new ConsoleRunOutput()).Run(wow, cts);
 
-    // The autonomous run uses the profile verified for the logged-in class;
-    // the bounded route trial exists for the Paladin only.
-    string? profile = auto
-        ? ForeverVerifiedSetup.AutoProfileFor(classId)
-        : ForeverVerifiedSetup.PaladinTrialProfile;
-    if (profile is null)
-    {
-        Console.Error.WriteLine($"No verified Forever profile for class {(UnitClass)classId}; no input sent.");
-        return ForeverRunProtocol.ExitRefused;
-    }
-    Console.WriteLine($"Loading {profile}.");
-
-    using BotController controller = ActivatorUtilities.CreateInstance<BotController>(provider);
-    if (!controller.LoadClassProfile(profile))
-    {
-        Console.Error.WriteLine("Normal controller did not load the Forever profile.");
-        return ForeverRunProtocol.ExitRefused;
-    }
-
-    if (auto)
-    {
-        if (controller.GoapAgent?.AvailableGoals is not [ForeverAutonomousGoal automatic])
-        {
-            Console.Error.WriteLine("Normal controller did not load the autonomous goal.");
-            return ForeverRunProtocol.ExitRefused;
-        }
-        string autoReason = string.Empty;
-        bool autoReady = false;
-        // BotController's addon thread now owns capture. Calling Update here
-        // too would race it on the shared screen image and tracker buffers.
-        // A live run waits for a fight to end or health to come back.
-        int attempts = run ? 600 : 50;
-        string waitingFor = string.Empty;
-        for (int attempt = 0; attempt < attempts && !cts.IsCancellationRequested;
-             attempt++)
-        {
-            if (automatic.TryReadOnlyPreflight(out autoReason))
-            {
-                autoReady = true;
-                break;
-            }
-            if (run && autoReason != waitingFor)
-            {
-                Console.WriteLine($"Waiting for the preflight: {autoReason}.");
-                waitingFor = autoReason;
-            }
-            Thread.Sleep(100);
-        }
-        if (!autoReady)
-        {
-            Console.Error.WriteLine($"Autonomous preflight refused: {autoReason}. No input sent.");
-            return ForeverRunProtocol.ExitRefused;
-        }
-        Console.WriteLine("Autonomous current-position preflight passed.");
-        if (!run)
-        {
-            IReadOnlyList<ForeverPullOption> pulls = automatic.PullOptions();
-            Console.WriteLine(pulls.Count == 0
-                ? "Pull options now: none in view."
-                : "Pull options now, the best first: " + string.Join("; ", pulls) + ".");
-            return ForeverRunProtocol.ExitComplete;
-        }
-
-        // The run steers and clicks with the mouse, which the game follows only
-        // while it is the active window; Windows will not hand that over to a
-        // background process right after someone typed elsewhere.
-        if (!WaitForGameWindow(process, cts.Token))
-        {
-            Console.Error.WriteLine("The game window did not become active; no input sent.");
-            return ForeverRunProtocol.ExitRefused;
-        }
-        controller.ToggleBotStatus();
-        started = true;
-        DateTime autoDeadline = DateTime.UtcNow.AddSeconds(minutes is [double bound] ? bound * 60 :
-            route is not null ? 1200 : roam is not null ? 900 : sweep ? 600 : travel is not null ? 300 : 170);
-        DateTime nextSnapshot = DateTime.MinValue;
-        string autoLastStatus = string.Empty;
-        while (!cts.IsCancellationRequested && DateTime.UtcNow < autoDeadline &&
-               automatic.Status is not ("Failed" or "Complete"))
-        {
-            string status = automatic.Status;
-            if (status != autoLastStatus)
-            {
-                Console.WriteLine($"{ForeverRunProtocol.PhasePrefix} {status}; completed cycles={automatic.CompletedKills}, looted={automatic.CompletedLoots}; {automatic.AgendaStatus}");
-                autoLastStatus = status;
-            }
-            if (DateTime.UtcNow >= nextSnapshot)
-            {
-                if (tracker.TryGetLatest(out VisualBarSample current))
-                    Console.WriteLine($"{ForeverRunProtocol.SnapshotPrefix}{current.Position?.UIMapId} {current.Position?.MapX * 100:0.00},{current.Position?.MapY * 100:0.00}, " +
-                        $"health={current.PlayerHealth:P0}, mana={current.PlayerPower:P0}, " +
-                        $"target={current.TargetHealth:P0}, flags={current.TargetFlags}, " +
-                        $"auras={current.SlotAuras?.ToString() ?? "unreadable"}, marker={current.TargetScreenPosition}, " +
-                        $"plates={current.Nameplates?.PlateCount.ToString() ?? "unreadable"}, " +
-                        $"range1/2/3={current.ActionStates?.GetSlot(1)?.InRange}/{current.ActionStates?.GetSlot(2)?.InRange}/{current.ActionStates?.GetSlot(3)?.InRange}, " +
-                        $"attack={current.Attack?.ToString() ?? "unreadable"}, pet={PetState(current)}, " +
-                        $"tracked={current.TrackedBlips?.Count.ToString() ?? "no minimap"}, " +
-                        $"soft={current.SoftInteract?.ToString() ?? "unreadable"}, " +
-                        $"cast={current.LastCastEvent}, death={current.LastDeathEvent}, loot={current.Loot}, " +
-                        $"frameReady={ForeverFrame.HasTrialInputs(current)}");
-                else
-                    Console.WriteLine($"  visual frame unavailable: {tracker.Problem}");
-                nextSnapshot = DateTime.UtcNow.AddSeconds(2);
-            }
-            Thread.Sleep(100);
-        }
-        if (controller.IsBotActive)
-            controller.ToggleBotStatus();
-        Console.WriteLine($"{ForeverRunProtocol.SummaryPrefix} {automatic.CompletedKills}; deaths observed: {automatic.ObservedDeaths}; " +
-            $"corpses looted: {automatic.CompletedLoots}; " +
-            $"status: {automatic.Status}; {automatic.LastFailure}");
-        bool timedOut = DateTime.UtcNow >= autoDeadline;
-        // A repeating route has no end of its own: the time bound, reached
-        // without a failure, is how it ends.
-        if (timedOut && route is { Repeat: true } && automatic.Status != "Failed")
-        {
-            Console.WriteLine($"Time limit reached; the repeating route ran until then ({automatic.AgendaStatus}).");
-            return ForeverRunProtocol.ExitComplete;
-        }
-        if (timedOut)
-            Console.Error.WriteLine("Trial time limit reached before the run completed.");
-        return automatic.Status == "Complete" ? ForeverRunProtocol.ExitComplete : ForeverRunProtocol.ExitFailed;
-    }
-
-    if (controller.GoapAgent?.AvailableGoals is not [ForeverTrialGoal goal])
-    {
-        Console.Error.WriteLine("Normal controller did not load the isolated trial goal.");
-        return ForeverRunProtocol.ExitRefused;
-    }
-
-    Console.WriteLine("Normal Forever controller loaded with one bounded trial goal.");
-    bool routeReady = goal.TryReadOnlyRoutePreflight(out string routeReason);
-    if (!routeReady)
-    {
-        Console.Error.WriteLine($"Route preflight refused: {routeReason}. No game input sent.");
-        return ForeverRunProtocol.ExitRefused;
-    }
-    Console.WriteLine("Route preflight passed.");
-    if (!run)
-    {
-        Console.WriteLine("Read-only check passed; no game input sent.");
-        return ForeverRunProtocol.ExitComplete;
-    }
-
-    controller.ToggleBotStatus();
-    started = true;
-    DateTime deadline = DateTime.UtcNow.AddSeconds(195);
-    string lastStatus = string.Empty;
-    while (!cts.IsCancellationRequested && DateTime.UtcNow < deadline &&
-           goal.TrialStatus is not ("Passed" or "Failed"))
-    {
-        string status = goal.TrialStatus;
-        if (status != lastStatus)
-        {
-            Console.WriteLine($"Controller phase: {status}");
-            lastStatus = status;
-        }
-        Thread.Sleep(100);
-    }
-    if (controller.IsBotActive)
-        controller.ToggleBotStatus();
-
-    Console.WriteLine($"Controller trial status: {goal.TrialStatus}. {goal.LastFailure}");
-    return goal.TrialStatus == "Passed" ? ForeverRunProtocol.ExitComplete : ForeverRunProtocol.ExitFailed;
-}
-catch (Exception ex)
+// The run's lines, printed as the runner always printed them; the web UI's run host reads them.
+sealed class ConsoleRunOutput : IForeverRunOutput
 {
-    if (!started)
-    {
-        Console.Error.WriteLine($"Controller trial refused: {ex.Message}");
-        return ForeverRunProtocol.ExitRefused;
-    }
-    Console.Error.WriteLine($"Controller trial stopped by an error: {ex.Message}");
-    return ForeverRunProtocol.ExitFailed;
-}
-finally
-{
-    cts.Cancel();
-}
-
-static bool WaitForGameWindow(WowProcess process, CancellationToken token)
-{
-    if (WinAPI.NativeMethods.GetForegroundWindow() == process.MainWindowHandle)
-        return true;
-    Console.WriteLine($"{ForeverRunProtocol.ClickPrompt} to start the run (waiting up to 60 seconds).");
-    for (int i = 0; i < 600 && !token.IsCancellationRequested; i++)
-    {
-        if (WinAPI.NativeMethods.GetForegroundWindow() == process.MainWindowHandle)
-        {
-            // Let the click that activated the window finish first.
-            Thread.Sleep(1000);
-            return true;
-        }
-        Thread.Sleep(100);
-    }
-    return false;
+    public void Line(string text) => Console.WriteLine(text);
+    public void Problem(string text) => Console.Error.WriteLine(text);
+    public void Snapshot(string text) => Console.WriteLine(text);
 }
 
 sealed class TrialLoggerProvider : ILoggerProvider

@@ -1,11 +1,11 @@
 namespace Core.Forever;
 
 /// <summary>
-/// What the trial runner (<c>Utilities/ForeverControllerTrial</c>) and the web
-/// UI's run host (<c>Frontend/ForeverRunHost</c>) share: the option and the
-/// line that stop a run, the lines the host reads a run's state from, and the
-/// exit codes. The runner prints these, the host matches them; rewording one
-/// here rewords both sides.
+/// What a <see cref="ForeverRun"/>, printed by the trial runner
+/// (<c>Utilities/ForeverControllerTrial</c>), and the web UI's run host
+/// (<c>Frontend/ForeverRunHost</c>) share: the option and the line that stop a
+/// run, the lines the host reads a run's state from, and the exit codes. The
+/// run writes these, the host matches them; rewording one here rewords both sides.
 /// </summary>
 public static class ForeverRunProtocol
 {
