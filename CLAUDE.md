@@ -43,7 +43,7 @@ before working in one.
 - `BlazorServer/` ✎ - Main entry point: bot + web UI on :5000
 - `HeadlessServer/` ✎ - Same bot, CLI only; benchmarks chdir here
 - `Core/` ✎ - Core business logic (GOAP, goals, requirements, input). WoW: Forever code
-  stays in Forever-owned files; see "Code layout and upstream seams" in `docs/forever-port.md`
+  lives mostly in `Core/Forever`; see "Code layout" in `docs/forever-port.md`
 - `Game/` ✎ - WoW process, input (stateful - read before touching), screen contracts
 - `Frontend/` ✎ - Blazor UI shared by BlazorServer and PathingAPI
 - `PPather/` ✎ - Pathfinding (DotRecast navmesh + legacy spot A*, MPQ reading)

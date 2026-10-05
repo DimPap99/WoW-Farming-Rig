@@ -1,21 +1,13 @@
 // The Leaflet map's script comes in pieces: Frontend/wwwroot/script/leaflet-watch.js
 // and the leaflet-*.js files listed below, loaded in this order by both hosts.
-// Upstream (Xian55/WowClassicGrindBot) keeps the map as the one leaflet-watch.js.
-// The pieces are contiguous runs of that script in its own order, so joined they
-// are that script again, and an upstream change to it merges as one file:
-//
-//   node scripts/leaflet-pieces.mjs merge upstream/dev
-//
-// joins our pieces as HEAD has them (so it works in the middle of a merge too),
-// three-way merges upstream's leaflet-watch.js into that, and splits the result
-// back into the pieces. With conflicts it writes the merged file instead; resolve
-// it, then `split` it. `join` and `split` alone do one half each, and `check`
-// confirms that the pieces split where the table says and join without loss.
+// The pieces are contiguous runs of one script in its own order, so joined they
+// are that script again. `join` writes the whole script (to stdout or a file),
+// `split` cuts a whole script back into the pieces, and `check` confirms that the
+// pieces split where the table says and join without loss. Moving code across a
+// piece boundary means updating `starts` below; run `check` afterwards.
 // Node only, no packages.
 
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,7 +16,7 @@ const folder = join(repo, 'Frontend', 'wwwroot', 'script');
 
 // Each piece starts at the first line, after the previous piece's start, equal
 // to `starts`, or `back` lines before it. The first piece starts at the top and
-// carries no header, so leaflet-watch.js stays upstream's opening lines.
+// carries no header, so leaflet-watch.js keeps the script's opening lines.
 const pieces = [
     { file: 'leaflet-watch.js' },
     {
@@ -60,12 +52,7 @@ const pieces = [
 const BOM = String.fromCharCode(0xFEFF);
 const WHOLE = 'leaflet-watch.js';
 
-function git(...args) {
-    return execFileSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 64 << 20 });
-}
-
 const fromDisk = file => readFileSync(join(folder, file), 'utf8');
-const fromGit = rev => file => git('show', `${rev}:Frontend/wwwroot/script/${file}`);
 
 function header(piece, eol) {
     return [
@@ -100,9 +87,9 @@ function split(whole) {
     });
 }
 
-function joinPieces(read = fromDisk) {
+function joinPieces() {
     return pieces.map((piece, i) => {
-        const text = read(piece.file);
+        const text = fromDisk(piece.file);
         if (i === 0) return text;
         const eol = text.includes('\r\n') ? '\r\n' : '\n';
         const expected = header(piece, eol);
@@ -139,38 +126,7 @@ switch (command) {
         console.log(ok ? `ok: ${pieces.length} pieces, ${joined.split('\n').length} lines joined` : 'pieces out of step');
         process.exit(ok ? 0 : 1);
     }
-    case 'merge': {
-        const theirs = argument ?? 'upstream/dev';
-        const base = git('merge-base', 'HEAD', theirs).trim();
-        const dir = mkdtempSync(join(tmpdir(), 'leaflet-pieces-'));
-        const [ours, older, newer] = ['ours.js', 'base.js', 'theirs.js'].map(file => join(dir, file));
-        writeFileSync(ours, joinPieces(fromGit('HEAD')), 'utf8');
-        writeFileSync(older, fromGit(base)(WHOLE), 'utf8');
-        writeFileSync(newer, fromGit(theirs)(WHOLE), 'utf8');
-
-        // merge-file exits with the number of conflicts, or above 127 on an error.
-        let merged, conflicts = 0;
-        try {
-            merged = execFileSync('git', ['merge-file', '-p', ours, older, newer], { encoding: 'utf8', maxBuffer: 64 << 20 });
-        } catch (error) {
-            if (error.status === null || error.status > 127) throw error;
-            merged = error.stdout;
-            conflicts = error.status;
-        } finally {
-            rmSync(dir, { recursive: true, force: true });
-        }
-
-        if (conflicts > 0) {
-            const out = join(repo, 'leaflet-watch.merged.js');
-            writeFileSync(out, merged, 'utf8');
-            console.error(`${conflicts} conflict(s): resolve them in ${out}, then: node scripts/leaflet-pieces.mjs split ${out}`);
-            process.exit(1);
-        }
-        write(merged);
-        console.log(`merged ${theirs}'s ${WHOLE} into the pieces; git add them to finish`);
-        break;
-    }
     default:
-        console.error('usage: node scripts/leaflet-pieces.mjs merge [upstream/dev] | split [whole.js] | join [whole.js] | check');
+        console.error('usage: node scripts/leaflet-pieces.mjs split [whole.js] | join [whole.js] | check');
         process.exit(2);
 }

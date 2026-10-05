@@ -20,7 +20,7 @@ This section guides you through the complete setup process. Here's an overview o
 
 Clone the repository into a folder such as `C:\WoW-Farming-Rig`. Substitute your own folder path in the commands below.
 
-> **Clone with submodules.** The pathfinder depends on the [DotRecast](https://github.com/Xian55/DotRecast) git submodule, so a plain `git clone` leaves `external/DotRecast` empty and the build will fail. Clone it in one step:
+> **Clone with submodules.** The pathfinder depends on the [DotRecast](https://github.com/DimPap99/DotRecast) git submodule, so a plain `git clone` leaves `external/DotRecast` empty and the build will fail. Clone it in one step:
 > ```
 > git clone --recurse-submodules https://github.com/DimPap99/WoW-Farming-Rig.git
 > ```

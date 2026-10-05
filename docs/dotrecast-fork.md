@@ -8,7 +8,7 @@ offline on a build server, ship the result".
 That constraint is what drove every change below. This page walks the fork
 commit by commit, with what was measured and how.
 
-Fork: [DotRecast `wow-mods` branch](https://github.com/Xian55/DotRecast/tree/wow-mods)
+Fork: [DotRecast `wow-mods` branch](https://github.com/DimPap99/DotRecast/tree/wow-mods)
 
 ---
 
@@ -74,7 +74,7 @@ Allocation and GC counts are the most trustworthy figures here - they are far
 less sensitive to machine state than wall-clock.
 
 `FILTER_BORDER` is the one stage that ends up *slower* than upstream. That is a
-deliberate, documented trade in [`66300b0`](https://github.com/Xian55/DotRecast/commit/66300b0) - see below.
+deliberate, documented trade in [`66300b0`](https://github.com/DimPap99/DotRecast/commit/66300b0) - see below.
 
 ### On how these were measured
 
@@ -160,13 +160,13 @@ on a 1.7 ms stage and not worth chasing.
 
 **`FILTER_BORDER` is the only real regression, and it is the documented one.**
 +46% here against +29% on the 6700K - the deliberate trade from
-[`66300b0`](https://github.com/Xian55/DotRecast/commit/66300b0), reproduced on a
+[`66300b0`](https://github.com/DimPap99/DotRecast/commit/66300b0), reproduced on a
 second architecture. Nothing new is broken.
 
 Worth recording what this section originally claimed, because it was wrong: a
 **+75% `BUILD_POLYMESH` regression**, blamed on
-[`1b555ad`](https://github.com/Xian55/DotRecast/commit/1b555ad4374df307715e1e574b2a67d16daaa963)
-and [`a6c10b7`](https://github.com/Xian55/DotRecast/commit/a6c10b7) being x86-tuned.
+[`1b555ad`](https://github.com/DimPap99/DotRecast/commit/1b555ad4374df307715e1e574b2a67d16daaa963)
+and [`a6c10b7`](https://github.com/DimPap99/DotRecast/commit/a6c10b7) being x86-tuned.
 Bisecting all 28 commits found the stage flat throughout - 18.0, 18.3, 18.5, 17.7,
 17.9 ms - and the "regression" was the n=1 sampling artifact described above. With
 the profiler fixed it is a −14% *improvement*. The lesson is the one this page
@@ -191,47 +191,47 @@ with x64-baked ones for distribution.
 
 ### Allocation removal
 
-#### [`e6472d7`](https://github.com/Xian55/DotRecast/commit/e6472d734d2f63917cb44d52a20c28e72e47382c) - `core: add a Span<int> overload to InsertSort`
+#### [`e6472d7`](https://github.com/DimPap99/DotRecast/commit/e6472d734d2f63917cb44d52a20c28e72e47382c) - `core: add a Span<int> overload to InsertSort`
 Enables the next one. The array overload forwards to it, so nothing changes.
 
-#### [`1b555ad`](https://github.com/Xian55/DotRecast/commit/1b555ad4374df307715e1e574b2a67d16daaa963) - `recast: build polygon mesh adjacency without per-edge objects`
+#### [`1b555ad`](https://github.com/DimPap99/DotRecast/commit/1b555ad4374df307715e1e574b2a67d16daaa963) - `recast: build polygon mesh adjacency without per-edge objects`
 `BuildMeshAdjacency` allocated an `RcEdge` plus its three `int[2]` fields per
 edge - four objects each, on the order of 80k per tile. Replaced with one flat
 `int[]` of stride 6.
 → `BUILD_POLYMESH` −11…−17%, `BUILD_CONTOURS` −15…−18%.
 
-#### [`a377ba4`](https://github.com/Xian55/DotRecast/commit/a377ba4f7fa0b8719193e7f365170dd94493bb19) - `recast: stack-allocate the scratch verts in contour hole merging`
+#### [`a377ba4`](https://github.com/DimPap99/DotRecast/commit/a377ba4f7fa0b8719193e7f365170dd94493bb19) - `recast: stack-allocate the scratch verts in contour hole merging`
 `IntersectSegContour` and `InCone` each allocated a 16-int array per call, and
 `MergeRegionHoles` calls them O(outline × hole) times.
 
-#### [`d549b24`](https://github.com/Xian55/DotRecast/commit/d549b2455c4989714aa0e784e1a1b4c77018ca15) - `recast: read direction offset tables from the data section`
+#### [`d549b24`](https://github.com/DimPap99/DotRecast/commit/d549b2455c4989714aa0e784e1a1b4c77018ca15) - `recast: read direction offset tables from the data section`
 `GetDirOffsetX/Y` are read tens of millions of times per tile. As
 `static ReadOnlySpan<sbyte>` with an inline initializer they live in the
 assembly data section - no static field load, foldable bounds check.
 
-#### [`4a313e2`](https://github.com/Xian55/DotRecast/commit/4a313e2420977722fd80802e6ab91c63a1baea8f) - `recast: make RcCompactSpanBuilder a value type`
+#### [`4a313e2`](https://github.com/DimPap99/DotRecast/commit/4a313e2420977722fd80802e6ab91c63a1baea8f) - `recast: make RcCompactSpanBuilder a value type`
 Pure mutable scratch that was a class, costing one heap object per compact span
 (~300k per tile) in the compact build, and again per span in every region
 write-back. `SetCon` now takes it by `ref`.
 
-#### [`60a1f2e`](https://github.com/Xian55/DotRecast/commit/60a1f2e50e28289014f0d0cf5cee666f4c2b983e) - `recast: drop LINQ from the compact heightfield build`
+#### [`60a1f2e`](https://github.com/DimPap99/DotRecast/commit/60a1f2e50e28289014f0d0cf5cee666f4c2b983e) - `recast: drop LINQ from the compact heightfield build`
 Two LINQ pipelines ran once per compact span each - ~300k iterator steps plus a
 delegate invocation, for what is an array fill and an array copy.
 
-#### [`99b2b15`](https://github.com/Xian55/DotRecast/commit/99b2b152b405f9ee5d7c960fed707637c4a66e8c) - `recast: hoist per-column invariants out of the neighbour connection loop`
+#### [`99b2b15`](https://github.com/DimPap99/DotRecast/commit/99b2b152b405f9ee5d7c960fed707637c4a66e8c) - `recast: hoist per-column invariants out of the neighbour connection loop`
 The four neighbour cells depend on the column, not the span, but were resolved
 per span: four bounds tests, four table reads, four multiplied `cells[]` loads,
 ×300k spans. Also `MathF.Abs`→`Math.Abs` on ints in the innermost loop, and an
 early break once a neighbour climbs past `walkableClimb` (spans are stored
 bottom-up, so no later one can qualify).
 
-#### [`c54cfa0`](https://github.com/Xian55/DotRecast/commit/c54cfa0e0e16cc54eeefe46a87d1df8fb02064f7) - `recast: reuse one scratch window in the median area filter`
+#### [`c54cfa0`](https://github.com/DimPap99/DotRecast/commit/c54cfa0e0e16cc54eeefe46a87d1df8fb02064f7) - `recast: reuse one scratch window in the median area filter`
 A 9-element `int[]` was allocated per compact span for a window that gets
 overwritten anyway. Now one `stackalloc` reused across the pass.
 
 ### Algorithmic
 
-#### [`c5f21c5`](https://github.com/Xian55/DotRecast/commit/c5f21c5ca599c7673a0b7243145e3fecc53f4e23) - `recast: skip the median sort when the 3x3 neighbourhood is uniform`
+#### [`c5f21c5`](https://github.com/DimPap99/DotRecast/commit/c5f21c5ca599c7673a0b7243145e3fecc53f4e23) - `recast: skip the median sort when the 3x3 neighbourhood is uniform`
 All nine slots start as copies of the centre area and are only overwritten where
 a neighbour differs. On open terrain almost every neighbourhood is a single area
 id, so `InsertSort` was sorting nine identical values - up to 36 compare-and-shift
@@ -240,30 +240,30 @@ steps - to pick a value already known.
 > **Isolated interleaved A/B**, corpus `MEDIAN_AREA`:
 > forced sort **98.6 / 100.0 ms** → fast path **82.2 / 73.1 ms**
 
-#### [`040531b`](https://github.com/Xian55/DotRecast/commit/040531be076515bcbd4c7cf3dd0495a62ac1e9b6) - `recast: fold erode's fill and threshold passes into their neighbours`
+#### [`040531b`](https://github.com/DimPap99/DotRecast/commit/040531be076515bcbd4c7cf3dd0495a62ac1e9b6) - `recast: fold erode's fill and threshold passes into their neighbours`
 Three full sweeps of the span set become two. The cells partition every span
 index exactly once, so the `Array.Fill(255)` folds into the boundary pass; and
 pass 2 finalises `distanceToBoundary[i]` per iteration and never reads `areas`,
 so the thresholding folds in there. ~2.4 MB less array traffic per tile.
 
-#### [`3351e31`](https://github.com/Xian55/DotRecast/commit/3351e3193bcee4c2b20c3789987f028bf6bd3e4e) - `recast: fold the distance field's init and max passes into their neighbours`
+#### [`3351e31`](https://github.com/DimPap99/DotRecast/commit/3351e3193bcee4c2b20c3789987f028bf6bd3e4e) - `recast: fold the distance field's init and max passes into their neighbours`
 Same shape: the init-to-`0xffff` sweep folds into boundary marking, and the max
 reduction folds into pass 2.
 
-#### [`1ec623d`](https://github.com/Xian55/DotRecast/commit/1ec623d5ad00f0db0d9a13a0f7a4992e52db1a8d) - `core+recast: time the watershed level bucketing and the final expansion`
+#### [`1ec623d`](https://github.com/DimPap99/DotRecast/commit/1ec623d5ad00f0db0d9a13a0f7a4992e52db1a8d) - `core+recast: time the watershed level bucketing and the final expansion`
 Instrumentation only. The `EXPAND` timer opens and closes *inside* the level
 loop, so the final expansion is untimed, and the `DIVIDE_TO_LEVELS` calls are
 commented out with no label defined - leaving ~half of watershed unattributed.
 
 > This immediately attributed a **155 ms blind spot**: level bucketing is
 > **183 ms of the 383 ms watershed total (48%)**, while the final expansion that
-> looked pathological is **4.6 ms (1%)**. [`d5d4914`](https://github.com/Xian55/DotRecast/commit/d5d491408ca9684c89dab68a82c2a7dfe40a0d06) exists because of this one.
+> looked pathological is **4.6 ms (1%)**. [`d5d4914`](https://github.com/DimPap99/DotRecast/commit/d5d491408ca9684c89dab68a82c2a7dfe40a0d06) exists because of this one.
 
-#### [`3c3745f`](https://github.com/Xian55/DotRecast/commit/3c3745f7e8b37be39e8733d7c51a945d9c476b83) - `recast: reuse one dirty-entry list across watershed expansion`
+#### [`3c3745f`](https://github.com/DimPap99/DotRecast/commit/3c3745f7e8b37be39e8733d7c51a945d9c476b83) - `recast: reuse one dirty-entry list across watershed expansion`
 `ExpandRegions` allocated its write-back list per call - ~250 calls per tile,
 regrowing to stack size each time.
 
-#### [`d5d4914`](https://github.com/Xian55/DotRecast/commit/d5d491408ca9684c89dab68a82c2a7dfe40a0d06) - `recast: bucket watershed cells by level instead of rescanning every column`
+#### [`d5d4914`](https://github.com/DimPap99/DotRecast/commit/d5d491408ca9684c89dab68a82c2a7dfe40a0d06) - `recast: bucket watershed cells by level instead of rescanning every column`
 `SortCellsByLevel` walks the entire heightfield to collect one 8-level band, and
 the level loop calls it once per wrap: ~30 full sweeps, ~15M span visits per
 tile. Now bucketed by level window once up front.
@@ -279,7 +279,7 @@ the merges. Stack order matters: `FloodRegion` assigns region ids in it.
 > Note `EXPAND` *rises* ~45 ms - the old full scan was inadvertently prefetching
 > `srcReg`/`areas` for it. Net is still ≈−4%.
 
-#### [`5c94bc0`](https://github.com/Xian55/DotRecast/commit/5c94bc02501602bc4ab0eef162d3bc324631b157) - `recast: pool the large per-tile scratch arrays`
+#### [`5c94bc0`](https://github.com/DimPap99/DotRecast/commit/5c94bc02501602bc4ab0eef162d3bc324631b157) - `recast: pool the large per-tile scratch arrays`
 Four large-object allocations per tile - `tempSpans` ~5 MB, `distanceToBoundary`
 ~1.2 MB, `srcReg` and `srcDist` ~1.2 MB each - now rented from `ArrayPool`.
 `tempSpans` needs `reg`/`con` written explicitly since it no longer arrives
@@ -288,25 +288,25 @@ zeroed; `srcReg`/`srcDist` genuinely need clearing because `srcReg == 0` is the
 
 ### Parallelism
 
-#### [`9f46bb0`](https://github.com/Xian55/DotRecast/commit/9f46bb0ce6c3f7e5ccc428ff00cd3245b8b8b1cc) - `recast: recycle spans through a pool during rasterization`
+#### [`9f46bb0`](https://github.com/DimPap99/DotRecast/commit/9f46bb0ce6c3f7e5ccc428ff00cd3245b8b8b1cc) - `recast: recycle spans through a pool during rasterization`
 `AddSpan` called `new RcSpan()` per (triangle, cell) incidence - 3×10⁵ to 1.5×10⁶
 objects, 12–60 MB per tile - and the merge path dropped absorbed spans instead of
 reusing them. Upstream already declared a pool, freelist, `AllocSpan` and
 `FreeSpan`, but **nothing ever called them**; the mechanism was dead code.
 
-#### [`0d8641b`](https://github.com/Xian55/DotRecast/commit/0d8641bd9aedcf9742c7934a7f38332c1646eabe) - `recast: rasterize triangles in parallel z-bands`
+#### [`0d8641b`](https://github.com/DimPap99/DotRecast/commit/0d8641bd9aedcf9742c7934a7f38332c1646eabe) - `recast: rasterize triangles in parallel z-bands`
 Splits the heightfield into row bands, one thread each, each with its own
 allocator so no locking is needed. A triangle only touches columns in its own z
 range and each band clamps to its own rows, so no two bands write the same
 column. Falls back to sequential below 2048 triangles.
 
-#### [`51b96e6`](https://github.com/Xian55/DotRecast/commit/51b96e602b803de7d1311a10463481e1dfe2435c) - `recast: build the polygon detail mesh in parallel`
+#### [`51b96e6`](https://github.com/DimPap99/DotRecast/commit/51b96e602b803de7d1311a10463481e1dfe2435c) - `recast: build the polygon detail mesh in parallel`
 The per-polygon loop reads its inputs read-only and writes only per-iteration
 scratch. Each worker gets its own scratch set; results are collected by polygon
 index and concatenated in order, so numbering matches the sequential version.
 → `BUILD_POLYMESHDETAIL` −41…−48%.
 
-[`0d8641b`](https://github.com/Xian55/DotRecast/commit/0d8641bd9aedcf9742c7934a7f38332c1646eabe) and [`51b96e6`](https://github.com/Xian55/DotRecast/commit/51b96e602b803de7d1311a10463481e1dfe2435c) buy **single-tile latency, not throughput** - they compose
+[`0d8641b`](https://github.com/DimPap99/DotRecast/commit/0d8641bd9aedcf9742c7934a7f38332c1646eabe) and [`51b96e6`](https://github.com/DimPap99/DotRecast/commit/51b96e602b803de7d1311a10463481e1dfe2435c) buy **single-tile latency, not throughput** - they compose
 poorly with a caller that already bakes several tiles concurrently. Worth gating
 behind a switch if you do that.
 
@@ -317,9 +317,9 @@ the largest remaining gap against C++, and an allocation profile showed the same
 three stages dominating managed allocation. Both had one root cause: DotRecast
 allocates where C++ owns storage.
 
-#### [`66300b0`](https://github.com/Xian55/DotRecast/commit/66300b0) - `recast: store heightfield spans as pooled value types`
+#### [`66300b0`](https://github.com/DimPap99/DotRecast/commit/66300b0) - `recast: store heightfield spans as pooled value types`
 `RcSpan` was a class, so `AddSpan` produced one ~40-byte heap object per
-(triangle, cell) incidence - 3×10⁵ to 1.5×10⁶ per tile. [`9f46bb0`](https://github.com/Xian55/DotRecast/commit/9f46bb0ce6c3f7e5ccc428ff00cd3245b8b8b1cc) had already
+(triangle, cell) incidence - 3×10⁵ to 1.5×10⁶ per tile. [`9f46bb0`](https://github.com/DimPap99/DotRecast/commit/9f46bb0ce6c3f7e5ccc428ff00cd3245b8b8b1cc) had already
 revived the dead pool; this goes the rest of the way to the C++ layout: 16-byte
 value-type spans in fixed-size pages, addressed by `int` index.
 `RcHeightfield.spans` becomes `int[]` column heads and `RcSpan.next` an index.
@@ -339,8 +339,8 @@ afterwards would recover it, at the cost of a multi-megabyte large-object
 allocation per tile, which is the exact pressure the commit exists to remove.
 The trade is +330 ms elsewhere for −44 ms here.
 
-#### [`207489c`](https://github.com/Xian55/DotRecast/commit/207489c) - `recast: bucket the watershed level index with a counting sort`
-The level index from [`d5d4914`](https://github.com/Xian55/DotRecast/commit/d5d491408ca9684c89dab68a82c2a7dfe40a0d06) kept one `List` per level window. Every
+#### [`207489c`](https://github.com/DimPap99/DotRecast/commit/207489c) - `recast: bucket the watershed level index with a counting sort`
+The level index from [`d5d4914`](https://github.com/DimPap99/DotRecast/commit/d5d491408ca9684c89dab68a82c2a7dfe40a0d06) kept one `List` per level window. Every
 unassigned walkable span produces an entry - 2×10⁵ to 6×10⁵ per tile - so those
 lists grew by repeated doubling, copying the whole bucket each time. That was the
 largest single allocator left in the region build.
@@ -352,7 +352,7 @@ merges depend on.
 
 > allocation **249 → 191 MB (−24%)**
 
-#### [`2bc9163`](https://github.com/Xian55/DotRecast/commit/2bc9163) - `recast: pool the compact heightfield's bulk arrays`
+#### [`2bc9163`](https://github.com/DimPap99/DotRecast/commit/2bc9163) - `recast: pool the compact heightfield's bulk arrays`
 `cells`, `spans`, `dist` and `areas` are ~10 MB per tile and dead once the meshes
 are built - but several tiles bake concurrently, so that garbage is all live at
 once and most of it lands on the large object heap.
@@ -375,7 +375,7 @@ documented on the type:
 With allocation handled, the native comparison put the remaining gaps in the
 contour and polygon builds. Both turned out to be plain wasted work.
 
-#### [`8174bf3`](https://github.com/Xian55/DotRecast/commit/8174bf3) - `recast: tighten the contour boundary-marking sweep`
+#### [`8174bf3`](https://github.com/DimPap99/DotRecast/commit/8174bf3) - `recast: tighten the contour boundary-marking sweep`
 `RC_TIMER_BUILD_CONTOURS_TRACE` does not time contour tracing - it wraps the
 flat sweep that marks which span edges border another region, visiting every
 span and testing four directions. `chf` is a class, so each `chf.spans[..]` is a
@@ -388,7 +388,7 @@ plus −1, +w, +1, −w.
 > `BUILD_CONTOURS_TRACE` **39.1/39.5 → 17.9/17.2 ms (−56%)**,
 > `BUILD_CONTOURS` −37%
 
-#### [`a6c10b7`](https://github.com/Xian55/DotRecast/commit/a6c10b7) - `recast: drop the integer divides and repeated determinants from the polygon build`
+#### [`a6c10b7`](https://github.com/DimPap99/DotRecast/commit/a6c10b7) - `recast: drop the integer divides and repeated determinants from the polygon build`
 `GetPolyMergeValue` wrapped indices with `% na` / `% nb`. Neither bound is a
 constant, so each is a hardware integer divide - ~25 cycles, not pipelined - in
 a scan called O(npolys³) times per contour. Every index is already below twice
@@ -400,7 +400,7 @@ which made `Area2` the hottest routine in the polygon build.
 
 > `BUILD_POLYMESH` **58.9/56.4 → 47.6/30.5 ms**
 
-#### [`1d1a8ae`](https://github.com/Xian55/DotRecast/commit/1d1a8ae) - `recast: trim the per-vertex work in the contour walk`
+#### [`1d1a8ae`](https://github.com/DimPap99/DotRecast/commit/1d1a8ae) - `recast: trim the per-vertex work in the contour walk`
 `GetCon` called twice per direction in six places, `chf` arrays reloaded per
 access, `DistancePtSeg` recomputing the segment's own terms for every raw point
 tested against it, and a four-field point insert doing four `List.Insert` calls
@@ -416,7 +416,7 @@ This is the round the "What C++ actually says" section below is about. Four
 candidates, all pure layout changes; **two paid and two did not**, and the two
 that did not were reverted after being measured.
 
-#### [`de7f32a`](https://github.com/Xian55/DotRecast/commit/de7f32a) - `recast: store compact heightfield areas one byte per span` ✅
+#### [`de7f32a`](https://github.com/DimPap99/DotRecast/commit/de7f32a) - `recast: store compact heightfield areas one byte per span` ✅
 `chf.areas` held an `int` per span where C++ holds an `unsigned char`. Area ids
 are small - `RC_WALKABLE_AREA` is 63 - so three of every four bytes were padding
 being dragged through the cache. It matters because `ExpandRegions` reads it once
@@ -428,7 +428,7 @@ per span per direction, making it the array's heaviest consumer.
 > `MEDIAN_AREA`, which sweeps `areas` in a 3×3 stencil and was the stage we
 > predicted would win most, **did not move**.
 
-#### [`eae9562`](https://github.com/Xian55/DotRecast/commit/eae9562) - `recast: pack the compact span into eight bytes` ✅
+#### [`eae9562`](https://github.com/DimPap99/DotRecast/commit/eae9562) - `recast: pack the compact span into eight bytes` ✅
 `RcCompactSpan` was four ints; C++ packs `ushort y; ushort reg; uint con:24, h:8`.
 At hundreds of thousands of spans per tile this is the largest single part of the
 working set. `con` and `h` became properties over a packed `uint`, so **no call
@@ -555,7 +555,7 @@ the Java hop widened value types that C++ packs into bitfields:
 
 | structure | C++ | DotRecast | ratio |
 |---|---|---|---|
-| `rcSpan` | bitfields + `next`, 16 B, pooled contiguous | 16 B struct, paged ✅ | fixed by [`66300b0`](https://github.com/Xian55/DotRecast/commit/66300b0) |
+| `rcSpan` | bitfields + `next`, 16 B, pooled contiguous | 16 B struct, paged ✅ | fixed by [`66300b0`](https://github.com/DimPap99/DotRecast/commit/66300b0) |
 | `rcCompactSpan` | `ushort y, reg` + `con:24, h:8` = 8 B | 4×`int` = 16 B | 2× |
 | `rcCompactCell` | `index:24, count:8` = 4 B | 2×`int` = 8 B | 2× |
 | `chf.dist` | `unsigned short*` | `int[]` | 2× |
@@ -619,8 +619,8 @@ than per-core efficiency; and the working set is still 9.4 MB against C++'s
 7.4 MB, because two of the four narrowings were not worth taking.
 
 That "single-threaded throughout" claim does not survive scrutiny, incidentally:
-the tip has two `Parallel.For` sites ([`0d8641b`](https://github.com/Xian55/DotRecast/commit/0d8641bd9aedcf9742c7934a7f38332c1646eabe)
-and [`51b96e6`](https://github.com/Xian55/DotRecast/commit/51b96e602b803de7d1311a10463481e1dfe2435c))
+the tip has two `Parallel.For` sites ([`0d8641b`](https://github.com/DimPap99/DotRecast/commit/0d8641bd9aedcf9742c7934a7f38332c1646eabe)
+and [`51b96e6`](https://github.com/DimPap99/DotRecast/commit/51b96e602b803de7d1311a10463481e1dfe2435c))
 and there is no switch to disable them, so the C# column above was almost
 certainly the parallel build. The M4 numbers below quantify what that was worth.
 
@@ -739,7 +739,7 @@ the C# arm's variance, not the harness's.
   **Nothing was kept.** The closest thing to a win was `ref RcSpan` locals replacing
   nine repeated `store[i]` lookups per span, together with `MathF.Abs` → `Math.Abs`
   on an `int` in the innermost loop - the same int→float round trip
-  [`99b2b15`](https://github.com/Xian55/DotRecast/commit/99b2b152b405f9ee5d7c960fed707637c4a66e8c)
+  [`99b2b15`](https://github.com/DimPap99/DotRecast/commit/99b2b152b405f9ee5d7c960fed707637c4a66e8c)
   removed elsewhere and missed here. It measured 89.1 → 86.9 ms with total bake
   526.8 → 523.5 ms, hashes unchanged and 142 tests green, and it was still
   abandoned: −2.5% on one stage and −0.6% overall sits inside the 0.7-1.5% run

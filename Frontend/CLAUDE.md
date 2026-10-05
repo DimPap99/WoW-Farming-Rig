@@ -69,15 +69,15 @@ not break one route, it kills host startup.
 (era-derived). The map and its nav entry were stuck on `SoM or TBC` long after wrath,
 cata and mop worked, which is exactly how that goes stale.
 
-**The map script is in pieces, and upstream still has it whole.** `leaflet-watch.js`
-and `leaflet-map/layers/coords/spawns/sidebar/paths/signalr.js` are contiguous runs of
-upstream's one `leaflet-watch.js`, listed in that order in `BlazorServer/App.razor` and
+**The map script is in pieces.** `leaflet-watch.js` and
+`leaflet-map/layers/coords/spawns/sidebar/paths/signalr.js` are contiguous runs of one
+script, listed in that order in `BlazorServer/App.razor` and
 `PathingAPI/Pages/_Host.cshtml`. They share one global scope, so a function may call
 into any piece, but a load-time statement (`const x = new L.…`) sees only earlier
-pieces. Merge an upstream change to the single file with `node
-scripts/leaflet-pieces.mjs merge upstream/dev` (see `docs/upstream-sync.md`), not by
-hand, and run its `check` after moving a boundary. `Configs` stays in
-`leaflet-watch.js`: `CoreTests` reads it from there.
+pieces. After moving code across a boundary, update the table in
+`scripts/leaflet-pieces.mjs` and run `node scripts/leaflet-pieces.mjs check`; `join`
+prints the whole script. `Configs` stays in `leaflet-watch.js`: `CoreTests` reads it
+from there.
 
 **The JS mirrors `DataConfig` and must be kept in step.** `clientEra()`, `tileEra()`,
 `TILE_SHARED_CONTINENTS` and the `Configs` blocks in `leaflet-watch.js` duplicate
