@@ -51,6 +51,7 @@ Catalog/CatalogEndpoints.cs        /api/v1/catalog/locations, /testroutes
 Navmesh/BakeAdmin.cs               the admin-only engine: bake, clear, area grids, terrain
 Navmesh/ForeverGameFiles.cs        ForeverCasc:* -> Forever's CASC geometry
 Navmesh/NavmeshEndpoints.cs        /api/v1/navmesh, /api/v1/bake, /api/v1/areagrids
+Navmesh/NavmeshViews.cs            the navmesh as a map draws it: a continent's relief, one tile's polygons
 Navmesh/StartupBakes.cs            --bake= / --bake-area=
 Watch/WatchHub.cs                  /watchHub (MessagePack): viewers, Replay, Terrain
 Watch/WatchBroadcaster.cs          planner events and drawings -> the hub, one send loop

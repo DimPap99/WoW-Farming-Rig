@@ -163,6 +163,8 @@ bot uses, either on the same PC or with changes committed to the repository.
 | `GET /api/v1/catalog/locations` | | `NamedLocation[]` (curated spots and teleports) |
 | `GET /api/v1/catalog/testroutes` | | `TestRoute[]` with ready `RouteRequest`s |
 | `GET /api/v1/navmesh/{continent}/tiles` | | `NavmeshTile[]` (bounds, resident) |
+| `GET /api/v1/navmesh/{continent}/tiles/{x}/{z}` | | `NavmeshTileGeometry` (the tile's walkable polygons, for drawing); 404 when not baked |
+| `GET /api/v1/navmesh/{continent}/overview` | | `NavmeshOverview` (one walkable height per baked tile: a map's relief) |
 | `DELETE /api/v1/navmesh/{continent}` | | `CacheCleared`; 409 while a job runs |
 | `GET/POST /api/v1/bake` | `BakeRequest(Continent?, AdtX?, AdtY?)` on POST | `BakeStatus`; 202, 400, or 409 (busy, no game files) |
 | `POST /api/v1/bake/cancel` | | `BakeStatus`; 409 when none runs |

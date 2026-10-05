@@ -19,6 +19,7 @@ Navmesh/       DotRecast engine (the current one)
   NavmeshCoords.cs         wow <-> recast conversion, tile indexing
   NavmeshEndpointResolver.cs  snap a world point to a poly (tight vertical extents on purpose)
   NavmeshTileGraph.cs      a continent as a graph of tile regions, built from the tile files, for routes across it
+  NavmeshTileFiles.cs      how a cache directory names and reads its tile files
   CostZones.cs/CostZoneLoader.cs  authored road/danger costs, query-time only
   AreaGrid.cs              standalone area-id grid, answers without game files
   CatmullRom.cs            path smoothing

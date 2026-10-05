@@ -9,6 +9,7 @@ using PathingService.Hosting;
 using PathingService.Status;
 
 using PPather;
+using PPather.Navmesh;
 using PPather.Planning;
 
 using SharedLib;
@@ -28,10 +29,9 @@ public static class NavmeshEndpoints
         navmesh.MapGet($"{{continent}}/{PathingApi.Tiles}",
                 (string continent, DataConfig data, IOptions<NavmeshBakeOptions> bake, RoutePlanner planner, CoverageCache coverage) =>
                 {
-                    if (!coverage.Read().Any(c => c.Continent == continent))
+                    if (!IsContinent(continent, coverage))
                     {
-                        return Results.Problem(detail: $"'{continent}' is not a continent of {data.Exp}",
-                            statusCode: StatusCodes.Status400BadRequest, title: "Request refused");
+                        return NotAContinent(continent, data);
                     }
 
                     PPatherService.NavmeshTileInfo[] tiles = PPatherService.GetNavmeshTiles(data, bake.Value, continent,
@@ -40,6 +40,32 @@ public static class NavmeshEndpoints
                 })
             .WithSummary("Every baked tile of a continent with its world bounds; Resident marks those the planner holds")
             .Produces<NavmeshTile[]>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+
+        navmesh.MapGet($"{{continent}}/{PathingApi.Overview}", (string continent, DataConfig data, RoutePlanner planner, CoverageCache coverage) =>
+                IsContinent(continent, coverage)
+                    ? Results.Ok(NavmeshViews.Overview(planner, continent))
+                    : NotAContinent(continent, data))
+            .WithSummary("One walkable height per baked tile of a continent: a map's base at any zoom")
+            .WithDescription("Read from the continent's tile graph, which the first request after a bake builds (about 10 s for Kalimdor).")
+            .Produces<NavmeshOverview>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+
+        navmesh.MapGet($"{{continent}}/{PathingApi.Tiles}/{{x:int}}/{{z:int}}",
+                (string continent, int x, int z, DataConfig data, IOptions<NavmeshBakeOptions> bake, CoverageCache coverage) =>
+                {
+                    if (!IsContinent(continent, coverage))
+                    {
+                        return NotAContinent(continent, data);
+                    }
+
+                    return NavmeshViews.Tile(NavmeshSettings.CacheDirectory(data, bake.Value, continent), x, z) is NavmeshTileGeometry tile
+                        ? Results.Ok(tile)
+                        : Results.NotFound();
+                })
+            .WithSummary("One baked tile's walkable polygons, for drawing; 404 when it is not baked")
+            .Produces<NavmeshTileGeometry>()
+            .Produces(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         navmesh.MapDelete("{continent}", (string continent, BakeAdmin admin) => admin.Clear(continent).ToHttp())
@@ -86,5 +112,17 @@ public static class NavmeshEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         return app;
+    }
+
+    // Continents are folder names: only the client's own are taken.
+    private static bool IsContinent(string continent, CoverageCache coverage)
+    {
+        return coverage.Read().Any(c => c.Continent == continent);
+    }
+
+    private static IResult NotAContinent(string continent, DataConfig data)
+    {
+        return Results.Problem(detail: $"'{continent}' is not a continent of {data.Exp}",
+            statusCode: StatusCodes.Status400BadRequest, title: "Request refused");
     }
 }

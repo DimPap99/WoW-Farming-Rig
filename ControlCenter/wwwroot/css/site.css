@@ -909,6 +909,62 @@ kbd {
     box-shadow: none;
 }
 
+/* --- world view (deck.gl): a flat map that tilts into 3D --------------------------- */
+
+.pa-world {
+    position: absolute;
+    inset: 0;
+    background: var(--pa-bg);
+}
+
+.pa-world-canvas {
+    position: absolute;
+    inset: 0;
+}
+
+.pa-world-tools {
+    position: absolute;
+    top: var(--pa-gap);
+    right: var(--pa-gap);
+    z-index: 1001;
+}
+
+/* Over the world view nothing sits above a panel, so it starts at the top. */
+.pa-world .pa-panel--top-left {
+    top: var(--pa-gap);
+    max-height: calc(100% - 2 * var(--pa-gap));
+}
+
+.pa-world-readout {
+    position: absolute;
+    right: var(--pa-gap);
+    bottom: var(--pa-gap);
+    z-index: 999;
+    padding: 4px 10px;
+    border-radius: var(--pa-radius-sm);
+    background: rgba(10, 14, 19, 0.7);
+    color: var(--pa-text-muted);
+    font: 12px var(--pa-mono);
+    pointer-events: none;
+    white-space: pre;
+}
+
+.pa-world-readout:empty {
+    display: none;
+}
+
+.pa-world-failed {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 1100;
+    padding: 12px 16px;
+    transform: translate(-50%, -50%);
+    background: var(--pa-glass);
+    border: 1px solid var(--pa-border-strong);
+    border-radius: var(--pa-radius);
+}
+
 /* --- map, frames, pages --------------------------------------------------------- */
 
 .pa-map {

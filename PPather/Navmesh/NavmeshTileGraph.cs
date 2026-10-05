@@ -7,7 +7,6 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Numerics;
 using System.Threading;
@@ -67,6 +66,30 @@ public sealed class NavmeshTileGraph
     public Vector3 PointOf(int node)
     {
         return points[node];
+    }
+
+    /// <summary>
+    /// Every tile with the mean height of its regions' points: a coarse relief of the continent's
+    /// walkable ground, one value per tile.
+    /// </summary>
+    public IEnumerable<(int TileX, int TileZ, float Height)> TileHeights()
+    {
+        foreach ((long key, TileRegions tile) in tiles)
+        {
+            int regions = 0;
+            foreach (ushort region in tile.RegionOfPoly)
+            {
+                regions = Math.Max(regions, region + 1);
+            }
+
+            float sum = 0;
+            for (int r = 0; r < regions; r++)
+            {
+                sum += points[tile.FirstNode + r].Z;
+            }
+
+            yield return ((int)(key >> 32), (int)key, regions > 0 ? sum / regions : 0);
+        }
     }
 
     /// <summary>The region polygon <paramref name="polyIndex"/> of tile (<paramref name="tileX"/>, <paramref name="tileZ"/>) is in.</summary>
@@ -244,9 +267,9 @@ public sealed class NavmeshTileGraph
     {
         long started = Stopwatch.GetTimestamp();
         SortedDictionary<int, List<int>> rows = [];
-        foreach (string file in Directory.EnumerateFiles(cacheDir, "tile_*.dnm"))
+        foreach (string file in Directory.EnumerateFiles(cacheDir, NavmeshTileFiles.Pattern))
         {
-            if (TryTileOf(file, out int x, out int z))
+            if (NavmeshTileFiles.TryTileOf(file, out int x, out int z))
             {
                 if (!rows.TryGetValue(z, out List<int>? row))
                 {
@@ -314,15 +337,6 @@ public sealed class NavmeshTileGraph
         return ((long)x << 32) | (uint)z;
     }
 
-    private static bool TryTileOf(string file, out int x, out int z)
-    {
-        x = z = 0;
-        string[] parts = Path.GetFileNameWithoutExtension(file).Split('_');
-        return parts.Length == 3 &&
-               int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out x) &&
-               int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out z);
-    }
-
     /// <summary>The sweep's state: the rows loaded, and the graph as it grows.</summary>
     private sealed class Builder(DtNavMesh mesh, ILogger logger)
     {
@@ -337,7 +351,7 @@ public sealed class NavmeshTileGraph
         {
             foreach (int x in xs)
             {
-                string file = Path.Combine(cacheDir, $"tile_{x}_{z}.dnm");
+                string file = NavmeshTileFiles.PathOf(cacheDir, x, z);
                 try
                 {
                     using BinaryReader stream = new(File.OpenRead(file));
@@ -540,7 +554,7 @@ public readonly record struct TileSetStamp(int Count, long Bytes, long NewestTic
         int count = 0;
         long bytes = 0;
         long newest = 0;
-        foreach (string file in Directory.EnumerateFiles(cacheDir, "tile_*.dnm"))
+        foreach (string file in Directory.EnumerateFiles(cacheDir, NavmeshTileFiles.Pattern))
         {
             FileInfo info = new(file);
             count++;

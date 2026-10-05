@@ -245,7 +245,7 @@ public sealed class RoutePlanner : IDisposable
     private RouteOutcome FindAcross(Lane lane, string continent, WorldMapArea area, in RouteQuery query, Vector3 from, Vector3 to,
         long start, CancellationToken token)
     {
-        NavmeshTileGraph graph = GetTileGraph(continent);
+        NavmeshTileGraph graph = TileGraph(continent);
         NavmeshQueryMemory memory = lane.Pathfinder.CreateMemory();
         NavmeshQueryTuning tuning = query.Tuning;
 
@@ -442,7 +442,7 @@ public sealed class RoutePlanner : IDisposable
     /// have not changed since it was built, else built from them (about 10 s for Kalimdor) and kept
     /// there. One build at a time; a caller that needs it meanwhile waits for it.
     /// </summary>
-    private NavmeshTileGraph GetTileGraph(string continent)
+    public NavmeshTileGraph TileGraph(string continent)
     {
         lock (tileGraphLock)
         {
