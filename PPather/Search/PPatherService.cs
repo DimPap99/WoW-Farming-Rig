@@ -164,80 +164,17 @@ public sealed class PPatherService : IDisposable
 
         if (gameFileSourceFactory is null)
             MPQSelfTest();
-        StartZoneWatcher();
+        zoneWatcher = CostZoneWatcher.TryStart(logger, dataConfig.Road, ReloadZonesFromDisk);
     }
 
     // --- Authored cost zone hot reload ----------------------------------
 
-    /// <summary>
-    /// Coalescing window for zone file edits. One save from the map UI writes a
-    /// road file and a danger file, and most editors emit several events per
-    /// write, so reloading per event would reload four or five times for one
-    /// logical edit.
-    /// </summary>
-    private const int ZoneReloadDebounceMs = 500;
-
-    private System.IO.FileSystemWatcher? zoneWatcher;
-    private Timer? zoneReloadDebounce;
+    /// <summary>Reloads authored zones whenever their files change on disk; see <see cref="CostZoneWatcher"/>.</summary>
+    private readonly CostZoneWatcher? zoneWatcher;
 
     /// <summary>
-    /// Reloads authored zones whenever their files change on disk, whoever
-    /// wrote them. The map UI already calls the reload endpoint after saving,
-    /// but hand edits, scripts and the DangerZoneGenerator utility do not -
-    /// without this they take effect only after a restart.
-    ///
-    /// Zones are query-time only, so this is a pointer swap: no rebake, no
-    /// navmesh invalidation.
-    /// </summary>
-    private void StartZoneWatcher()
-    {
-        string root = dataConfig.Road;
-        if (!System.IO.Directory.Exists(root))
-        {
-            if (logger.IsEnabled(LogLevel.Information))
-            {
-                logger.LogInformation("Cost zone watcher not started: {Root} does not exist.", root);
-            }
-            return;
-        }
-
-        try
-        {
-            zoneReloadDebounce = new Timer(_ => ReloadZonesFromDisk(), null, Timeout.Infinite, Timeout.Infinite);
-
-            zoneWatcher = new System.IO.FileSystemWatcher(root, "*.json")
-            {
-                IncludeSubdirectories = true, // dangerzone/ lives under road/
-                NotifyFilter = System.IO.NotifyFilters.LastWrite | System.IO.NotifyFilters.FileName | System.IO.NotifyFilters.Size,
-            };
-
-            zoneWatcher.Changed += OnZoneFileChanged;
-            zoneWatcher.Created += OnZoneFileChanged;
-            zoneWatcher.Deleted += OnZoneFileChanged;
-            zoneWatcher.Renamed += OnZoneFileChanged;
-            zoneWatcher.Error += (_, e) =>
-                logger.LogWarning(e.GetException(), "Cost zone watcher error; edits may need a manual reload.");
-
-            zoneWatcher.EnableRaisingEvents = true;
-            if (logger.IsEnabled(LogLevel.Information))
-            {
-                logger.LogInformation("Cost zone watcher live on {Root}.", root);
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Could not start the cost zone watcher; use the reload endpoint instead.");
-            zoneWatcher?.Dispose();
-            zoneWatcher = null;
-        }
-    }
-
-    private void OnZoneFileChanged(object sender, System.IO.FileSystemEventArgs e) =>
-        zoneReloadDebounce?.Change(ZoneReloadDebounceMs, Timeout.Infinite);
-
-    /// <summary>
-    /// Timer callback. Must never throw: an escaping exception on a timer
-    /// thread takes the process down.
+    /// Watcher callback, on a timer thread: it must never throw, because an escaping
+    /// exception there takes the process down.
     /// </summary>
     private void ReloadZonesFromDisk()
     {
@@ -256,15 +193,7 @@ public sealed class PPatherService : IDisposable
 
     public void Dispose()
     {
-        if (zoneWatcher != null)
-        {
-            zoneWatcher.EnableRaisingEvents = false;
-            zoneWatcher.Dispose();
-            zoneWatcher = null;
-        }
-
-        zoneReloadDebounce?.Dispose();
-        zoneReloadDebounce = null;
+        zoneWatcher?.Dispose();
 
         lock (areaGridLock)
         {
@@ -375,12 +304,21 @@ public sealed class PPatherService : IDisposable
     /// </summary>
     public NavmeshCoverage[] GetNavmeshCoverage()
     {
+        return GetNavmeshCoverage(dataConfig, bakeOptions);
+    }
+
+    /// <summary>
+    /// <see cref="GetNavmeshCoverage()"/> for a caller with no service of its own (the route
+    /// planner). Needs <see cref="ContinentDB"/> filled, as every continent lookup does.
+    /// </summary>
+    public static NavmeshCoverage[] GetNavmeshCoverage(DataConfig dataConfig, NavmeshBakeOptions bakeOptions)
+    {
         List<string> continents = KnownWorldContinents();
         NavmeshCoverage[] result = new NavmeshCoverage[continents.Count];
 
         for (int i = 0; i < continents.Count; i++)
         {
-            string dir = NavmeshCacheDir(continents[i]);
+            string dir = NavmeshSettings.CacheDirectory(dataConfig, bakeOptions, continents[i]);
             int tiles = System.IO.Directory.Exists(dir)
                 ? System.IO.Directory.EnumerateFiles(dir, "*.dnm").Count()
                 : 0;
@@ -905,14 +843,7 @@ public sealed class PPatherService : IDisposable
 
     private string NavmeshCacheDir(string continent)
     {
-        // The era, not the client name: som, tbc and wrath share one bake.
-        string hash = NavmeshSettings.ComputeSettingsHash(
-            NavmeshSettings.MeshEra(dataConfig.Exp),
-            typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0",
-            bakeOptions.AgentRadius, bakeOptions.AgentMaxClimb, bakeOptions.WalkableSlope,
-            bakeOptions.ResolveMinWorldZ(continent));
-
-        return System.IO.Path.Join(dataConfig.Navmesh, continent, hash);
+        return NavmeshSettings.CacheDirectory(dataConfig, bakeOptions, continent);
     }
 
     /// <summary>

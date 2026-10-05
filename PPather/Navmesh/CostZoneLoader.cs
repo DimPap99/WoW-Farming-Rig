@@ -130,70 +130,83 @@ public static class CostZoneLoader
 
     private static bool Validate(ILogger logger, string file, RoadData data)
     {
+        string? problem = Problem(data);
+        if (problem != null)
+        {
+            logger.LogWarning("Cost zone file {File} rejected: {Problem}.", file, problem);
+        }
+        return problem == null;
+    }
+
+    private static bool Validate(ILogger logger, string file, DangerZoneData data)
+    {
+        string? problem = Problem(data);
+        if (problem != null)
+        {
+            logger.LogWarning("Cost zone file {File} rejected: {Problem}.", file, problem);
+        }
+        return problem == null;
+    }
+
+    /// <summary>
+    /// Why <paramref name="data"/> would be rejected when loaded, or null when it is valid.
+    /// A writer checks with this before saving, so a bad edit is refused at once instead of
+    /// being skipped later with only a warning.
+    /// </summary>
+    public static string? Problem(RoadData data)
+    {
         if (data.Roads == null)
         {
-            logger.LogWarning("Cost zone file {File} rejected: Roads array is null.", file);
-            return false;
+            return "Roads array is null";
         }
 
         foreach (RoadSegment segment in data.Roads)
         {
             if (segment.Width <= 0 || segment.Width > MaxRoadWidthChunks)
             {
-                logger.LogWarning("Cost zone file {File} rejected: road '{Name}' has width {Width}, expected 1..{Max}.",
-                    file, segment.Name, segment.Width, MaxRoadWidthChunks);
-                return false;
+                return $"road '{segment.Name}' has width {segment.Width}, expected 1..{MaxRoadWidthChunks}";
             }
 
             if (segment.Points == null || segment.Points.Length == 0 || segment.Points.Length > MaxPointsPerSegment)
             {
-                logger.LogWarning("Cost zone file {File} rejected: road '{Name}' has {Count} points, expected 1..{Max}.",
-                    file, segment.Name, segment.Points?.Length ?? 0, MaxPointsPerSegment);
-                return false;
+                return $"road '{segment.Name}' has {segment.Points?.Length ?? 0} points, expected 1..{MaxPointsPerSegment}";
             }
 
             foreach (Vector2 p in segment.Points)
             {
                 if (!IsSaneCoord(p.X) || !IsSaneCoord(p.Y))
                 {
-                    logger.LogWarning("Cost zone file {File} rejected: road '{Name}' has an out-of-range point ({X}, {Y}).",
-                        file, segment.Name, p.X, p.Y);
-                    return false;
+                    return $"road '{segment.Name}' has an out-of-range point ({p.X}, {p.Y})";
                 }
             }
         }
 
-        return true;
+        return null;
     }
 
-    private static bool Validate(ILogger logger, string file, DangerZoneData data)
+    /// <inheritdoc cref="Problem(RoadData)"/>
+    public static string? Problem(DangerZoneData data)
     {
         if (data.Circles == null || data.Rectangles == null)
         {
-            logger.LogWarning("Cost zone file {File} rejected: Circles or Rectangles array is null.", file);
-            return false;
+            return "Circles or Rectangles array is null";
         }
 
         foreach (CircleDangerZone c in data.Circles)
         {
             if (!IsSaneCoord(c.CenterX) || !IsSaneCoord(c.CenterY))
             {
-                logger.LogWarning("Cost zone file {File} rejected: circle '{Name}' centre ({X}, {Y}) is out of range.",
-                    file, c.Name, c.CenterX, c.CenterY);
-                return false;
+                return $"circle '{c.Name}' centre ({c.CenterX}, {c.CenterY}) is out of range";
             }
 
             if (!float.IsFinite(c.Radius) || c.Radius <= 0f || c.Radius > ExtentLimit)
             {
-                logger.LogWarning("Cost zone file {File} rejected: circle '{Name}' radius {Radius}, expected 0..{Max}.",
-                    file, c.Name, c.Radius, ExtentLimit);
-                return false;
+                return $"circle '{c.Name}' radius {c.Radius}, expected 0..{ExtentLimit}";
             }
 
             if (!float.IsFinite(c.Penalty))
             {
-                logger.LogWarning("Cost zone file {File} rejected: circle '{Name}' penalty is not a finite number.", file, c.Name);
-                return false;
+                return $"circle '{c.Name}' penalty is not a finite number";
             }
         }
 
@@ -201,31 +214,26 @@ public static class CostZoneLoader
         {
             if (!IsSaneCoord(r.MinX) || !IsSaneCoord(r.MinY) || !IsSaneCoord(r.MaxX) || !IsSaneCoord(r.MaxY))
             {
-                logger.LogWarning("Cost zone file {File} rejected: rectangle '{Name}' has out-of-range bounds.", file, r.Name);
-                return false;
+                return $"rectangle '{r.Name}' has out-of-range bounds";
             }
 
             if (r.MaxX < r.MinX || r.MaxY < r.MinY)
             {
-                logger.LogWarning("Cost zone file {File} rejected: rectangle '{Name}' has inverted bounds.", file, r.Name);
-                return false;
+                return $"rectangle '{r.Name}' has inverted bounds";
             }
 
             if (r.MaxX - r.MinX > ExtentLimit || r.MaxY - r.MinY > ExtentLimit)
             {
-                logger.LogWarning("Cost zone file {File} rejected: rectangle '{Name}' is larger than {Max}yd a side.",
-                    file, r.Name, ExtentLimit);
-                return false;
+                return $"rectangle '{r.Name}' is larger than {ExtentLimit}yd a side";
             }
 
             if (!float.IsFinite(r.Penalty))
             {
-                logger.LogWarning("Cost zone file {File} rejected: rectangle '{Name}' penalty is not a finite number.", file, r.Name);
-                return false;
+                return $"rectangle '{r.Name}' penalty is not a finite number";
             }
         }
 
-        return true;
+        return null;
     }
 
     private static bool TryRead<T>(ILogger logger, string file, out T? value) where T : class
