@@ -68,6 +68,10 @@
             </div>
         </details>
 
+        <label class="pa-check" title="Off: the bot's own search, a band around the straight line; a long or winding route can stop short. On: find the way across the whole continent first, then search along it.">
+            <input type="checkbox" @bind="acrossContinent" /> Search the whole continent
+        </label>
+
         <div class="pa-actions">
             <button class="pa-btn" type="button" disabled="@busy" title="Draw a straight line between the two places"
                     @onclick="DrawAsync">
@@ -105,6 +109,7 @@
     private string to = string.Empty;
     private float jitter;
     private string seed = string.Empty;
+    private bool acrossContinent;
     private bool busy;
     private string? result;
     private ResultKind resultKind;
@@ -228,7 +233,8 @@
         {
             int? parsedSeed = int.TryParse(seed, NumberStyles.Integer, CultureInfo.InvariantCulture, out int s) ? s : null;
             RouteResponse response = await pathing.FindRouteAsync(new RouteRequest(null, zone.UiMapId, CoordinateSpace.World,
-                start.Position, end.Position, new RouteTuning(jitter, parsedSeed)), Token);
+                start.Position, end.Position, new RouteTuning(jitter, parsedSeed),
+                acrossContinent ? RouteSearch.Continent : RouteSearch.Band), Token);
 
             (result, resultKind) = RouteResults.Describe(response);
         }

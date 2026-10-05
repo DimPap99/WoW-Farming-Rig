@@ -97,7 +97,7 @@ the management side is down.
 4. **One planner implementation.** `PPather/Planning/RoutePlanner` serves the Pathing Service
    now and the agent's local mode later. A path previewed in the Control Center is the path
    the bot will compute, and a parity test enforces that.
-5. **Failures are typed.** A route request returns `Found`, `NoPath`, `NotBaked`, `Unavailable`
+5. **Failures are typed.** A route request returns `Found`, `Partial`, `NoPath`, `NotBaked`, `Unavailable`
    or `BadRequest`. "Service down" must never read as "no path", which is what the RemoteV1
    client does today with a 429.
 6. **The Pathing Service never calls bots; bots ask it.** An assignment goes from manager to
@@ -145,7 +145,7 @@ bot uses, either on the same PC or with changes committed to the repository.
 
 | Endpoint | Body / query | Answer |
 |---|---|---|
-| `POST /api/v1/routes/find` | `RouteRequest(Client, UiMapId, Space: World\|Map, From, To, Tuning)` | `RouteResponse(Status, Points, Smoothed, ElapsedMs, Detail)` |
+| `POST /api/v1/routes/find` | `RouteRequest(Client, UiMapId, Space: World\|Map, From, To, Tuning, Search: Band\|Continent)` | `RouteResponse(Status, Points, Smoothed, ElapsedMs, Detail)`; a `Partial` route holds the points as far as the search got |
 | `GET /api/v1/capabilities` | | `PathingCapabilities(ApiVersion, Client, Era, PathsAreSmoothed, Continents)` |
 | `GET /api/v1/health` | | baked tiles per continent and resident lanes |
 | `GET /api/v1/paths?filter=` | | `RecordedPathInfo[]` |

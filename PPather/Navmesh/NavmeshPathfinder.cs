@@ -321,6 +321,38 @@ public sealed class NavmeshPathfinder : IDisposable
     }
 
     /// <summary>
+    /// The polygon a route from or to <paramref name="wow"/> starts or ends on, as the tile it
+    /// lies in and its index there - how a <see cref="NavmeshTileGraph"/> knows polygons. The
+    /// same resolver as <see cref="FindPath(Vector3, Vector3, bool?)"/>, so a route searched
+    /// along the graph starts where a plain search would. Not re-entrant, like the searches.
+    /// </summary>
+    public bool TryLocatePoly(Vector3 wow, out int tileX, out int tileZ, out int polyIndex)
+    {
+        tileX = tileZ = polyIndex = 0;
+        tiles.EnsureTilesForSegment(wow, wow);
+        tiles.Lock.EnterReadLock();
+        try
+        {
+            filter.BeginQuery();
+            if (!resolver.TryResolve(wow, null, out long polyRef, out _) ||
+                !tiles.NavMesh.GetTileAndPolyByRef(polyRef, out DtMeshTile tile, out _).Succeeded() ||
+                tile?.data?.header == null)
+            {
+                return false;
+            }
+
+            tileX = tile.data.header.x;
+            tileZ = tile.data.header.y;
+            polyIndex = DtDetour.DecodePolyIdPoly(polyRef);
+            return true;
+        }
+        finally
+        {
+            tiles.Lock.ExitReadLock();
+        }
+    }
+
+    /// <summary>
     /// Checks a short straight walk along connected ground. Only the start
     /// surface is resolved; the destination stays on that surface's corridor.
     /// A full route may exist even when this direct segment is blocked.

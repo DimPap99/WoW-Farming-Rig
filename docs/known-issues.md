@@ -126,7 +126,25 @@ commit that fixed it.
       so a run tells "walked past it" from "nothing to loot"; check the tracking's dot matching
       against a live capture.
 
+28. **Routes swim along the sea floor.**
+    - **Where:** `PPather/Navmesh/WowQueryFilter` (`CostWater` = 1.3), and the bake, which keeps
+      the sea floor under water as walkable (`AreaWater`).
+    - **Seen:** Durotar to Tanaris across the continent (2026-10-05) runs down the east coast:
+      2,378 of its 10,338 yards on the sea floor, down to height -47. The band search's partial
+      route did the same between Ratchet and Theramore.
+    - **Effect:** swimming is priced barely above walking, so a long coast swim beats any land
+      detour; the bot would swim it at the surface, with fatigue a risk far from the shore.
+    - **Fix (a decision, not started):** price swimming higher, for both the bot and the
+      planner, or per request. It changes routes the bot walks, so it needs live runs.
+
 ## Fixed
+
+27. **A route that stopped short was reported as found** (2026-10-05). The band search loads
+    tiles only near the straight line; Durotar to Tanaris stopped 2,837 yards short in southern
+    Dustwallow, and the service answered `Found` with that half route, which the Control Center
+    showed in green. The pathfinder measured the gap (`EndGapYd`) but nothing read it. A route
+    ending more than 5 yards from the resolved destination is now `Partial`, with where it stops
+    and how far short; `RouteSearch.Continent` searches the whole continent along its tile graph.
 
 9. **A Forever run could not outlive the web UI** (Phase 3). `ForeverRunHost --listen` stopped the
    run when the host's stdio pipe closed. The resident agent runs Forever in process through

@@ -41,6 +41,25 @@ public sealed class PathingApiTests
     }
 
     [Fact]
+    public async Task A_route_that_stops_short_answers_partial_with_its_points_and_where_it_stops()
+    {
+        Assert.SkipUnless(TestData.HasPrecataTiles, TestData.NoTiles);
+        using PathingServiceFactory factory = new(TestData.RepoJson);
+        PathingClient client = new(factory.CreateClient());
+
+        // Durotar to Tanaris: no way on near the straight line past southern Dustwallow.
+        RouteResponse route = await client.FindRouteAsync(
+            new RouteRequest(TestData.Client, 1411, CoordinateSpace.World, new Point3(1007.78f, -4446.22f, 11.2022f),
+                new Point3(-7931.2f, -3414.28f, 80.7365f)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(RouteStatus.Partial, route.Status);
+        Assert.True(route.Smoothed);
+        Assert.True(route.Points.Length > 2);
+        Assert.Contains("yd short of the destination", route.Detail);
+    }
+
+    [Fact]
     public async Task An_unbaked_tile_is_an_answer_not_an_error()
     {
         Assert.SkipUnless(TestData.HasPrecataTiles, TestData.NoTiles);

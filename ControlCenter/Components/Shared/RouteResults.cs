@@ -13,6 +13,7 @@ public static class RouteResults
         return response.Status switch
         {
             RouteStatus.Found => ($"{response.Points.Length} points in {ms} ms", ResultKind.Ok),
+            RouteStatus.Partial => ($"Only part of the way ({ms} ms): {response.Detail}", ResultKind.Warn),
             RouteStatus.NoPath => ($"No path ({ms} ms): {response.Detail}", ResultKind.Warn),
             RouteStatus.NotBaked => ($"Not baked: {response.Detail}", ResultKind.Warn),
             RouteStatus.BadRequest => ($"Refused: {response.Detail}", ResultKind.Error),
@@ -27,6 +28,7 @@ public static class RouteResults
         return response.Status switch
         {
             RouteStatus.Found => ($"{response.Points.Length} pts · {ms} ms", ResultKind.Ok),
+            RouteStatus.Partial => ("part of the way", ResultKind.Warn),
             RouteStatus.NoPath => ("no path", ResultKind.Warn),
             RouteStatus.NotBaked => ("not baked", ResultKind.Warn),
             RouteStatus.BadRequest => ("refused", ResultKind.Error),

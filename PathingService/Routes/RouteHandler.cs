@@ -28,7 +28,8 @@ public sealed class RouteHandler(RoutePlanner planner)
         RouteQuery query = new(request.UiMapId,
             request.Space == CoordinateSpace.Map ? RouteSpace.Map : RouteSpace.World,
             ToVector(request.From), ToVector(request.To),
-            new NavmeshQueryTuning(tuning?.JitterYards ?? 0f, tuning?.JitterSeed, tuning?.EdgeMarginYards));
+            new NavmeshQueryTuning(tuning?.JitterYards ?? 0f, tuning?.JitterSeed, tuning?.EdgeMarginYards),
+            request.Search == RouteSearch.Continent ? RouteReach.Continent : RouteReach.Band);
 
         RouteOutcome outcome = planner.Find(query, token);
 
@@ -40,7 +41,7 @@ public sealed class RouteHandler(RoutePlanner planner)
         }
 
         return new RouteResponse(ToStatus(outcome.Status), points,
-            outcome.Found && RoutePlanner.PathsAreSmoothed, outcome.ElapsedMs, outcome.Detail);
+            points.Length > 0 && RoutePlanner.PathsAreSmoothed, outcome.ElapsedMs, outcome.Detail);
     }
 
     private string? Problem(RouteRequest request)
@@ -81,6 +82,7 @@ public sealed class RouteHandler(RoutePlanner planner)
         return status switch
         {
             RoutePlanStatus.Found => RouteStatus.Found,
+            RoutePlanStatus.Partial => RouteStatus.Partial,
             RoutePlanStatus.NoPath => RouteStatus.NoPath,
             RoutePlanStatus.NotBaked => RouteStatus.NotBaked,
             RoutePlanStatus.UnknownMap => RouteStatus.BadRequest,
