@@ -75,18 +75,26 @@ commit that fixed it.
     exist in both BlazorServer/Frontend and PathingAPI.
     - **Fix:** deleted in Phase 2 with PathingAPI.
 
+12. **A planner lane never notices tiles baked after it looked.**
+    - **Cause:** a disk-only `NavmeshTileCache` records a tile that is not on disk as empty
+      (`emptyTiles`) for the cache's lifetime and never looks at it again.
+    - **Effect:** once the Pathing Service bakes (Phase 2), an open `RoutePlanner` lane keeps
+      treating the new tiles as empty. The planner's own check (`File.Exists`) then passes and
+      the route answers `NoPath`.
+    - **Fix:** when a bake finishes, reopen the lanes of the continents it touched.
+
 ## Fixed in the Pathing Service, still in the old code
 
 These remain in `Frontend/Controllers` (mounted by BlazorServer and PathingAPI) until Phase 2
 deletes them.
 
-12. **File names are not checked.**
+13. **File names are not checked.**
     - `PathController.SavePath` joins any file name onto `Json/path`, so `../` writes anywhere.
     - `RoadController` and `DangerZoneController` take any continent string as a folder name.
     - **In the service:** `PathingService` refuses such names (`PathName`) and takes only plain
       continent names.
 
-13. **Cost zones are not validated on save.**
+14. **Cost zones are not validated on save.**
     - The road and danger-zone controllers write whatever they receive. `CostZoneLoader`
       later skips an invalid file with only a warning, so a bad save quietly removes zones.
     - **In the service:** `PathingService` validates with `CostZoneLoader.Problem` and answers
@@ -98,11 +106,17 @@ deletes them.
 caller between queries (now in `NavmeshQueryMemory`). Two jobs depend on them:
 
 - **Which floor (correctness).** A start without a height takes the floor the walker was last
-  resolved onto, if it is within 80 yards.
-  - Forever depends on it: the client reports Z = 0, so the navigator asks for paths without
-    a height on purpose and the kept floor stops it flipping between a mountain top and the
-    ground below ([forever-movement.md](forever-movement.md), "Which floor", tested live).
-  - Classic passes the player's real height, so it never uses this.
+  resolved onto, if it is within 80 yards. No client gives the bot its height: Classic's addon
+  reads only the map X/Y (`C_Map.GetPlayerMapPosition`), and Forever's `UnitPosition` returns
+  a Z that is always 0. What differs is who remembers the floor.
+  - **Classic remembers it in the bot.** `PlayerReader.WorldPosZ` ("MapZ not exists") is set
+    from the heights of the route points `Navigation` walks and from known spawn positions,
+    and sent with every request. So the pathfinder's floor memory only matters until the bot
+    has a height of its own, as at start.
+  - **Forever leaves it to the pathfinder.** The navigator asks for paths without a height on
+    purpose, and the kept floor stops it flipping between a mountain top and the ground below
+    ([forever-movement.md](forever-movement.md), "Which floor", tested live). When it walks a
+    route, it passes the route's own heights instead.
 - **Repeat requests (speed).** The follower asks for the same destination every few seconds.
   - The sticky corridor keeps a band it already widened, so the tiles it loaded are reused.
   - The stall memo skips re-walking a dead end's whole escalation for 30 seconds or
@@ -112,8 +126,10 @@ caller between queries (now in `NavmeshQueryMemory`). Two jobs depend on them:
 
 So the memory stays.
 - **Local mode:** one walker per process, so the instance's own memory is exactly right.
-- **Shared service:** memory must belong to the caller. One-off UI queries get fresh memory
-  per request (what the planner does now). A bot planning remotely will get memory keyed by
-  its client id once clients have one.
-- **Stateless alternative:** the request could carry the floor hint itself (the last
-  resolved height), leaving only the speed part tied to a client.
+- **Shared service, UI queries:** these are one-off, so each request gets fresh memory, which
+  is what the planner does now.
+- **Shared service, remote bots - preferred direction:** keep the service stateless. The
+  request carries the bot's last floor (its last resolved height), the way Classic's
+  `WorldPosZ` already does. The speed memos then apply only within one request.
+- **Fallback:** if repeat requests turn out to be too slow without the speed memos, add a
+  small per-client cache keyed by the client id the user plans to introduce.

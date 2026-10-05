@@ -59,8 +59,9 @@ resolved, its corridor band and recent stalls. That is right for one walker and 
 shared service, so the planner passes a new `NavmeshQueryMemory` per request (see the parity
 and concurrency tests in `ServiceTests/Planning`). The memory is worth having: it keeps
 Forever's height-less walker on its floor and makes repeat requests cheap (see
-`docs/known-issues.md`, "Design notes"). When bots plan here, key the memory by their client
-id instead of dropping it.
+`docs/known-issues.md`, "Design notes"). When bots plan here, the preferred way is for each
+request to carry the bot's last floor, so the service stays stateless. A cache keyed by
+client id comes only if repeat requests turn out too slow.
 
 **The planner never bakes.** An endpoint on a tile with no `.dnm` answers `NotBaked`, naming
 the point. A continent whose cache directory appears later (downloaded or baked) gets a lane

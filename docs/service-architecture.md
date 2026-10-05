@@ -204,8 +204,10 @@ The heavy lifting lives in reusable classes:
    - Rebuild `LocalPathingApi` on `RoutePlanner`.
    - Remove `PPatherService`'s two-call search, `PatherGate`/`RateLimit`, the RemoteV1 and V3
      clients, the AnTCP server, the legacy `api/PPather/*` endpoints, and SpotAStar if unused.
-   - Optional remote planning: `ServicePathingApi` behind a `FailoverPathingApi` decorator,
-     with memory per session in the service.
+   - Optional remote planning: `ServicePathingApi` behind a `FailoverPathingApi` decorator.
+     The request carries the bot's last floor, as Classic's `WorldPosZ` does, so the service
+     stays stateless. A per-client cache keyed by client id comes only if repeat requests
+     turn out too slow ([known issues](known-issues.md), "Design notes").
    - BlazorServer becomes the PC's local setup UI (addon and frame config, key bindings),
      and route generation moves server-side.
 
@@ -236,6 +238,65 @@ Run it with `PathingService/run.sh` (`--exp=` picks the client); Swagger UI is a
 - **Bake, world data, the watch hub and Forever routes** are still PathingAPI's. They move in
   Phase 2 with the pages that use them.
 
+## Phase 2 starting notes
+
+What the Control Center session needs to know before it plans. Verify against the code
+first; these were true on 2026-10-05.
+
+- **What moves from PathingAPI:**
+  - Pages: `Index` (3D live view and test routes), `Leaflet` (map), `Search`, `Route`
+    (recorded paths), `CloseNPC` (NPC routes), `SwaggerFrame`.
+  - Shared components: `Viewport3D`, `SearchPanel`, `StatusBar`, `Panel`, `BusyButton`.
+  - Scripts and styles: `wwwroot/js/pathing-scene.js` (Babylon, fetched on demand),
+    `pathing-ui.js`, `css/site.css`.
+  - The rest: `Catalog/` (locations from `teleport_locations.txt`, recorded paths, test
+    routes), `Status/ServerStatus`, and the watch stream (`Watch/WatchBroadcaster` with
+    `WatchSettings`, `NavmeshTileMesh`, `PathStyle`).
+  - The hub is `Hubs/WatchHub` at `/watchHub`, MessagePack. Its messages are `drawPath`,
+    `drawLine`, `drawSphere`, `removeMesh`, `clear` and `log`.
+- **The map** is Frontend's script pieces: `leaflet-watch.js`, then map, layers, coords,
+  spawns, sidebar, paths and signalr, plus navmesh, bake and zones. It also needs Leaflet
+  1.7.1 from unpkg and Frontend's static libraries.
+  - It fetches data from `/tiles`, `/dbc`, `/area`, `/npcspawnlocations`,
+    `/mailboxlocations` and `/path` (`Frontend.UseCustomStaticFiles`).
+  - It authors through `api/Road`, `api/DangerZone` and `api/Path`.
+  - In the Control Center, proxy the data URLs and the hub to the Pathing Service with YARP
+    (`Yarp.ReverseProxy`, 2.3.0 is current), and move the authoring calls to the `/api/v1`
+    routes.
+- **What the Pathing Service must gain for those pages:**
+  - World data as static files.
+  - Bake and admin: `PPatherService`'s `StartBake`, `CancelBake`, `BakeStatus`,
+    `ClearNavmeshCache`, `BuildAreaGrid` and `GetNavmeshTiles`. Host one `PPatherService` for
+    admin only, never for queries.
+  - A watch stream. `RoutePlanner` raises no events yet; add an observer for routes found
+    and for tiles each lane loads.
+  - The location catalog and the test routes.
+  - A Forever route library. First move `Core/Forever/Tasks/ForeverRouteFile` and what it
+    builds (`ForeverRoute`, `ForeverMapPoint`, `ForeverArea`, `ForeverUntil`, the task types)
+    out of `Core`. Check that closure before promising it; it can slip to a later phase.
+- **Traps:**
+  - A lane caches missing tiles as empty for its life, so reopen it after a bake
+    ([known issues](known-issues.md), item 12).
+  - On-demand Forever bakes use `Utilities/ForeverCasc`, which PathingAPI references and the
+    solution does not contain.
+  - In PathingAPI, opening a 3D page resets the engine; in the service a reset must never
+    disturb the lanes other callers use.
+  - The map's JS mirrors `DataConfig`'s era logic, and `CoreTests` reads `Configs` from
+    `leaflet-watch.js`.
+  - In the Control Center the era comes from the service's capabilities, not from the URL.
+- **Decide with the user first:**
+  - **BlazorServer's own map:** it authors roads and danger zones through
+    `Frontend/Controllers`. Deleting those means pointing it at the Pathing Service or
+    dropping authoring from the bot's dashboard.
+  - **The 3D live view:** keep it, or keep only the 2D map.
+  - **The Control Center's port** (5000, 5001 and 5010 are taken).
+  - **Scope:** whether bake admin and the Forever route library are in this phase.
+- **Not in Phase 2:**
+  - The route generator page: it needs `Core`'s `RouteGenerator` (Phase 4).
+  - Recording paths, which needs the game. `Frontend/Helper/PathEditor` can still serve the
+    route editor.
+  - The bot pages.
+
 ## Findings while designing
 
 Everything spotted during this work is tracked, with where it lives and when it goes away,
@@ -243,8 +304,8 @@ in [known issues](known-issues.md). The ones that shaped this design:
 
 - **`NavmeshPathfinder` remembers its caller** (floor, corridor band, stall memo). That is right
   for one walker per process and wrong for a shared service. The planner gives each request
-  fresh memory, and a remote bot will get memory keyed by its client id. Why the memory is
-  worth keeping is in known issues, "Design notes".
+  fresh memory. A remote bot will send its last floor with each request, keeping the service
+  stateless. Why the memory is worth keeping is in known issues, "Design notes".
 - **`startIndoors` never reaches the navmesh**, from the bot or from PathingAPI's `WorldRoute2`.
   The planner mirrors that for parity; both sides get fixed together in Phase 4.
 - **The old authoring controllers trust names and skip validation.** `PathingService` checks
