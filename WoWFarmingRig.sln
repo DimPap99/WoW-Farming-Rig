@@ -57,6 +57,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlCenter", "ControlCen
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentTests", "AgentTests\AgentTests.csproj", "{3B8231F4-BD14-40FA-9472-85568B48D364}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BotManager", "BotManager\BotManager.csproj", "{27312A5D-68A6-43A4-B1B1-989C7823029B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -295,6 +297,18 @@ Global
 		{3B8231F4-BD14-40FA-9472-85568B48D364}.Release|x64.Build.0 = Release|x64
 		{3B8231F4-BD14-40FA-9472-85568B48D364}.Release|x86.ActiveCfg = Release|x86
 		{3B8231F4-BD14-40FA-9472-85568B48D364}.Release|x86.Build.0 = Release|x86
+		{27312A5D-68A6-43A4-B1B1-989C7823029B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{27312A5D-68A6-43A4-B1B1-989C7823029B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{27312A5D-68A6-43A4-B1B1-989C7823029B}.Debug|x64.ActiveCfg = Debug|x64
+		{27312A5D-68A6-43A4-B1B1-989C7823029B}.Debug|x64.Build.0 = Debug|x64
+		{27312A5D-68A6-43A4-B1B1-989C7823029B}.Debug|x86.ActiveCfg = Debug|x86
+		{27312A5D-68A6-43A4-B1B1-989C7823029B}.Debug|x86.Build.0 = Debug|x86
+		{27312A5D-68A6-43A4-B1B1-989C7823029B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{27312A5D-68A6-43A4-B1B1-989C7823029B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{27312A5D-68A6-43A4-B1B1-989C7823029B}.Release|x64.ActiveCfg = Release|x64
+		{27312A5D-68A6-43A4-B1B1-989C7823029B}.Release|x64.Build.0 = Release|x64
+		{27312A5D-68A6-43A4-B1B1-989C7823029B}.Release|x86.ActiveCfg = Release|x86
+		{27312A5D-68A6-43A4-B1B1-989C7823029B}.Release|x86.Build.0 = Release|x86
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

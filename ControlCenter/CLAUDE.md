@@ -42,7 +42,9 @@ wwwroot/js/pathing-ui.js           script loader, toast, remembered rail state
 
 **The browser talks only to the Control Center.** The map's script fetches `/tiles`, `/dbc`,
 `/api/v1/...` and connects to `/watchHub` on its own origin; `ServiceProxy` forwards them to
-the Pathing Service (WebSockets included). A prefix the map needs that is not in
+the Pathing Service (WebSockets included), adding the service's key (`PathingService:ApiKey`, else
+`ApiKey`) so the browser never holds it. That also means whoever reaches the Control Center reaches
+the services: keep it on localhost, or behind your own access control. A prefix the map needs that is not in
 `ServiceProxy.PathingPrefixes` answers 404 here, not at the service.
 
 **A down service is a state, not an error.** Pages read `PathingStatus.Online` and show

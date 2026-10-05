@@ -80,6 +80,8 @@ public static class PathingServiceRegistration
     {
         app.UseExceptionHandler();
         app.UseStatusCodePages();
+        // Before everything it guards: the API, the hub and the world data.
+        app.UseServiceKey();
 
         app.UseSwagger();
         app.UseSwaggerUI(swagger => swagger.SwaggerEndpoint("/swagger/v1/swagger.json", ApiTitle));

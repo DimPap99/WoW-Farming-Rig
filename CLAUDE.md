@@ -26,6 +26,7 @@ dotnet test --project AgentTests              # the tests that need Core (Window
 dotnet run --project BlazorServer
 PathingService/run.sh                         # the Pathing Service on :5010, Swagger at /swagger
 ControlCenter/run.sh                          # the Control Center on :5020 (start the Pathing Service first)
+BotManager/run.sh                             # the Bot Manager on :5030, Swagger at /swagger
 dotnet run --project Benchmarks -c Release
 ```
 
@@ -62,9 +63,13 @@ before working in one.
 - `PPather/` ✎ - Pathfinding (DotRecast navmesh + legacy spot A*, MPQ reading)
 - `PathingService/` ✎ - The Pathing Service: concurrent route planning, the authoring API (paths, cost
   zones), world data, bakes and the watch hub; plain `net10.0`, never references Core/Game/WinAPI/Frontend
+- `BotManager/` ✎ - The Bot Manager: the registry of bots, assignments, commands (start, stop), run history,
+  the hub agents dial out to and the fleet stream for the Control Center; references Contracts and
+  ServiceClients only
 - `Contracts/` - Wire types and route constants shared by every service and client; no dependencies
-- `ServiceClients/` - Typed clients for the services (`IPathingClient`), shared by UI and agent, plus the
-  path editing model (`PathEditor`) and map-world arithmetic (`ZoneMath`)
+- `ServiceClients/` - Typed clients for the services (`IPathingClient`, `IBotManagerClient`), shared by UI and
+  agent, the key rules every service applies (`Security/ServiceKeyPolicy`), assignment rules, the path
+  editing model (`PathEditor`) and map-world arithmetic (`ZoneMath`)
 - `ServiceTests/` - xUnit tests for the services, the planner and the stores; runs on Linux
 - `AgentTests/` - xUnit tests that need Core (Forever's run, the agent's runtimes); the Windows TFM,
   but nothing in it attaches to a game, so it runs on Linux too

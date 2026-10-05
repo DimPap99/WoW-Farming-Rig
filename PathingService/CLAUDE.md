@@ -7,7 +7,7 @@ data and streams what it plans to the watch hub. Bots keep planning in their own
 service owns the data and plans for the UI (the Control Center).
 
 Plain `net10.0`, so it runs on Linux and macOS. It references `Contracts`, `PPather`,
-`DataConfig`, `SharedLib` and `Utilities/ForeverCasc` only. **Never add a reference to `Core`,
+`DataConfig`, `SharedLib`, `ServiceClients` (for the shared key rules) and `Utilities/ForeverCasc` only. **Never add a reference to `Core`,
 `Game`, `WinAPI` or `Frontend`** - that would drag the bot (and Windows) into a service.
 
 ## Run
@@ -31,6 +31,7 @@ Hosting/PathingServiceRegistration AddPathingService / UsePathingService - the c
 Hosting/PathingLogging.cs          Serilog to console + daily file (LogFile)
 Hosting/StoreResult.cs             store outcomes (incl. Conflict) and their one mapping to HTTP
 Hosting/AtomicFile.cs              write-then-rename, so readers never see half a file
+Hosting/ServiceKeyGuard.cs         the key (ServiceClients' ServiceKeyPolicy): other machines need ApiKey
 Routes/RouteHandler.cs             RouteRequest -> RoutePlanner -> RouteResponse (the only mapping)
 Routes/RouteEndpoints.cs           POST /api/v1/routes/find
 Paths/PathName.cs                  the one check every path name passes
@@ -69,6 +70,13 @@ with the bot's local mode in Phase 4.
 **One client per instance.** `--exp` picks the client (default `som`). A request naming
 another client answers `BadRequest`. Serving two clients from one process needs `ContinentDB`
 to stop being static first: it is filled by whoever loads first.
+
+**Other machines need the key.** A request from this machine (loopback, or no remote address, as the
+in-memory test server has) is always served; one from another machine only with `ApiKey` in the
+`X-Api-Key` header, and not at all while no key is configured. Bound beyond localhost without a key
+(`--urls=http://0.0.0.0:5010`), the service stops right after it starts. The check runs before the
+API, the hub and the world data. The Control Center and BlazorServer forward the browser's calls with
+the key, so a browser never holds it.
 
 **A route that does not exist is an answer, not an error.** `Found`, `NoPath` and `NotBaked`
 are HTTP 200. Only `BadRequest` (400) and `Unavailable` (503, a continent busy past the

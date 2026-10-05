@@ -6,7 +6,6 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -18,6 +17,8 @@ namespace ServiceClients.Pathing;
 /// </summary>
 public sealed class PathingClient(HttpClient http) : IPathingClient
 {
+    private readonly ServiceHttp service = new(http, "pathing service");
+
     public async Task<RouteResponse> FindRouteAsync(RouteRequest request, CancellationToken token = default)
     {
         try
@@ -27,13 +28,13 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
 
             // Every status the route endpoint answers carries a RouteResponse; anything else
             // (a proxy, a crash page) is reported by status.
-            if (await TryReadAsync<RouteResponse>(response, token).ConfigureAwait(false) is RouteResponse body)
+            if (await ServiceHttp.TryReadAsync<RouteResponse>(response, token).ConfigureAwait(false) is RouteResponse body)
             {
                 return body;
             }
 
             RouteStatus status = response.StatusCode == HttpStatusCode.BadRequest ? RouteStatus.BadRequest : RouteStatus.Unavailable;
-            return RouteResponse.Failed(status, await ErrorAsync(response, token).ConfigureAwait(false));
+            return RouteResponse.Failed(status, await ServiceHttp.ErrorAsync(response, token).ConfigureAwait(false));
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -41,7 +42,7 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
         }
         catch (Exception ex)
         {
-            return RouteResponse.Failed(RouteStatus.Unavailable, Unreachable(ex));
+            return RouteResponse.Failed(RouteStatus.Unavailable, service.Unreachable(ex));
         }
     }
 
@@ -198,114 +199,19 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
         return SendAsync(HttpMethod.Post, PathingApi.WatchClear, null, token);
     }
 
-    private async Task<ServiceResult<T>> GetAsync<T>(string uri, CancellationToken token)
+    private Task<ServiceResult<T>> GetAsync<T>(string uri, CancellationToken token)
     {
-        try
-        {
-            using HttpResponseMessage response = await http.GetAsync(uri, token).ConfigureAwait(false);
-            return await ResultAsync<T>(response, token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            return new(default, 0, Unreachable(ex));
-        }
+        return service.GetAsync<T>(uri, token);
     }
 
-    private async Task<ServiceResult<T>> SendAsync<T>(HttpMethod method, string uri, object? body, CancellationToken token)
+    private Task<ServiceResult<T>> SendAsync<T>(HttpMethod method, string uri, object? body, CancellationToken token)
     {
-        try
-        {
-            using HttpRequestMessage request = Request(method, uri, body);
-            using HttpResponseMessage response = await http.SendAsync(request, token).ConfigureAwait(false);
-            return await ResultAsync<T>(response, token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            return new(default, 0, Unreachable(ex));
-        }
+        return service.SendAsync<T>(method, uri, body, token);
     }
 
-    private static async Task<ServiceResult<T>> ResultAsync<T>(HttpResponseMessage response, CancellationToken token)
+    private Task<ServiceResult> SendAsync(HttpMethod method, string uri, object? body, CancellationToken token)
     {
-        if (!response.IsSuccessStatusCode)
-        {
-            return new(default, (int)response.StatusCode, await ErrorAsync(response, token).ConfigureAwait(false));
-        }
-
-        T? value = await TryReadAsync<T>(response, token).ConfigureAwait(false);
-        return value is null
-            ? new(default, (int)response.StatusCode, "the service answered without a readable body")
-            : new(value, (int)response.StatusCode, null);
-    }
-
-    private async Task<ServiceResult> SendAsync(HttpMethod method, string uri, object? body, CancellationToken token)
-    {
-        try
-        {
-            using HttpRequestMessage request = Request(method, uri, body);
-            using HttpResponseMessage response = await http.SendAsync(request, token).ConfigureAwait(false);
-            return response.IsSuccessStatusCode
-                ? new((int)response.StatusCode, null)
-                : new((int)response.StatusCode, await ErrorAsync(response, token).ConfigureAwait(false));
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            return new(0, Unreachable(ex));
-        }
-    }
-
-    private static HttpRequestMessage Request(HttpMethod method, string uri, object? body)
-    {
-        HttpRequestMessage request = new(method, uri);
-        if (body is not null)
-        {
-            request.Content = JsonContent.Create(body, body.GetType(), options: ContractJson.Options);
-        }
-
-        return request;
-    }
-
-    private static async Task<T?> TryReadAsync<T>(HttpResponseMessage response, CancellationToken token)
-    {
-        if (response.Content.Headers.ContentType?.MediaType is not ("application/json" or "application/problem+json"))
-        {
-            return default;
-        }
-
-        try
-        {
-            return await response.Content.ReadFromJsonAsync<T>(ContractJson.Options, token).ConfigureAwait(false);
-        }
-        catch (JsonException)
-        {
-            return default;
-        }
-    }
-
-    // The service answers refusals as RFC 9457 problem details; detail is the sentence meant
-    // for a person.
-    private static async Task<string> ErrorAsync(HttpResponseMessage response, CancellationToken token)
-    {
-        string fallback = $"{(int)response.StatusCode} {response.ReasonPhrase}";
-        Problem? problem = await TryReadAsync<Problem>(response, token).ConfigureAwait(false);
-        return problem?.Detail ?? problem?.Title ?? fallback;
-    }
-
-    private static string Unreachable(Exception ex)
-    {
-        return $"the pathing service could not be reached: {ex.Message}";
+        return service.SendAsync(method, uri, body, token);
     }
 
     // Each segment escaped on its own, so a subfolder's '/' stays a separator.
@@ -336,5 +242,4 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
             $"{PathingApi.CostZones}/{Uri.EscapeDataString(continent)}/{kind}/{uiMapId}");
     }
 
-    private sealed record Problem(string? Title, string? Detail);
 }
