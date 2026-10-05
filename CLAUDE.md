@@ -59,10 +59,11 @@ before working in one.
 - `Game/` ✎ - WoW process, input (stateful - read before touching), screen contracts
 - `Frontend/` ✎ - BlazorServer's pages and components (the bot's dashboard, its map page)
 - `MapAssets/` ✎ - The Leaflet map's scripts, libraries and styles, static files only; served by
-  BlazorServer and the Control Center
-- `ControlCenter/` ✎ - The central web UI on :5020: live 3D view, map, route search, path library and
-  editor, NPC routes, bakes, and the fleet with a console per bot; a client of the Pathing Service and
-  the Bot Manager, references Contracts, ServiceClients and MapAssets only
+  BlazorServer
+- `ControlCenter/` ✎ - The central web UI on :5020, every world page on one deck.gl map (the world view):
+  live routes, the map, the route designer, NPC routes, cost zones, navmesh and bakes, Forever routes,
+  and the fleet with a console per bot; a client of the Pathing Service and the Bot Manager,
+  references Contracts and ServiceClients only
 - `PPather/` ✎ - Pathfinding (DotRecast navmesh + legacy spot A*, MPQ reading)
 - `PathingService/` ✎ - The Pathing Service: concurrent route planning, the authoring API (paths, cost
   zones), world data, bakes and the watch hub; plain `net10.0`, never references Core/Game/WinAPI/Frontend

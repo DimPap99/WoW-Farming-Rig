@@ -1,6 +1,6 @@
 # World view - moving the Control Center off Leaflet and Babylon
 
-**Status (2026-10-05):** agreed with the user and under way; steps 1 to 5 are done. The user found the Leaflet map and the
+**Status (2026-10-05):** agreed with the user and under way; steps 1 to 6 are done, the look (step 7) is next. The user found the Leaflet map and the
 Babylon 3D view buggy and hard to use, and asked to move everything to the new map, keep the
 drawing tools (polygons and the rest), then improve the look. Phase 3 step 6 and the Windows
 checklist are parked for another session ([phase3-plan.md](phase3-plan.md)).
@@ -90,8 +90,10 @@ which it always is.
    `ForeverRouteSketch`: comments, trailing commas), each travel leg planned as the bot would,
    each roam's area outlined; a point picked on the map gives its zone map coordinates, inserted
    at the text's cursor or copied. The service's check stays the word on whether a run loads it.
-6. Remove Babylon (`pathing-scene.js`, `Viewport3D`) and Leaflet from the Control Center (the Map
-   page, the MapAssets scripts in `App.razor`, `SearchPanel`).
+6. **Done.** Babylon (`pathing-scene.js`, `Viewport3D`) and Leaflet are out of the Control Center:
+   the Map page, the MapAssets scripts and its project reference, `SearchPanel`, and the browser's
+   SignalR client (hubs are followed from the server). MapAssets stays, BlazorServer's own map.
+   Bootstrap's reset stays under the theme for now.
 7. The look: an aesthetics pass over the world view and the pages on it.
 
 Each step is checked in Chrome with Playwright (screenshots, interactions) before the next.

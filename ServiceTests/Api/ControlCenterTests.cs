@@ -6,6 +6,7 @@ using Contracts.Pathing;
 
 using Microsoft.Extensions.DependencyInjection;
 
+using System;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -14,22 +15,24 @@ using Xunit;
 
 namespace ServiceTests.Api;
 
-/// <summary>The Control Center with its Pathing Service down: the pages and the map still load, the forwarding says 502.</summary>
+/// <summary>The Control Center with its Pathing Service down: the pages and the world view still load, the forwarding says 502.</summary>
 public sealed class ControlCenterTests
 {
     [Fact]
-    public async Task The_shell_and_the_map_load_while_the_service_is_down()
+    public async Task The_shell_and_the_world_view_load_while_the_service_is_down()
     {
         using ControlCenterFactory factory = new();
         HttpClient http = factory.CreateClient();
 
         string shell = await http.GetStringAsync("/", TestContext.Current.CancellationToken);
-        using HttpResponseMessage map = await http.GetAsync("/_content/MapAssets/script/leaflet-watch.js", TestContext.Current.CancellationToken);
+        using HttpResponseMessage view = await http.GetAsync("/js/world-view.js", TestContext.Current.CancellationToken);
         using HttpResponseMessage forwarded = await http.GetAsync(PathingApi.Capabilities, TestContext.Current.CancellationToken);
 
         Assert.Contains("<title>Control Center</title>", shell);
-        Assert.Contains("_content/MapAssets/script/leaflet-map", shell);
-        Assert.Equal(HttpStatusCode.OK, map.StatusCode);
+        Assert.Contains("js/world-view", shell);
+        Assert.Contains("js/world-edit", shell);
+        Assert.DoesNotContain("leaflet", shell, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(HttpStatusCode.OK, view.StatusCode);
         Assert.Equal(HttpStatusCode.BadGateway, forwarded.StatusCode);
     }
 

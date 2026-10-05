@@ -30,7 +30,7 @@ WoWFarmingRig.sln
 │   ├── Frontend/           BlazorServer's Razor components
 │   │                       (dashboard, keyboard overlay, path recorder, mail UI)
 │   ├── MapAssets/          The Leaflet map's scripts and styles, served by
-│   │                       BlazorServer and the Control Center (static files only)
+│   │                       BlazorServer (static files only)
 │   ├── Game/               Windows-specific game interaction
 │   │                       (process management, DXGI & WGC screen capture, input)
 │   ├── SharedLib/          Cross-project utilities, NPC finder algorithms,
@@ -85,7 +85,7 @@ so a solution build does not build them.
 
 The services sit beside this graph, not on top of it: `PathingService` references only
 `Contracts`, `PPather`, `DataConfig`, `SharedLib` and `Utilities/ForeverCasc`, the Control
-Center only `Contracts`, `ServiceClients` and `MapAssets`, and no service may reference `Core`,
+Center only `Contracts` and `ServiceClients`, and no service may reference `Core`,
 `Game`, `WinAPI` or `Frontend`.
 
 `Game/` and `WinAPI/` are the only Windows-only projects. The pathing chain

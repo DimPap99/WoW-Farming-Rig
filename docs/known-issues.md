@@ -83,10 +83,10 @@ commit that fixed it.
     renders for in-app navigation only. Status-code re-execution would also rewrite the 404s the
     forwarded API answers, so it is left off.
 
-17. **Leaflet's script and stylesheet come from different versions.** Both hosts load
-    `leaflet.js` 1.9.4 from MapAssets and `leaflet.css` 1.7.1 from unpkg, as BlazorServer always
-    has. Nothing visibly breaks; align them (a local 1.9.4 stylesheet) when the map is next
-    worked on.
+17. **Leaflet's script and stylesheet come from different versions.** BlazorServer loads
+    `leaflet.js` 1.9.4 from MapAssets and `leaflet.css` 1.7.1 from unpkg, as it always has (the
+    Control Center no longer loads Leaflet since 2026-10-05). Nothing visibly breaks; align them
+    (a local 1.9.4 stylesheet) when the map is next worked on.
 
 23. **A Classic run waits for the addon without listening to its stop.**
     - **Where:** `Core/BotController`'s constructor, reached from `HeadlessServer/Runtimes/ClassicRuntime`.
