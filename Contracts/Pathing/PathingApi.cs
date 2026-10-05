@@ -80,8 +80,14 @@ public static class PathingApi
     /// </summary>
     public const string Navmesh = Root + "/navmesh";
 
-    /// <summary>The navmesh route segment that lists a continent's tiles.</summary>
+    /// <summary>
+    /// The navmesh route segment that lists a continent's tiles; <c>GET {Navmesh}/{continent}/{Tiles}/{x}/{z}</c>
+    /// answers one tile's <see cref="NavmeshTileGeometry"/>.
+    /// </summary>
     public const string Tiles = "tiles";
+
+    /// <summary><c>GET {Navmesh}/{continent}/{Overview}</c>: the continent's <see cref="NavmeshOverview"/>.</summary>
+    public const string Overview = "overview";
 
     /// <summary>
     /// The one navmesh bake the service runs at a time: <c>GET</c> its <see cref="BakeStatus"/>,

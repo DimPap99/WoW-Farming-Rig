@@ -600,6 +600,6 @@ public sealed class NavmeshTileCache : IDisposable
 
     private string TilePath(int tx, int tz)
     {
-        return Path.Combine(cacheDir, $"tile_{tx}_{tz}.dnm");
+        return NavmeshTileFiles.PathOf(cacheDir, tx, tz);
     }
 }

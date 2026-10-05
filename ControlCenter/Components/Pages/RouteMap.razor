@@ -1,0 +1,285 @@
+@page "/routes"
+
+@inherits ControlCenterComponent
+
+@inject IPathingClient pathing
+@inject WorldCache worldCache
+@inject PathingStatus status
+
+<PageTitle>Routes · Control Center</PageTitle>
+
+@* Plans a route on the world view. From and To are named places, or points clicked on the map. The
+   route is drawn in its status colour; one that stops short shows where, with a dashed line to
+   where it was going. The band search is the bot's own; the whole-continent search finds the way
+   across first. *@
+
+<WorldView Scene="@scene" Picking="@(picking is not null)" OnPick="PickedAsync">
+    <Panel Title="Route" Icon="signpost" Position="top-left">
+        @if (world is null)
+        {
+            <ResultLine Text="@(status.Online ? "Loading the world..." : "Waiting for the Pathing Service")" Kind="ResultKind.Info" />
+        }
+        else
+        {
+            <div class="pa-form">
+                <div class="pa-field">
+                    <label class="pa-label" for="pa-route-continent">Continent</label>
+                    <select class="pa-select" id="pa-route-continent" value="@continent" @onchange="ChangeContinentAsync">
+                        @foreach (ContinentInfo c in world.World.Continents)
+                        {
+                            <option value="@c.Name">@c.Name@(c.Tiles > 0 ? null : " (no tiles)")</option>
+                        }
+                    </select>
+                </div>
+
+                @EndField(from, "From")
+                @EndField(to, "To")
+                <datalist id="pa-route-places">
+                    @foreach (NamedLocation place in Places)
+                    {
+                        <option value="@place.Name"></option>
+                    }
+                </datalist>
+
+                <div class="pa-field">
+                    <span class="pa-label">Search</span>
+                    <div class="pa-segmented" role="group" aria-label="How far the search looks">
+                        <button class="pa-toggle" type="button" aria-pressed="@Aria.State(!acrossContinent)" @onclick="() => acrossContinent = false"
+                                title="The bot's own search: a band around the straight line. Fast; a route that must stray far from the line stops short.">
+                            Band
+                        </button>
+                        <button class="pa-toggle" type="button" aria-pressed="@Aria.State(acrossContinent)" @onclick="() => acrossContinent = true"
+                                title="Finds the way across the whole continent first, then searches along it. For long routes.">
+                            Whole continent
+                        </button>
+                    </div>
+                </div>
+
+                <BusyButton Class="pa-btn--primary" Icon="media-play" Busy="@busy" Disabled="@(from.At is null || to.At is null)" OnClick="FindAsync">
+                    Find route
+                </BusyButton>
+
+                <ResultLine Text="@result" Kind="@resultKind" />
+                @if (stats is not null)
+                {
+                    <span class="pa-faint">@stats</span>
+                }
+            </div>
+        }
+    </Panel>
+</WorldView>
+
+@if (!status.Online)
+{
+    <OfflineNotice Service="@status.Service" Reason="@status.Error" />
+}
+
+@code {
+    /// <summary>One end of the route: a named place, or a point clicked on the map.</summary>
+    private sealed class RouteEnd(string kind)
+    {
+        public string Kind { get; } = kind;
+
+        public string Text { get; set; } = string.Empty;
+
+        public Point3? At { get; set; }
+    }
+
+    private readonly RouteEnd from = new(WorldKinds.Start);
+    private readonly RouteEnd to = new(WorldKinds.End);
+    private RouteEnd? picking;
+
+    private WorldSnapshot? world;
+    private string continent = string.Empty;
+    private WorldScene scene = WorldScene.Empty(string.Empty);
+    private bool acrossContinent;
+    private bool busy;
+    private string? result;
+    private ResultKind resultKind;
+    private string? stats;
+
+    private IEnumerable<NamedLocation> Places => world?.LocationsOn(continent) ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Subscribe(() => status.Changed += Redraw, () => status.Changed -= Redraw);
+        Subscribe(() => status.Reconnected += Reload, () => status.Reconnected -= Reload);
+        await LoadAsync();
+    }
+
+    // One end's field: a place from the list, or the pin that picks a point on the map.
+    private RenderFragment EndField(RouteEnd end, string name)
+    {
+        return @<div class="pa-field">
+            <label class="pa-label" for="@($"pa-route-{end.Kind}")">@name</label>
+            <div class="pa-input-group">
+                <input class="pa-input" id="@($"pa-route-{end.Kind}")" list="pa-route-places" autocomplete="off"
+                       placeholder="A place, or pick one on the map" value="@end.Text" @onchange="e => ChooseAsync(end, e.Value?.ToString())" />
+                <button class="pa-btn pa-btn--icon @(picking == end ? "pa-btn--primary" : null)" type="button" @onclick="() => Pick(end)"
+                        title="@(picking == end ? "Click the map to place it, or click here to stop" : $"Pick {name} on the map")">
+                    <span class="oi oi-map-marker" aria-hidden="true"></span>
+                </button>
+            </div>
+        </div>;
+    }
+
+    private async Task LoadAsync()
+    {
+        world = status.Online ? await worldCache.GetAsync() : null;
+        if (world is null)
+        {
+            return;
+        }
+
+        if (world.Continent(continent) is null)
+        {
+            continent = world.World.Continents.FirstOrDefault(c => c.Tiles > 0)?.Name ?? world.World.Continents.FirstOrDefault()?.Name ?? string.Empty;
+        }
+
+        Show();
+    }
+
+    private void Reload()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private Task ChangeContinentAsync(ChangeEventArgs e)
+    {
+        continent = e.Value?.ToString() ?? string.Empty;
+        foreach (RouteEnd end in new[] { from, to })
+        {
+            end.Text = string.Empty;
+            end.At = null;
+        }
+
+        picking = null;
+        result = stats = null;
+        Show();
+        return Task.CompletedTask;
+    }
+
+    private Task ChooseAsync(RouteEnd end, string? text)
+    {
+        end.Text = text?.Trim() ?? string.Empty;
+        end.At = Places.FirstOrDefault(p => p.Name == end.Text)?.Position;
+        result = end.At is null && end.Text.Length > 0 ? $"{end.Text} is not a place on {continent}: pick one from the list or on the map" : null;
+        resultKind = ResultKind.Warn;
+        stats = null;
+        Show();
+        return Task.CompletedTask;
+    }
+
+    private void Pick(RouteEnd end)
+    {
+        picking = picking == end ? null : end;
+    }
+
+    private Task PickedAsync(WorldPoint point)
+    {
+        if (picking is RouteEnd end)
+        {
+            end.At = point.ToPoint3();
+            end.Text = point.ToString();
+            picking = null;
+            result = stats = null;
+            Show();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task FindAsync()
+    {
+        if (world is null || from.At is not Point3 start || to.At is not Point3 end ||
+            world.Continent(continent) is not ContinentInfo info || world.ZoneAt(info.MapId, start) is not ZoneInfo zone)
+        {
+            return;
+        }
+
+        busy = true;
+        result = acrossContinent ? "Searching across the continent..." : "Searching...";
+        resultKind = ResultKind.Info;
+        stats = null;
+        try
+        {
+            RouteResponse response = await pathing.FindRouteAsync(new RouteRequest(null, zone.UiMapId, CoordinateSpace.World, start, end,
+                Search: acrossContinent ? RouteSearch.Continent : RouteSearch.Band), Token);
+            (result, resultKind) = RouteResults.Describe(response);
+            Show(response, start, end);
+        }
+        catch (OperationCanceledException)
+        {
+            // The page went away.
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    // The ends as they are; with a route, the route as far as it goes, and where it stopped short.
+    private void Show(RouteResponse? response = null, Point3? start = null, Point3? end = null)
+    {
+        List<WorldMarker> markers = [];
+        foreach (RouteEnd routeEnd in new[] { from, to })
+        {
+            if (routeEnd.At is Point3 at)
+            {
+                markers.Add(WorldMarker.At(routeEnd.Kind, routeEnd.Kind, at, routeEnd == from ? "From" : "To"));
+            }
+        }
+
+        List<WorldRoute> routes = [];
+        if (response is { Points.Length: > 0 } && end is Point3 destination)
+        {
+            Point3[] points = response.Points;
+            routes.Add(WorldRoute.Of("route", response.Status == RouteStatus.Found ? WorldKinds.Found : WorldKinds.Partial, points));
+            stats = string.Create(CultureInfo.InvariantCulture,
+                $"{Length(points):N0} yd · {points.Length:N0} points · {response.ElapsedMs:F0} ms");
+            if (response.Status == RouteStatus.Partial)
+            {
+                Point3 last = points[^1];
+                markers.Add(WorldMarker.At(WorldKinds.Stop, WorldKinds.Stop, last, "Stops here"));
+                routes.Add(WorldRoute.Of("gap", WorldKinds.Gap, [last, destination with { Z = destination.Z == 0 ? last.Z : destination.Z }]));
+            }
+        }
+
+        scene = new WorldScene(continent, [.. routes], [.. markers], Labels(), Frame: response is not null);
+    }
+
+    /// <summary>Wider than any zone: a map this size is a continent's or the world's, not a zone to name.</summary>
+    private const float MaxZoneSpanYd = 9000;
+
+    // Zone names at their middles, for finding one's way at a glance.
+    private WorldLabel[] Labels()
+    {
+        return world is null
+            ? []
+            : [.. world.World.Zones
+                .Where(z => z.Continent == continent &&
+                            MathF.Abs(z.LocLeft - z.LocRight) < MaxZoneSpanYd && MathF.Abs(z.LocTop - z.LocBottom) < MaxZoneSpanYd)
+                .Select(z =>
+                {
+                    Point3 middle = ZoneMath.ToWorld(z, new Point3(50, 50, 0));
+                    return new WorldLabel(z.Name, middle.X, middle.Y);
+                })];
+    }
+
+    private static float Length(Point3[] points)
+    {
+        float length = 0;
+        for (int i = 1; i < points.Length; i++)
+        {
+            float dx = points[i].X - points[i - 1].X;
+            float dy = points[i].Y - points[i - 1].Y;
+            length += MathF.Sqrt((dx * dx) + (dy * dy));
+        }
+
+        return length;
+    }
+}

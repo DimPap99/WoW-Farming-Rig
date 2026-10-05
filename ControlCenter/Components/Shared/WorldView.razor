@@ -1,0 +1,143 @@
+@* The world view: one map for every page that shows the world, flat and north-up, tilting into 3D,
+   drawn with deck.gl by wwwroot/js/world-view.js. The page owns what is shown (Scene, sent whole
+   when it changes) and hears clicks on the map while Picking; the ground - the continent's relief,
+   and each tile's walkable polygons when zoomed in - the view fetches itself from the Pathing
+   Service, so it needs no minimap art. Drag pans, the wheel zooms, right-drag turns and tilts. *@
+
+@inherits ControlCenterComponent
+@implements IAsyncDisposable
+
+@inject IJSRuntime js
+
+<div class="pa-world @(Picking ? "is-picking" : null)" @ref="host">
+    <div class="pa-world-canvas"></div>
+
+    <div class="pa-world-tools">
+        <div class="pa-group" role="group" aria-label="View">
+            <button class="pa-toggle" type="button" aria-pressed="@Aria.State(tilted)" @onclick="ToggleTiltAsync"
+                    title="Tilt the map to see heights; right-drag turns and tilts it">3D</button>
+            <button class="pa-toggle" type="button" @onclick="FitAsync" title="Frame what this page shows">Fit</button>
+        </div>
+    </div>
+
+    <div class="pa-world-readout" aria-hidden="true"></div>
+
+    @if (failed is not null)
+    {
+        <div class="pa-world-failed"><ResultLine Text="@failed" Kind="ResultKind.Error" /></div>
+    }
+
+    @ChildContent
+</div>
+
+@code {
+    /// <summary>What the page shows; a new instance is sent to the view, the same one is not.</summary>
+    [Parameter, EditorRequired] public WorldScene Scene { get; set; } = WorldScene.Empty(string.Empty);
+
+    /// <summary>While set, a click on the map is reported to <see cref="OnPick"/>.</summary>
+    [Parameter] public bool Picking { get; set; }
+
+    [Parameter] public EventCallback<WorldPoint> OnPick { get; set; }
+
+    /// <summary>Panels shown over the view.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    // The service's routes the view fetches its ground from, forwarded by this host.
+    private static readonly object Urls = new
+    {
+        overview = $"{PathingApi.Navmesh}/{{continent}}/{PathingApi.Overview}",
+        tile = $"{PathingApi.Navmesh}/{{continent}}/{PathingApi.Tiles}/{{x}}/{{z}}",
+    };
+
+    private ElementReference host;
+    private DotNetObjectReference<WorldView>? self;
+    private string? id;
+    private WorldScene? shown;
+    private bool? pickingShown;
+    private bool tilted;
+    private string? failed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                self = DotNetObjectReference.Create(this);
+                id = await js.InvokeAsync<string>("worldView.create", Token, host, self, new { urls = Urls });
+            }
+
+            if (id is null)
+            {
+                return;
+            }
+
+            if (!ReferenceEquals(Scene, shown))
+            {
+                shown = Scene;
+                await js.InvokeVoidAsync("worldView.setScene", Token, id, Scene);
+            }
+
+            if (pickingShown != Picking)
+            {
+                pickingShown = Picking;
+                await js.InvokeVoidAsync("worldView.setPicking", Token, id, Picking);
+            }
+        }
+        catch (JSException e)
+        {
+            // deck.gl could not be fetched, or a scene broke the script: said here, not thrown into the circuit.
+            failed = $"The map could not be drawn: {e.Message}";
+            StateHasChanged();
+        }
+        catch (Exception e) when (e is JSDisconnectedException or OperationCanceledException)
+        {
+            // The page went away.
+        }
+    }
+
+    /// <summary>A click on the map while <see cref="Picking"/>: world yards, and the height of the ground drawn under it, else 0.</summary>
+    [JSInvokable]
+    public Task OnWorldClick(float x, float y, float z)
+    {
+        return OnPick.InvokeAsync(new WorldPoint(x, y, z));
+    }
+
+    private async Task ToggleTiltAsync()
+    {
+        tilted = !tilted;
+        await Js("worldView.setTilt", tilted);
+    }
+
+    private Task FitAsync()
+    {
+        return Js("worldView.fit");
+    }
+
+    private async Task Js(string identifier, params object[] args)
+    {
+        if (id is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await js.InvokeVoidAsync(identifier, Token, [id, .. args]);
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or OperationCanceledException)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        if (id is not null)
+        {
+            await js.InvokeTeardownAsync("worldView.dispose", id);
+        }
+
+        self?.Dispose();
+    }
+}

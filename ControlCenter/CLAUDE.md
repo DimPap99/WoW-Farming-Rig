@@ -39,17 +39,19 @@ Bots/FleetFeed.cs                  the one client of the manager's /fleetHub: ev
 Bots/FleetConnectionFactory.cs     the feed's hub connection (MessagePack, the manager's key)
 Bots/BotLogBuffer.cs               a console's log: the backlog joined to the stream, each line once
 Bots/AssignmentDraft.cs            the assignment form's fields, Missing and Refusal (AssignmentRules)
+World/WorldScene.cs                what a page shows on the world view: routes, markers, labels, kinds
 Components/App.razor, Routes.razor the document; InteractiveServer without prerendering
 Components/Layout/                 MainLayout (rail), NavMenu, StatusBar
-Components/Shared/                 ControlCenterComponent (base), Viewport3D, SearchPanel,
-                                   Panel, BusyButton, ResultLine, OfflineNotice, Terminal, ...
+Components/Shared/                 ControlCenterComponent (base), WorldView, Viewport3D, SearchPanel,
+                                   Panel, BusyButton, ResultLine, OfflineNotice, Terminal, Aria, ...
 Components/Bots/                   BotCard, BotState, BotLive, BotCommands, AssignmentForm,
                                    RunHistory, BotLog, FeedChip; BotFormat (words and styles)
-Components/Pages/                  LiveView (/), Map (/Leaflet/...), Search, PathLibrary (/paths),
+Components/Pages/                  RouteMap (/routes), LiveView (/), Map (/Leaflet/...), Search, PathLibrary (/paths),
                                    PathEditorPage (/paths/edit/...), NpcRoutes, ForeverRoutes
                                    (/forever-routes), Fleet (/fleet), BotConsole
                                    (/fleet/{agentId}), ApiReference
 wwwroot/css/site.css               the whole theme; pa- prefixed so the map keeps Bootstrap
+wwwroot/js/world-view.js           the world view on deck.gl (fetched on demand): flat map, tilts into 3D
 wwwroot/js/pathing-scene.js        the Babylon 3D view; Babylon itself is fetched on demand
 wwwroot/js/pathing-ui.js           script loader, toast, remembered rail state
 ```
@@ -107,6 +109,19 @@ thread and the feed on SignalR's: pair each `+=` with its `-=` in `Subscribe`, r
 `Redraw()`, and change a component's state inside `InvokeAsync`. Both raise through `Subscribers`,
 so a subscriber that throws is logged and stops neither the others nor the poller. A component
 that awaits JS teardown implements `IAsyncDisposable` and calls `Dispose()` itself.
+
+**The world view replaces the map and the 3D view, one page at a time.** `WorldView` (deck.gl,
+`wwwroot/js/world-view.js`) is a flat, north-up map that tilts into 3D: drag pans, the wheel zooms,
+right-drag turns and tilts. The page sends a `WorldScene` (routes, markers, labels) whole when it
+changes, and hears clicks while `Picking`; the ground the view fetches itself from the service's
+`navmesh/{continent}/overview` (one height per baked tile, drawn as a relief) and, zoomed in to
+under 1,600 yards across, `navmesh/{continent}/tiles/{x}/{z}` (the walkable polygons). So it needs
+no minimap art and works for Forever too. The page draws WoW's x north and y west as screen up and
+left (`X = -y, Y = x`). Flat is orthographic, so ground at different heights lines up; tilted is in
+perspective. The ground is drawn unlit (`material: false`): deck.gl's default lighting turned it
+black once zoomed in. `worldView.describe()` reports each view's continent, ground and layers, for a
+browser check to wait on. `RouteMap` (`/routes`) is the first page on it; Live view, Map, Route
+search and the path pages still use Leaflet and Babylon until they move.
 
 **The era comes from the service, not the URL.** The map page passes the service's client to
 the map script; the `/Leaflet/{client}` segment is advisory, as the map's own continent selector

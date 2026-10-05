@@ -1,6 +1,10 @@
+using ControlCenter.Components.Pages;
 using ControlCenter.Hosting;
+using ControlCenter.Pathing;
 
 using Contracts.Pathing;
+
+using Microsoft.Extensions.DependencyInjection;
 
 using System.Net;
 using System.Net.Http;
@@ -27,6 +31,19 @@ public sealed class ControlCenterTests
         Assert.Contains("_content/MapAssets/script/leaflet-map", shell);
         Assert.Equal(HttpStatusCode.OK, map.StatusCode);
         Assert.Equal(HttpStatusCode.BadGateway, forwarded.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_route_map_waits_for_the_service_and_says_how_to_start_it()
+    {
+        using ControlCenterFactory factory = new();
+        await factory.Services.GetRequiredService<PathingStatus>().RefreshAsync(TestContext.Current.CancellationToken);
+
+        string page = await factory.RenderAsync<RouteMap>();
+
+        Assert.Contains("pa-world", page);
+        Assert.Contains("Waiting for the Pathing Service", page);
+        Assert.Contains("The Pathing Service is offline", page);
     }
 
     [Fact]
