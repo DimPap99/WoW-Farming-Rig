@@ -28,7 +28,13 @@
         'danger-block': [230, 72, 64],
         area: [88, 166, 255],
         poi: [57, 197, 207],
+        'adt-whole': [49, 214, 90],
+        'adt-part': [214, 165, 49],
+        'adt-chosen': [240, 178, 50],
+        resident: [57, 197, 207],
     };
+    // Kinds that outline the ground in their hundreds, filled lightly so the ground stays readable.
+    const FILL = { 'adt-whole': 10, 'adt-part': 22, 'adt-chosen': 60, resident: 40 };
     const DEFAULT_COLOR = [235, 240, 246];
     const DRAFT_COLOR = [240, 178, 50];
     const MIN_VERTICES = { line: 2, polygon: 3, points: 1 };
@@ -98,9 +104,9 @@
         result.push(new deck.PolygonLayer({
             id: 'shape-areas', data: areas, pickable: true, stroked: true, filled: true, material: false,
             getPolygon: s => s.type === 'rectangle' ? rectangle(s.vertices) : s.vertices,
-            getFillColor: s => colorOf(s.kind, isSelected(s) ? 70 : 45),
-            getLineColor: s => colorOf(s.kind, 235),
-            lineWidthUnits: 'pixels', getLineWidth: s => isSelected(s) ? 3 : 2,
+            getFillColor: s => colorOf(s.kind, FILL[s.kind] ?? (isSelected(s) ? 70 : 45)),
+            getLineColor: s => colorOf(s.kind, FILL[s.kind] !== undefined && !isSelected(s) ? 130 : 235),
+            lineWidthUnits: 'pixels', getLineWidth: s => isSelected(s) ? 3 : (FILL[s.kind] !== undefined ? 1 : 2),
             updateTriggers: { getFillColor: edit.selected, getLineWidth: edit.selected },
             parameters: over,
         }));

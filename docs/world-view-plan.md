@@ -80,7 +80,12 @@ which it always is.
      (`world/spawns`, `world/npcs/search`) instead of the browser reading the data files;
      creatures found by name on the continent; points marked by clicking, with their zone map
      coordinates. The Leaflet page stays as "Minimap (old)" for what is left.
-   - Navmesh coverage and bakes; the ADT grid.
+   - **Done.** Navmesh (`/navmesh`): the ADT grid in how much of each ADT is baked, the tiles the
+     planner holds, an ADT chosen on the map to bake or the whole continent, progress as it goes,
+     the area grid rebuilt, the cache cleared (after a confirm). Bakes say why they cannot start
+     where the service has no game files. Coordinates show under the pointer on every page.
+   - Not moved, on purpose: the old minimap's art (the world view draws the navmesh instead, for
+     every client), and BlazorServer's own path recording (it stays in BlazorServer).
 5. Forever routes: the route drawn beside its text; coordinates picked from the map.
 6. Remove Babylon (`pathing-scene.js`, `Viewport3D`) and Leaflet from the Control Center (the Map
    page, the MapAssets scripts in `App.razor`, `SearchPanel`).

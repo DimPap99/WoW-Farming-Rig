@@ -1,0 +1,418 @@
+@page "/navmesh"
+
+@inherits ControlCenterComponent
+
+@inject IPathingClient pathing
+@inject WorldCache worldCache
+@inject PathingStatus status
+@inject IJSRuntime js
+
+<PageTitle>Navmesh · Control Center</PageTitle>
+
+@* Where the navmesh is baked, and baking more: each ADT that has baked tiles is outlined in how
+   much of it is baked, the tiles the planner holds now can be shown, an ADT is chosen on the map
+   to bake, or the whole continent; a bake's progress shows as it goes and the map fills in. Bakes
+   read the game files where the Pathing Service runs, and are refused there without them. *@
+
+<WorldView Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="Chosen" OnSelected="ShapeSelected">
+    <Panel Title="Navmesh" Icon="grid-three-up" Position="top-left" Class="pa-panel--tall">
+        @if (world is null)
+        {
+            <ResultLine Text="@(status.Online ? "Loading the world..." : "Waiting for the Pathing Service")" Kind="ResultKind.Info" />
+        }
+        else
+        {
+            <div class="pa-form">
+                <div class="pa-field">
+                    <label class="pa-label" for="pa-navmesh-continent">Continent</label>
+                    <select class="pa-select" id="pa-navmesh-continent" value="@continent" @onchange="ChangeContinentAsync">
+                        @foreach (ContinentInfo c in world.World.Continents)
+                        {
+                            <option value="@c.Name">@c.Name@(c.Tiles > 0 ? null : " (no tiles)")</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="pa-route-summary">
+                    <span>@Words.Count(tiles.Length, "tile") baked in @Words.Count(adts.Count, "ADT"), @adts.Count(a => a.Value == AdtGrid.TilesPerAdt) of them whole</span>
+                    <span class="pa-faint">@Words.Count(tiles.Count(t => t.Resident), "tile") held by the planner now</span>
+                </div>
+
+                <label class="pa-check" title="Each ADT with baked tiles, green when whole, amber when part of it is">
+                    <input type="checkbox" @bind="showAdts" @bind:after="Show" /> ADT grid
+                </label>
+                <label class="pa-check" title="The tiles the planner holds in memory now, for the routes it plans">
+                    <input type="checkbox" @bind="showResident" @bind:after="Show" /> Tiles held by the planner
+                </label>
+
+                <div class="pa-divider"></div>
+
+                <span class="pa-label">Bake</span>
+                @if (!CanBake)
+                {
+                    <ResultLine Text="No game files where the Pathing Service runs: baking needs the client installed there." Kind="ResultKind.Warn" />
+                }
+                <p class="pa-tip">@(adt is (int x, int y) ? $"ADT {x},{y}: {Words.Count(Baked(x, y), "tile")} of {AdtGrid.TilesPerAdt} baked." : "Choose an ADT with the tool at the top right, or click one on the grid.")</p>
+                <div class="pa-actions pa-actions--wrap">
+                    <BusyButton Class="pa-btn--primary" Icon="layers" Busy="@busy" Disabled="@(adt is null || !CanBake || Running)" OnClick="BakeAdtAsync"
+                                Title="Bake the ADT's 16 tiles: about ten seconds">
+                        Bake the ADT
+                    </BusyButton>
+                    <button class="pa-btn" type="button" disabled="@(!CanBake || Running || busy)" title="Every ADT the continent has terrain for: hours, hundreds of MB"
+                            @onclick="BakeContinentAsync">
+                        Bake @continent
+                    </button>
+                    <button class="pa-btn pa-btn--ghost" type="button" disabled="@(!Running)" @onclick="CancelAsync">Cancel</button>
+                </div>
+                @if (bake is BakeStatus s && (s.Running || s.Scope.Length > 0))
+                {
+                    <div class="pa-route-summary">
+                        <ResultLine Text="@Progress(s)" Kind="@(s.Running ? ResultKind.Info : ResultKind.Ok)" />
+                        @if (s.Running && s.AdtTotal > 0)
+                        {
+                            <div class="pa-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Percent(s)">
+                                <span style="width: @(Percent(s).ToString(CultureInfo.InvariantCulture))%"></span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div class="pa-divider"></div>
+
+                <span class="pa-label">Upkeep</span>
+                <div class="pa-actions pa-actions--wrap">
+                    <button class="pa-btn" type="button" disabled="@(!CanBake || busy)" title="Bake the area grid again, which names a point's zone" @onclick="AreaGridAsync">
+                        Rebuild the area grid
+                    </button>
+                    <button class="pa-btn pa-btn--ghost" type="button" disabled="@(busy || tiles.Length == 0)" title="Delete every baked tile of the continent" @onclick="ClearAsync">
+                        <span class="oi oi-trash" aria-hidden="true"></span> Clear the cache
+                    </button>
+                </div>
+                <ResultLine Text="@result" Kind="@resultKind" />
+            </div>
+        }
+    </Panel>
+</WorldView>
+
+@if (!status.Online)
+{
+    <OfflineNotice Service="@status.Service" Reason="@status.Error" />
+}
+
+@code {
+    /// <summary>How often a running bake is asked how far it got; the coverage is read again at most every <see cref="CoverageMs"/>.</summary>
+    private const int PollMs = 1500;
+    private const int CoverageMs = 10000;
+
+    private static readonly WorldTool[] Tools = [new(WorldShapes.Point, "Choose an ADT to bake: click it")];
+
+    private const string AdtPrefix = "adt-";
+
+    private WorldSnapshot? world;
+    private string continent = string.Empty;
+    private string? tool;
+    private NavmeshTile[] tiles = [];
+    private Dictionary<(int X, int Y), int> adts = [];
+    private (int X, int Y)? adt;
+    private bool showAdts = true;
+    private bool showResident;
+    private BakeStatus? bake;
+    private bool polling;
+    private bool busy;
+    private string? result;
+    private ResultKind resultKind;
+    private WorldScene scene = WorldScene.Empty(string.Empty);
+
+    private bool CanBake => status.Capabilities?.GameFiles == true;
+
+    private bool Running => bake?.Running == true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Subscribe(() => status.Changed += Redraw, () => status.Changed -= Redraw);
+        Subscribe(() => status.Reconnected += Reload, () => status.Reconnected -= Reload);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        world = status.Online ? await worldCache.GetAsync() : null;
+        if (world is null)
+        {
+            return;
+        }
+
+        if (world.Continent(continent) is null)
+        {
+            continent = world.World.Continents.FirstOrDefault(c => c.Tiles > 0)?.Name ?? world.World.Continents.FirstOrDefault()?.Name ?? string.Empty;
+        }
+
+        await ReadCoverageAsync();
+        await ReadBakeAsync();
+    }
+
+    private void Reload()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task ChangeContinentAsync(ChangeEventArgs e)
+    {
+        continent = e.Value?.ToString() ?? string.Empty;
+        adt = null;
+        await ReadCoverageAsync();
+    }
+
+    // The continent's baked tiles, rolled up into the ADTs they belong to.
+    private async Task ReadCoverageAsync()
+    {
+        try
+        {
+            ServiceResult<NavmeshTile[]> read = await pathing.GetNavmeshTilesAsync(continent, Token);
+            tiles = read.Value ?? [];
+            adts = tiles
+                .GroupBy(t => AdtGrid.Of((t.MinX + t.MaxX) / 2, (t.MinY + t.MaxY) / 2))
+                .ToDictionary(g => g.Key, g => g.Count());
+            if (!read.Ok)
+            {
+                Say($"The coverage of {continent} could not be read: {read.Error}", ResultKind.Error);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        Show();
+    }
+
+    private int Baked(int x, int y) => adts.GetValueOrDefault((x, y));
+
+    // --- the map's events -------------------------------------------------------------------
+
+    private void Chosen(WorldDrawn drawn)
+    {
+        adt = AdtGrid.Of(drawn.Points[0].X, drawn.Points[0].Y);
+        tool = null;
+        Show();
+    }
+
+    private void ShapeSelected(string? id)
+    {
+        if (id is not null && id.StartsWith(AdtPrefix, StringComparison.Ordinal) && id[AdtPrefix.Length..].Split('_') is [string x, string y] &&
+            int.TryParse(x, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ax) &&
+            int.TryParse(y, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ay))
+        {
+            adt = (ax, ay);
+            Show();
+        }
+    }
+
+    // --- bakes --------------------------------------------------------------------------------
+
+    private Task BakeAdtAsync()
+    {
+        return adt is (int x, int y) ? StartAsync(new BakeRequest(continent, x, y), $"ADT {x},{y}") : Task.CompletedTask;
+    }
+
+    private async Task BakeContinentAsync()
+    {
+        if (await js.ConfirmAsync($"Bake every ADT of {continent}? It takes hours and hundreds of MB.", Token))
+        {
+            await StartAsync(new BakeRequest(continent), continent);
+        }
+    }
+
+    private async Task StartAsync(BakeRequest request, string what)
+    {
+        busy = true;
+        try
+        {
+            ServiceResult<BakeStatus> started = await pathing.StartBakeAsync(request, Token);
+            if (!started.Ok)
+            {
+                Say($"{what}: {started.Error}", ResultKind.Error);
+                return;
+            }
+
+            bake = started.Value;
+            Say(null, ResultKind.Info);
+            _ = PollAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        try
+        {
+            ServiceResult<BakeStatus> cancelled = await pathing.CancelBakeAsync(Token);
+            bake = cancelled.Value ?? bake;
+            Say(cancelled.Ok ? "Cancelling..." : cancelled.Error, cancelled.Ok ? ResultKind.Info : ResultKind.Error);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    // A bake already running when the page opens is followed too.
+    private async Task ReadBakeAsync()
+    {
+        try
+        {
+            ServiceResult<BakeStatus> read = await pathing.GetBakeStatusAsync(Token);
+            bake = read.Value;
+            if (Running)
+            {
+                _ = PollAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    // Asks how far the bake got until it ends; the map fills in as it goes, and once more at the end.
+    private async Task PollAsync()
+    {
+        if (polling)
+        {
+            return;
+        }
+
+        polling = true;
+        long lastCoverage = Environment.TickCount64;
+        try
+        {
+            while (!Token.IsCancellationRequested)
+            {
+                await Task.Delay(PollMs, Token);
+                ServiceResult<BakeStatus> read = await pathing.GetBakeStatusAsync(Token);
+                bake = read.Value ?? bake;
+                if (!Running || Environment.TickCount64 - lastCoverage >= CoverageMs)
+                {
+                    lastCoverage = Environment.TickCount64;
+                    await ReadCoverageAsync();
+                }
+
+                await InvokeAsync(StateHasChanged);
+                if (!Running)
+                {
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            polling = false;
+        }
+    }
+
+    private static int Percent(BakeStatus s) => s.AdtTotal > 0 ? (int)Math.Round(100.0 * s.AdtDone / s.AdtTotal) : 0;
+
+    private static string Progress(BakeStatus s)
+    {
+        return s.Running
+            ? string.Create(CultureInfo.InvariantCulture,
+                $"{s.Scope}: {Percent(s)}% - ADT {s.AdtDone} of {s.AdtTotal}, {s.TilesDone:N0} tiles, {s.ElapsedSeconds:F0} s ({s.Message})")
+            : string.Create(CultureInfo.InvariantCulture,
+                $"{s.Scope}: {s.Message} - {s.TilesDone:N0} tiles baked, {s.TilesAlreadyOnDisk:N0} already there, {s.ElapsedSeconds:F0} s");
+    }
+
+    // --- upkeep -------------------------------------------------------------------------------
+
+    private async Task AreaGridAsync()
+    {
+        busy = true;
+        try
+        {
+            ServiceResult built = await pathing.BuildAreaGridAsync(continent, Token);
+            Say(built.Ok ? $"The area grid of {continent} is being baked" : built.Error, built.Ok ? ResultKind.Info : ResultKind.Error);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task ClearAsync()
+    {
+        if (!await js.ConfirmAsync($"Delete every baked navmesh tile of {continent}? Routes there stop until it is baked again.", Token))
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            ServiceResult<CacheCleared> cleared = await pathing.ClearNavmeshAsync(continent, Token);
+            Say(cleared.Ok ? string.Create(CultureInfo.InvariantCulture, $"Cleared {cleared.Value!.FreedBytes / (1024.0 * 1024.0):F1} MB") : cleared.Error,
+                cleared.Ok ? ResultKind.Ok : ResultKind.Error);
+            await ReadCoverageAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void Say(string? text, ResultKind kind)
+    {
+        result = text;
+        resultKind = kind;
+    }
+
+    // The ADTs with baked tiles, the tiles the planner holds, and the ADT chosen to bake.
+    private void Show()
+    {
+        List<WorldShape> shapes = [];
+        if (showAdts)
+        {
+            foreach (((int x, int y), int count) in adts)
+            {
+                (Point3 min, Point3 max) = AdtGrid.Bounds(x, y);
+                shapes.Add(WorldShape.Of(Id(x, y), WorldShapes.Rectangle, count >= AdtGrid.TilesPerAdt ? "adt-whole" : "adt-part",
+                    [min, max], label: string.Create(CultureInfo.InvariantCulture, $"ADT {x},{y} · {count}/{AdtGrid.TilesPerAdt}")));
+            }
+        }
+
+        if (showResident)
+        {
+            foreach (NavmeshTile tile in tiles.Where(t => t.Resident))
+            {
+                shapes.Add(WorldShape.Of(string.Create(CultureInfo.InvariantCulture, $"tile-{tile.X}_{tile.Z}"), WorldShapes.Rectangle, "resident",
+                    [new Point3(tile.MinX, tile.MinY, 0), new Point3(tile.MaxX, tile.MaxY, 0)]));
+            }
+        }
+
+        if (adt is (int ax, int ay))
+        {
+            (Point3 min, Point3 max) = AdtGrid.Bounds(ax, ay);
+            shapes.Add(WorldShape.Of("chosen", WorldShapes.Rectangle, "adt-chosen", [min, max],
+                label: string.Create(CultureInfo.InvariantCulture, $"ADT {ax},{ay}")));
+        }
+
+        scene = new WorldScene(continent, [], [], ZoneLabels.Of(world, continent), Shapes: [.. shapes], Selected: "chosen");
+    }
+
+    private static string Id(int x, int y) => string.Create(CultureInfo.InvariantCulture, $"{AdtPrefix}{x}_{y}");
+}

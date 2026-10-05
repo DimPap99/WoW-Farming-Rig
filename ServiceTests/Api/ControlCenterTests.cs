@@ -55,9 +55,11 @@ public sealed class ControlCenterTests
         string zones = await factory.RenderAsync<CostZones>();
         string live = await factory.RenderAsync<LiveView>();
         string npcs = await factory.RenderAsync<NpcRoutes>();
+        string navmesh = await factory.RenderAsync<Navmesh>();
+        string map = await factory.RenderAsync<WorldMap>();
 
         Assert.Contains("Waiting for the Pathing Service", zones);
-        Assert.All(new[] { zones, live, npcs }, page =>
+        Assert.All(new[] { zones, live, npcs, navmesh, map }, page =>
         {
             Assert.Contains("pa-world", page);
             Assert.Contains("The Pathing Service is offline", page);
