@@ -229,7 +229,7 @@ Run it with `PathingService/run.sh` (`--exp=` picks the client); Swagger UI is a
 - **`global.json` opts `dotnet test` into Microsoft.Testing.Platform.** xUnit v3 4.x requires
   it on the .NET 10 SDK. The CI's `dotnet test --no-build` works unchanged.
 - **The route contract has no `startIndoors` yet.** It is added together with the Phase 4 fix
-  (see "Findings"), so the field never exists without an effect.
+  ([known issues](known-issues.md), item 1), so the field never exists without an effect.
 - **The client never throws.** It converts transport failures and refusals into
   `RouteStatus.Unavailable`/`BadRequest` or a failed `ServiceResult`, and retries twice under
   the standard resilience handler.
@@ -238,26 +238,19 @@ Run it with `PathingService/run.sh` (`--exp=` picks the client); Swagger UI is a
 
 ## Findings while designing
 
-- **`NavmeshPathfinder` remembers its caller.** Between queries it keeps the floor it last
-  resolved the start onto (`lastResolvedFrom`, used for z-less starts within 80 yd), the
-  corridor width that worked, and a 30 s stall memo. One instance shared by several walkers
-  would resolve walker B onto walker A's floor. That state now lives in `NavmeshQueryMemory`,
-  and the planner gives each request its own. The bot's single-walker path keeps the
-  instance's memory and is unchanged.
-- **`startIndoors` never reaches the navmesh from the bot.** `LocalPathingApi.FindWorldRoute`
-  calls `PPatherService.ToWorldZ` once for each endpoint, and the destination's call resets
-  `lastStartIndoors` to null before `DoSearch` reads it. The planner mirrors this for parity
-  and does not take the flag yet. Fix both sides together in Phase 4.
-- **`PathController.SavePath` trusts the file name.** It joins whatever name it receives onto
-  `Json/path`, so `../x.json` writes outside the folder. `RecordedPathStore` rejects rooted
-  paths, `..` and names without the `.json` extension.
-- **Cost zones are not validated on save.** `RoadController` writes whatever it receives, and
-  `CostZoneLoader` later skips an invalid file with only a warning, so a bad save quietly
-  removes zones. `CostZoneStore` validates with the loader's own rules and answers 400 with the
-  reason.
-- **`PPatherService.GetQueryNavmesh` hands out the live search's pathfinder** when it is on the
-  same continent, so route generation and the follower can use one `NavmeshPathfinder` from
-  two threads. This is unchanged here; Phase 4 removes it with the two-call search.
+Everything spotted during this work is tracked, with where it lives and when it goes away,
+in [known issues](known-issues.md). The ones that shaped this design:
+
+- **`NavmeshPathfinder` remembers its caller** (floor, corridor band, stall memo). That is right
+  for one walker per process and wrong for a shared service. The planner gives each request
+  fresh memory, and a remote bot will get memory keyed by its client id. Why the memory is
+  worth keeping is in known issues, "Design notes".
+- **`startIndoors` never reaches the navmesh**, from the bot or from PathingAPI's `WorldRoute2`.
+  The planner mirrors that for parity; both sides get fixed together in Phase 4.
+- **The old authoring controllers trust names and skip validation.** `PathingService` checks
+  path names and continents, and validates cost zones on save.
+- **A map route can throw while converting back to map coordinates** (overlapping zones).
+  The planner keeps such a point in the request's zone.
 
 ## Open questions
 

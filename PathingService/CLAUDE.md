@@ -57,7 +57,10 @@ that is how the old V1 client turned "busy" into "no path".
 **Each request gets fresh pathfinder memory.** `NavmeshPathfinder` remembers the last floor it
 resolved, its corridor band and recent stalls. That is right for one walker and wrong for a
 shared service, so the planner passes a new `NavmeshQueryMemory` per request (see the parity
-and concurrency tests in `ServiceTests/Planning`).
+and concurrency tests in `ServiceTests/Planning`). The memory is worth having: it keeps
+Forever's height-less walker on its floor and makes repeat requests cheap (see
+`docs/known-issues.md`, "Design notes"). When bots plan here, key the memory by their client
+id instead of dropping it.
 
 **The planner never bakes.** An endpoint on a tile with no `.dnm` answers `NotBaked`, naming
 the point. A continent whose cache directory appears later (downloaded or baked) gets a lane

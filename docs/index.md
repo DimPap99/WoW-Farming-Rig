@@ -17,6 +17,7 @@ Start with the [project README](../README.md) for the support matrix and quick s
 ## Design and development
 
 - [Service architecture](service-architecture.md): where the project is heading - Pathing Service, Bot Manager, Control Center, one agent per PC
+- [Known issues and findings](known-issues.md): spotted problems, where they live and when they go away
 - [Architecture](architecture.md) and [technical challenges](technical-challenges.md)
 - [DotRecast fork](dotrecast-fork.md) and [upstream issue draft](dotrecast-upstream-issue.md)
 - [Generated routes](generated-routes-design.md), [flying navigation](flying-navigation-design.md), and [transport navigation](transport-offmesh-navigation-design.md)
