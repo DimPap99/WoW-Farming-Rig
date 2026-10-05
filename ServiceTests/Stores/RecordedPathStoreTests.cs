@@ -1,0 +1,127 @@
+using Contracts;
+using Contracts.Pathing;
+
+using PathingService.Hosting;
+using PathingService.Paths;
+
+using SharedLib.Converters;
+
+using System.IO;
+using System.Linq;
+using System.Numerics;
+using System.Text.Json;
+
+using Xunit;
+
+namespace ServiceTests.Stores;
+
+public sealed class RecordedPathStoreTests
+{
+    private static readonly Point3[] Points = [new(48.564f, 59.133f, 0), new(48.546f, 58.525f, 0), new(48.456f, 57.866f, 12.5f)];
+
+    // Frontend/Controllers/PathController.SavePath: System.Text.Json with an upper-case Vector3Converter.
+    private static readonly JsonSerializerOptions ControllerOptions = new() { Converters = { new Vector3Converter(true) } };
+
+    [Fact]
+    public void A_saved_path_is_byte_for_byte_what_PathController_wrote()
+    {
+        using TempDataRoot data = new();
+        RecordedPathStore store = new(data.Config());
+
+        Assert.Equal(StoreOutcome.Done, store.Save("10_Gnome.json", Points).Outcome);
+
+        string expected = JsonSerializer.Serialize(Points.Select(p => new Vector3(p.X, p.Y, p.Z)).ToArray(), ControllerOptions);
+        Assert.Equal(expected, File.ReadAllText(Path.Combine(data.Config().Path, "10_Gnome.json")));
+    }
+
+    [Fact]
+    public void A_path_reads_back_and_lists_with_its_folder()
+    {
+        using TempDataRoot data = new();
+        RecordedPathStore store = new(data.Config());
+        store.Save("_herb/Elwynn.json", Points);
+        store.Save("Loch.json", Points);
+        File.WriteAllText(Path.Combine(data.Config().Path, "Loch.jpg"), "image");
+
+        StoreResult<RecordedPath> read = store.Get("_herb/Elwynn.json");
+
+        Assert.Equal(StoreOutcome.Done, read.Outcome);
+        Assert.Equal(Points, read.Value!.Points);
+        string[] names = ["Loch.json", "_herb/Elwynn.json"];
+        Assert.Equal(names, store.List(null).Select(p => p.Name).Order(System.StringComparer.Ordinal));
+        Assert.Equal("Loch.jpg", store.List("loch").Single().Screenshot);
+    }
+
+    [Fact]
+    public void A_file_without_heights_reads_like_the_bot_reads_it()
+    {
+        using TempDataRoot data = new();
+        Directory.CreateDirectory(data.Config().Path);
+        File.WriteAllText(Path.Combine(data.Config().Path, "old.json"), """[{"X":48.564,"Y":59.133},{"x":1.5,"y":2.5}]""");
+
+        StoreResult<RecordedPath> read = new RecordedPathStore(data.Config()).Get("old.json");
+
+        Assert.Equal([new Point3(48.564f, 59.133f, 0), new Point3(1.5f, 2.5f, 0)], read.Value!.Points);
+    }
+
+    [Fact]
+    public void Forever_route_files_are_not_recorded_paths()
+    {
+        using TempDataRoot data = new();
+        string forever = Path.Combine(data.Config().Path, PathName.ForeverRouteFolder);
+        Directory.CreateDirectory(forever);
+        File.WriteAllText(Path.Combine(forever, "trip.json"), "{}");
+        RecordedPathStore store = new(data.Config());
+
+        Assert.Empty(store.List(null));
+        Assert.Equal(StoreOutcome.Invalid, store.Get("_forever/trip.json").Outcome);
+        Assert.Equal(StoreOutcome.Invalid, store.Save("_forever/trip.json", Points).Outcome);
+    }
+
+    [Theory]
+    [InlineData("../escape.json")]
+    [InlineData("a/../../escape.json")]
+    [InlineData("/etc/escape.json")]
+    [InlineData("folder\\escape.json")]
+    [InlineData("C:escape.json")]
+    [InlineData("notes.txt")]
+    [InlineData("a//b.json")]
+    [InlineData(" padded.json")]
+    [InlineData("")]
+    public void Names_that_could_leave_the_folder_are_refused(string name)
+    {
+        using TempDataRoot data = new();
+        RecordedPathStore store = new(data.Config());
+
+        StoreResult saved = store.Save(name, Points);
+
+        Assert.Equal(StoreOutcome.Invalid, saved.Outcome);
+        Assert.False(string.IsNullOrEmpty(saved.Error));
+        Assert.Empty(Directory.EnumerateFiles(data.Root, "*", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void Points_must_be_finite_and_present()
+    {
+        using TempDataRoot data = new();
+        RecordedPathStore store = new(data.Config());
+
+        Assert.Equal(StoreOutcome.Invalid, store.Save("empty.json", []).Outcome);
+        Assert.Equal(StoreOutcome.Invalid, store.Save("nan.json", [new(float.NaN, 1, 0)]).Outcome);
+    }
+
+    [Fact]
+    public void Delete_removes_the_path_and_keeps_its_screenshot()
+    {
+        using TempDataRoot data = new();
+        RecordedPathStore store = new(data.Config());
+        store.Save("gone.json", Points);
+        string screenshot = Path.Combine(data.Config().Path, "gone.jpg");
+        File.WriteAllText(screenshot, "image");
+
+        Assert.Equal(StoreOutcome.Done, store.Delete("gone.json").Outcome);
+        Assert.Equal(StoreOutcome.NotFound, store.Get("gone.json").Outcome);
+        Assert.Equal(StoreOutcome.NotFound, store.Delete("gone.json").Outcome);
+        Assert.True(File.Exists(screenshot));
+    }
+}
