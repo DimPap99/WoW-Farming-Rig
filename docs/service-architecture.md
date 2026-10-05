@@ -314,16 +314,100 @@ Run both with `PathingService/run.sh` and `ControlCenter/run.sh`, then open
 
 ## Phase 3 starting notes
 
-- **The Forever route library.** Move `Core/Forever/Tasks/ForeverRouteFile` and what it builds
-  (`ForeverRoute`, `ForeverMapPoint`, `ForeverArea`, `ForeverUntil`, the task types) out of
-  `Core` first. `ForeverUntil.IsMet` reads Core's `VisualBarSample` and `ForeverTaskProgress`, so
-  it has to become an extension that stays in Core. Then the service lists, checks
-  (`ForeverRouteFile.TryLoad`), serves and saves `Json/path/_forever` files, and agents fetch
-  their assigned route by name.
+Checked against the code after Phase 2 (2026-10-05). None of the Phase 3 names exist yet
+(`BotManager`, `AgentHub`, `AgentLink`, `BotRuntimeHost`, `TelemetryPublisher`, `BotSnapshot`,
+`ForeverRun`), and no port is taken for the Bot Manager.
+
+- **The Forever route model can leave `Core` whole.**
+  - It is data only: `ForeverRouteFile` and `ForeverRoute`, the task records in
+    `ForeverTask.cs` (`ForeverTravelTask`, `ForeverRoamAreaTask`, `ForeverHuntHereTask`,
+    `ForeverPulls`, `ForeverTasks`), `ForeverUntil`, `ForeverMapPoint`, and `ForeverArea` with
+    `ForeverWorldArea`. Apart from each other they need only Newtonsoft and SharedLib's
+    `DataConfig` and `WorldMapAreaDB`, so SharedLib (plain `net10.0`, referenced by Core and
+    the Pathing Service) can hold them.
+  - `ForeverUntil.IsMet` reads Core's `ForeverTaskProgress` and `VisualBarSample`; it becomes
+    an extension that stays in Core. The runners (`ForeverTravel`, `ForeverRoamArea`,
+    `ForeverHuntHere`, `ForeverWalker`) are behaviour and stay too.
+  - The loader's users: `Utilities/ForeverControllerTrial`, `Frontend/ForeverRouteCatalog` and
+    `Utilities/ForeverVisualReader/LogicTest.Route.cs`.
+- **Serving route files.**
+  - `WorldMapAreaDB` is per instance, so the service can check a route against
+    `Json/dbc/forever` whatever `--exp` it runs with; `ContinentDB` (known issues, item 4) is
+    not involved.
+  - Route files carry `//` comments: `durotar_example.json` documents the format in them.
+    Newtonsoft skips them, System.Text.Json refuses them unless told to skip, and a structured
+    save drops them. Decide what saving a route does before building it.
+  - The folder name exists twice, `ForeverRouteFile.Folder` and `PathName.ForeverRouteFolder`.
+    `PathName` refuses `_forever/` names for recorded paths and the store skips the folder when
+    listing, but the static `/path` route (`WorldData.RecordedPaths`) already serves it.
+- **`ForeverRun`, out of `ForeverControllerTrial/Program.cs`.**
+  - The file is 498 lines of top-level statements: arguments, the `WowB` process, its own DI
+    container (`AddCoreBase`, `AddCoreNormal`, Local pathing), the first readable frame, a
+    verified profile (`ForeverVerifiedSetup`), the preflight, a wait for the game window to
+    come to the front (`ForeverRunProtocol.ClickPrompt`), then a 100 ms loop with a time bound
+    per mode, status lines, snapshots every 2 s and exit codes.
+  - The run's state is a string. `ForeverAutonomousGoal.Status` is a private `RunState`
+    (`Start`, `Running`, `Complete`, `Failed`) or the current activity's text, and the loop
+    compares it with `"Complete"` and `"Failed"`. A reusable run should expose the state as a
+    type.
+  - It reads `Json` under its working directory (the repository root); HeadlessServer reads
+    `data_config.json`, whose root is `../Json` from its own folder.
+  - `Frontend/ForeverRunHost` (BlazorServer's "Forever runs" page) starts it as a child process
+    (`--route --minutes --listen --pid`), reads its output by the `ForeverRunProtocol` prefixes
+    and stops it with `stop` on its input, ending it after `StopGraceMs` (10 s). That text
+    protocol is the only interface a run has today (known issues, item 9).
+- **HeadlessServer is not resident yet.**
+  - It refuses Forever: `Program.ConfigureServices` stops when `AddWoWProcess` reports a
+    Forever client ("diagnostic-only"), and `HeadlessServer.Run` refuses
+    `ForeverDiagnosticController` again. Forever automation exists only in the trial runner,
+    behind its gates (verified profile, preflight, a click into the game, a time bound). An
+    agent that runs Forever lifts that guard on purpose and keeps the gates.
+  - It is not a hosted app. `Main` fills a `ServiceCollection`, starts the bot and blocks on
+    `Console.ReadKey`, and the bot's foreground threads keep the process running after that.
+    Nothing stops it cleanly (known issues, item 21). `BlazorServer/Program.Main` has the
+    restart loop to copy, on the Generic Host.
+  - It references `Frontend`, a Blazor class library, only for `ShortSourceContextEnricher`
+    (`Frontend/LoggerSink`); moving that to `SharedLib.Logging` drops the reference.
+  - Core, Game and HeadlessServer take `net10.0-windows10.0.19041.0` from
+    `Directory.Packages.props`. They build on Linux but cannot run there. New service projects
+    set `net10.0`, as `PathingService` does.
+- **A `BotSnapshot` has two sources.** Classic's dashboard reads `PlayerReader`, `CombatLog`,
+  `LevelTracker`, `CorpseTracker`, `IBotController.GoapAgent` and the log (`LoggerSink`).
+  Forever's reads `ForeverVisualBarTracker` (`VisualBarSample`) and `ForeverAutonomousGoal`
+  (status, agenda, kills, loot, deaths).
+- **Data sync.**
+  - What a bot reads that the Pathing Service owns: recorded paths (`Json/path`), Forever
+    routes (`Json/path/_forever`), cost zones (`Json/road/<era>`, which `CostZoneWatcher` picks
+    up live) and navmesh tiles (`Json/PathInfo/navmesh/<era>`, from the CDN through
+    `scripts/download-navmesh.ps1`).
+  - The service has no navmesh tile endpoint (`/tiles` is the minimap art); see "Tile
+    distribution" under open questions.
+  - Cost zones travel as `CostZoneSet`, but the files are PPather's `RoadData` and
+    `DangerZoneData`, mapped and written in `PathingService/CostZones/CostZoneStore`. An agent
+    that writes them needs that mapping shared, not copied.
 - **The bot's live view** comes back through the Bot Manager: PathingAPI used to draw a
-  `RemoteV1` bot's routes and its `PathVisualizer` markers, and nothing does now.
+  `RemoteV1` bot's routes and its `PathVisualizer` markers, and nothing does now. The watch
+  hub's `POST /api/v1/watch/paths` and `/watch/markers` can already draw them.
 - **The Control Center gains** the fleet page, per-bot console and assignments, as a client of
   the Bot Manager next to the Pathing Service.
+- **Verifying it on Linux.**
+  - The Bot Manager and the Control Center's pages can be checked end to end with a fake
+    agent: a SignalR client in `ServiceTests` that registers, sends snapshots and obeys
+    commands, over `TestServer` with long polling and MessagePack, as `WatchHubTests` does.
+  - The agent, `ForeverRun` and the logon task need Windows and a game: compile them on Linux
+    and list what to try on Windows.
+  - Phase 2's browser checks used Playwright .NET with the system Chrome, headless, with
+    SwiftShader for WebGL. Blazor's navigation needs `WaitForFunction` on `location.pathname`
+    (`WaitForURL` misses it). The services ran on a scratch data root (links to `Json/*`, the
+    authored folders copied) so nothing tracked changed. `WebApplicationFactory` needs each
+    extra host's `Program` in a namespace (`ControlCenter.Program`).
+- **A workable order**, each step mergeable on its own:
+  1. the route model out of Core and the route library (Linux);
+  2. `ForeverRun`, with no behaviour change and a live run on Windows;
+  3. the contracts and the Bot Manager, with a fake agent (Linux);
+  4. the agent in HeadlessServer;
+  5. the Control Center's fleet, console and assignments;
+  6. the data sync, the logon task and the restart loop.
 
 ## Findings while designing
 
@@ -335,8 +419,7 @@ in [known issues](known-issues.md). The ones that shaped this design:
   fresh memory. A remote bot will send its last floor with each request, keeping the service
   stateless. Why the memory is worth keeping is in known issues, "Design notes".
 - **`startIndoors` never reaches the navmesh** from the bot, nor did it from PathingAPI's
-  `WorldRoute2`.
-  The planner mirrors that for parity; both sides get fixed together in Phase 4.
+  `WorldRoute2`. The planner mirrors that for parity; both sides get fixed together in Phase 4.
 - **The old authoring controllers trust names and skip validation.** `PathingService` checks
   path names and continents, and validates cost zones on save.
 - **A map route can throw while converting back to map coordinates** (overlapping zones).

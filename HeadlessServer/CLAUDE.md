@@ -64,4 +64,5 @@ project breaks the benchmark harness.
 otherwise picks the first matching client. For several bots, give each its own instance
 and its own in-process navmesh — see the README's "Running multiple bots".
 
-**Shutdown must release input.** Same rule as `BlazorServer`; see `Game/CLAUDE.md`.
+**Shutdown must release input.** Same rule as `BlazorServer`; see `Game/CLAUDE.md`. Today
+nothing here does it: there is no clean stop at all (`docs/known-issues.md`, item 21).

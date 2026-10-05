@@ -8,8 +8,9 @@ commit that fixed it.
 ## Open
 
 1. **`startIndoors` never reaches the navmesh.**
-   - **Where:** `Core/PPather/LocalPathingApi.FindWorldRoute` and PathingAPI's `WorldRoute2`.
-   - **Cause:** both call `PPatherService.ToWorldZ` once per endpoint, and the destination's
+   - **Where:** `Core/PPather/LocalPathingApi.FindWorldRoute`; PathingAPI's `WorldRoute2` had
+     it too, until Phase 2.
+   - **Cause:** it calls `PPatherService.ToWorldZ` once per endpoint, and the destination's
      call sets `lastStartIndoors` back to null before `DoSearch` reads it.
    - **Effect:** the navmesh resolver never sees the bot's indoor hint. Only the geometry
      path (with game archives installed) uses it, for the start's height.
@@ -89,6 +90,18 @@ commit that fixed it.
     `leaflet.js` 1.9.4 from MapAssets and `leaflet.css` 1.7.1 from unpkg, as BlazorServer always
     has. Nothing visibly breaks; align them (a local 1.9.4 stylesheet) when the map is next
     worked on.
+
+21. **HeadlessServer has no clean stop.**
+    - **Where:** `HeadlessServer/Program.Main`.
+    - **Cause:** it starts the bot and blocks on `Console.ReadKey`. The bot's threads are
+      foreground threads, so a key press does not end the process either. Nothing handles
+      Ctrl+C or process exit, and the `ServiceProvider` is never disposed, so
+      `BotController.Dispose` never runs.
+    - **Effect:** the only way to stop it is to end the process, without the release
+      `Game/CLAUDE.md` requires, which can leave a key held in the game. Found by reading the
+      code, not observed.
+    - **Fix:** the resident agent (Phase 3) runs on the Generic Host and stops by releasing
+      input first.
 
 ## Fixed
 
