@@ -45,6 +45,7 @@ CostZones/CostZoneEndpoints.cs     /api/v1/costzones
 World/WorldDataFiles.cs            the map's static data routes (Contracts' WorldData)
 World/WorldCatalog.cs              zones with bounds, continents, NPC types, NPCs by zone; a zone's layers
                                    (elites, herbs, veins, skinnable, mailboxes); creatures by name
+World/MapArtTable.cs               where each era's minimap art lies on its continents (ContinentInfo.Art)
 World/WorldEndpoints.cs            /api/v1/world, /world/npcs, /world/npcs/search, /world/spawns
 Catalog/LocationCatalog.cs         curated spots + Json/locations/teleport_locations.txt
 Catalog/TestRoutes.cs              known-trouble routes as RouteRequests
@@ -164,6 +165,11 @@ route a run would refuse is never written. Names are one plain file name: no sub
 too, half a second later; the second reload is harmless. A save is validated with
 `CostZoneLoader.Problem`, the same rules the loader applies, so a bad save is refused (400)
 instead of silently dropping zones at the next load.
+
+**The map art's numbers live twice.** `MapArtTable` (for the Control Center, through
+`ContinentInfo.Art`) and the `Configs` of `MapAssets/wwwroot/script/leaflet-watch.js` (BlazorServer's
+Leaflet map) both say where each era's art lies. `ServiceTests/Api/MapArtTests` reads the script and
+fails when they differ: change both. A continent has art only when its tiles are on disk.
 
 **The world data routes create their folders.** `PhysicalFileProvider` throws on a missing
 root, and which folder backs a route depends on the client, so `UseWorldData` creates it. The

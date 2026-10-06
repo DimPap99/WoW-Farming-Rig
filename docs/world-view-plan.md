@@ -148,6 +148,17 @@ was photographed before and after; what is here was clearly better, what was not
 Not changed: marker and shape names keep their boxes (they read well); the relief's colours by
 height are as they were, which paints low land as sea (known issue 29).
 
+Then, at the user's asking (2026-10-06):
+7. **The game's map art**, as the Leaflet map showed it, under the routes where the service has it:
+   the minimap's tile pyramid (`Json/leaflet/<era>/<continent>`), placed by `MapArt` (from
+   `PathingService/World/MapArtTable`, kept in step with `leaflet-watch.js` by a test). The
+   **Map** button turns it off; tilted, the relief shows instead. Zoomed in, the walkable polygons
+   lie see-through over it. Forever has no art, so its views keep the relief.
+8. **Tools you can see.** The tool buttons were bare icons in a column under 3D/Fit and went unseen;
+   each now has its name under a "Draw" heading. The Map page drew points only; it now draws lines,
+   polygons, rectangles and circles too, as the Leaflet map did, each listed with what it measures
+   (length, area, size, radius) and copied as zone map coordinates.
+
 How to check:
 - `dotnet test`: 278 tests (none skipped where the minimap art is downloaded).
   `ServiceTests/Api/ControlCenterTests` renders the world view pages offline.
@@ -174,4 +185,5 @@ Open for the user:
   service runs) has no home in the Control Center now. deck.gl could draw it as a mesh, if wanted.
 - Swimming costs 1.3 times walking (known issue 28): it is why a continent route from Durotar to
   Tanaris runs on the sea floor. Changing it changes how the bot walks.
-- Low land drawn as sea (known issue 29) needs a water share per tile in the overview.
+- Low land drawn as sea (known issue 29) needs a water share per tile in the overview. With the
+  map art on, it shows only where the art has no tile, or tilted.

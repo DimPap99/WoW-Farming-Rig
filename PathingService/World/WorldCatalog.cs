@@ -49,7 +49,7 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
         for (int i = 0; i < counted.Length; i++)
         {
             continents[i] = new ContinentInfo(counted[i].Continent, (int)ContinentDB.NameToId[counted[i].Continent],
-                counted[i].Tiles);
+                counted[i].Tiles, MapArtTable.For(data, counted[i].Continent));
         }
 
         return new WorldInfo(data.Exp, DataConfig.ClientEra(data.Exp), DataConfig.HasLeaflet(data.Exp), continents, Zones(),

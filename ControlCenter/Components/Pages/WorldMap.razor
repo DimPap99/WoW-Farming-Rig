@@ -6,14 +6,17 @@
 @inject WorldCache worldCache
 @inject PathingStatus status
 @inject ZoneLookup zoneLookup
+@inject IJSRuntime js
 
 <PageTitle>Map · Control Center</PageTitle>
 
 @* What is where in a zone, on the world view: NPCs by type, elites, herbs, veins, skinnable
    creatures, mailboxes and named places, each a layer to turn on; creatures searched by name on
-   the continent; points marked by clicking, with their coordinates. *@
+   the continent; points marked and lines, areas and circles drawn, with their coordinates and what
+   they measure. *@
 
-<WorldView @ref="view" Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="MarkedAsync" OnMarker="MarkerClicked">
+<WorldView @ref="view" Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="MarkedAsync" OnMarker="MarkerClicked"
+           OnEdited="EditedAsync" OnSelected="ShapeSelected">
     <Panel Title="Map" Icon="map" Position="top-left" Class="pa-panel--tall">
         @if (world is null)
         {
@@ -85,22 +88,24 @@
                 <div class="pa-divider"></div>
 
                 <div class="pa-field">
-                    <span class="pa-label">Marked points</span>
+                    <span class="pa-label">Marks</span>
                     @if (marks.Count == 0)
                     {
-                        <span class="pa-faint">Mark one with the pin at the top right: its coordinates show here.</span>
+                        <span class="pa-faint">Mark a point, or draw a line, an area or a circle, with the tools at the top right: where it is and what it measures show here.</span>
                     }
                     else
                     {
-                        <ul class="pa-waypoints" aria-label="Marked points">
+                        <ul class="pa-waypoints" aria-label="Marks">
                             @for (int i = 0; i < marks.Count; i++)
                             {
-                                int index = i;
-                                Point3 mark = marks[index];
-                                <li class="pa-waypoint">
-                                    <span class="pa-waypoint-n">@(index + 1)</span>
-                                    <span class="pa-waypoint-at" title="World yards: @Yards(mark)">@ZoneLabels.Where(Known(mark), mark)</span>
-                                    <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Remove it" @onclick="() => Unmark(index)">
+                                Mark mark = marks[i];
+                                <li class="pa-waypoint @(mark.Id == selected ? "is-selected" : null)">
+                                    <span class="pa-waypoint-n">@(i + 1)</span>
+                                    <button class="pa-waypoint-at" type="button" title="@OnZoneMap(mark)" @onclick="() => FocusAsync(mark)">@Describe(mark)</button>
+                                    <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Copy where it is: @OnZoneMap(mark)" @onclick="() => CopyAsync(mark)">
+                                        <span class="oi oi-clipboard" aria-hidden="true"></span>
+                                    </button>
+                                    <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Remove it" @onclick="() => Unmark(mark)">
                                         <span class="oi oi-x" aria-hidden="true"></span>
                                     </button>
                                 </li>
@@ -125,7 +130,17 @@
     // NPC types as layers too: their ids are the NpcFlags names, the service's.
     private static readonly string[] NpcTypes = ["vendor", "repair", "trainer", "flightmaster", "innkeeper"];
 
-    private static readonly WorldTool[] Tools = [new(WorldShapes.Point, "Mark a point: each click marks one; Esc stops")];
+    /// <summary>A mark: a point, or a shape drawn to measure or to keep - a line, a polygon, a rectangle, a circle.</summary>
+    private sealed record Mark(string Id, string Shape, Point3[] Points, float Radius);
+
+    private static readonly WorldTool[] Tools =
+    [
+        new(WorldShapes.Point, "Mark a point: each click marks one; Esc stops", "Point"),
+        new(WorldShapes.Line, "Draw a line to measure: click along it, then the last point again (or Enter)", "Line"),
+        new(WorldShapes.Polygon, "Draw an area: click its corners, then the first again (or Enter); Esc cancels", "Polygon"),
+        new(WorldShapes.Rectangle, "Draw a rectangle: two opposite corners", "Rectangle"),
+        new(WorldShapes.Circle, "Draw a circle: its centre, then a point on its edge", "Circle"),
+    ];
 
     private const string PlacesLayer = "places";
 
@@ -138,7 +153,9 @@
     private string search = string.Empty;
     private NpcInfo[] found = [];
     private NpcInfo? chosen;
-    private readonly List<Point3> marks = [];
+    private readonly List<Mark> marks = [];
+    private int marked;
+    private string? selected;
     private string? result;
     private ResultKind resultKind;
     private WorldScene scene = WorldScene.Empty(string.Empty);
@@ -313,30 +330,134 @@
         }
     }
 
+    // A point keeps its tool, a click a point; a shape is drawn once, then selected to change.
     private async Task MarkedAsync(WorldDrawn drawn)
     {
-        marks.Add(drawn.Points[0]);
+        Mark mark = new($"mark-{++marked}", drawn.Shape, drawn.Points, drawn.Radius);
+        marks.Add(mark);
+        if (drawn.Shape != WorldShapes.Point)
+        {
+            selected = mark.Id;
+            tool = null;
+        }
+
         Show();
+        await LearnAsync(mark);
+    }
+
+    private async Task EditedAsync(WorldEdited edited)
+    {
+        int index = marks.FindIndex(m => m.Id == edited.Id);
+        if (index < 0)
+        {
+            return;
+        }
+
+        marks[index] = marks[index] with { Points = edited.Points, Radius = edited.Radius };
+        Show();
+        await LearnAsync(marks[index]);
+    }
+
+    private void ShapeSelected(string? id)
+    {
+        selected = id;
+        Show();
+    }
+
+    private async Task FocusAsync(Mark mark)
+    {
+        selected = mark.Shape == WorldShapes.Point ? selected : mark.Id;
+        Show();
+        if (view is not null)
+        {
+            await view.CenterOnAsync(Middle(mark));
+        }
+    }
+
+    private void Unmark(Mark mark)
+    {
+        marks.Remove(mark);
+        selected = selected == mark.Id ? null : selected;
+        Show();
+    }
+
+    // Where it is as a player reads it, for a Forever route or a note: the zone map's coordinates of
+    // its points ([x, y] each; a rectangle's two corners, as a roam's Area takes them).
+    private async Task CopyAsync(Mark mark)
+    {
         try
         {
-            await zoneLookup.LearnAsync(MapId, [drawn.Points[0]], Token);
+            bool copied = await js.InvokeAsync<bool>("pathingUi.copy", Token, OnZoneMap(mark));
+            Say(copied ? $"Copied mark {marks.IndexOf(mark) + 1}: {OnZoneMap(mark)}" : "The browser did not allow copying", copied ? ResultKind.Ok : ResultKind.Warn);
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task LearnAsync(Mark mark)
+    {
+        try
+        {
+            await zoneLookup.LearnAsync(MapId, [Middle(mark), .. mark.Points], Token);
         }
         catch (OperationCanceledException)
         {
         }
     }
 
-    private void Unmark(int index)
+    // What a mark is and measures: "Durotar 52.3, 44.1", "Line · 1,204 yd", "Circle · 85 yd round".
+    private string Describe(Mark mark)
     {
-        marks.RemoveAt(index);
-        Show();
+        Point3[] p = mark.Points;
+        return mark.Shape switch
+        {
+            WorldShapes.Point => ZoneLabels.Where(Known(p[0]), p[0]),
+            WorldShapes.Line => $"Line · {Words.Yards(RouteGeometry.Length(p))}",
+            WorldShapes.Polygon => $"Polygon · {Words.Count(p.Length, "corner")} · {Words.SquareYards(Area(p))}",
+            WorldShapes.Rectangle => string.Create(CultureInfo.InvariantCulture,
+                $"Rectangle · {MathF.Abs(p[1].Y - p[0].Y):N0} × {MathF.Abs(p[1].X - p[0].X):N0} yd"),
+            WorldShapes.Circle => $"Circle · {Words.Yards(mark.Radius)} round {ZoneLabels.Where(Known(p[0]), p[0])}",
+            _ => mark.Shape,
+        };
+    }
+
+    // Its points in the zone map's coordinates, where its middle's zone is known; else world yards.
+    private string OnZoneMap(Mark mark)
+    {
+        Point3 middle = Middle(mark);
+        ZoneInfo? zone = Known(middle);
+        IEnumerable<string> points = mark.Points.Select(p =>
+        {
+            Point3 at = zone is null ? p : ZoneMath.ToMap(zone, p);
+            return string.Create(CultureInfo.InvariantCulture, $"[{at.X:F1}, {at.Y:F1}]");
+        });
+        string where = mark.Points.Length == 1 ? points.First() : $"[{string.Join(", ", points)}]";
+        return zone is null ? $"world yards {where}" : $"{zone.Name} {where}";
+    }
+
+    private static Point3 Middle(Mark mark)
+    {
+        return new Point3(mark.Points.Average(p => p.X), mark.Points.Average(p => p.Y), 0);
+    }
+
+    // A polygon's area by the shoelace formula, in square yards.
+    private static float Area(Point3[] p)
+    {
+        float twice = 0;
+        for (int i = 0; i < p.Length; i++)
+        {
+            Point3 a = p[i];
+            Point3 b = p[(i + 1) % p.Length];
+            twice += (a.X * b.Y) - (b.X * a.Y);
+        }
+
+        return MathF.Abs(twice) / 2;
     }
 
     private ZoneInfo? Known(Point3 at) => world is null ? null : zoneLookup.Known(world, MapId, at);
 
     private string ZoneName(Point3 at) => Known(at)?.Name ?? "?";
-
-    private static string Yards(Point3 at) => FormattableString.Invariant($"{at.X:F1}, {at.Y:F1}, {at.Z:F1}");
 
     private void Say(string? text, ResultKind kind)
     {
@@ -369,15 +490,27 @@
                 npc.Position, isChosen ? npc.Name : null, npc.Name));
         }
 
+        // Points as markers, numbered; shapes as shapes, numbered where their names show, editable.
+        List<WorldShape> shapes = [];
         for (int i = 0; i < marks.Count; i++)
         {
-            markers.Add(WorldMarker.At($"mark-{i.ToString(CultureInfo.InvariantCulture)}", "mark", marks[i], (i + 1).ToString(CultureInfo.InvariantCulture)));
+            Mark mark = marks[i];
+            string number = (i + 1).ToString(CultureInfo.InvariantCulture);
+            if (mark.Shape == WorldShapes.Point)
+            {
+                markers.Add(WorldMarker.At(mark.Id, WorldKinds.Mark, mark.Points[0], number));
+            }
+            else
+            {
+                shapes.Add(WorldShape.Of(mark.Id, mark.Shape, WorldKinds.Mark, mark.Points, editable: true, label: number, radius: mark.Radius));
+            }
         }
 
         // A zone chosen is framed whole: its map's corners.
         float[]? frameOn = frame && Zone is ZoneInfo zone
             ? WorldPoints.Flatten([ZoneMath.ToWorld(zone, new Point3(0, 0, 0)), ZoneMath.ToWorld(zone, new Point3(100, 100, 0))])
             : null;
-        scene = new WorldScene(continent, [], [.. markers], ZoneLabels.Of(world, continent), FrameOn: frameOn);
+        scene = new WorldScene(continent, [], [.. markers], ZoneLabels.Of(world, continent), Shapes: [.. shapes], Selected: selected,
+            FrameOn: frameOn);
     }
 }

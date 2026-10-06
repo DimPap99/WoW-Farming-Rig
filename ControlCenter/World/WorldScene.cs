@@ -68,8 +68,9 @@ public sealed record WorldShape(string Id, string Type, string Kind, float[] Poi
 
 /// <summary>A drawing tool the view offers: the shape a click draws, and what the page calls it.</summary>
 /// <param name="Shape">One of <see cref="WorldShapes"/>.</param>
-/// <param name="Title">What it is for, shown on its button: "Add waypoints".</param>
-public sealed record WorldTool(string Shape, string Title);
+/// <param name="Title">How to use it, shown when the pointer rests on its button: "Add waypoints: each click adds one".</param>
+/// <param name="Label">Its name on the button, a word or two: "Waypoints".</param>
+public sealed record WorldTool(string Shape, string Title, string Label);
 
 /// <summary>A shape the pointer finished drawing with a tool.</summary>
 /// <param name="Shape">The tool's: one of <see cref="WorldShapes"/>.</param>
@@ -185,4 +186,7 @@ public static class WorldKinds
     public const string Area = "area";
 
     public const string Poi = "poi";
+
+    /// <summary>What the map page's marks are drawn as: a point marked, or a shape drawn to measure.</summary>
+    public const string Mark = "mark";
 }

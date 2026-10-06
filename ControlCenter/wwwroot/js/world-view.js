@@ -32,6 +32,14 @@
     const LABEL_PX = 12;             // zone names' size
     const LABEL_GAP = 3;             // the room a zone name keeps either side: its outline and a space
     const AREA_CELL = 16;            // yards: points this close share a zone (ZoneLookup.CellYd)
+    // The map art: the game's minimap in 256-pixel tiles, an ADT (533.33 yards) in 512 pixels at the
+    // finest zoom, placed from the middle of the world's 64 x 64 ADTs (MapArt in the contracts).
+    const ADT = 1600 / 3;
+    const HALF_WORLD = 32 * ADT;
+    const ART_TILE = 256;
+    const ART_FETCHES = 8;           // art tiles fetched at once
+    const ART_KEPT = 320;            // art tiles kept in memory, the least lately drawn dropped first
+    const ART_MESH_ALPHA = 70;       // a tile's walkable polygons over the art: see-through
     const AREA_REST_MS = 120;        // the pointer rests this long before its zone is asked for
     const FONT = 'ui-sans-serif, system-ui, Segoe UI, sans-serif';
 
@@ -128,7 +136,7 @@
 
     // --- the view ------------------------------------------------------------------------------
 
-    /** Creates a view in host; options.urls name the service's routes it reads: overview, tile, world, area. */
+    /** Creates a view in host; options.urls name the service's routes it reads (overview, tile, world, area, art), options.art whether the map art shows. */
     async function create(host, dotnet, options) {
         await window.pathingUi.loadScript(DECK_URL);
         const id = 'world-' + (nextId++);
@@ -143,6 +151,10 @@
             viewState: { target: [0, 0, 0], zoom: -4, rotationX: TOP_DOWN, rotationOrbit: 0, minZoom: -7, maxZoom: 5, minRotationX: 5, maxRotationX: TOP_DOWN },
             tilted: false,
             picking: false,
+            artOn: options.art !== false,
+            artTiles: new Map(),    // 'z/x/y' -> { image, used }; image null while loading, false when missing
+            artQueue: [], artInFlight: 0, artWanted: new Set(), artClock: 0, artDrawn: 0,
+            redrawQueued: false,
             readout: host.querySelector('.pa-world-readout'),
             hover: null,            // what the pointer is over, for the readout to name again
             world: null,            // { mapIds: continent -> map id, zones: uiMapId -> zone map }
@@ -322,6 +334,14 @@
         moveTo(view, { target: [vx - beside(view, zoom), vy, 0], zoom });
     }
 
+    /** Shows the game's map art under the routes where the continent has it, or the relief alone. */
+    function setArt(id, on) {
+        const view = instances.get(id);
+        if (!view) return;
+        view.artOn = !!on;
+        render(view);
+    }
+
     /** While on, a click on the map is sent to the page's OnWorldClick. */
     function setPicking(id, on) {
         const view = instances.get(id);
@@ -347,6 +367,9 @@
         view.queue = [];
         view.areas = new Map();
         view.zone = null;
+        view.artTiles = new Map();
+        view.artQueue = [];
+        markArt(view);
         try {
             const response = await fetch(fill(view.urls.overview, { continent }));
             if (!response.ok) throw new Error(response.status + ' ' + response.statusText);
@@ -665,6 +688,154 @@
         return p;
     }
 
+    // --- the map art ---------------------------------------------------------------------------
+
+    // The continent's art, when the service has it (not for Forever, nor where it is not downloaded).
+    function artOf(view) {
+        return view.world && view.continent ? view.world.arts.get(view.continent) || null : null;
+    }
+
+    // Whether the art is drawn now: it is wanted, the continent has it, and the view is flat. Tilted,
+    // the relief's steps show the heights a flat picture would hide.
+    function artShown(view) {
+        return view.artOn && !view.tilted && !!artOf(view);
+    }
+
+    // The page's Map button shows only where there is art to show (the host's data-art).
+    function markArt(view) {
+        if (artOf(view)) view.host.dataset.art = '';
+        else delete view.host.dataset.art;
+    }
+
+    // The art tiles the screen needs, at the zoom where a tile's pixel is about a screen pixel, and
+    // under each not loaded yet the nearest coarser tile that is, so panning shows no holes. A tile
+    // the service does not have (open sea) leaves the relief showing.
+    function artLayers(view, under) {
+        const art = artOf(view);
+        const viewport = view.deck.getViewports()[0];
+        if (!artShown(view) || !viewport) {
+            view.artWanted = new Set();
+            return [];
+        }
+
+        const ratio = window.devicePixelRatio || 1;
+        const zoom = Math.max(art.minZoom, Math.min(art.maxZoom,
+            Math.round(art.maxZoom + view.viewState.zoom + Math.log2(ratio * (ADT / 512)) + 0.2)));
+        // Flat, the view looks straight down: the screen's corners on the ground bound what it shows.
+        const corners = [[0, 0], [viewport.width, 0], [0, viewport.height], [viewport.width, viewport.height]].map(p => viewport.unproject(p));
+        const xs = corners.map(c => c[0]);
+        const ys = corners.map(c => c[1]);
+        const size = artTileYards(art, zoom);
+        const [left, top] = artCorner(art);
+        const scale = Math.pow(2, zoom - art.maxZoom);
+        const x0 = Math.max(0, Math.floor((Math.min(...xs) - left) / size));
+        const x1 = Math.min(Math.ceil((art.width * scale) / ART_TILE) - 1, Math.floor((Math.max(...xs) - left) / size));
+        const y0 = Math.max(0, Math.floor((top - Math.max(...ys)) / size));
+        const y1 = Math.min(Math.ceil((art.height * scale) / ART_TILE) - 1, Math.floor((top - Math.min(...ys)) / size));
+
+        const wanted = new Set();
+        const fine = [];
+        const coarse = new Map();
+        for (let x = x0; x <= x1; x++) {
+            for (let y = y0; y <= y1; y++) {
+                const key = zoom + '/' + x + '/' + y;
+                wanted.add(key);
+                const tile = view.artTiles.get(key);
+                if (tile && tile.image) {
+                    fine.push(key);
+                    continue;
+                }
+                if (tile && tile.image === false) continue;
+                if (!tile) {
+                    view.artTiles.set(key, { image: null, used: 0 });
+                    view.artQueue.push(key);
+                }
+                for (let z = zoom - 1, cx = x >> 1, cy = y >> 1; z >= art.minZoom; z--, cx >>= 1, cy >>= 1) {
+                    const parent = view.artTiles.get(z + '/' + cx + '/' + cy);
+                    if (parent && parent.image) {
+                        coarse.set(z + '/' + cx + '/' + cy, z);
+                        break;
+                    }
+                }
+            }
+        }
+        view.artWanted = wanted;
+        pumpArt(view);
+
+        // Coarser tiles first, under the finer ones.
+        const keys = [...[...coarse.keys()].sort((a, b) => coarse.get(a) - coarse.get(b)), ...fine];
+        const clock = ++view.artClock;
+        view.artDrawn = keys.length;
+        return keys.map(key => {
+            const tile = view.artTiles.get(key);
+            tile.used = clock;
+            const [z, x, y] = key.split('/').map(Number);
+            const [l, t] = artCorner(art);
+            const s = artTileYards(art, z);
+            return new deck.BitmapLayer({
+                id: 'art-' + key, image: tile.image, bounds: [l + (x * s), t - ((y + 1) * s), l + ((x + 1) * s), t - (y * s)],
+                parameters: under,
+            });
+        });
+    }
+
+    // The view X of the picture's left edge and the view Y of its top (view X = -wow y, Y = wow x).
+    function artCorner(art) {
+        return [(art.column * ADT) - HALF_WORLD, HALF_WORLD - (art.row * ADT)];
+    }
+
+    // The yards a tile spans at a zoom: an ADT is 512 pixels at the finest, twice as many yards a
+    // pixel each zoom below.
+    function artTileYards(art, zoom) {
+        return ART_TILE * (ADT / 512) * Math.pow(2, art.maxZoom - zoom);
+    }
+
+    // Fetches the newest wanted tiles first, a few at a time; one the view panned away from is asked
+    // for again when it is wanted.
+    function pumpArt(view) {
+        while (view.artInFlight < ART_FETCHES && view.artQueue.length > 0) {
+            const key = view.artQueue.pop();
+            if (!view.artWanted.has(key)) {
+                view.artTiles.delete(key);
+                continue;
+            }
+            const tiles = view.artTiles;
+            const [z, x, y] = key.split('/');
+            const image = new Image();
+            image.src = fill(view.urls.art, { continent: view.continent, z, x, y });
+            view.artInFlight++;
+            image.decode()
+                .then(() => { if (tiles.has(key)) tiles.get(key).image = image; })
+                .catch(() => { if (tiles.has(key)) tiles.get(key).image = false; })
+                .finally(() => {
+                    view.artInFlight--;
+                    if (view.disposed) return;
+                    forgetArt(view);
+                    redraw(view);
+                    pumpArt(view);
+                });
+        }
+    }
+
+    // Keeps the tiles drawn last: beyond ART_KEPT, the least lately drawn go.
+    function forgetArt(view) {
+        if (view.artTiles.size <= ART_KEPT) return;
+        const old = [...view.artTiles.entries()]
+            .filter(([key, tile]) => tile.image !== null && !view.artWanted.has(key))
+            .sort((a, b) => a[1].used - b[1].used);
+        for (let i = 0; i < old.length && view.artTiles.size > ART_KEPT; i++) view.artTiles.delete(old[i][0]);
+    }
+
+    // Draws again on the next frame, once for everything that arrived meanwhile.
+    function redraw(view) {
+        if (view.redrawQueued) return;
+        view.redrawQueued = true;
+        requestAnimationFrame(() => {
+            view.redrawQueued = false;
+            render(view);
+        });
+    }
+
     // --- drawing -------------------------------------------------------------------------------
 
     function render(view) {
@@ -691,9 +862,11 @@
                 layers.push(new deck.BitmapLayer({
                     id: 'relief-image', image: view.overview.image, bounds: view.overview.bounds, parameters: under,
                 }));
+                layers.push(...artLayers(view, under));
                 // Only while tiles show: a SolidPolygonLayer whose data becomes empty keeps drawing its
-                // last polygons (deck.gl 9.4), which left a black square where tiles had shown.
-                if (shown.size) {
+                // last polygons (deck.gl 9.4), which left a black square where tiles had shown. Over the
+                // map art there is none: the art shows what is not walkable.
+                if (shown.size && !artShown(view)) {
                     layers.push(new deck.SolidPolygonLayer({
                         id: 'relief-holes', data: detail.filter(c => shown.has(c.key)), material: false,
                         getPolygon: c => c.polygon, getFillColor: GROUND_CLEAR, parameters: under,
@@ -702,6 +875,9 @@
             }
         }
 
+        // Over the map art a tile's polygons are see-through: the art shows what is there, the
+        // polygons where a bot can walk.
+        const mesh = artShown(view) ? ART_MESH_ALPHA : 255;
         for (const cell of detail) {
             const polygons = view.tiles.get(cell.key);
             if (!polygons) continue;
@@ -709,8 +885,9 @@
                 id: 'tile-' + cell.key, data: polygons, _full3d: true, pickable: '3d', material: false,
                 stroked: true, filled: true, lineWidthUnits: 'pixels', getLineWidth: 1,
                 getPolygon: p => p.polygon,
-                getFillColor: p => p.water ? WATER : heightColor(p.height),
+                getFillColor: p => [...(p.water ? WATER : heightColor(p.height)), mesh],
                 getLineColor: OUTLINE,
+                updateTriggers: { getFillColor: mesh },
             }));
         }
 
@@ -894,8 +1071,11 @@
             const world = await response.json();
             view.world = {
                 mapIds: new Map(world.continents.map(c => [c.name, c.mapId])),
+                arts: new Map(world.continents.filter(c => c.art).map(c => [c.name, c.art])),
                 zones: new Map(world.zones.map(z => [z.uiMapId, z])),
             };
+            markArt(view);
+            render(view);
         } catch (e) {
             window.pathingUi.log('Zone names for the pointer could not be read: ' + e.message);
         }
@@ -975,6 +1155,7 @@
                 continent: v.continent,
                 reliefTiles: v.overview ? v.overview.cells.length : 0,
                 detailTiles: [...v.tiles.values()].filter(t => t).length,
+                art: artShown(v) ? v.artDrawn : null,
                 viewState: { target: v.viewState.target, zoom: v.viewState.zoom, rotationX: v.viewState.rotationX },
                 layers: (v.deck.props.layers || []).map(l => l.id + ':' + (Array.isArray(l.props.data) ? l.props.data.length : '?')),
                 routes: v.scene.routes.map(r => r.id + ':' + r.kind + ':' + r.path.length),
@@ -996,5 +1177,5 @@
         return { x: sx, y: sy };
     }
 
-    window.worldView = { create, setScene, setTool, setTilt, fit, centerOn, setPicking, dispose, describe, screenOf };
+    window.worldView = { create, setScene, setTool, setTilt, setArt, fit, centerOn, setPicking, dispose, describe, screenOf };
 })();
