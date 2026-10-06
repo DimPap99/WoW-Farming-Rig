@@ -90,7 +90,25 @@ with walkable ground inside.
 
 ## Running a route
 
-From the web UI: start BlazorServer (`BlazorServer\build.bat`, then
+From the Control Center, through the game PC's bot agent (see
+[the central services](pathing-api.md#the-bot-manager-and-the-agents)):
+
+1. Start the Pathing Service, the Bot Manager and the Control Center. On the game PC, start
+   the agent: `HeadlessServer\run.bat --agent --manager http://<central-pc>:5030
+   --pathing-service http://<central-pc>:5010`, or install its logon task.
+2. On **Fleet**, open the bot's console. Choose WoW: Forever, the route and its time bound
+   (1 to 600 minutes), then Save and Start.
+3. The agent first pulls the route, and Forever's cost zones, from the Pathing Service into
+   its own `Json`. The run then lists its steps, waits for the preflight, and asks for a
+   click into the game window (the console says so), as below.
+4. Stop releases the keys and the mouse first. The run's lines are in the console, in its
+   run history, and in `local/logs/agent-<route>-<time>.log` when that folder exists.
+
+The route is checked as the run loads it, so a route the Forever routes page shows as refused
+is refused here too, with the step.
+
+From BlazorServer, until the agent has passed its Windows checks (the page then goes, known
+issue 24): start BlazorServer (`BlazorServer\build.bat`, then
 `BlazorServer\run.bat`) and open **Forever runs** at `http://localhost:5000`.
 It lists the route files with their steps (or why one is refused), starts one
 with a time bound, shows the run's activity, progress and output as it goes,

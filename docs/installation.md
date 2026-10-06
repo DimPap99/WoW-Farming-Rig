@@ -10,7 +10,7 @@ This section guides you through the complete setup process. Here's an overview o
 | 4 | Build the application | Compile the source code into runnable programs |
 | 5 | Configure the addon | Set up communication between WoW and the application |
 | 6 | Start the dashboard | Launch the web interface for control and monitoring |
-| 7 | (Optional) HeadlessServer | Run without UI for lower resource usage |
+| 7 | (Optional) HeadlessServer | Run without UI for lower resource usage, or as this PC's bot agent |
 | 8-11 | Configure WoW client | Set up keybindings and interface options |
 | 12 | Create class profile | Define your combat rotation and behavior |
 

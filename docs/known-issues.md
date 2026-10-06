@@ -158,6 +158,21 @@ commit that fixed it.
     - **Fix (not started):** a poll that fails is the poller's news, not an error: quieten the
       resilience pipeline's logging for the pollers (or give them a client without retries), and
       log the state change once, as `ServiceStatus` does.
+    - The agent's data sync uses the same client and was quieted in its own settings
+      (`headless_appsettings.json`: `System.Net.Http.HttpClient` at Warning, `Polly` at Fatal, since
+      Polly logs the last failed attempt at Error); the Control Center's pollers are not.
+
+31. **A file deleted centrally stays on the bot PCs.**
+    - **Where:** `BotAgent/Sync/DataSync`. The sync never deletes (Phase 3, decision 5): it brings a
+      run's files up to date and keeps a local change aside before replacing it, but a file the
+      Pathing Service no longer has is left as it is.
+    - **Effect:** a road or danger zone removed in the Control Center keeps shaping routes on a bot
+      PC that synced it before. A cost-zone file is deleted when its zone map's last zone goes, and
+      the bot's `CostZoneWatcher` reads whatever is in the folder. A recorded path or a route deleted
+      centrally stays usable there too, which matters less: it runs only when named.
+    - **Fix (not started):** for cost zones, mirror an era's folder whole, keeping aside what it
+      removes, or have the service list what was deleted. Either changes how a bot walks, so the
+      bot PC should say what it removed.
 
 ## Fixed
 
