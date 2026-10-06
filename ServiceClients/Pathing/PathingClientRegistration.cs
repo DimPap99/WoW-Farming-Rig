@@ -2,9 +2,15 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
+using Polly;
+using Polly.Timeout;
+
 using ServiceClients.Security;
 
 using System;
+using System.Net;
+using System.Net.Http;
+using System.Threading.Tasks;
 
 namespace ServiceClients.Pathing;
 
@@ -16,7 +22,10 @@ public static class PathingClientRegistration
     /// <summary>The limit for all attempts together.</summary>
     public static readonly TimeSpan TotalTimeout = TimeSpan.FromSeconds(45);
 
-    /// <summary>Every call is safe to repeat: routes are queries, saves replace, deletes are idempotent.</summary>
+    /// <summary>
+    /// Every call is safe to repeat (routes are queries, saves replace, deletes are idempotent), but
+    /// only what <see cref="IsWorthRetrying"/> names is repeated.
+    /// </summary>
     public const int Retries = 2;
 
     /// <summary>
@@ -59,10 +68,27 @@ public static class PathingClientRegistration
             options.AttemptTimeout.Timeout = AttemptTimeout;
             options.TotalRequestTimeout.Timeout = TotalTimeout;
             options.Retry.MaxRetryAttempts = Retries;
+            options.Retry.ShouldHandle = args => ValueTask.FromResult(IsWorthRetrying(args.Outcome));
+            // One breaker serves every call: a continent that is busy, or a file that is bad, must not
+            // shut out the rest. It opens on what says the service itself is out of reach.
+            options.CircuitBreaker.ShouldHandle = args =>
+                ValueTask.FromResult(IsWorthRetrying(args.Outcome) || args.Outcome.Exception is TimeoutRejectedException);
             // The breaker must sample at least two attempts' worth of time.
             options.CircuitBreaker.SamplingDuration = AttemptTimeout * 2;
         });
 
         return builder;
+    }
+
+    /// <summary>
+    /// What a retry can fix: the request did not reach the service (<see cref="HttpRequestException"/>),
+    /// or a gateway in front of it failed (502, 504). Not a 500, which comes again (an unreadable
+    /// file, a planner exception); not a 503, which a continent answers after its lane already waited
+    /// 10 s; and not an attempt that timed out, which would run its search again.
+    /// </summary>
+    public static bool IsWorthRetrying(Outcome<HttpResponseMessage> outcome)
+    {
+        return outcome.Exception is HttpRequestException ||
+               outcome.Result?.StatusCode is HttpStatusCode.BadGateway or HttpStatusCode.GatewayTimeout;
     }
 }

@@ -168,6 +168,8 @@ commit that fixed it.
     - The agent's data sync uses the same client and was quieted in its own settings
       (`headless_appsettings.json`: `System.Net.Http.HttpClient` at Warning, `Polly` at Fatal, since
       Polly logs the last failed attempt at Error); the Control Center's pollers are not.
+    - The pathing client no longer repeats a 500 or a 503 (item 37), which takes those out of the
+      noise; a service that is down is still retried and logged on every poll.
 
 31. **A file deleted centrally stays on the bot PCs.**
     - **Where:** `BotAgent/Sync/DataSync`. The sync never deletes (Phase 3, decision 5): it brings a
@@ -213,22 +215,6 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
         Unavailable (retryable) instead of BadRequest.
     - **Fix (not started):** read a route only from the statuses that carry one, map the rest by
       status code, read the body once, and check points before sending.
-
-37. **The pathing client retries a busy service.**
-    - **Where:** `ServiceClients/Pathing/PathingClientRegistration` (`AddStandardResilienceHandler`).
-    - **Cause:** the standard handler retries every 5xx, POST included.
-      `BotManagerClientRegistration` calls `DisableForUnsafeHttpMethods`; this one does not.
-    - **Effect:**
-      - A 503 Busy (the lane already waited 10 s) is tried 3 times, so the caller learns after
-        about 35 s and the lane sees 3 times the waiters. A 500 Unreadable is retried for
-        nothing.
-      - An attempt cut off at 20 s keeps the gate, since the planner checks the token only while
-        waiting for it, so the retry queues behind it.
-      - One breaker serves every call through the client: under fleet load a busy continent
-        could fail path, cost-zone and health calls too.
-      - The log noise is item 30.
-    - **Fix (not started):** no retry on 503 or 500 for POSTs (or honour a Retry-After), and
-      check the token after the gate.
 
 38. **A planner lane never sees tiles that others write.** Item 12 fixed this for the service's
     own bakes.
@@ -349,6 +335,19 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       unreadable file fails the whole GET.
 
 ## Fixed
+
+37. **The pathing client retried a busy service** (Phase 1 review, 2026-10-06). The standard
+    resilience handler retried every 5xx, POST included: a 503 Busy (the lane had already waited
+    10 s) was tried 3 times, so the caller learned after about 35 s and the lane saw 3 times the
+    waiters, and a 500 was retried for nothing. One breaker served every call, so a busy continent
+    could shut out path, cost-zone and health calls too. The client now retries only what a retry
+    can fix (`PathingClientRegistration.IsWorthRetrying`): a request that did not reach the service,
+    or a gateway's 502 or 504; not a 500, a 503 or an attempt that timed out, which would run its
+    search again. The breaker opens on those and on timeouts, not on a busy continent or a bad
+    file. `RoutePlanner` checks the caller's token once it holds the lane, so a caller that gave up
+    while it waited does not get a search. Left: a search that has started runs to its end after
+    its caller has gone, since the pathfinder takes no token; a continent route stops at its next
+    leg.
 
 33. **A cost-zone file could pass validation and still hang every load** (Phase 1 review,
     2026-10-06). `CostZoneLoader.Problem` capped width, points, coordinates and each shape's size,

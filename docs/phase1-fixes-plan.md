@@ -1,6 +1,6 @@
 # Phase 1 review - the fixes: plan and handoff
 
-**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1, 1.2, 1.3. A max-level review of Phase 1
+**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1, 1.2, 1.3, 1.4. A max-level review of Phase 1
 (84c93499..7ef44187, the Pathing Service, the planner, the contracts, the pathing client and
 `ServiceTests`), checked against the code as of e71c5781, found what is now items 32 to 46 of
 [known-issues.md](known-issues.md). It also corrected items 2 and 12 and the floor-memory design
@@ -120,7 +120,7 @@ on the machine it ran on. Line numbers below are as of e71c5781.
 - **Trap:** the bot loads the same files through the same loader, so the cap must stay far above
   anything real.
 
-### 1.4 The pathing client retries a busy service (item 37)
+### 1.4 The pathing client retries a busy service (item 37) - done
 
 - **Where:** `PathingClientRegistration` (`:57`). `BotManagerClientRegistration` (`:43`) calls
   `DisableForUnsafeHttpMethods`, but that would also stop retrying a route POST that never
@@ -138,6 +138,8 @@ on the machine it ran on. Line numbers below are as of e71c5781.
 - **Test:** a client from `AddPathingClient` over a stub handler
   (`ConfigurePrimaryHttpMessageHandler`), counting attempts: a 503 is tried once, a 500 once,
   and an `HttpRequestException` 3 times.
+- As built: the circuit breaker takes the same rule (plus attempt timeouts), so a busy continent
+  no longer opens it for every call; tested with 120 503s and then a route that is found.
 - Item 30 (the log noise) shrinks with this, but stays its own item.
 
 ### 1.5 A cost-zone save answers 204 when the reload failed (item 41)
