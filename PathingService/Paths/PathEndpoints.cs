@@ -7,9 +7,12 @@ using Microsoft.AspNetCore.Routing;
 
 using PathingService.Hosting;
 
+using PPather.Navmesh;
 using PPather.Planning;
 
 using SharedLib;
+
+using System.Globalization;
 
 namespace PathingService.Paths;
 
@@ -48,13 +51,20 @@ public static class PathEndpoints
                     return Results.Problem(detail: "x and y must be finite numbers", statusCode: StatusCodes.Status400BadRequest);
                 }
 
+                if (!NavmeshCoords.InWorld(x, y))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest, detail: string.Create(CultureInfo.InvariantCulture,
+                        $"x and y must be within {NavmeshCoords.WorldEdge:F2} yards of 0, the edge of the world"));
+                }
+
                 (int areaId, float z) = planner.GetAreaAndHeight(mapId, x, y);
                 int uiMapId = maps.TryGetZoneOfArea(areaId, out WorldMapArea zone) ? zone.UIMapId : 0;
                 return Results.Ok(new AreaAtPoint(areaId, z, uiMapId));
             })
             .WithTags(Tag)
             .WithSummary("Area id, its zone map and the walkable height at a world point of a continent (mapId), from baked data only")
-            .Produces<AreaAtPoint>();
+            .Produces<AreaAtPoint>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
 
         return app;
     }

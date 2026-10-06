@@ -57,14 +57,9 @@ public sealed class RouteHandler(RoutePlanner planner)
             return "points must be finite numbers";
         }
 
-        if (request.Tuning is RouteTuning tuning &&
-            (!float.IsFinite(tuning.JitterYards) || tuning.JitterYards < 0f ||
-             tuning.EdgeMarginYards is float margin && (!float.IsFinite(margin) || margin < 0f)))
-        {
-            return "jitter and edge margin must be finite and not negative";
-        }
-
-        return null;
+        return request.Tuning is RouteTuning tuning
+            ? new NavmeshQueryTuning(tuning.JitterYards, tuning.JitterSeed, tuning.EdgeMarginYards).Problem()
+            : null;
     }
 
     private static bool IsFinite(Point3 p)
@@ -85,7 +80,7 @@ public sealed class RouteHandler(RoutePlanner planner)
             RoutePlanStatus.Partial => RouteStatus.Partial,
             RoutePlanStatus.NoPath => RouteStatus.NoPath,
             RoutePlanStatus.NotBaked => RouteStatus.NotBaked,
-            RoutePlanStatus.UnknownMap => RouteStatus.BadRequest,
+            RoutePlanStatus.UnknownMap or RoutePlanStatus.Refused => RouteStatus.BadRequest,
             _ => RouteStatus.Unavailable,
         };
     }

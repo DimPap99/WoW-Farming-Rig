@@ -149,7 +149,7 @@ Pathing Service on the same PC, or commit the authored files to the repository.
 
 | Endpoint | Body / query | Answer |
 |---|---|---|
-| `POST /api/v1/routes/find` | `RouteRequest(Client, UiMapId, Space: World\|Map, From, To, Tuning, Search: Band\|Continent)` | `RouteResponse(Status, Points, Smoothed, ElapsedMs, Detail)`; a `Partial` route holds the points as far as the search got |
+| `POST /api/v1/routes/find` | `RouteRequest(Client, UiMapId, Space: World\|Map, From, To, Tuning, Search: Band\|Continent)` | `RouteResponse(Status, Points, Smoothed, ElapsedMs, Detail)`; a `Partial` route holds the points as far as the search got; `BadRequest` (400) for tuning past 10 yards of jitter or edge margin |
 | `GET /api/v1/capabilities` | | `PathingCapabilities(ApiVersion, Client, Era, PathsAreSmoothed, Continents)` |
 | `GET /api/v1/health` | | baked tiles per continent and resident lanes |
 | `GET /api/v1/paths?filter=` | | `RecordedPathInfo[]` |
@@ -157,7 +157,7 @@ Pathing Service on the same PC, or commit the authored files to the repository.
 | `GET /api/v1/forever/routes` | | `ForeverRouteInfo[]`, each checked as a run loads it |
 | `GET/PUT/DELETE /api/v1/forever/routes/{name}` | `ForeverRouteText` on PUT | `ForeverRouteDocument` (text and check) / 204, or 400 with the step / 404 |
 | `POST /api/v1/forever/routes/check` | `ForeverRouteDraft` | `ForeverRouteInfo`, nothing saved |
-| `GET /api/v1/area?mapId&x&y` | | `AreaAtPoint(AreaId, Z, UiMapId)`: the baked area, its zone (a sub-area's parent), the ground's height |
+| `GET /api/v1/area?mapId&x&y` | | `AreaAtPoint(AreaId, Z, UiMapId)`: the baked area, its zone (a sub-area's parent), the ground's height; 400 beyond the edge of the world (17,066.67 yards from 0) |
 | `GET /api/v1/costzones/{continent}` | | `CostZoneSet` (roads and danger zones by uiMap) |
 | `PUT /api/v1/costzones/{continent}/roads/{uiMapId}` | `RoadZones` | 204, or 400 with the reason |
 | `PUT /api/v1/costzones/{continent}/danger/{uiMapId}` | `DangerZones` | 204, or 400 with the reason |
@@ -177,7 +177,7 @@ Pathing Service on the same PC, or commit the authored files to the repository.
 | `GET/POST /api/v1/bake` | `BakeRequest(Continent?, AdtX?, AdtY?)` on POST | `BakeStatus`; 202, 400, or 409 (busy, no game files) |
 | `POST /api/v1/bake/cancel` | | `BakeStatus`; 409 when none runs |
 | `POST /api/v1/areagrids?continent` | | 202; 409 without game files |
-| `POST /api/v1/watch/paths`, `/watch/markers`, `/watch/clear` | `WatchPath`, `WatchMarker` | 202 |
+| `POST /api/v1/watch/paths`, `/watch/markers`, `/watch/clear` | `WatchPath`, `WatchMarker` | 202; 400 with the reason, such as a point beyond the edge of the world |
 | `/watchHub` (SignalR, MessagePack) | `Replay()`, `Terrain(continent, tiles)`, `WatchRoutes()` (routes only, no scene) | `drawPath`, `drawLine`, `drawSphere`, `removeMesh`, `clear`, `log`, `addNavmeshTile`, `addTerrainTile`; to route watchers `routePlanned(WatchRoute)` and `clear` |
 | `/tiles`, `/dbc`, `/area`, `/npcspawnlocations`, `/mailboxlocations`, `/path`, `/locations` | | the map's world data files (`WorldData`) |
 

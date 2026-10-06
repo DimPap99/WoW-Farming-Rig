@@ -51,7 +51,7 @@ public enum RouteSearch
     Continent
 }
 
-/// <summary>Shapes one route; every field applies to this request only.</summary>
+/// <summary>Shapes one route; every field applies to this request only. The service refuses more than 10 yards of either.</summary>
 /// <param name="JitterYards">Random offset of interior corners in yards, so repeated trips do not retrace one line; 0 disables it.</param>
 /// <param name="JitterSeed">Makes the jitter reproducible; null draws a fresh seed.</param>
 /// <param name="EdgeMarginYards">How far corners are pushed off walls; null keeps the service's default.</param>

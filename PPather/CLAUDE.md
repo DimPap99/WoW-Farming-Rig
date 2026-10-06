@@ -57,6 +57,12 @@ yields `World/Maps/...` on macOS and matches nothing. Use interpolation with `\\
 `cata`/`mop` to themselves. A stale mesh routes the bot through solid geometry, so this
 is deliberately stricter than the minimap-art sharing in `DataConfig.TileEra`.
 
+**Detour never returns for a point far off the world grid.** `CalcTileLoc` casts with
+`(int)MathF.Floor`, which saturates on .NET 9 and later, and `for (x = minx; x <= maxx; ++x)`
+then wraps forever. `TryGetHeight` refuses such a point (`NavmeshCoords.InWorld`); any new entry
+point that takes a caller's coordinate checks it too. Bound the inputs here; don't patch the
+submodule for it.
+
 **`PPather.Graph.Path` collides with `System.IO.Path`.** Fully qualify it in any file
 doing I/O.
 

@@ -184,25 +184,6 @@ commit that fixed it.
 Items 32 to 46 come from the review of Phase 1 (84c93499..7ef44187, 2026-10-06), checked
 against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](phase1-fixes-plan.md).
 
-32. **One request can hang a continent's planner lane for good.**
-    - **Where:** `PathingService/Paths/PathEndpoints` (`GET /area`) and `RouteHandler.Problem`
-      (`tuning`), down to DotRecast's `DtNavMesh.CalcTileLoc` and `DtNavMeshQuery.QueryPolygons`.
-    - **Cause:** only finiteness is checked. `CalcTileLoc` casts with `(int)MathF.Floor`, which
-      saturates to `int.MaxValue` on .NET 9 and later, and `for (x = minx; x <= maxx; ++x)` then
-      wraps and never ends (nothing builds with overflow checks). With 133.33-yard tiles that
-      starts at about 2.86e11: an `/area` x or y, or an `edgeMarginYards` near 4e11, whose edge
-      push snaps a point that far out.
-      - `jitterYards` has no ceiling either. DotRecast's `FindRandomPointWithinCircle` floods
-        every polygon in the radius for each corner: 100000 took 35.8 s on a 5.3 km Kalimdor
-        route (2 ms at 1.5).
-    - **Effect:** the request holds the continent's lane gate forever (a route also holds the
-      tile cache's read lock). The continent's routes answer 503 after 10 s, `/area` answers
-      height 0, every cost-zone save and reload waits for good in `Gate.Wait()`, and a core stays
-      busy until restart. `WatchDrawing` reaches the same height lookup from a POST body.
-    - **Fix (not started):** refuse points outside the world (the cost-zone check's ±40,000 is
-      one bound) and cap `jitterYards` and `edgeMarginYards` at a few yards, in `RoutePlanner` so
-      every caller gets it.
-
 33. **A cost-zone file can pass validation and still hang every load.**
     - **Where:** `CostZoneLoader.Problem` (the service's save check) and `CostZones.MarkLeg`.
     - **Cause:** `Problem` caps width (64), points per segment (50,000), coordinates (±40,000)
@@ -393,6 +374,21 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       unreadable file fails the whole GET.
 
 ## Fixed
+
+32. **One request could hang a continent's planner lane for good** (Phase 1 review, 2026-10-06).
+    - **Cause:** only finiteness was checked. DotRecast's `CalcTileLoc` casts with
+      `(int)MathF.Floor`, which saturates far outside the world grid, and its loop over the tiles
+      then never ends. An `/area` point or a watch drawing beyond about 2.86e11 yards, or an
+      `edgeMarginYards` that pushed a point that far, held the lane's gate, a core and every
+      cost-zone save until a restart. `jitterYards` had no ceiling either: 100,000 took 36 s on one
+      route.
+    - **Fix:** a world point must lie within `NavmeshCoords.WorldEdge` (17,066.67 yards, the edge
+      of the world grid) on each axis. `/area` and the watch drawings answer 400 beyond it, and
+      `RoutePlanner.GetAreaAndHeight` and `NavmeshPathfinder.TryGetHeight` answer nothing there
+      without asking Detour. Jitter and edge margin are capped at 10 yards each
+      (`NavmeshQueryTuning`): the route endpoint answers 400 and the planner `Refused`. The tests
+      run against a deadline; with the guard taken out, the planner's test times out on the real
+      hang.
 
 27. **A route that stopped short was reported as found** (2026-10-05). The band search loads
     tiles only near the straight line; Durotar to Tanaris stopped 2,837 yards short in southern

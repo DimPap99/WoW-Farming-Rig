@@ -229,11 +229,16 @@ public sealed class NavmeshPathfinder : IDisposable
     /// probes the nearest poly with a tall vertical search box so a z-less query
     /// still snaps to the surface. Loads the covering tile from disk if baked but
     /// never bakes (so it needs no game files); returns false when no navmesh
-    /// covers the point.
+    /// covers the point, and for a point off the world grid without asking Detour.
     /// </summary>
     public bool TryGetHeight(float worldX, float worldY, out float z)
     {
         z = 0f;
+        if (!NavmeshCoords.InWorld(worldX, worldY))
+        {
+            return false;
+        }
+
         Vector3 wow = new(worldX, worldY, 0f);
 
         NavmeshCoords.GetTileIndex(worldX, worldY, out int tx, out int tz);

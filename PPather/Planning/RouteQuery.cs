@@ -57,7 +57,10 @@ public enum RoutePlanStatus
     UnknownMap,
 
     /// <summary>The continent's lane stayed busy past the planner's wait budget.</summary>
-    Busy
+    Busy,
+
+    /// <summary>The query asks for more work than the planner does: tuning past <see cref="NavmeshQueryTuning"/>'s caps.</summary>
+    Refused
 }
 
 /// <summary>One route request to <see cref="RoutePlanner.Find"/>.</summary>

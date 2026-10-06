@@ -45,4 +45,32 @@ public sealed class NavmeshQueryMemory
 /// <param name="JitterYards">Random interior-corner offset in yards; 0 disables it.</param>
 /// <param name="JitterSeed">Seeds the jitter; null draws a fresh seed.</param>
 /// <param name="EdgeMarginYards">Edge margin override; null keeps the configured default.</param>
-public readonly record struct NavmeshQueryTuning(float JitterYards = 0f, int? JitterSeed = null, float? EdgeMarginYards = null);
+public readonly record struct NavmeshQueryTuning(float JitterYards = 0f, int? JitterSeed = null, float? EdgeMarginYards = null)
+{
+    /// <summary>
+    /// The most jitter a caller may ask for. Each interior corner searches every polygon within
+    /// this radius, and the query holds its pathfinder meanwhile: 100,000 yards took 36 s on one
+    /// route, 1.5 yards 2 ms.
+    /// </summary>
+    public const float MaxJitterYards = 10f;
+
+    /// <summary>
+    /// The widest edge margin a caller may ask for (the configured default is 1.5). A push off
+    /// the wall snaps a point that far out, and one beyond the world grid never comes back from
+    /// Detour (<see cref="NavmeshCoords.InWorld"/>).
+    /// </summary>
+    public const float MaxEdgeMarginYards = 10f;
+
+    /// <summary>Why a caller's tuning is refused, or null: each value finite, not negative and within its cap.</summary>
+    public string? Problem()
+    {
+        if (!float.IsFinite(JitterYards) || JitterYards is < 0f or > MaxJitterYards)
+        {
+            return $"jitter must be 0 to {MaxJitterYards} yards";
+        }
+
+        return EdgeMarginYards is float margin && (!float.IsFinite(margin) || margin is < 0f or > MaxEdgeMarginYards)
+            ? $"the edge margin must be 0 to {MaxEdgeMarginYards} yards"
+            : null;
+    }
+}

@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -22,6 +23,22 @@ public static class NavmeshCoords
 {
     /// <summary>Rc-space grid origin (both horizontal axes): -32 ADT.</summary>
     public const float Origin = -ChunkReader.ZEROPOINT;
+
+    /// <summary>
+    /// The edge of the world grid, in yards from 0 on each horizontal axis (32 ADTs). No tile
+    /// exists beyond it.
+    /// </summary>
+    public const float WorldEdge = ChunkReader.ZEROPOINT;
+
+    /// <summary>
+    /// The point is on the world grid. Check a caller's point here before it reaches a Detour
+    /// query: Detour casts a coordinate to a tile index with <c>(int)</c>, which saturates far
+    /// outside the grid, and its loop over those tiles then never ends.
+    /// </summary>
+    public static bool InWorld(float wowX, float wowY)
+    {
+        return Math.Abs(wowX) <= WorldEdge && Math.Abs(wowY) <= WorldEdge;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Vector3 ToRc(in Vector3 wow)
