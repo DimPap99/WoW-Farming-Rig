@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Numerics;
 
@@ -64,7 +65,7 @@ public static class CostZoneLoader
 
         foreach (string file in Directory.GetFiles(continentDir, "*.json"))
         {
-            if (TryRead(logger, file, out RoadData? road) && road != null && Validate(logger, file, road))
+            if (TryRead(logger, file, out RoadData? road) && road != null && Validate(logger, file, road, roadCoreHalfWidth))
             {
                 roads.Add(road);
             }
@@ -113,7 +114,17 @@ public static class CostZoneLoader
     //
     //   Absurd extents - CostZones rasterizes a shape's bounding box into 33yd
     //   chunks. A radius of 1e9 is 10^15 chunk iterations, which hangs whichever
-    //   thread is reloading rather than failing.
+    //   thread is reloading rather than failing. Sane shapes add up the same way:
+    //   a road's every leg walks its own box, so the file's total is capped too.
+
+    /// <summary>
+    /// The most cells one file may make <see cref="CostZones.Build"/> visit, counted as it walks
+    /// them (<see cref="CostZones.RasterCells(in RoadSegment, float)"/>): a fraction of a second.
+    /// The largest file in the repository takes 31,525 and all 67 together 592,395, while a road
+    /// zig-zagging corner to corner would take about 1.15e12 and hang every load of its continent,
+    /// in the service and on the bot.
+    /// </summary>
+    public const long MaxRasterCells = 2_000_000;
 
     /// <summary>Widest coordinate the WoW map can hold, plus slack.</summary>
     private const float CoordLimit = 40000f;
@@ -128,9 +139,9 @@ public static class CostZoneLoader
 
     private static bool IsSaneCoord(float v) => float.IsFinite(v) && MathF.Abs(v) <= CoordLimit;
 
-    private static bool Validate(ILogger logger, string file, RoadData data)
+    private static bool Validate(ILogger logger, string file, RoadData data, float roadCoreHalfWidth)
     {
-        string? problem = Problem(data);
+        string? problem = Problem(data, roadCoreHalfWidth);
         if (problem != null)
         {
             logger.LogWarning("Cost zone file {File} rejected: {Problem}.", file, problem);
@@ -153,7 +164,9 @@ public static class CostZoneLoader
     /// A writer checks with this before saving, so a bad edit is refused at once instead of
     /// being skipped later with only a warning.
     /// </summary>
-    public static string? Problem(RoadData data)
+    /// <param name="data">The file's roads.</param>
+    /// <param name="roadCoreHalfWidth">The loader's road core, which sets how far a narrow road reaches.</param>
+    public static string? Problem(RoadData data, float roadCoreHalfWidth = CostZones.DefaultRoadCoreHalfWidth)
     {
         if (data.Roads == null)
         {
@@ -181,7 +194,31 @@ public static class CostZoneLoader
             }
         }
 
-        return null;
+        // Counted last: the count needs sane widths and coordinates.
+        double cells = 0;
+        double mostCells = 0;
+        string most = string.Empty;
+        foreach (RoadSegment segment in data.Roads)
+        {
+            double roadCells = CostZones.RasterCells(segment, roadCoreHalfWidth);
+            cells += roadCells;
+            if (roadCells > mostCells)
+            {
+                mostCells = roadCells;
+                most = segment.Name;
+            }
+        }
+
+        return cells > MaxRasterCells
+            ? TooMuchWork("roads", cells, $"road '{most}'", mostCells) +
+              ": a long diagonal leg costs its whole bounding box, so add points along it"
+            : null;
+    }
+
+    private static string TooMuchWork(string what, double cells, string most, double mostCells)
+    {
+        return string.Create(CultureInfo.InvariantCulture,
+            $"the {what} would take {cells:N0} steps to load, more than the {MaxRasterCells:N0} allowed; the most is {most} with {mostCells:N0}");
     }
 
     /// <inheritdoc cref="Problem(RoadData)"/>
@@ -233,7 +270,33 @@ public static class CostZoneLoader
             }
         }
 
-        return null;
+        // Each shape is capped, but not how many a file holds.
+        double cells = 0;
+        double mostCells = 0;
+        string most = string.Empty;
+        foreach (CircleDangerZone c in data.Circles)
+        {
+            double shapeCells = CostZones.RasterCells(c);
+            cells += shapeCells;
+            if (shapeCells > mostCells)
+            {
+                mostCells = shapeCells;
+                most = $"circle '{c.Name}'";
+            }
+        }
+
+        foreach (RectangleDangerZone r in data.Rectangles)
+        {
+            double shapeCells = CostZones.RasterCells(r);
+            cells += shapeCells;
+            if (shapeCells > mostCells)
+            {
+                mostCells = shapeCells;
+                most = $"rectangle '{r.Name}'";
+            }
+        }
+
+        return cells > MaxRasterCells ? TooMuchWork("danger zones", cells, most, mostCells) : null;
     }
 
     private static bool TryRead<T>(ILogger logger, string file, out T? value) where T : class

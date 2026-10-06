@@ -184,19 +184,6 @@ commit that fixed it.
 Items 32 to 46 come from the review of Phase 1 (84c93499..7ef44187, 2026-10-06), checked
 against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](phase1-fixes-plan.md).
 
-33. **A cost-zone file can pass validation and still hang every load.**
-    - **Where:** `CostZoneLoader.Problem` (the service's save check) and `CostZones.MarkLeg`.
-    - **Cause:** `Problem` caps width (64), points per segment (50,000), coordinates (±40,000)
-      and each shape's size, but not a leg's length or how many segments and shapes a file
-      holds. `MarkLeg` walks each leg's whole bounding box in 16.7-yard steps.
-    - **Effect:** a 1.2 MB road of 50,000 points zig-zagging corner to corner is accepted, and
-      loading it takes about 1.15e12 steps (worked out from the code, not timed). It hangs the
-      PUT, the watcher, each client retry, every lane open (inside the planner's global lock)
-      and the bot's own load. The file survives a restart, and the data sync copies it to the
-      bot PCs.
-    - **Fix (not started):** bound the rasterized work in `Problem` (the legs' bounding boxes
-      summed), which the loader and the bot share.
-
 35. **The planner blocks request threads.**
     - **Where:** `RoutePlanner`. Route queries, `/area` and each leg of a continent route wait on
       the lane's `SemaphoreSlim` synchronously for up to 10 s; cost-zone reloads and
@@ -345,6 +332,8 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       continents (`CostZoneStore`). On Linux `azeroth` saves with 204 into a folder nothing
       reads; the data sync then writes it into `Azeroth\` on a Windows bot, which applies it
       while the service does not. Names with `_` or `'` (instances on tbc and later) are refused.
+      The uiMap id is checked only for being not negative, not against the continent's maps, so
+      the number of zone files in a continent, which every load reads, has no bound.
     - A name whose `/` is sent as `%2F` (Swagger UI's "Try it out" encodes the whole name) is
       saved as one flat file in `Json/path`: the `{**name}` route keeps `%2F` and `PathName`
       allows `%`. The repo's clients encode each segment.
@@ -360,6 +349,18 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       unreadable file fails the whole GET.
 
 ## Fixed
+
+33. **A cost-zone file could pass validation and still hang every load** (Phase 1 review,
+    2026-10-06). `CostZoneLoader.Problem` capped width, points, coordinates and each shape's size,
+    but not the rasterizer's work: `CostZones.MarkLeg` walks each leg's whole bounding box in
+    16.7-yard steps, so a road zig-zagging corner to corner (about 1.15e12 steps) was accepted and
+    hung the save, the watcher, every lane open and the bot's own load. `Problem` now counts the
+    cells as the rasterizer walks them (`CostZones.RasterCells`, beside its loops) and refuses a
+    file over `CostZoneLoader.MaxRasterCells` (2,000,000), naming the road or shape that costs the
+    most. The repository's largest file takes 31,525 and all 67 together 592,395. The loader
+    applies the same check, so a file already on disk over the cap is skipped with a warning, here
+    and on the bot. Left: the cap is per file, and a uiMap id is any number (item 46), so a
+    continent's file count is not bounded.
 
 34. **The path store listed, overwrote and deleted the class profiles' path groups** (Phase 1
     review, 2026-10-06). `Json/path` also holds the eight `PathSettings` groups (`1-8_*.json`)

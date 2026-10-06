@@ -181,6 +181,65 @@ public sealed class CostZones
         return 1f + ((offRoad - 1f) * t);
     }
 
+    /// <summary>The rasterizer's step on both axes, in yards: half a chunk.</summary>
+    public const float RasterStep = ChunkReader.CHUNKSIZE * 0.5f;
+
+    /// <summary>
+    /// How many cells <see cref="Build"/> visits for one road: each leg's bounding box, grown by
+    /// the road's reach, in <see cref="RasterStep"/> steps. A long diagonal leg costs its whole box.
+    /// </summary>
+    public static double RasterCells(in RoadSegment segment, float roadCoreHalfWidth = DefaultRoadCoreHalfWidth)
+    {
+        ReadOnlySpan<System.Numerics.Vector2> pts = segment.Points;
+        float influence = Influence(segment, roadCoreHalfWidth);
+        if (pts.Length == 1)
+        {
+            return LegCells(pts[0].X, pts[0].Y, pts[0].X, pts[0].Y, influence);
+        }
+
+        double cells = 0;
+        for (int i = 0; i + 1 < pts.Length; i++)
+        {
+            cells += LegCells(pts[i].X, pts[i].Y, pts[i + 1].X, pts[i + 1].Y, influence);
+        }
+
+        return cells;
+    }
+
+    /// <summary>How many cells <see cref="Build"/> visits for one circle: its bounding box.</summary>
+    public static double RasterCells(in CircleDangerZone circle)
+    {
+        return BoxCells(circle.CenterX - circle.Radius, circle.CenterY - circle.Radius,
+            circle.CenterX + circle.Radius, circle.CenterY + circle.Radius);
+    }
+
+    /// <summary>How many cells <see cref="Build"/> visits for one rectangle.</summary>
+    public static double RasterCells(in RectangleDangerZone rect)
+    {
+        return BoxCells(rect.MinX, rect.MinY, rect.MaxX, rect.MaxY);
+    }
+
+    // The authored half-width becomes the reach of the attraction rather than
+    // the width of a plateau.
+    private static float Influence(in RoadSegment segment, float roadCoreHalfWidth)
+    {
+        return MathF.Max(segment.HalfWidthWorld, roadCoreHalfWidth + ChunkReader.CHUNKSIZE);
+    }
+
+    private static double LegCells(float ax, float ay, float bx, float by, float influence)
+    {
+        return BoxCells(MathF.Min(ax, bx) - influence, MathF.Min(ay, by) - influence,
+            MathF.Max(ax, bx) + influence, MathF.Max(ay, by) + influence);
+    }
+
+    // As the loops walk a box: from the minimum in RasterStep steps while at or below the maximum.
+    private static double BoxCells(float minX, float minY, float maxX, float maxY)
+    {
+        return maxX < minX || maxY < minY
+            ? 0
+            : (Math.Floor((maxX - minX) / RasterStep) + 1) * (Math.Floor((maxY - minY) / RasterStep) + 1);
+    }
+
     private static void RasterizeRoad(in RoadSegment segment, float offRoad, Dictionary<long, float> cost,
         float roadCoreHalfWidth)
     {
@@ -190,9 +249,7 @@ public sealed class CostZones
             return;
         }
 
-        // The authored half-width becomes the reach of the attraction rather
-        // than the width of a plateau.
-        float influence = MathF.Max(segment.HalfWidthWorld, roadCoreHalfWidth + ChunkReader.CHUNKSIZE);
+        float influence = Influence(segment, roadCoreHalfWidth);
 
         if (pts.Length == 1)
         {
@@ -213,7 +270,7 @@ public sealed class CostZones
     private static void MarkLeg(float ax, float ay, float bx, float by,
         float influence, float offRoad, Dictionary<long, float> cost, float roadCoreHalfWidth)
     {
-        float step = ChunkReader.CHUNKSIZE * 0.5f;
+        const float step = RasterStep;
 
         float minX = MathF.Min(ax, bx) - influence;
         float maxX = MathF.Max(ax, bx) + influence;
@@ -263,7 +320,7 @@ public sealed class CostZones
         Dictionary<long, float> cost, HashSet<long> blocked,
         Func<float, float, bool> contains)
     {
-        float step = ChunkReader.CHUNKSIZE * 0.5f;
+        const float step = RasterStep;
 
         // Authored penalties come from the spot-A* era where they were additive
         // costs; treat them as a multiplier over the off-road baseline and clamp
