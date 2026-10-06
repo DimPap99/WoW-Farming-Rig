@@ -302,7 +302,9 @@ Run it with `PathingService/run.sh` (`--exp=` picks the client); Swagger UI is a
   ([known issues](known-issues.md), item 1), so the field never exists without an effect.
 - **The client never throws.** It converts transport failures and refusals into
   `RouteStatus.Unavailable`/`BadRequest` or a failed `ServiceResult`, and retries twice under
-  the standard resilience handler.
+  the standard resilience handler, but only what a retry can fix: a request that did not reach
+  the service, or a gateway's 502 or 504. A 500 comes again and a 503 has already waited for the
+  lane, so neither is repeated, and neither opens the circuit breaker (Phase 1 review).
 - **Bake, world data and the watch hub** moved in Phase 2; the Forever route library moved to
   Phase 3.
 

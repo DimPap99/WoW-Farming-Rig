@@ -172,6 +172,10 @@ public sealed class RoutePlanner : IDisposable
                     return Fail(RoutePlanStatus.Busy, continent, start, $"{continent} kept being reopened; ask again");
                 }
 
+                // The caller may have gone while it waited (a client's attempt timed out): the lane
+                // goes to the next query, not to a search nobody will read.
+                token.ThrowIfCancellationRequested();
+
                 NavmeshPathfinder nav = lane.Pathfinder;
                 resolvedFrom = WithSurfaceHeight(nav, from);
                 resolvedTo = WithSurfaceHeight(nav, to);
@@ -420,6 +424,7 @@ public sealed class RoutePlanner : IDisposable
     }
 
     // Work on the lane's pathfinder under its gate; false when the lane stayed busy or closed meanwhile.
+    // Throws when the caller has gone, even once the gate is taken, as Find does.
     private bool OnLane(Lane lane, CancellationToken token, Action<NavmeshPathfinder> work)
     {
         if (!lane.Gate.Wait(laneWait, token))
@@ -434,6 +439,7 @@ public sealed class RoutePlanner : IDisposable
                 return false;
             }
 
+            token.ThrowIfCancellationRequested();
             work(lane.Pathfinder);
             return true;
         }
