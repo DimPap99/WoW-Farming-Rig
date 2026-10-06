@@ -260,16 +260,11 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - **Fix:** correct the text; rule 4 needs the parity test, or the claim, to cover installs
       with archives.
 
-46. **Smaller findings.** (The first, a null cost-zone entry answering 500, is fixed: see "Fixed".)
-    - Continent names are checked for letters and digits only, not against the client's
-      continents (`CostZoneStore`). On Linux `azeroth` saves with 204 into a folder nothing
-      reads; the data sync then writes it into `Azeroth\` on a Windows bot, which applies it
-      while the service does not. Names with `_` or `'` (instances on tbc and later) are refused.
-      The uiMap id is checked only for being not negative, not against the continent's maps, so
-      the number of zone files in a continent, which every load reads, has no bound.
-    - A name whose `/` is sent as `%2F` (Swagger UI's "Try it out" encodes the whole name) is
-      saved as one flat file in `Json/path`: the `{**name}` route keeps `%2F` and `PathName`
-      allows `%`. The repo's clients encode each segment.
+46. **Smaller findings.** (The null cost-zone entry, the continent names and `%2F` in path names
+    are fixed: see "Fixed".)
+    - A cost-zone save's uiMap id is checked only for being not negative, not against the
+      continent's maps, so the number of zone files in a continent, which every load reads, has no
+      bound. A check would have to keep uiMap 0, the legacy single file's.
     - A lane is built under the planner's global lock (`RoutePlanner.GetLane`): 15-60 ms,
       measured, in which every continent's queries and `/health` wait, again after each bake or
       cache clear.
@@ -287,6 +282,14 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       (`StatusCodeSelector` in `PathingServiceRegistration`); the manager needs the same lines.
 
 ## Fixed
+
+46. **Cost-zone continents and path names were checked too loosely** (item 46's second and third
+    findings; Phase 1 review, 2026-10-06). The store took any name of letters and digits as a
+    continent, so on Linux `azeroth` saved with 204 into a folder nothing read, which the data sync
+    then wrote into `Azeroth\` on a Windows bot; and it refused the client's own `Zul'gurub` or
+    `Azjol_LowerCity`. It now takes the client's continents only (`WorldMapAreaDB`), in any case,
+    and saves under the client's own. `PathName` refuses `%`, so a name whose `/` came as `%2F`
+    (Swagger UI's "Try it out" escapes the whole name) is no longer saved as one flat file.
 
 36. **The pathing client misread failures** (Phase 1 review, 2026-10-06). It read any JSON body
     as a `RouteResponse`: a ProblemDetails (500, 400, 401) became `Status = (RouteStatus)500` with

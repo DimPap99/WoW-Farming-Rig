@@ -9,6 +9,8 @@ using PPather.Navmesh;
 
 using ServiceClients;
 
+using SharedLib;
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -24,16 +26,14 @@ namespace PathingService.CostZones;
 /// <see cref="CostZoneLoader"/> keeps reading the same files. Unlike those controllers, a save
 /// is checked with the loader's own rules first.
 /// </summary>
-public sealed class CostZoneStore(DataConfig dataConfig)
+public sealed class CostZoneStore(DataConfig dataConfig, WorldMapAreaDB maps)
 {
     /// <summary>A continent's old single road file (<c>{continent}.json</c>) is read as this uiMap.</summary>
     public const int LegacyRoadUiMap = 0;
 
-    public const int MaxContinentLength = 64;
-
     public StoreResult<CostZoneSet> Get(string continent)
     {
-        if (ContinentProblem(continent) is string problem)
+        if (ContinentProblem(ref continent) is string problem)
         {
             return StoreResult<CostZoneSet>.Invalid(problem);
         }
@@ -73,7 +73,7 @@ public sealed class CostZoneStore(DataConfig dataConfig)
     /// <summary>Replaces one map's roads; no roads deletes its file.</summary>
     public StoreResult SaveRoads(string continent, int uiMapId, RoadZones? zones)
     {
-        if ((TargetProblem(continent, uiMapId) ?? (zones is null ? "a road set is required" : CostZoneMapping.MissingEntry(zones))) is string problem)
+        if ((TargetProblem(ref continent, uiMapId) ?? (zones is null ? "a road set is required" : CostZoneMapping.MissingEntry(zones))) is string problem)
         {
             return StoreResult.Invalid(problem);
         }
@@ -91,7 +91,7 @@ public sealed class CostZoneStore(DataConfig dataConfig)
     /// <summary>Replaces one map's danger zones; none deletes its file.</summary>
     public StoreResult SaveDanger(string continent, int uiMapId, DangerZones? zones)
     {
-        if ((TargetProblem(continent, uiMapId) ?? (zones is null ? "a danger zone set is required" : CostZoneMapping.MissingEntry(zones))) is string problem)
+        if ((TargetProblem(ref continent, uiMapId) ?? (zones is null ? "a danger zone set is required" : CostZoneMapping.MissingEntry(zones))) is string problem)
         {
             return StoreResult.Invalid(problem);
         }
@@ -116,29 +116,31 @@ public sealed class CostZoneStore(DataConfig dataConfig)
         return IOPath.Join(dataConfig.Road, continent, CostZoneLoader.DangerZoneFolder);
     }
 
-    // Continent names become folder names, so only plain names are taken (Azeroth,
-    // Expansion01, HawaiiMainLand); the old controllers took any non-empty string.
-    private static string? ContinentProblem(string continent)
+    // Continent names become folder names, so only the client's own are taken, and in their own
+    // case (azeroth is Azeroth): the bot reads Azeroth\, and on Linux the service would not read
+    // azeroth/. The old controllers took any non-empty string.
+    private string? ContinentProblem(ref string continent)
     {
-        if (string.IsNullOrEmpty(continent) || continent.Length > MaxContinentLength)
+        if (string.IsNullOrEmpty(continent))
         {
             return "a continent name is required";
         }
 
-        foreach (char c in continent)
+        foreach (WorldMapArea area in maps.Values)
         {
-            if (!char.IsAsciiLetterOrDigit(c))
+            if (area.Continent.Equals(continent, StringComparison.OrdinalIgnoreCase))
             {
-                return $"'{continent}' is not a continent name";
+                continent = area.Continent;
+                return null;
             }
         }
 
-        return null;
+        return $"'{continent}' is not a continent of {dataConfig.Exp}";
     }
 
-    private static string? TargetProblem(string continent, int uiMapId)
+    private string? TargetProblem(ref string continent, int uiMapId)
     {
-        return ContinentProblem(continent) ?? (uiMapId < 0 ? "uiMapId must not be negative" : null);
+        return ContinentProblem(ref continent) ?? (uiMapId < 0 ? "uiMapId must not be negative" : null);
     }
 
     private static Dictionary<int, T> ReadAll<T>(string folder) where T : new()
