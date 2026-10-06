@@ -253,18 +253,6 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - **Fix (not started):** resolve Forever endpoints the way the bot does, and decide whether
       Forever has cost zones at all.
 
-41. **A cost-zone save answers 204 when the reload failed.**
-    - **Where:** `PathingService/CostZones/CostZoneEndpoints` (`Saved`), `RoutePlanner.ReloadCostZones`.
-    - **Cause:** the reload is all or nothing per continent, and the save drops its result
-      (`POST /reload` maps the same `false` to 409). Each reload also reads the files before
-      waiting on the lane gate, which does not serve waiters in order.
-    - **Effect:** with one invalid file in the continent (an old road of width 100, say), every
-      valid save answers 204 and changes nothing until the lane reopens. Two reloads in flight
-      (the map saves roads and danger zones back to back, and the watcher follows) can apply the
-      older read last; the watcher's own reload usually repairs it.
-    - **Fix (not started):** say that the reload failed (409, naming the bad file, after the
-      write), and read the files under the gate.
-
 42. **The test of fresh pathfinder memory per request cannot fail.**
     - **Where:** `ServiceTests/Planning/RoutePlannerConcurrencyTests`
       (`A_query_does_not_inherit_the_previous_callers_floor`), which `PathingService/CLAUDE.md`
@@ -305,8 +293,7 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       terrain, `startIndoors`), while the planner always takes the navmesh surface. Parity holds
       for disk-only Classic installs; Forever is item 40.
     - `service-architecture.md`, the endpoint table: capabilities carries `BakedContinents` and
-      `GameFiles`, not `Continents`; `POST /costzones/reload` answers 409 when a zone file is
-      invalid, not only 204.
+      `GameFiles`, not `Continents`.
     - `PathingService/CLAUDE.md` cites the concurrency tests for fresh memory per request: item 42.
     - **Fix:** correct the text; rule 4 needs the parity test, or the claim, to cover installs
       with archives.
@@ -335,6 +322,15 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       unreadable file fails the whole GET.
 
 ## Fixed
+
+41. **A cost-zone save answered 204 when the reload failed** (Phase 1 review, 2026-10-06). The
+    reload is all or nothing per continent, and the save dropped its result, so with one invalid
+    file in the continent (an old road of width 100, say) every valid save answered 204 and changed
+    nothing until the lane reopened. A save now reloads only its own continent and answers 409,
+    saved but not in use, naming the file in the way and why (`CostZoneLoader.TryLoad` says what
+    failed; `POST /costzones/reload` names it too). Both zone pages, the world view's and
+    BlazorServer's map, show a 409 as saved, not in use yet. Reloads of a lane run one at a time
+    from their read to their swap, so the one that read last applies last.
 
 37. **The pathing client retried a busy service** (Phase 1 review, 2026-10-06). The standard
     resilience handler retried every 5xx, POST included: a 503 Busy (the lane had already waited

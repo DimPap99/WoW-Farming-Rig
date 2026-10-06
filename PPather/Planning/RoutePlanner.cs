@@ -535,35 +535,56 @@ public sealed class RoutePlanner : IDisposable
     /// </summary>
     public bool ReloadCostZones()
     {
-        bool complete = true;
+        return ReloadCostZones(null, out _);
+    }
+
+    /// <summary>
+    /// Re-reads the authored roads and danger zones of the open lane of <paramref name="continent"/>,
+    /// or of every open lane. All or nothing per continent: a continent whose files do not all load
+    /// keeps its working set, and <paramref name="failure"/> names the first file that failed and
+    /// why. A continent with no open lane has nothing to reload: it reads its files when it opens.
+    /// </summary>
+    public bool ReloadCostZones(string? continent, out string? failure)
+    {
+        failure = null;
         foreach (Lane lane in OpenLanes())
         {
-            if (!CostZoneLoader.TryLoad(logger, dataConfig.Road, lane.Continent, out CostZones zones,
-                    roadCoreHalfWidth: queryOptions.RoadCore))
+            if (continent is not null && !lane.Continent.Equals(continent, StringComparison.OrdinalIgnoreCase))
             {
-                logger.LogWarning(
-                    "Cost zones for {Continent} were not reloaded: at least one file is unreadable or invalid. Previous zones stay in effect.",
-                    lane.Continent);
-                complete = false;
                 continue;
             }
 
-            // Swapped between queries, never under one.
-            lane.Gate.Wait();
-            try
+            // One reload at a time per lane, from its read to its swap, so the one that read
+            // last applies last. The gate alone would not: it does not serve waiters in order.
+            lock (lane.ReloadLock)
             {
-                if (!lane.Closed)
+                if (!CostZoneLoader.TryLoad(logger, dataConfig.Road, lane.Continent, out CostZones zones, out string? failed,
+                        roadCoreHalfWidth: queryOptions.RoadCore))
                 {
-                    lane.Pathfinder.Zones = zones;
+                    logger.LogWarning(
+                        "Cost zones for {Continent} were not reloaded: {Failure}. Previous zones stay in effect.",
+                        lane.Continent, failed);
+                    failure ??= failed;
+                    continue;
                 }
-            }
-            finally
-            {
-                lane.Gate.Release();
+
+                // Swapped between queries, never under one.
+                lane.Gate.Wait();
+                try
+                {
+                    if (!lane.Closed)
+                    {
+                        lane.Pathfinder.Zones = zones;
+                    }
+                }
+                finally
+                {
+                    lane.Gate.Release();
+                }
             }
         }
 
-        return complete;
+        return failure is null;
     }
 
     /// <summary>
@@ -902,6 +923,9 @@ public sealed class RoutePlanner : IDisposable
         public string Continent { get; } = continent;
         public NavmeshPathfinder Pathfinder { get; } = pathfinder;
         public SemaphoreSlim Gate { get; } = new(1, 1);
+
+        /// <summary>Held by a cost-zone reload from its read to its swap.</summary>
+        public Lock ReloadLock { get; } = new();
 
         /// <summary>Taken out of service; a query that still holds it moves to a fresh lane.</summary>
         public bool Closed => closed;

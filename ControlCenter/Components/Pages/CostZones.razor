@@ -384,11 +384,13 @@
         }
     }
 
-    // Each changed zone's two files, roads and danger; a refusal names the zone and why.
+    // Each changed zone's two files, roads and danger; a refusal names the zone and why. A 409 is a
+    // file saved but not in use: another file of the continent keeps its zones from reloading.
     private async Task SaveAsync()
     {
         busy = true;
         List<string> refused = [];
+        string? notApplied = null;
         try
         {
             foreach (int uiMapId in dirty.ToArray())
@@ -403,18 +405,29 @@
 
                 ServiceResult savedRoads = await pathing.SaveRoadsAsync(continent, uiMapId, roads, Token);
                 ServiceResult savedDanger = await pathing.SaveDangerAsync(continent, uiMapId, danger, Token);
-                if (savedRoads.Ok && savedDanger.Ok)
+                if (Stored(savedRoads) && Stored(savedDanger))
                 {
                     dirty.Remove(uiMapId);
+                    notApplied ??= savedRoads.Ok ? savedDanger.Error : savedRoads.Error;
                 }
                 else
                 {
-                    refused.Add($"{ZoneName(uiMapId)}: {savedRoads.Error ?? savedDanger.Error}");
+                    refused.Add($"{ZoneName(uiMapId)}: {(Stored(savedRoads) ? savedDanger.Error : savedRoads.Error)}");
                 }
             }
 
-            Say(refused.Count == 0 ? "Saved: the next route uses them" : $"Not saved - {string.Join("; ", refused)}",
-                refused.Count == 0 ? ResultKind.Ok : ResultKind.Error);
+            if (refused.Count > 0)
+            {
+                Say($"Not saved - {string.Join("; ", refused)}", ResultKind.Error);
+            }
+            else if (notApplied is not null)
+            {
+                Say($"Saved, not in use yet - {notApplied}", ResultKind.Warn);
+            }
+            else
+            {
+                Say("Saved: the next route uses them", ResultKind.Ok);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -423,6 +436,11 @@
         {
             busy = false;
         }
+    }
+
+    private static bool Stored(ServiceResult saved)
+    {
+        return saved.Ok || saved.Status == (int)System.Net.HttpStatusCode.Conflict;
     }
 
     private static DangerRectangle Rectangle(Zone zone)
