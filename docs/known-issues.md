@@ -252,17 +252,6 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - **Fix (not started):** resolve Forever endpoints the way the bot does, and decide whether
       Forever has cost zones at all.
 
-42. **The test of fresh pathfinder memory per request cannot fail.**
-    - **Where:** `ServiceTests/Planning/RoutePlannerConcurrencyTests`
-      (`A_query_does_not_inherit_the_previous_callers_floor`), which `PathingService/CLAUDE.md`
-      cites as the guard.
-    - **Cause:** `RoutePlanner.Find` fills a start at height 0 from `TryGetHeight` before
-      `FindPath`, and the floor memory applies only to a start at height 0 (`ContinuityHint`).
-      This short route never widens or stalls, so the speed memos never start either.
-    - **Effect:** making `Find` share the lane's own memory would still pass every test.
-    - **Fix (not started):** a test that reaches the memory: a start the planner cannot give a
-      height, on stacked floors, or a route that widens.
-
 44. **Height lookups read the navmesh without the tile lock.**
     - **Where:** `NavmeshPathfinder.TryGetHeight`, which `RoutePlanner` uses for `/area` and for
       route endpoints at height 0.
@@ -283,7 +272,6 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       for disk-only Classic installs; Forever is item 40.
     - `service-architecture.md`, the endpoint table: capabilities carries `BakedContinents` and
       `GameFiles`, not `Continents`.
-    - `PathingService/CLAUDE.md` cites the concurrency tests for fresh memory per request: item 42.
     - **Fix:** correct the text; rule 4 needs the parity test, or the claim, to cover installs
       with archives.
 
@@ -314,6 +302,16 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       (`StatusCodeSelector` in `PathingServiceRegistration`); the manager needs the same lines.
 
 ## Fixed
+
+42. **The test of fresh pathfinder memory per request could not fail** (Phase 1 review,
+    2026-10-06). `A_query_does_not_inherit_the_previous_callers_floor` compared answers, but the
+    planner gives a start without a height the surface under it before `FindPath`, and the floor
+    memory applies only to a start at height 0, so making `Find` share the lane's own memory still
+    passed every test. PPather's internals are now visible to `ServiceTests`, and
+    `Queries_leave_the_lanes_own_memory_as_they_found_it` runs the corpus and a continent route,
+    then reads each lane pathfinder's own memory (`OwnMemory`): no floor, no sticky band, no stall.
+    With `Find` calling `nav.FindPath(from, to, null)`, it fails, while the parity tests still
+    pass. `PathingService/CLAUDE.md` points to it.
 
 39. **A disk-only tile cache deleted a tile it failed to read** (Phase 1 review, 2026-10-06). A
     tile that did not parse was deleted to be baked again, even by a cache with no world, which
