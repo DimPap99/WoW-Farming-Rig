@@ -16,4 +16,10 @@ public static class Words
     {
         return string.Create(CultureInfo.InvariantCulture, $"{yards:N0} yd");
     }
+
+    /// <summary>"12,300 sq yd".</summary>
+    public static string SquareYards(float area)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{area:N0} sq yd");
+    }
 }

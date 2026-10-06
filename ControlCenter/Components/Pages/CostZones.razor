@@ -130,9 +130,9 @@
 
     private static readonly WorldTool[] Tools =
     [
-        new(WorldShapes.Line, "Draw a road: click along it, then the last point again (or Enter)"),
-        new(WorldShapes.Circle, "Draw a danger zone: its centre, then a point on its edge"),
-        new(WorldShapes.Rectangle, "Draw a rectangular danger zone: two opposite corners"),
+        new(WorldShapes.Line, "Draw a road: click along it, then the last point again (or Enter)", "Road"),
+        new(WorldShapes.Circle, "Draw a danger zone: its centre, then a point on its edge", "Danger circle"),
+        new(WorldShapes.Rectangle, "Draw a rectangular danger zone: two opposite corners", "Danger box"),
     ];
 
     /// <summary>One road or danger zone, as the page edits it; points in world yards.</summary>

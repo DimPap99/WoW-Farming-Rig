@@ -166,9 +166,9 @@
 
     private static readonly WorldTool[] Tools =
     [
-        new(WorldShapes.Point, "Add waypoints: each click adds one at the end; Esc stops"),
-        new(WorldShapes.Polygon, "Draw an area to roam: click its corners, then the first again (or Enter); Esc cancels"),
-        new(WorldShapes.Rectangle, "Draw a rectangular area to roam: click two opposite corners"),
+        new(WorldShapes.Point, "Add waypoints: each click adds one at the end; Esc stops", "Waypoints"),
+        new(WorldShapes.Polygon, "Draw an area to roam: click its corners, then the first again (or Enter); Esc cancels", "Area"),
+        new(WorldShapes.Rectangle, "Draw a rectangular area to roam: click two opposite corners", "Box area"),
     ];
 
     /// <summary>An area drawn on the map: a polygon's corners, or a rectangle's two opposite ones.</summary>

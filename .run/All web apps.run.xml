@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="All web apps" type="CompoundRunConfigurationType" folderName="Web apps">
+    <toRun name="Pathing Service" type="DotNetProject" />
+    <toRun name="Bot Manager" type="DotNetProject" />
+    <toRun name="Control Center" type="LaunchSettings" />
+    <method v="2" />
+  </configuration>
+</component>

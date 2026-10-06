@@ -19,16 +19,20 @@
             <button class="pa-toggle" type="button" aria-pressed="@Aria.State(tilted)" @onclick="ToggleTiltAsync"
                     title="Tilt the map to see heights; right-drag turns and tilts it">3D</button>
             <button class="pa-toggle" type="button" @onclick="FitAsync" title="Frame what this page shows">Fit</button>
+            <button class="pa-toggle pa-world-art" type="button" aria-pressed="@Aria.State(art)" @onclick="ToggleArtAsync"
+                    title="The game's map under the routes: its minimap, as the Leaflet map showed it">Map</button>
         </div>
 
         @if (Tools is { Length: > 0 })
         {
             <div class="pa-group pa-world-draw" role="group" aria-label="Draw">
+                <span class="pa-group-label" aria-hidden="true">Draw</span>
                 @foreach (WorldTool tool in Tools)
                 {
                     <button class="pa-toggle pa-world-tool" type="button" aria-pressed="@Aria.State(Tool == tool.Shape)"
                             title="@tool.Title" aria-label="@tool.Title" data-tool="@tool.Shape" @onclick="() => ChooseAsync(tool.Shape)">
                         @Icon(tool.Shape)
+                        <span class="pa-world-tool-name">@tool.Label</span>
                     </button>
                 }
             </div>
@@ -85,7 +89,11 @@
         tile = $"{PathingApi.Navmesh}/{{continent}}/{PathingApi.Tiles}/{{x}}/{{z}}",
         world = PathingApi.World,
         area = $"{PathingApi.Area}?mapId={{mapId}}&x={{x}}&y={{y}}",
+        art = $"{WorldData.Tiles}/{{continent}}/z{{z}}x{{x}}y{{y}}.webp",
     };
+
+    // Whether the map art shows, remembered in this browser; on until turned off.
+    private const string ArtKey = "cc.world.art";
 
     // Not a tool: the page's tool differs from it, so it is sent on the next render.
     private const string ResendTool = "\0";
@@ -102,6 +110,7 @@
     private bool? pickingShown;
     private string? toolShown;
     private bool tilted;
+    private bool art = true;
     private string? failed;
 
     protected override void OnParametersSet()
@@ -121,7 +130,12 @@
             if (firstRender)
             {
                 self = DotNetObjectReference.Create(this);
-                id = await js.InvokeAsync<string>("worldView.create", Token, host, self, new { urls = Urls });
+                art = await js.InvokeAsync<string?>("pathingUi.storageGet", Token, ArtKey) != "0";
+                id = await js.InvokeAsync<string>("worldView.create", Token, host, self, new { urls = Urls, art });
+                if (!art)
+                {
+                    StateHasChanged();
+                }
             }
 
             if (id is null)
@@ -222,6 +236,21 @@
     private Task FitAsync()
     {
         return Js("worldView.fit");
+    }
+
+    private async Task ToggleArtAsync()
+    {
+        art = !art;
+        try
+        {
+            await js.InvokeVoidAsync("pathingUi.storageSet", Token, ArtKey, art ? "1" : "0");
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or OperationCanceledException)
+        {
+            // Not remembered, still switched.
+        }
+
+        await Js("worldView.setArt", art);
     }
 
     private async Task Js(string identifier, params object[] args)

@@ -923,16 +923,32 @@ kbd {
     gap: 8px;
 }
 
-/* The drawing tools, one under another: what a click on the map draws. */
+/* The map art's switch shows where the continent has art (the script sets data-art). */
+.pa-world-art {
+    display: none;
+}
+
+.pa-world[data-art] .pa-world-art {
+    display: inline-flex;
+}
+
+/* The drawing tools, one under another: what a click on the map draws. Named, not icons alone: a
+   bare icon column on the map went unseen. */
 .pa-world-draw {
     flex-direction: column;
+    align-items: stretch;
+}
+
+.pa-world-draw .pa-group-label {
+    padding: 4px 8px 2px;
 }
 
 .pa-world-tool {
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
+    justify-content: flex-start;
+    gap: 8px;
+    height: 30px;
+    padding: 0 12px 0 8px;
+    color: var(--pa-text);
 }
 
 .pa-world-icon {

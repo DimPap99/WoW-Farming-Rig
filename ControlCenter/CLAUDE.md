@@ -134,7 +134,13 @@ right-drag turns and tilts. The page sends a `WorldScene` (routes, markers, labe
 changes, and hears clicks while `Picking`; the ground the view fetches itself from the service's
 `navmesh/{continent}/overview` (one height per baked tile) and, zoomed in to under 1,600 yards
 across, `navmesh/{continent}/tiles/{x}/{z}` (the walkable polygons). So it needs no minimap art and
-works for Forever too. Flat, the overview is drawn as one shaded picture (`reliefImage`: four
+works for Forever too; where the service has the art (`ContinentInfo.Art`, a `MapArt` from
+`PathingService/World/MapArtTable`), it is laid over the relief while flat, the game's minimap as
+BlazorServer's Leaflet map draws it: `/tiles/{continent}/z{z}x{x}y{y}.webp`, at the zoom where a
+tile's pixel is about a screen pixel, with coarser tiles under the ones still loading, at most 320
+kept. Over it a tile's polygons are see-through and the dark under them is left out. The **Map**
+button turns it off (remembered per browser, `cc.world.art`) and shows only where there is art
+(the script sets `data-art` on the view). Flat, the overview is drawn as one shaded picture (`reliefImage`: four
 pixels a tile, the heights smoothed between tile middles, each pixel lit from the north-west, where
 nothing is baked darkened and cleared) over the tiles' cells, which stay under it for the heights a
 hover or a click picks; tilted, the cells themselves show, as steps. Routes and lines are drawn
@@ -175,7 +181,10 @@ the map's own element (`.pa-world-canvas`, made focusable by deck.gl) has the fo
 centring use the width a tall panel at the side leaves uncovered. A shape edited whole can be a few
 thousand points, so the circuit takes messages up to `MaxCircuitMessageBytes` (1 MB), not 32 KB.
 A click goes to the tool in use if there is one, else to picking (`Picking`) whatever lies under
-it, else it selects a shape or a marker. A scene's `Frame` and `FrameOn` are kept until a scene is
+it, else it selects a shape or a marker. Each tool's button carries its name (`WorldTool.Label`)
+under a "Draw" heading: icons alone went unseen. The Map page's tools draw marks - a point, a
+line, a polygon, a rectangle, a circle - listed with what they measure and copied as zone map
+coordinates; nothing saves them. A scene's `Frame` and `FrameOn` are kept until a scene is
 actually sent: a page whose answers come quickly replaces a scene before the view has even been
 made (deck.gl loads on first use), and the framing asked for must not be lost with it.
 
