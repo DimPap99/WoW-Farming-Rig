@@ -1,6 +1,8 @@
 # Phase 1 review - the fixes: plan and handoff
 
-**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1 to 1.8 (1.8 without the writer's side, now in step 3), and of the independent items, 42, 36, the rest of 46, the planner's half of 2, and 45's text. A max-level review of Phase 1
+**Status (2026-10-07):** step 1 is done on `fix/phase1-review` (not pushed): 1.1 to 1.8, 1.8
+without the writer's side, and every independent item (42, 36, the rest of 46, the planner's half
+of 2, 45's text); see "Step 1 as built". Next: step 2. A max-level review of Phase 1
 (84c93499..7ef44187, the Pathing Service, the planner, the contracts, the pathing client and
 `ServiceTests`), checked against the code as of e71c5781, found what is now items 32 to 46 of
 [known-issues.md](known-issues.md). It also corrected items 2 and 12 and the floor-memory design
@@ -230,6 +232,31 @@ on the machine it ran on. Line numbers below are as of e71c5781.
   - the endpoint table: `BakedContinents` and `GameFiles` (reload's 204 or 409 went in with 1.5);
   - narrow rule 4 to what holds today, disk-only Classic installs, until step 3.
 
+## Step 1 as built (2026-10-07)
+
+One commit per fix on `fix/phase1-review`, after the plan's own (0f4d61b8): 1.1 262a0efc, 1.2
+b2a83a72, 1.3 d30a3348, 1.4 0cd22047, 1.5 34acba4d, 1.6 48435013, 1.7 ecd69a42, 1.8 478333b2;
+item 42 d831c02d, 36 cbea7ac9, 46 c6d2f9d1, 2 e9e61919, 45 1a3c8cac. `ServiceTests` grew from 301
+to 351 tests, all passing with the precata tiles present; `AgentTests` (50) and the solution
+build pass. Every new test was run once against the old code (or with the guard taken out) and
+failed there; the tests for hangs did so by their deadline, not by hanging.
+
+Beyond the plan, found on the way:
+- In Development, where every `run.sh` runs its service, minimal APIs throw on a body or a query
+  they cannot bind, and `UseExceptionHandler` made that a 500, which clients took for the
+  service's own failure. The Pathing Service answers 400 now (with 1.7); the Bot Manager has the
+  same handler (item 46).
+- `PathingClient.GetAreaAsync` wrote 3e11 as `3E+11`, whose `+` a query reads as a space (with 1.1).
+- The circuit breaker counted a busy continent as the service failing; it takes the retry's rule
+  now (with 1.4).
+- `Get` of a path group answers 400, like a `_forever/` name, not Unreadable's 500 (1.2).
+- Both zone pages took a 409 as "not saved"; they show it as saved, not in use yet (1.5).
+- The old map-frame conversion only went wrong at gaps, where the continent's map alone holds a
+  point: a point in another zone is in two maps, threw, and was caught into the right frame (2).
+
+Moved to step 3: the tile writers (item 39, open); item 46's uiMap bound and the Bot Manager's
+500.
+
 ## Step 2 - review Phase 2
 
 - **Run** `/code-review max 7ef44187..4e65fd27` (31698e77, 32ce9d46, 4e65fd27).
@@ -265,10 +292,11 @@ on the machine it ran on. Line numbers below are as of e71c5781.
   endpoints the way the bot does (`TryResolveColumn`, `PreferGroundUnderPoint`).
 - **The rest of item 45:** rule 4 needs a parity test for installs with archives, or keeps the
   narrowed claim.
-- **The rest of item 46:** NotBaked on an empty tile, and `GET /costzones` against what the
-  loader applies.
-- **Writers:** bakes and the download script write tiles under a temporary name and rename them,
-  if 1.8 left that out.
+- **The rest of item 46:** NotBaked on an empty tile, `GET /costzones` against what the loader
+  applies, a lane built under the global lock, a save's uiMap checked against the continent's
+  maps (keeping uiMap 0), and the Bot Manager's 500 for a request it cannot read.
+- **Writers (item 39):** bakes and the download script write tiles under a temporary name and
+  rename them; 1.8 left this out. Run the bake gate, which needs game files.
 
 ## Decisions for the user
 
