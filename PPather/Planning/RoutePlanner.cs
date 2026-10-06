@@ -718,6 +718,15 @@ public sealed class RoutePlanner : IDisposable
         return result;
     }
 
+    /// <summary>The pathfinder of the open lane of <paramref name="continent"/>; null without one.</summary>
+    internal NavmeshPathfinder? LanePathfinder(string continent)
+    {
+        lock (lanesLock)
+        {
+            return lanes.TryGetValue(continent, out Lane? lane) && !lane.Closed ? lane.Pathfinder : null;
+        }
+    }
+
     /// <summary>The tiles the lane of <paramref name="continent"/> holds, by index; empty without a lane.</summary>
     public IReadOnlySet<(int X, int Z)> ResidentTileSet(string continent)
     {

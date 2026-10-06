@@ -1,3 +1,4 @@
+using PPather.Navmesh;
 using PPather.Planning;
 
 using System.Collections.Generic;
@@ -48,29 +49,38 @@ public sealed class RoutePlannerConcurrencyTests
         Assert.All(planner.Lanes(), lane => Assert.True(lane.Queries >= Copies));
     }
 
+    // Each query brings fresh memory (NavmeshQueryMemory): the floor it was resolved onto, the band
+    // that worked, the last stall. A lane's pathfinder also keeps memory for a caller of its own,
+    // which a shared planner must never use: the next caller would start on the previous one's
+    // floor. Answers alone cannot show it, since the planner gives a start without a height the
+    // surface under it before the pathfinder's floor memory could apply (known issue 42), so this
+    // reads that memory: every kind of query leaves it as a new pathfinder has it.
     [Fact]
-    public void A_query_does_not_inherit_the_previous_callers_floor()
+    public void Queries_leave_the_lanes_own_memory_as_they_found_it()
     {
         Assert.SkipUnless(TestData.HasPrecataTiles, TestData.NoTiles);
 
-        // Inside Anvilmar with a height, then from the same spot without one. A shared
-        // pathfinder would resolve the second start onto the first one's floor.
-        CorpusRoute indoors = new("Anvilmar, height known", 1426, RouteSpace.World,
-            new(-6101.417f, 390.9181f, 395.626f), new(-6154.18f, 609.84973f, 395.626f));
-        CorpusRoute noHeight = indoors with { Name = "Anvilmar, no height", From = indoors.From with { Z = 0 } };
-
-        Vector3[] alone;
-        using (RoutePlanner fresh = TestData.NewPlanner())
+        using RoutePlanner planner = TestData.NewPlanner();
+        foreach (CorpusRoute route in TestData.Corpus)
         {
-            alone = Find(fresh, noHeight).Points;
+            Assert.Contains(Find(planner, route).Status, Planned);
         }
 
-        using RoutePlanner planner = TestData.NewPlanner();
-        Find(planner, indoors);
-        Vector3[] afterAnother = Find(planner, noHeight).Points;
+        CorpusRoute barrens = TestData.Corpus.Single(r => r.Name == "The Barrens search");
+        Assert.Contains(planner.Find(new RouteQuery(barrens.UiMap, barrens.Space, barrens.From, barrens.To,
+            Reach: RouteReach.Continent)).Status, Planned);
 
-        Assert.Equal(alone, afterAnother);
+        foreach (string continent in (string[])["Azeroth", "Kalimdor"])
+        {
+            NavmeshQueryMemory own = planner.LanePathfinder(continent)!.OwnMemory;
+            Assert.Null(own.LastResolvedFrom);
+            Assert.Equal(0, own.StickyStamp);
+            Assert.Equal(0, own.StalledStamp);
+        }
     }
+
+    // The statuses of a query the pathfinder answered.
+    private static readonly RoutePlanStatus[] Planned = [RoutePlanStatus.Found, RoutePlanStatus.Partial, RoutePlanStatus.NoPath];
 
     [Fact]
     public void Jitter_applies_to_its_own_query_only()
@@ -82,7 +92,7 @@ public sealed class RoutePlannerConcurrencyTests
 
         Vector3[] plain = Find(planner, route).Points;
         RouteOutcome jittered = planner.Find(new RouteQuery(route.UiMap, route.Space, route.From, route.To,
-            new PPather.Navmesh.NavmeshQueryTuning(JitterYards: 3f, JitterSeed: 7)));
+            new NavmeshQueryTuning(JitterYards: 3f, JitterSeed: 7)));
         Vector3[] plainAgain = Find(planner, route).Points;
 
         Assert.True(jittered.Found);

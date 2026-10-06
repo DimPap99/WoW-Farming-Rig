@@ -114,8 +114,10 @@ on the sea floor.
 
 **Each request gets fresh pathfinder memory.** `NavmeshPathfinder` remembers the last floor it
 resolved, its corridor band and recent stalls. That is right for one walker and wrong for a
-shared service, so the planner passes a new `NavmeshQueryMemory` per request (see the parity
-and concurrency tests in `ServiceTests/Planning`). The memory is worth having: it keeps
+shared service, so the planner passes a new `NavmeshQueryMemory` per request.
+`RoutePlannerConcurrencyTests.Queries_leave_the_lanes_own_memory_as_they_found_it` guards it by
+reading the lane's own memory (PPather's internals are visible to `ServiceTests`): answers alone
+cannot show it, since the planner gives a start without a height its surface first. The memory is worth having: it keeps
 Forever's height-less walker on its floor and makes repeat requests cheap (see
 `docs/known-issues.md`, "Design notes"). When bots plan here, the preferred way is for each
 request to carry the bot's last floor, so the service stays stateless. A cache keyed by

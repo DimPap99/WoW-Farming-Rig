@@ -18,6 +18,12 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
 
+  <!-- ServiceTests reads a lane's own query memory, to prove the planner never writes it
+       (docs/known-issues.md, item 42). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="ServiceTests" />
+  </ItemGroup>
+
   <!-- DotRecast from the pinned wow-mods submodule. -->
   <ItemGroup>
     <ProjectReference Include="..\external\DotRecast\src\DotRecast.Core\DotRecast.Core.csproj" />

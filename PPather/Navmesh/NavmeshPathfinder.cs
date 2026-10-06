@@ -128,6 +128,12 @@ public sealed class NavmeshPathfinder : IDisposable
     public NavmeshTileCache Tiles => tiles;
 
     /// <summary>
+    /// The memory this instance keeps for its own caller. A query that brings its own swaps it out
+    /// for its length only, so a pathfinder shared by several callers must leave this as it was.
+    /// </summary>
+    internal NavmeshQueryMemory OwnMemory => memory;
+
+    /// <summary>
     /// Authored road / danger zones applied while searching. Assigning takes
     /// effect on the next query - no rebake, the navmesh itself is unchanged.
     /// </summary>
