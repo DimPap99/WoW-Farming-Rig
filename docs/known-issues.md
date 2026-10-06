@@ -19,15 +19,22 @@ commit that fixed it.
      planner mirrors today's behaviour so the parity gate holds, and the route contract has
      no `startIndoors` field until then.
 
-2. **A map route can throw while converting back to map coordinates.**
-   - **Where:** `PPatherService.ToLocal`, called by `LocalPathingApi.FindMapRoute` (no catch).
-   - **Cause:** it uses `WorldMapAreaDB.GetWorldMapArea`, which throws
-     `ArgumentOutOfRangeException` for a point outside every zone of the continent, and
-     `InvalidOperationException` for one inside two overlapping zones when neither is the
-     request's uiMap (Silithus and Feralas overlap, for example).
-   - **Effect:** the route fails on the follower's thread.
-   - **Status:** `RoutePlanner` keeps such a point in the request's zone. The bot side is
-     fixed in Phase 4.
+2. **A map route can throw, or quietly change frame, while converting back to map coordinates.**
+   - **Where:** `PPatherService.ToLocal`, called by `LocalPathingApi.FindMapRoute` (no catch),
+     and `RoutePlanner.WorldToMap`.
+   - **Cause:** both use `WorldMapAreaDB.GetWorldMapArea`, which returns the one map that holds
+     a point and throws when it finds none or several. The continent maps hold points too
+     (1415 Eastern Kingdoms covers the gaps between its zones), so:
+     - a point inside a zone other than the request's is in two or more maps, which throws
+       `InvalidOperationException` (Silithus and Feralas overlap, for example);
+     - a point that no zone holds, only a continent map, does not throw: it comes back in that
+       map's 0-100 frame, mixed in with the zone's. (-7500, 500) on map 0 is one; the Phase 1
+       review (2026-10-06) counted 3,514 of 10,590 baked Azeroth tile centres held by 1415 alone;
+     - `ArgumentOutOfRangeException` is left for a point outside every map of the continent.
+   - **Effect:** the bot's route fails on the follower's thread. `RoutePlanner` keeps a throwing
+     point in the request's zone, but a gap point jumps on the zone map with no error.
+   - **Fix:** convert every point in the request's zone (`WorldMapAreaDB.ToMap_FlipXY(world,
+     area)`, what the planner's catch does), in the planner now and on the bot in Phase 4.
 
 3. **Two threads can share one `NavmeshPathfinder`.**
    - **Where:** `PPatherService.GetQueryNavmesh`.
@@ -174,6 +181,217 @@ commit that fixed it.
       removes, or have the service list what was deleted. Either changes how a bot walks, so the
       bot PC should say what it removed.
 
+Items 32 to 46 come from the review of Phase 1 (84c93499..7ef44187, 2026-10-06), checked
+against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](phase1-fixes-plan.md).
+
+32. **One request can hang a continent's planner lane for good.**
+    - **Where:** `PathingService/Paths/PathEndpoints` (`GET /area`) and `RouteHandler.Problem`
+      (`tuning`), down to DotRecast's `DtNavMesh.CalcTileLoc` and `DtNavMeshQuery.QueryPolygons`.
+    - **Cause:** only finiteness is checked. `CalcTileLoc` casts with `(int)MathF.Floor`, which
+      saturates to `int.MaxValue` on .NET 9 and later, and `for (x = minx; x <= maxx; ++x)` then
+      wraps and never ends (nothing builds with overflow checks). With 133.33-yard tiles that
+      starts at about 2.86e11: an `/area` x or y, or an `edgeMarginYards` near 4e11, whose edge
+      push snaps a point that far out.
+      - `jitterYards` has no ceiling either. DotRecast's `FindRandomPointWithinCircle` floods
+        every polygon in the radius for each corner: 100000 took 35.8 s on a 5.3 km Kalimdor
+        route (2 ms at 1.5).
+    - **Effect:** the request holds the continent's lane gate forever (a route also holds the
+      tile cache's read lock). The continent's routes answer 503 after 10 s, `/area` answers
+      height 0, every cost-zone save and reload waits for good in `Gate.Wait()`, and a core stays
+      busy until restart. `WatchDrawing` reaches the same height lookup from a POST body.
+    - **Fix (not started):** refuse points outside the world (the cost-zone check's ±40,000 is
+      one bound) and cap `jitterYards` and `edgeMarginYards` at a few yards, in `RoutePlanner` so
+      every caller gets it.
+
+33. **A cost-zone file can pass validation and still hang every load.**
+    - **Where:** `CostZoneLoader.Problem` (the service's save check) and `CostZones.MarkLeg`.
+    - **Cause:** `Problem` caps width (64), points per segment (50,000), coordinates (±40,000)
+      and each shape's size, but not a leg's length or how many segments and shapes a file
+      holds. `MarkLeg` walks each leg's whole bounding box in 16.7-yard steps.
+    - **Effect:** a 1.2 MB road of 50,000 points zig-zagging corner to corner is accepted, and
+      loading it takes about 1.15e12 steps (worked out from the code, not timed). It hangs the
+      PUT, the watcher, each client retry, every lane open (inside the planner's global lock)
+      and the bot's own load. The file survives a restart, and the data sync copies it to the
+      bot PCs.
+    - **Fix (not started):** bound the rasterized work in `Problem` (the legs' bounding boxes
+      summed), which the loader and the bot share.
+
+34. **The path store lists, overwrites and deletes the class profiles' path groups.**
+    - **Where:** `PathingService/Paths/RecordedPathStore`; the Control Center's route library
+      (`Components/Designer/RouteLibrary.razor`) and assignment form offer what it lists.
+    - **Cause:** `Json/path` also holds the eight `PathSettings` group files (`1-8_*.json`,
+      arrays of `{Requirements, Generate, ...}` with comments) that every `*_1-10.json` class
+      profile names in `PathsFilenames`. Newtonsoft skips the comments and the unknown members,
+      so `Get` reads a group as a path of (0,0,0) points instead of answering Unreadable.
+    - **Effect:** the route library opens a group as 3 points. Saving it (no replace prompt,
+      since the name is the opened one) or deleting it makes every 1-10 profile throw on load
+      (`ClassConfiguration`: "file does not exists"). The data sync then copies the broken file
+      to the bot PCs.
+    - **Fix (not started):** keep the groups out of the store: refuse a file that is not a point
+      array, or move the groups to their own folder along with `PathsFilenames`.
+
+35. **The planner blocks request threads.**
+    - **Where:** `RoutePlanner`. Route queries, `/area` and each leg of a continent route wait on
+      the lane's `SemaphoreSlim` synchronously for up to 10 s; cost-zone reloads and
+      `CloseLanes` wait with no limit.
+    - **Cause:** the endpoints are synchronous, and the request holding the gate blocks in
+      `Task.WaitAll` on the tile workers, which are async and need pool threads too.
+    - **Seen:** a model of a lane on Kestrel (12 CPUs). 64 concurrent requests needing about
+      4.5 s of serial work: 30 answered, 34 got 503 Busy, and `/health` stalled 19 s.
+      200 requests: 168 Busy and a 29 s stall.
+    - **Effect:** besides the Busy answers, `/area` gives up after its 10 s and answers height 0,
+      the same as "not baked", and keeps the thread even after its caller has gone (it takes no
+      cancellation).
+    - **Fix (not started):** `WaitAsync` behind async endpoints, and `/area` answering 503 when
+      busy, as routes do.
+
+36. **The pathing client misreads failures.**
+    - **Where:** `ServiceClients/Pathing/PathingClient.FindRouteAsync`, `ServiceClients/ServiceHttp`.
+    - **Cause and effect:**
+      - Any JSON body is read as a `RouteResponse`. A ProblemDetails (500 from a planner
+        exception, 400 from body binding, 401 from the key guard) becomes `Status =
+        (RouteStatus)500` with no points, so a caller's switch falls through and `Points.Length`
+        throws; a JSON error without `status` reads as `Found` with no points.
+      - When that read throws (a newer service's status this client does not know), the error
+        path reads the disposed body again, and its `ObjectDisposedException` turns a 200 into
+        "could not be reached".
+      - A NaN or infinite point throws in the client's own serializer, which is reported as
+        Unavailable (retryable) instead of BadRequest.
+    - **Fix (not started):** read a route only from the statuses that carry one, map the rest by
+      status code, read the body once, and check points before sending.
+
+37. **The pathing client retries a busy service.**
+    - **Where:** `ServiceClients/Pathing/PathingClientRegistration` (`AddStandardResilienceHandler`).
+    - **Cause:** the standard handler retries every 5xx, POST included.
+      `BotManagerClientRegistration` calls `DisableForUnsafeHttpMethods`; this one does not.
+    - **Effect:**
+      - A 503 Busy (the lane already waited 10 s) is tried 3 times, so the caller learns after
+        about 35 s and the lane sees 3 times the waiters. A 500 Unreadable is retried for
+        nothing.
+      - An attempt cut off at 20 s keeps the gate, since the planner checks the token only while
+        waiting for it, so the retry queues behind it.
+      - One breaker serves every call through the client: under fleet load a busy continent
+        could fail path, cost-zone and health calls too.
+      - The log noise is item 30.
+    - **Fix (not started):** no retry on 503 or 500 for POSTs (or honour a Retry-After), and
+      check the token after the gate.
+
+38. **A planner lane never sees tiles that others write.** Item 12 fixed this for the service's
+    own bakes.
+    - **Where:** `RoutePlanner`'s lanes (a disk-only `NavmeshTileCache` keeps a missing tile as
+      empty); `CloseLanes` is called only by `BakeAdmin`.
+    - **Effect:** tiles from `download-navmesh.ps1`, a bot baking into the shared folder or
+      BakeTool stay empty to a running service: routes over them answer NoPath or Partial, or
+      detour, until a restart. The comment over `RoutePlanner.GetLane` and `PathingService/CLAUDE.md`
+      say downloads are picked up; `RoutePlannerWatchTests` asserts that they are not.
+    - **Fix (not started):** watch the tile folder (or its newest write, as the coverage cache
+      does) and close the lanes it touches.
+
+39. **A disk-only tile cache deletes a tile it fails to read.**
+    - **Where:** `PPather/Navmesh/NavmeshTileCache.LoadOrBake`.
+    - **Cause:** a tile that does not parse is deleted to be baked again, even by a cache with no
+      world, which can never bake it. Bakes (`File.Create`) and `download-navmesh.ps1`
+      (extracting into the folder) write tiles in place.
+    - **Effect:** on Linux, a planner lane that reads a tile mid-write unlinks it and marks it
+      empty: the tile is gone from the shared folder and routes through it answer NoPath
+      (checked across two processes). On Windows the delete fails while the writer has the file
+      open, so nothing is lost.
+    - **Fix (not started):** delete only when the cache can bake; write tiles under a temporary
+      name and rename.
+
+40. **The planner does not plan Forever the way the Forever bot does.**
+    - **Where:** `RoutePlanner` with `--exp=forever` (`WithSurfaceHeight`, the lane's
+      `Navmesh:Query` settings, cost zones), against `Core/Forever/ForeverNavmesh.OpenDiskOnly`
+      and `ForeverNavigator`.
+    - **Cause:** the planner replaces a height of 0 with the surface nearest height 0
+      (`TryGetHeight`), so the resolver's column logic never runs, and it applies
+      `Json/road/forever`. The bot passes 0 to `TryResolveColumn`, which takes the highest
+      surface under the point (`PreferGroundUnderPoint = true`), and loads no zones.
+    - **Effect:** on a bridge, an upper floor or a hillside over a mine, the Control Center's
+      Forever routes page plans legs from the lower surface while the bot walks from the higher
+      one. Forever zones bend the preview and never the bot, though the data sync ships them.
+    - **Fix (not started):** resolve Forever endpoints the way the bot does, and decide whether
+      Forever has cost zones at all.
+
+41. **A cost-zone save answers 204 when the reload failed.**
+    - **Where:** `PathingService/CostZones/CostZoneEndpoints` (`Saved`), `RoutePlanner.ReloadCostZones`.
+    - **Cause:** the reload is all or nothing per continent, and the save drops its result
+      (`POST /reload` maps the same `false` to 409). Each reload also reads the files before
+      waiting on the lane gate, which does not serve waiters in order.
+    - **Effect:** with one invalid file in the continent (an old road of width 100, say), every
+      valid save answers 204 and changes nothing until the lane reopens. Two reloads in flight
+      (the map saves roads and danger zones back to back, and the watcher follows) can apply the
+      older read last; the watcher's own reload usually repairs it.
+    - **Fix (not started):** say that the reload failed (409, naming the bad file, after the
+      write), and read the files under the gate.
+
+42. **The test of fresh pathfinder memory per request cannot fail.**
+    - **Where:** `ServiceTests/Planning/RoutePlannerConcurrencyTests`
+      (`A_query_does_not_inherit_the_previous_callers_floor`), which `PathingService/CLAUDE.md`
+      cites as the guard.
+    - **Cause:** `RoutePlanner.Find` fills a start at height 0 from `TryGetHeight` before
+      `FindPath`, and the floor memory applies only to a start at height 0 (`ContinuityHint`).
+      This short route never widens or stalls, so the speed memos never start either.
+    - **Effect:** making `Find` share the lane's own memory would still pass every test.
+    - **Fix (not started):** a test that reaches the memory: a start the planner cannot give a
+      height, on stacked floors, or a route that widens.
+
+43. **On Windows, `_forever./x.json` gets past the Forever guard.**
+    - **Where:** `PathingService/Paths/PathName`.
+    - **Cause:** the guard compares the raw first segment with `_forever` and allows trailing
+      dots, while Windows path normalization drops a segment's single trailing period, so the
+      file is `_forever\x.json`.
+    - **Effect:** on a Windows host a PUT to `/api/v1/paths` overwrites a Forever route file with
+      a point array, and a DELETE removes it. Not testable on Linux.
+    - **Fix (not started):** refuse segments that end in a dot or a space, and check the guard on
+      the resolved path.
+
+44. **Height lookups read the navmesh without the tile lock.**
+    - **Where:** `NavmeshPathfinder.TryGetHeight`, which `RoutePlanner` uses for `/area` and for
+      route endpoints at height 0.
+    - **Cause:** it runs `FindNearestPoly` without the tile cache's read lock, while workers still
+      loading an earlier query's corridor add and evict tiles under the write lock, and it does
+      not wait for a tile that is already loading.
+    - **Effect:** a point on a tile still loading gets height 0, or a route between baked points
+      answers NoPath. Rarely, a tile read while it is evicted has its data cleared under it: a
+      500. Not seen; from the code (`ResidentTiles` and `TryLocatePoly` take the lock).
+    - **Fix (not started):** take the read lock and wait for the point's own tile, as `FindPath`
+      does for its corridor.
+
+45. **Docs that promise more than the code does.**
+    - `service-architecture.md`, rule 4: "a parity test enforces" that a preview is the bot's
+      path, but `RoutePlannerParityTests` skips when the bot side has game archives. With them
+      the bot seeds a missing height from the geometry (`Search.CreateWorldLocation`: canopy,
+      terrain, `startIndoors`), while the planner always takes the navmesh surface. Parity holds
+      for disk-only Classic installs; Forever is item 40.
+    - `service-architecture.md`, the endpoint table: capabilities carries `BakedContinents` and
+      `GameFiles`, not `Continents`; `POST /costzones/reload` answers 409 when a zone file is
+      invalid, not only 204.
+    - `PathingService/CLAUDE.md` cites the concurrency tests for fresh memory per request: item 42.
+    - **Fix:** correct the text; rule 4 needs the parity test, or the claim, to cover installs
+      with archives.
+
+46. **Smaller findings.**
+    - A null element in a cost-zone array (`{"roads":[null]}`) answers 500, which the client
+      retries, instead of 400 (`CostZoneMapping`). No client sends one.
+    - Continent names are checked for letters and digits only, not against the client's
+      continents (`CostZoneStore`). On Linux `azeroth` saves with 204 into a folder nothing
+      reads; the data sync then writes it into `Azeroth\` on a Windows bot, which applies it
+      while the service does not. Names with `_` or `'` (instances on tbc and later) are refused.
+    - A name whose `/` is sent as `%2F` (Swagger UI's "Try it out" encodes the whole name) is
+      saved as one flat file in `Json/path`: the `{**name}` route keeps `%2F` and `PathName`
+      allows `%`. The repo's clients encode each segment.
+    - A lane is built under the planner's global lock (`RoutePlanner.GetLane`): 15-60 ms,
+      measured, in which every continent's queries and `/health` wait, again after each bake or
+      cache clear.
+    - `RoutePlanner.WorldToMap` throws and catches an exception for each point outside the
+      request's zone.
+    - An endpoint on a tile with no geometry (open sea) answers NotBaked, "download or bake",
+      rather than NoPath: a bake writes no file for an empty tile.
+    - `GET /costzones/{continent}` lists numeric file names only, while the loader applies every
+      `*.json` in the folder; a legacy `{continent}.json` is listed but never applied, and one
+      unreadable file fails the whole GET.
+
 ## Fixed
 
 27. **A route that stopped short was reported as found** (2026-10-05). The band search loads
@@ -227,6 +445,8 @@ commit that fixed it.
       to a fresh one). The Pathing Service closes the lanes a bake touched when it ends, and a
       continent's lane when its tiles are deleted. `ServiceTests` walls a route off with
       missing tiles, copies them in, and checks that the route arrives only once the lane closed.
+    - Fixed only for the service's own bakes and deletes. Tiles that anything else writes into
+      the folder are still not seen: item 38.
 
 13. **File names were not checked** (Phase 2, 32ce9d46). `Frontend/Controllers` are deleted: the
     map authors through the Pathing Service, which refuses such names (`PathName`) and takes only
@@ -269,8 +489,10 @@ caller between queries (now in `NavmeshQueryMemory`). Two jobs depend on them:
   a Z that is always 0. What differs is who remembers the floor.
   - **Classic remembers it in the bot.** `PlayerReader.WorldPosZ` ("MapZ not exists") is set
     from the heights of the route points `Navigation` walks and from known spawn positions,
-    and sent with every request. So the pathfinder's floor memory only matters until the bot
-    has a height of its own, as at start.
+    and sent with every request. Where it has none yet, as at start, `PPatherService.DoSearch`
+    fills the height from the geometry or the navmesh surface before the pathfinder sees it,
+    and the floor memory applies only to a start at height 0 (`ContinuityHint`). So Classic
+    reaches the memory only when that fill finds no surface.
   - **Forever leaves it to the pathfinder.** The navigator asks for paths without a height on
     purpose, and the kept floor stops it flipping between a mountain top and the ground below
     ([forever-movement.md](forever-movement.md), "Which floor", tested live). When it walks a
