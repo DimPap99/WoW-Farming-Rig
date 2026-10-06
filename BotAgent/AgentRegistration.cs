@@ -1,10 +1,13 @@
 using BotAgent.Link;
 using BotAgent.Runtime;
+using BotAgent.Sync;
 using BotAgent.Telemetry;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+
+using ServiceClients.Pathing;
 
 using System;
 
@@ -34,6 +37,24 @@ public static class AgentRegistration
         services.AddHostedService(sp => sp.GetRequiredService<TelemetryPublisher>());
         // Last, so it stops first: the run releases input and reports before telemetry and the link go.
         services.AddHostedService(sp => sp.GetRequiredService<BotRuntimeHost>());
+        return services;
+    }
+
+    /// <summary>
+    /// The data sync as a run's preparation (<see cref="DataSync"/>): before each run, the files it
+    /// needs come from the Pathing Service <paramref name="pathing"/> names into <paramref name="data"/>'s
+    /// folders. With no service, every run uses this PC's copies and says so. Needs an <see cref="IGameProbe"/>.
+    /// </summary>
+    public static IServiceCollection AddDataSync(this IServiceCollection services, DataConfig data, PathingServiceOptions? pathing)
+    {
+        if (pathing is not null)
+        {
+            services.AddPathingClient(pathing.Url, pathing.ApiKey);
+        }
+
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IRunPreparation>(sp => new DataSync(sp.GetService<IPathingClient>(), data,
+            sp.GetRequiredService<IGameProbe>(), sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<DataSync>>()));
         return services;
     }
 }

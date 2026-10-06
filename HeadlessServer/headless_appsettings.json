@@ -5,6 +5,11 @@
       "Override": {
         "Microsoft": "Warning",
         "Microsoft.Hosting.Lifetime": "Information",
+        // The data sync's HTTP client: every request, and each retry and failed attempt (with its
+        // stack trace) while the Pathing Service is down, would reach the Control Center's console.
+        // The sync says what matters in one line. Polly never logs at Fatal.
+        "System.Net.Http.HttpClient": "Warning",
+        "Polly": "Fatal",
 
         "Game.WowProcessInput": "Warning",
         "Core.ConfigurableInput": "Warning",
@@ -42,6 +47,11 @@
   // The Bot Manager to dial out to (--manager); empty runs on its own. A manager on another PC
   // needs the key: "ApiKey" here or in the environment, the same on every service and agent.
   "BotManager": {
+    "Url": ""
+  },
+  // The Pathing Service a run's files are synced from before it starts (--pathing-service): its
+  // route, the profile's paths, the cost zones. Empty: runs use this PC's copies. The same key.
+  "PathingService": {
     "Url": ""
   }
 }

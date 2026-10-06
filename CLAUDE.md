@@ -51,9 +51,11 @@ before working in one.
 
 - `BlazorServer/` ✎ - Main entry point: bot + web UI on :5000
 - `HeadlessServer/` ✎ - Same bot, CLI only, on the Generic Host; with `--agent` the PC's resident bot agent
-  (Classic or Forever runs the Bot Manager assigns); benchmarks chdir here
+  (Classic or Forever runs the Bot Manager assigns), kept running by `run-agent.ps1` and a logon task
+  (`install-agent-task.ps1`); benchmarks chdir here
 - `BotAgent/` ✎ - The agent's machinery without the bot: identity, the link to the Bot Manager, the run
-  host (stop releases input first), telemetry; no Core, tested on Linux in ServiceTests
+  host (stop releases input first), the data sync from the Pathing Service, telemetry; no Core, tested
+  on Linux in ServiceTests
 - `Core/` ✎ - Core business logic (GOAP, goals, requirements, input). WoW: Forever code
   lives mostly in `Core/Forever`; see "Code layout" in `docs/forever-port.md`
 - `Game/` ✎ - WoW process, input (stateful - read before touching), screen contracts

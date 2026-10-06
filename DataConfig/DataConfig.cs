@@ -20,6 +20,18 @@ public sealed class DataConfig
     /// <summary>The named places (teleport targets and landmarks) in <see cref="Locations"/>.</summary>
     public const string TeleportLocationsFile = "teleport_locations.txt";
 
+    /// <summary>WoW: Forever's route files, a folder of <see cref="Path"/> in a format of their own.</summary>
+    public const string ForeverRouteFolder = "_forever";
+
+    /// <summary>The folder under <see cref="Root"/> where an agent keeps what it last synced, and its backups.</summary>
+    public const string SyncFolder = ".sync";
+
+    /// <summary>
+    /// Every era <see cref="ClientEra"/> gives a known client. A folder is named after an era, so a
+    /// name from outside (a request) is taken only when it is one of these.
+    /// </summary>
+    public static readonly string[] Eras = ["precata", "cata", "mop", "forever"];
+
     public int Version = DataConfigMeta.Version;
     // Spelled as the repo folder is: "json" only resolves on a case-insensitive filesystem.
     public string Root { get; set; } = Join("..", "Json");
@@ -28,6 +40,9 @@ public sealed class DataConfig
     public string Class => Join(Root, "class");
     [JsonIgnore]
     public string Path => Join(Root, "path");
+    /// <summary>WoW: Forever's route files (<see cref="ForeverRouteFolder"/> in <see cref="Path"/>).</summary>
+    [JsonIgnore]
+    public string ForeverRoutes => Join(Path, ForeverRouteFolder);
     [JsonIgnore]
     public string ExpDbc => Join(Root, "dbc", Exp);
     [JsonIgnore]
@@ -37,7 +52,7 @@ public sealed class DataConfig
     [JsonIgnore]
     public string MPQ => Join(Root, "MPQ");
     [JsonIgnore]
-    public string Road => Join(Root, "road", ClientEra(Exp));
+    public string Road => RoadOf(ClientEra(Exp));
     [JsonIgnore]
     public string ExpArea => Join(Root, "area", Exp);
     [JsonIgnore]
@@ -58,6 +73,13 @@ public sealed class DataConfig
     /// </summary>
     [JsonIgnore]
     public string Locations => Join(Root, "locations");
+
+    /// <summary>What an agent last synced from the Pathing Service, and the local changes it kept aside.</summary>
+    [JsonIgnore]
+    public string Sync => Join(Root, SyncFolder);
+
+    /// <summary>The authored roads and danger zones of <paramref name="era"/> (one of <see cref="Eras"/>), whatever client this is.</summary>
+    public string RoadOf(string era) => Join(Root, "road", era);
 
     /// <summary>
     /// Groups clients whose art/geometry is shared, so geometry-derived assets

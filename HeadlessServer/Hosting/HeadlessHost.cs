@@ -11,12 +11,14 @@ using Microsoft.Extensions.Logging;
 
 using Serilog;
 
+using ServiceClients.Pathing;
+
 namespace HeadlessServer.Hosting;
 
 /// <summary>
-/// HeadlessServer on the Generic Host: the bot agent (BotAgent) with Core's runtimes. Ctrl+C, a
-/// logoff or a stop from the Task Scheduler stops the host, which stops a run the way a stop
-/// command does: input released first, then the run torn down.
+/// HeadlessServer on the Generic Host: the bot agent (BotAgent) with Core's runtimes and the data
+/// sync. Ctrl+C, a logoff or a stop from the Task Scheduler stops the host, which stops a run the way
+/// a stop command does: input released first, then the run torn down.
 /// </summary>
 public static class HeadlessHost
 {
@@ -44,6 +46,8 @@ public static class HeadlessHost
 
         builder.Services.AddSingleton(options);
         builder.Services.AddBotAgent(AgentOptions.From(builder.Configuration), sink);
+        // Before a run, the files it needs from the Pathing Service; without one, this PC's copies.
+        builder.Services.AddDataSync(DataConfig.Load(), PathingServiceOptions.FromIfConfigured(builder.Configuration));
         builder.Services.AddSingleton<IBotRuntimeFactory, HeadlessRuntimeFactory>();
         builder.Services.AddSingleton<IGameProbe, WowGameProbe>();
         builder.Services.AddSingleton<IClassProfileCatalog, ClassProfileFolder>();

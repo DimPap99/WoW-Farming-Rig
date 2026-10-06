@@ -87,7 +87,7 @@ internal sealed class AgentUnderTest : IAsyncDisposable
     public AgentIdentity Identity => provider.GetRequiredService<AgentIdentity>();
 
     public static async Task<AgentUnderTest> StartAsync(string folder, ManagerSlot? manager, FakeRuntimeFactory factory,
-        FakeProcess? process = null, int graceMs = 2000)
+        FakeProcess? process = null, int graceMs = 2000, IRunPreparation? preparation = null)
     {
         ServiceCollection services = new();
         services.AddLogging();
@@ -103,6 +103,10 @@ internal sealed class AgentUnderTest : IAsyncDisposable
         services.AddSingleton<IGameProbe, FakeProbe>();
         services.AddSingleton<IClassProfileCatalog, FakeProfiles>();
         services.AddSingleton<IAgentProcess>(process ?? new FakeProcess());
+        if (preparation is not null)
+        {
+            services.AddSingleton(preparation);
+        }
 
         ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true });
         IHostedService[] hosted = [.. provider.GetServices<IHostedService>()];

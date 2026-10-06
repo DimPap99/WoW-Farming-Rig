@@ -62,6 +62,17 @@ public static class PathingApi
     /// <summary>The cost-zone route segment for danger zones.</summary>
     public const string Danger = "danger";
 
+    /// <summary>
+    /// The authored files agents keep copies of: <c>GET {Sync}/{set}</c> answers the set's
+    /// <see cref="SyncManifest"/>, and <c>GET {Sync}/{set}/{SyncFiles}/{name}</c> one file's bytes,
+    /// exactly as stored. <c>set</c> is one of <see cref="SyncSets"/>; <c>?era=</c> names the era of
+    /// <see cref="SyncSets.CostZones"/> and is refused on the others.
+    /// </summary>
+    public const string Sync = Root + "/sync";
+
+    /// <summary>The sync route segment for one file of a set.</summary>
+    public const string SyncFiles = "files";
+
     /// <summary><c>GET</c> the <see cref="WorldInfo"/>: the served client's continents, zones and NPC types.</summary>
     public const string World = Root + "/world";
 

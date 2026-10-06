@@ -4,6 +4,8 @@ using PathingService.Hosting;
 using PathingService.Navmesh;
 using PathingService.Paths;
 
+using ServiceClients;
+
 using SharedLib;
 using SharedLib.Forever;
 
@@ -35,7 +37,7 @@ public sealed class ForeverRouteLibrary(DataConfig dataConfig)
     private WorldMapAreaDB? maps;
 
     /// <summary>Where the route files are.</summary>
-    public string Folder { get; } = Path.GetFullPath(Path.Combine(dataConfig.Path, ForeverRouteFile.Folder));
+    public string Folder { get; } = Path.GetFullPath(dataConfig.ForeverRoutes);
 
     /// <summary>Every route file by name, each checked as a run would load it.</summary>
     public IReadOnlyList<ForeverRouteInfo> List()

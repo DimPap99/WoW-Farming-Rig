@@ -29,6 +29,12 @@ public sealed class RunOptions
         HelpText = "What the Bot Manager calls this agent (Agent:Name); the machine's name unless given")]
     public string? Name { get; set; }
 
+    [Option("pathing-service",
+        Required = false,
+        HelpText = "The Pathing Service a run's data is synced from (PathingService:Url), for example http://botbox:5010; " +
+        "none: runs use this PC's copies")]
+    public string? PathingService { get; set; }
+
     [Option('m',
         "mode",
         Required = false,
@@ -130,7 +136,7 @@ public sealed class RunOptions
         ? "Give a class profile (Warrior_1.json), or --agent to stay resident and run what the Bot Manager assigns."
         : LoadOnly && ClassConfig is null ? "--loadonly needs a class profile." : null;
 
-    /// <summary>What the options set in the configuration: the manager and the agent's name.</summary>
+    /// <summary>What the options set in the configuration: the manager, the agent's name and the Pathing Service.</summary>
     public IEnumerable<KeyValuePair<string, string?>> ConfigurationValues()
     {
         if (!string.IsNullOrWhiteSpace(Manager))
@@ -141,6 +147,11 @@ public sealed class RunOptions
         if (!string.IsNullOrWhiteSpace(Name))
         {
             yield return new(BotAgent.AgentOptions.NameKey, Name);
+        }
+
+        if (!string.IsNullOrWhiteSpace(PathingService))
+        {
+            yield return new(ServiceClients.Pathing.PathingServiceOptions.UrlKey, PathingService);
         }
     }
 }

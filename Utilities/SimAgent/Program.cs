@@ -12,6 +12,7 @@ using Serilog;
 using Serilog.Events;
 
 using ServiceClients.Bots;
+using ServiceClients.Pathing;
 
 using SimAgent;
 
@@ -20,7 +21,8 @@ using SimAgent;
 // Run two or three, each with its own identity file and name:
 //   dotnet run --project Utilities/SimAgent -- --Agent:Name=Sim-1 --Agent:IdentityFile=sim-1.json
 // --BotManager:Url (default http://localhost:5030), --Sim:Client (forever or som, default forever),
-// --Sim:ClickSeconds (how long a run "waits for a click", default 5).
+// --Sim:ClickSeconds (how long a run "waits for a click", default 5). --Sim:Data=<folder> syncs each
+// run's files into a data root there before it starts, from --PathingService:Url, as HeadlessServer does.
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 if (string.IsNullOrEmpty(builder.Configuration[BotManagerOptions.UrlKey]))
 {
@@ -31,6 +33,8 @@ AgentLogSink sink = new();
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)
+    .MinimumLevel.Override("Polly", LogEventLevel.Fatal)
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}")
     .WriteTo.Sink(sink)
     .CreateLogger();
@@ -42,5 +46,9 @@ builder.Services.AddSingleton<IBotRuntimeFactory, SimRuntimeFactory>();
 builder.Services.AddSingleton<IGameProbe, SimGame>();
 builder.Services.AddSingleton<IClassProfileCatalog, SimGame>();
 builder.Services.AddSingleton<IAgentProcess, SimGame>();
+if (builder.Configuration["Sim:Data"] is { Length: > 0 } data)
+{
+    builder.Services.AddDataSync(new DataConfig { Root = data }, PathingServiceOptions.FromIfConfigured(builder.Configuration));
+}
 
 builder.Build().Run();

@@ -7,7 +7,8 @@ data and streams what it plans to the watch hub. Bots keep planning in their own
 service owns the data and plans for the UI (the Control Center).
 
 Plain `net10.0`, so it runs on Linux and macOS. It references `Contracts`, `PPather`,
-`DataConfig`, `SharedLib`, `ServiceClients` (for the shared key rules) and `Utilities/ForeverCasc` only. **Never add a reference to `Core`,
+`DataConfig`, `SharedLib`, `ServiceClients` (the shared key rules, `AtomicFile`, `SyncHash`) and
+`Utilities/ForeverCasc` only. **Never add a reference to `Core`,
 `Game`, `WinAPI` or `Frontend`** - that would drag the bot (and Windows) into a service.
 
 ## Run
@@ -30,7 +31,6 @@ Program.cs                         host: validation on build, default URL, loggi
 Hosting/PathingServiceRegistration AddPathingService / UsePathingService - the composition root
 Hosting/PathingLogging.cs          Serilog to console + daily file (LogFile)
 Hosting/StoreResult.cs             store outcomes (incl. Conflict) and their one mapping to HTTP
-Hosting/AtomicFile.cs              write-then-rename, so readers never see half a file
 Hosting/ServiceKeyGuard.cs         the key (ServiceClients' ServiceKeyPolicy): other machines need ApiKey
 Routes/RouteHandler.cs             RouteRequest -> RoutePlanner -> RouteResponse (the only mapping)
 Routes/RouteEndpoints.cs           POST /api/v1/routes/find
@@ -42,6 +42,8 @@ Forever/ForeverRouteEndpoints.cs   /api/v1/forever/routes
 CostZones/CostZoneStore.cs         Json/road/<era>: roads and dangerzone/ per uiMap
 CostZones/CostZoneMapping.cs       wire shapes <-> PPather's RoadData / DangerZoneData
 CostZones/CostZoneEndpoints.cs     /api/v1/costzones
+Sync/SyncLibrary.cs                the sets agents mirror: manifests (name, size, SyncHash) and raw files
+Sync/SyncEndpoints.cs              /api/v1/sync
 World/WorldDataFiles.cs            the map's static data routes (Contracts' WorldData)
 World/WorldCatalog.cs              zones with bounds, continents, NPC types, NPCs by zone; a zone's layers
                                    (elites, herbs, veins, skinnable, mailboxes); creatures by name
@@ -160,6 +162,15 @@ them as text, so the `//` comments that document a route survive a save, and it 
 `ForeverRouteFile.TryParse` (SharedLib), the loader a run uses, against `dbc/forever` whatever
 `--exp` the instance serves (`WorldMapAreaDB` is per instance; `ContinentDB` is not involved). A
 route a run would refuse is never written. Names are one plain file name: no subfolders.
+
+**The sync serves files exactly as stored.** Agents mirror three sets before a run
+(`SyncSets`): `paths` (the path folder without `_forever/`), `forever-routes` and `costzones` (one
+era's `Json/road/<era>`, any era of `DataConfig.Eras` whatever `--exp` serves). A manifest lists each
+file with its size and `SyncHash` (SHA-256 with CRLF read as LF, so a Windows copy is not "changed"
+for its line endings); a file comes back as raw bytes. Names pass each folder's own rules
+(`PathName`, `ForeverRouteLibrary.TryResolve`, plain relative names for zones), and a route a run
+would refuse is still listed: this is a file mirror, the run checks. Writes everywhere go through
+ServiceClients' `AtomicFile`, which the agent's sync uses too.
 
 **A cost-zone save reloads the planner's zones at once.** The `CostZoneWatcher` would reload
 too, half a second later; the second reload is harmless. A save is validated with

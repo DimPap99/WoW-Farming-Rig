@@ -14,6 +14,7 @@ using PathingService.Navmesh;
 using PathingService.Paths;
 using PathingService.Routes;
 using PathingService.Status;
+using PathingService.Sync;
 using PathingService.Watch;
 using PathingService.World;
 
@@ -55,6 +56,7 @@ public static class PathingServiceRegistration
         services.AddSingleton<RecordedPathStore>();
         services.AddSingleton<ForeverRouteLibrary>();
         services.AddSingleton<CostZoneStore>();
+        services.AddSingleton<SyncLibrary>();
         services.AddSingleton<CoverageCache>();
         services.AddSingleton<WorldCatalog>();
         services.AddSingleton<LocationCatalog>();
@@ -93,6 +95,7 @@ public static class PathingServiceRegistration
         app.MapPathEndpoints();
         app.MapForeverRouteEndpoints();
         app.MapCostZoneEndpoints();
+        app.MapSyncEndpoints();
         app.MapWorldEndpoints();
         app.MapCatalogEndpoints();
         app.MapNavmeshEndpoints();
