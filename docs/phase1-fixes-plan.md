@@ -1,6 +1,6 @@
 # Phase 1 review - the fixes: plan and handoff
 
-**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1 to 1.8 (1.8 without the writer's side, now in step 3), and of the independent items, 42, 36 and the rest of 46. A max-level review of Phase 1
+**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1 to 1.8 (1.8 without the writer's side, now in step 3), and of the independent items, 42, 36, the rest of 46 and the planner's half of 2. A max-level review of Phase 1
 (84c93499..7ef44187, the Pathing Service, the planner, the contracts, the pathing client and
 `ServiceTests`), checked against the code as of e71c5781, found what is now items 32 to 46 of
 [known-issues.md](known-issues.md). It also corrected items 2 and 12 and the floor-memory design
@@ -215,7 +215,7 @@ on the machine it ran on. Line numbers below are as of e71c5781.
     that planner queries leave it untouched.
   - Prove it by mutation: with `Find` calling `nav.FindPath(from, to, null)`, the test must fail.
   - Fix `PathingService/CLAUDE.md`'s pointer to these tests.
-- **Item 2, the planner's map frame.**
+- **Item 2, the planner's map frame.** Done; the parity corpus stays in its zones, so it holds.
   - `RoutePlanner.WorldToMap` (`:840-851`) converts every point in the request's zone
     (`WorldMapAreaDB.ToMap_FlipXY(world, area)`), which is what its catch already does. That also
     ends the exception thrown for each point (item 46).

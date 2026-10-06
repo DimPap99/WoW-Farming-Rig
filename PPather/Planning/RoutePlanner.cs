@@ -876,21 +876,14 @@ public sealed class RoutePlanner : IDisposable
         return new Vector3(area.ToWorldX(map.Y), area.ToWorldY(map.X), z);
     }
 
-    // As PPatherService.ToLocal: each point in the zone that holds it, preferring the
-    // query's own zone where zones overlap. GetWorldMapArea throws for a point outside
-    // every zone of the continent, and for one inside two overlapping zones when neither
-    // is the query's; such a point stays in the query's zone rather than failing the
-    // whole route (docs/known-issues.md).
-    private Vector3 WorldToMap(Vector3 world, in WorldMapArea area)
+    // Every point in the query's own zone, the frame its start and destination were given in, so a
+    // route that strays into a neighbouring zone, or into a gap only the continent's map holds,
+    // keeps one frame and can be turned back into world yards (docs/known-issues.md, item 2). The
+    // bot's map route still takes each point in the zone that holds it (PPatherService.ToLocal);
+    // the two agree while a route stays in its zone.
+    private static Vector3 WorldToMap(Vector3 world, in WorldMapArea area)
     {
-        try
-        {
-            return maps.ToMap_FlipXY(world, area.MapID, area.UIMapId);
-        }
-        catch (Exception ex) when (ex is ArgumentOutOfRangeException or InvalidOperationException)
-        {
-            return WorldMapAreaDB.ToMap_FlipXY(world, area);
-        }
+        return WorldMapAreaDB.ToMap_FlipXY(world, area);
     }
 
     private static RouteOutcome Fail(RoutePlanStatus status, string continent, long start, string detail)
