@@ -22,7 +22,7 @@ public static class WatchEndpoints
 
         app.MapPost(PathingApi.WatchPaths, (WatchPath path, WorldMapAreaDB maps, RoutePlanner planner, WatchBroadcaster watch) =>
             {
-                if (WatchDrawing.Problem(path.Name, path.UiMapId, path.Points ?? [], path.Color, maps, out WorldMapArea zone) is string problem)
+                if (WatchDrawing.Problem(path.Name, path.UiMapId, path.Points ?? [], path.Space, path.Color, maps, out WorldMapArea zone) is string problem)
                 {
                     return Results.Problem(detail: problem, statusCode: StatusCodes.Status400BadRequest, title: "Request refused");
                 }
@@ -37,7 +37,7 @@ public static class WatchEndpoints
 
         app.MapPost(PathingApi.WatchMarkers, (WatchMarker marker, WorldMapAreaDB maps, RoutePlanner planner, WatchBroadcaster watch) =>
             {
-                if (WatchDrawing.Problem(marker.Name, marker.UiMapId, [marker.At], marker.Color, maps, out WorldMapArea zone) is string problem)
+                if (WatchDrawing.Problem(marker.Name, marker.UiMapId, [marker.At], marker.Space, marker.Color, maps, out WorldMapArea zone) is string problem)
                 {
                     return Results.Problem(detail: problem, statusCode: StatusCodes.Status400BadRequest, title: "Request refused");
                 }

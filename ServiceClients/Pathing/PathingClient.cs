@@ -80,8 +80,14 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
     public Task<ServiceResult<AreaAtPoint>> GetAreaAsync(int mapId, float worldX, float worldY, CancellationToken token = default)
     {
         // Invariant: a server in a decimal-comma culture must still read 12.5 as twelve and a half.
-        string uri = string.Create(CultureInfo.InvariantCulture, $"{PathingApi.Area}?mapId={mapId}&x={worldX}&y={worldY}");
+        // Escaped: a large number is written 3E+11, and a + in a query reads as a space.
+        string uri = string.Create(CultureInfo.InvariantCulture, $"{PathingApi.Area}?mapId={mapId}&x={Number(worldX)}&y={Number(worldY)}");
         return GetAsync<AreaAtPoint>(uri, token);
+
+        static string Number(float value)
+        {
+            return Uri.EscapeDataString(value.ToString(CultureInfo.InvariantCulture));
+        }
     }
 
     public Task<ServiceResult<ForeverRouteInfo[]>> ListForeverRoutesAsync(CancellationToken token = default)

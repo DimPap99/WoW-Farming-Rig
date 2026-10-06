@@ -106,6 +106,12 @@ public sealed class RoutePlanner : IDisposable
     {
         long start = Stopwatch.GetTimestamp();
 
+        // A query holds its continent's lane for as long as its tuning makes it work.
+        if (query.Tuning.Problem() is string refused)
+        {
+            return Fail(RoutePlanStatus.Refused, string.Empty, start, refused);
+        }
+
         if (!maps.TryGet(query.UiMapId, out WorldMapArea area) ||
             !ContinentDB.IdToName.TryGetValue(area.MapID, out string? continent))
         {
@@ -484,11 +490,13 @@ public sealed class RoutePlanner : IDisposable
     /// <summary>
     /// Area id and walkable height at a world point, from the baked area grid and navmesh -
     /// no game files involved. Zeros for what is not baked, as
-    /// <see cref="PPatherService.GetAreaIdAndZ"/> answers.
+    /// <see cref="PPatherService.GetAreaIdAndZ"/> answers, and for a point beyond the edge of
+    /// the world (<see cref="NavmeshCoords.InWorld"/>), which is never queried.
     /// </summary>
     public (int AreaId, float Z) GetAreaAndHeight(int mapId, float worldX, float worldY)
     {
-        if (!ContinentDB.IdToName.TryGetValue(mapId, out string? continent))
+        if (!NavmeshCoords.InWorld(worldX, worldY) ||
+            !ContinentDB.IdToName.TryGetValue(mapId, out string? continent))
         {
             return (0, 0f);
         }

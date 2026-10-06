@@ -88,6 +88,15 @@ the key, so a browser never holds it.
 planner's wait) are errors, and every one of them carries a `RouteResponse`. Never answer 429:
 that is how the old V1 client turned "busy" into "no path".
 
+**A point beyond the edge of the world never comes back.** Detour turns a coordinate into a tile
+index with `(int)`, which saturates far outside the world grid, and its loop over those tiles then
+never ends: one `/area` request held a continent's lane, a core and every cost-zone save for good
+(known issue 32). Check a caller's world point with `NavmeshCoords.InWorld`, after any map
+conversion, before it reaches a query, as `/area` and the watch drawings do; a route endpoint out
+there answers `NotBaked` first, since no tile exists. Route tuning is capped as well
+(`NavmeshQueryTuning.MaxJitterYards` and `MaxEdgeMarginYards`, 10 yards): jitter searches every
+polygon within its radius, and an edge margin pushes points that far.
+
 **A route that stops short says so.** The band search (`RouteSearch.Band`, the default and the
 bot's own) loads tiles only within about 270 yards of the straight line, 530 when it widens; a
 route that must stray further ends at a dead end. That used to come back as `Found`. Now a route
