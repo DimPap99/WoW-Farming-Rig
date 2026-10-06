@@ -35,7 +35,7 @@ Hosting/ServiceKeyGuard.cs         the key (ServiceClients' ServiceKeyPolicy): o
 Routes/RouteHandler.cs             RouteRequest -> RoutePlanner -> RouteResponse (the only mapping)
 Routes/RouteEndpoints.cs           POST /api/v1/routes/find
 Paths/PathName.cs                  the one check every path name passes
-Paths/RecordedPathStore.cs         Json/path library, formats exactly as before
+Paths/RecordedPathStore.cs         Json/path library, formats exactly as before; leaves the path groups alone
 Paths/PathEndpoints.cs             /api/v1/paths, /api/v1/area
 Forever/ForeverRouteLibrary.cs     Json/path/_forever: Forever route files, checked as a run loads them
 Forever/ForeverRouteEndpoints.cs   /api/v1/forever/routes
@@ -165,6 +165,14 @@ resets the engine, so a continent's triangle cache (gigabytes) never stays resid
 in `.json`, and never under `_forever/` (Forever route files, a different format). The old
 controller joined any name onto the folder. Continent names in the cost-zone and navmesh routes
 are the client's own continents only, for the same reason.
+
+**The path folder holds more than recorded paths.** The class profiles' path groups
+(`PathsFilenames`, `1-8_*.json`: `PathSettings` with requirements, commented) live beside the
+paths, and Newtonsoft reads one as points at 0, 0, 0. The store knows a recorded path by how the
+file starts (`RecordedPathStore.NotARecordedPath`: a list whose first entry starts with X, Y or
+Z) and leaves anything else alone: not listed, and a read, save or delete by its name answers 400.
+It reads only the start of each file, as the library lists the whole folder on every refresh. The
+sync's `paths` set still serves the groups: a Classic run needs them.
 
 **Forever route files are text, checked against Forever's map data.** The library reads and writes
 them as text, so the `//` comments that document a route survive a save, and it checks each with
