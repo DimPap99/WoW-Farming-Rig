@@ -1,6 +1,6 @@
 # Phase 1 review - the fixes: plan and handoff
 
-**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1. A max-level review of Phase 1
+**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1, 1.2. A max-level review of Phase 1
 (84c93499..7ef44187, the Pathing Service, the planner, the contracts, the pathing client and
 `ServiceTests`), checked against the code as of e71c5781, found what is now items 32 to 46 of
 [known-issues.md](known-issues.md). It also corrected items 2 and 12 and the floor-memory design
@@ -65,7 +65,7 @@ on the machine it ran on. Line numbers below are as of e71c5781.
 - **Trap:** the hang needs a lane (baked tiles) to reproduce; the regression test does not, since
   it asserts the refusal, which comes first.
 
-### 1.2 The path store edits the class profiles' path groups (item 34)
+### 1.2 The path store edits the class profiles' path groups (item 34) - done
 
 - **Facts:**
   - `Json/path` holds 546 point arrays and 8 group files: `1-8_*.json`, objects with
@@ -80,6 +80,8 @@ on the machine it ran on. Line numbers below are as of e71c5781.
     means not a path.
   - `List` skips such a file, and `Get` answers Unreadable ("... is a PathSettings group, not a
     recorded path"). `Save` and `Delete` refuse when the existing file is not a path.
+    - As built: `Get` answers 400 (Invalid), like a `_forever/` name, rather than Unreadable's
+      500, which the client retries.
   - The route library and the assignment form list through the store, so they stop offering
     the groups.
 - **Alternative (not chosen):** move the groups into a folder of their own, as `_forever` is.

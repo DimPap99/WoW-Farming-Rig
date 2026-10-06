@@ -20,6 +20,9 @@ public sealed class RecordedPathStoreTests
 {
     private static readonly Point3[] Points = [new(48.564f, 59.133f, 0), new(48.546f, 58.525f, 0), new(48.456f, 57.866f, 12.5f)];
 
+    // A PathSettings group that every Human 1-10 profile names; it shares the folder with the paths.
+    private const string Group = "1-8_Human_Northshire.json";
+
     // Frontend/Controllers/PathController.SavePath: System.Text.Json with an upper-case Vector3Converter.
     private static readonly JsonSerializerOptions ControllerOptions = new() { Converters = { new Vector3Converter(true) } };
 
@@ -77,6 +80,70 @@ public sealed class RecordedPathStoreTests
         Assert.Empty(store.List(null));
         Assert.Equal(StoreOutcome.Invalid, store.Get("_forever/trip.json").Outcome);
         Assert.Equal(StoreOutcome.Invalid, store.Save("_forever/trip.json", Points).Outcome);
+    }
+
+    [Fact]
+    public void A_class_profiles_path_group_is_left_alone()
+    {
+        using TempDataRoot data = new();
+        string group = data.CopyRepoFile(Path.Combine("path", Group));
+        byte[] before = File.ReadAllBytes(group);
+        RecordedPathStore store = new(data.Config());
+        store.Save("Loch.json", Points);
+
+        StoreResult<RecordedPath> read = store.Get(Group);
+        StoreResult saved = store.Save(Group, Points);
+        StoreResult deleted = store.Delete(Group);
+
+        Assert.Equal(["Loch.json"], store.List(null).Select(p => p.Name));
+        Assert.Equal(StoreOutcome.Invalid, read.Outcome);
+        Assert.Contains("\"Requirements\"", read.Error);
+        Assert.Equal(StoreOutcome.Invalid, saved.Outcome);
+        Assert.Equal(StoreOutcome.Invalid, deleted.Outcome);
+        Assert.Equal(before, File.ReadAllBytes(group));
+        Assert.Equal(Points, store.Get("Loch.json").Value!.Points);
+    }
+
+    [Fact]
+    public void The_repositorys_library_is_every_recorded_path_and_no_group()
+    {
+        DataConfig repo = TestData.RepoConfig();
+        RecordedPathStore store = new(repo);
+
+        string[] listed = [.. store.List(null).Select(p => p.Name)];
+        string[] left = [.. Directory.EnumerateFiles(repo.Path, "*.json", SearchOption.AllDirectories)
+            .Select(file => PathName.Relative(repo.Path, file))
+            .Where(name => !PathName.IsForeverRoute(name))
+            .Except(listed)];
+
+        Assert.Contains(Group, left);
+        Assert.All(left, name => Assert.Contains("\"Requirements\"", File.ReadAllText(Path.Combine(repo.Path, name))));
+        Assert.All(listed, name =>
+        {
+            StoreResult<RecordedPath> read = store.Get(name);
+            Assert.Equal(StoreOutcome.Done, read.Outcome);
+            Assert.NotEmpty(read.Value!.Points);
+        });
+    }
+
+    [Theory]
+    [InlineData("""[{"X":48.5,"Y":59.1}]""", true)]
+    [InlineData("""[ { "z": 1, "x": 2, "y": 3 } ]""", true)]
+    [InlineData("// recorded by hand\n[{\"Y\":1,\"X\":2}]", true)]
+    [InlineData("[]", true)]
+    [InlineData("""[{"Requirements":["Level < 3"]}]""", false)]
+    [InlineData("""[{}]""", false)]
+    [InlineData("""[[1,2,3]]""", false)]
+    [InlineData("""{"X":1}""", false)]
+    [InlineData("", false)]
+    [InlineData("not json", false)]
+    public void A_recorded_path_is_known_by_how_it_starts(string text, bool isPath)
+    {
+        using TempDataRoot data = new();
+        string file = Path.Combine(data.Root, "file.json");
+        File.WriteAllText(file, text);
+
+        Assert.Equal(isPath, RecordedPathStore.NotARecordedPath(file) is null);
     }
 
     [Theory]

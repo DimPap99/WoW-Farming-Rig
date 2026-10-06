@@ -197,20 +197,6 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - **Fix (not started):** bound the rasterized work in `Problem` (the legs' bounding boxes
       summed), which the loader and the bot share.
 
-34. **The path store lists, overwrites and deletes the class profiles' path groups.**
-    - **Where:** `PathingService/Paths/RecordedPathStore`; the Control Center's route library
-      (`Components/Designer/RouteLibrary.razor`) and assignment form offer what it lists.
-    - **Cause:** `Json/path` also holds the eight `PathSettings` group files (`1-8_*.json`,
-      arrays of `{Requirements, Generate, ...}` with comments) that every `*_1-10.json` class
-      profile names in `PathsFilenames`. Newtonsoft skips the comments and the unknown members,
-      so `Get` reads a group as a path of (0,0,0) points instead of answering Unreadable.
-    - **Effect:** the route library opens a group as 3 points. Saving it (no replace prompt,
-      since the name is the opened one) or deleting it makes every 1-10 profile throw on load
-      (`ClassConfiguration`: "file does not exists"). The data sync then copies the broken file
-      to the bot PCs.
-    - **Fix (not started):** keep the groups out of the store: refuse a file that is not a point
-      array, or move the groups to their own folder along with `PathsFilenames`.
-
 35. **The planner blocks request threads.**
     - **Where:** `RoutePlanner`. Route queries, `/area` and each leg of a continent route wait on
       the lane's `SemaphoreSlim` synchronously for up to 10 s; cost-zone reloads and
@@ -374,6 +360,16 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       unreadable file fails the whole GET.
 
 ## Fixed
+
+34. **The path store listed, overwrote and deleted the class profiles' path groups** (Phase 1
+    review, 2026-10-06). `Json/path` also holds the eight `PathSettings` groups (`1-8_*.json`)
+    that every 1-10 profile names in `PathsFilenames`. Newtonsoft read one as a path of (0,0,0)
+    points, so the route library opened it as 3 points, and saving or deleting it made every
+    1-10 profile throw on load. The store now knows a recorded path by how the file starts (a list
+    whose first entry starts with X, Y or Z, comments skipped) and leaves anything else alone: it is
+    not listed, and a read, save or delete by its name answers 400 with why. The route library and
+    the assignment form list through the store, so they no longer offer the groups; the data sync
+    still serves them.
 
 32. **One request could hang a continent's planner lane for good** (Phase 1 review, 2026-10-06).
     - **Cause:** only finiteness was checked. DotRecast's `CalcTileLoc` casts with
