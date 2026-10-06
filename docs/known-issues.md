@@ -19,10 +19,10 @@ commit that fixed it.
      planner mirrors today's behaviour so the parity gate holds, and the route contract has
      no `startIndoors` field until then.
 
-2. **A map route can throw, or quietly change frame, while converting back to map coordinates.**
-   - **Where:** `PPatherService.ToLocal`, called by `LocalPathingApi.FindMapRoute` (no catch),
-     and `RoutePlanner.WorldToMap`.
-   - **Cause:** both use `WorldMapAreaDB.GetWorldMapArea`, which returns the one map that holds
+2. **The bot's map route can throw, or quietly change frame, while converting back to map coordinates.**
+   - **Where:** `PPatherService.ToLocal`, called by `LocalPathingApi.FindMapRoute` (no catch).
+     `RoutePlanner.WorldToMap` did the same until the Phase 1 review (see "Fixed").
+   - **Cause:** it uses `WorldMapAreaDB.GetWorldMapArea`, which returns the one map that holds
      a point and throws when it finds none or several. The continent maps hold points too
      (1415 Eastern Kingdoms covers the gaps between its zones), so:
      - a point inside a zone other than the request's is in two or more maps, which throws
@@ -31,10 +31,11 @@ commit that fixed it.
        map's 0-100 frame, mixed in with the zone's. (-7500, 500) on map 0 is one; the Phase 1
        review (2026-10-06) counted 3,514 of 10,590 baked Azeroth tile centres held by 1415 alone;
      - `ArgumentOutOfRangeException` is left for a point outside every map of the continent.
-   - **Effect:** the bot's route fails on the follower's thread. `RoutePlanner` keeps a throwing
-     point in the request's zone, but a gap point jumps on the zone map with no error.
+   - **Effect:** the bot's route fails on the follower's thread, or a gap point jumps on the zone
+     map with no error.
    - **Fix:** convert every point in the request's zone (`WorldMapAreaDB.ToMap_FlipXY(world,
-     area)`, what the planner's catch does), in the planner now and on the bot in Phase 4.
+     area)`), as the planner does now, on the bot in Phase 4. `RoutePlannerParityTests` compares
+     map routes with `ToLocal`; its corpus stays in its zones, where the two agree.
 
 3. **Two threads can share one `NavmeshPathfinder`.**
    - **Where:** `PPatherService.GetQueryNavmesh`.
@@ -260,16 +261,14 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - **Fix:** correct the text; rule 4 needs the parity test, or the claim, to cover installs
       with archives.
 
-46. **Smaller findings.** (The null cost-zone entry, the continent names and `%2F` in path names
-    are fixed: see "Fixed".)
+46. **Smaller findings.** (The null cost-zone entry, the continent names, `%2F` in path names and
+    the planner's exception per map point, with item 2, are fixed: see "Fixed".)
     - A cost-zone save's uiMap id is checked only for being not negative, not against the
       continent's maps, so the number of zone files in a continent, which every load reads, has no
       bound. A check would have to keep uiMap 0, the legacy single file's.
     - A lane is built under the planner's global lock (`RoutePlanner.GetLane`): 15-60 ms,
       measured, in which every continent's queries and `/health` wait, again after each bake or
       cache clear.
-    - `RoutePlanner.WorldToMap` throws and catches an exception for each point outside the
-      request's zone.
     - An endpoint on a tile with no geometry (open sea) answers NotBaked, "download or bake",
       rather than NoPath: a bake writes no file for an empty tile.
     - `GET /costzones/{continent}` lists numeric file names only, while the loader applies every
@@ -282,6 +281,15 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       (`StatusCodeSelector` in `PathingServiceRegistration`); the manager needs the same lines.
 
 ## Fixed
+
+2. **The planner's map routes changed frame at a gap** (the planner's half; Phase 1 review,
+   2026-10-06). `RoutePlanner.WorldToMap` took each point in the map that held it, as the bot's
+   `ToLocal` does, and caught the throw for a point in two maps (any point in another zone, since
+   the continent's map holds it too) to keep it in the request's zone, an exception per point.
+   A point no zone held, only the continent's map, came back in that map's 0-100 frame among the
+   zone's. Every point is now converted in the request's zone, with no exception, so a map route
+   turns back into the world route it was planned as. Tested with a route from the Eastern
+   Plaguelands to a coast cliff that only Eastern Kingdoms' map holds. The bot's half is item 2.
 
 46. **Cost-zone continents and path names were checked too loosely** (item 46's second and third
     findings; Phase 1 review, 2026-10-06). The store took any name of letters and digits as a
