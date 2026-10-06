@@ -201,21 +201,6 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - **Fix (not started):** `WaitAsync` behind async endpoints, and `/area` answering 503 when
       busy, as routes do.
 
-36. **The pathing client misreads failures.**
-    - **Where:** `ServiceClients/Pathing/PathingClient.FindRouteAsync`, `ServiceClients/ServiceHttp`.
-    - **Cause and effect:**
-      - Any JSON body is read as a `RouteResponse`. A ProblemDetails (500 from a planner
-        exception, 400 from body binding, 401 from the key guard) becomes `Status =
-        (RouteStatus)500` with no points, so a caller's switch falls through and `Points.Length`
-        throws; a JSON error without `status` reads as `Found` with no points.
-      - When that read throws (a newer service's status this client does not know), the error
-        path reads the disposed body again, and its `ObjectDisposedException` turns a 200 into
-        "could not be reached".
-      - A NaN or infinite point throws in the client's own serializer, which is reported as
-        Unavailable (retryable) instead of BadRequest.
-    - **Fix (not started):** read a route only from the statuses that carry one, map the rest by
-      status code, read the body once, and check points before sending.
-
 38. **A planner lane never sees tiles that others write.** Item 12 fixed this for the service's
     own bakes.
     - **Where:** `RoutePlanner`'s lanes (a disk-only `NavmeshTileCache` keeps a missing tile as
@@ -302,6 +287,17 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       (`StatusCodeSelector` in `PathingServiceRegistration`); the manager needs the same lines.
 
 ## Fixed
+
+36. **The pathing client misread failures** (Phase 1 review, 2026-10-06). It read any JSON body
+    as a `RouteResponse`: a ProblemDetails (500, 400, 401) became `Status = (RouteStatus)500` with
+    no points, and a JSON error without `status` read as `Found` with none. A status it did not
+    know threw, and the error path then read the disposed body, which turned a 200 into "could not
+    be reached"; a NaN point threw in its own serializer and came back as Unavailable. Now
+    `FindRouteAsync` takes a route only from `application/json` with a status it knows and points
+    (at least one when found or partial), maps anything else by its status code with the service's
+    words, says "answered a route this client cannot read" with the body's start for a 2xx it cannot
+    read, and refuses a point or tuning that is not finite before sending. `ServiceHttp.TryReadAsync`
+    buffers a body before reading it, so it can be read again.
 
 42. **The test of fresh pathfinder memory per request could not fail** (Phase 1 review,
     2026-10-06). `A_query_does_not_inherit_the_previous_callers_floor` compared answers, but the

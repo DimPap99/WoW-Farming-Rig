@@ -1,6 +1,6 @@
 # Phase 1 review - the fixes: plan and handoff
 
-**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1 to 1.8 (1.8 without the writer's side, now in step 3), and of the independent items, 42. A max-level review of Phase 1
+**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1 to 1.8 (1.8 without the writer's side, now in step 3), and of the independent items, 42 and 36. A max-level review of Phase 1
 (84c93499..7ef44187, the Pathing Service, the planner, the contracts, the pathing client and
 `ServiceTests`), checked against the code as of e71c5781, found what is now items 32 to 46 of
 [known-issues.md](known-issues.md). It also corrected items 2 and 12 and the floor-memory design
@@ -197,7 +197,7 @@ on the machine it ran on. Line numbers below are as of e71c5781.
 
 ### Also independent: in step 1 if it goes quickly, else in step 3
 
-- **Item 36, the client misreads failures.**
+- **Item 36, the client misreads failures.** Done.
   - `ServiceHttp.TryReadAsync` buffers the body once (`LoadIntoBufferAsync`), so the error path
     can read it again.
   - `FindRouteAsync` takes a `RouteResponse` only from `application/json` (never

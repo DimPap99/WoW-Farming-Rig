@@ -98,7 +98,11 @@ public sealed class ServiceHttp(HttpClient http, string service)
         return $"the {service} could not be reached: {ex.Message}";
     }
 
-    /// <summary>The body as a <typeparamref name="T"/>, or default when it is not JSON of that shape.</summary>
+    /// <summary>
+    /// The body as a <typeparamref name="T"/>, or default when it is not JSON of that shape. The body
+    /// is buffered first, so a caller can read it again: as a refusal, say, when it was not a
+    /// <typeparamref name="T"/>.
+    /// </summary>
     public static async Task<T?> TryReadAsync<T>(HttpResponseMessage response, CancellationToken token)
     {
         if (response.Content.Headers.ContentType?.MediaType is not ("application/json" or "application/problem+json"))
@@ -108,6 +112,7 @@ public sealed class ServiceHttp(HttpClient http, string service)
 
         try
         {
+            await response.Content.LoadIntoBufferAsync(token).ConfigureAwait(false);
             return await response.Content.ReadFromJsonAsync<T>(ContractJson.Options, token).ConfigureAwait(false);
         }
         catch (JsonException)

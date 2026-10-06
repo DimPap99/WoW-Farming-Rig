@@ -10,7 +10,6 @@ using System;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
-using System.Threading;
 using System.Threading.Tasks;
 
 using Xunit;
@@ -99,25 +98,5 @@ public sealed class PathingClientRetryTests
             .ConfigurePrimaryHttpMessageHandler(() => service);
         services.Configure<HttpStandardResilienceOptions>($"{builder.Name}-standard", options => options.Retry.Delay = TimeSpan.Zero);
         return services.BuildServiceProvider();
-    }
-
-    private sealed class StubService(Func<HttpRequestMessage, HttpResponseMessage> answer) : HttpMessageHandler
-    {
-        private int attempts;
-
-        public int Attempts => Volatile.Read(ref attempts);
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            Interlocked.Increment(ref attempts);
-            try
-            {
-                return Task.FromResult(answer(request));
-            }
-            catch (HttpRequestException ex)
-            {
-                return Task.FromException<HttpResponseMessage>(ex);
-            }
-        }
     }
 }

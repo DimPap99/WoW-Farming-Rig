@@ -21,16 +21,32 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
 
     public async Task<RouteResponse> FindRouteAsync(RouteRequest request, CancellationToken token = default)
     {
+        // The serializer refuses these, which would read as the service being out of reach.
+        if (!IsFinite(request.From) || !IsFinite(request.To) || request.Tuning is RouteTuning tuning &&
+            (!float.IsFinite(tuning.JitterYards) || tuning.EdgeMarginYards is float margin && !float.IsFinite(margin)))
+        {
+            return RouteResponse.Failed(RouteStatus.BadRequest, "points and tuning must be finite numbers");
+        }
+
         try
         {
             using HttpResponseMessage response = await http.PostAsJsonAsync(PathingApi.FindRoute, request, ContractJson.Options, token)
                 .ConfigureAwait(false);
 
-            // Every status the route endpoint answers carries a RouteResponse; anything else
-            // (a proxy, a crash page) is reported by status.
-            if (await ServiceHttp.TryReadAsync<RouteResponse>(response, token).ConfigureAwait(false) is RouteResponse body)
+            // The route endpoint answers every status it has with a RouteResponse as application/json.
+            // A refusal from in front of it (the key guard, body binding, an exception) is problem+json,
+            // and anything else (a proxy, a crash page) is reported by its status.
+            if (response.Content.Headers.ContentType?.MediaType == "application/json" &&
+                await ServiceHttp.TryReadAsync<RouteResponse>(response, token).ConfigureAwait(false) is RouteResponse body &&
+                IsRoute(body))
             {
                 return body;
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                return RouteResponse.Failed(RouteStatus.Unavailable,
+                    $"the pathing service answered a route this client cannot read: {await ExcerptAsync(response, token).ConfigureAwait(false)}");
             }
 
             RouteStatus status = response.StatusCode == HttpStatusCode.BadRequest ? RouteStatus.BadRequest : RouteStatus.Unavailable;
@@ -44,6 +60,26 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
         {
             return RouteResponse.Failed(RouteStatus.Unavailable, service.Unreachable(ex));
         }
+    }
+
+    // A status this client knows, and points, at least one when the route was found or ends short.
+    private static bool IsRoute(RouteResponse route)
+    {
+        return route.Points is not null && Enum.IsDefined(route.Status) &&
+               (route.Points.Length > 0 || route.Status is not (RouteStatus.Found or RouteStatus.Partial));
+    }
+
+    private static bool IsFinite(Point3 p)
+    {
+        return float.IsFinite(p.X) && float.IsFinite(p.Y) && float.IsFinite(p.Z);
+    }
+
+    /// <summary>The start of a body that is not what was expected, for a person to read.</summary>
+    private static async Task<string> ExcerptAsync(HttpResponseMessage response, CancellationToken token)
+    {
+        const int MaxExcerpt = 200;
+        string text = await response.Content.ReadAsStringAsync(token).ConfigureAwait(false);
+        return text.Length <= MaxExcerpt ? text : text[..MaxExcerpt] + "...";
     }
 
     public Task<ServiceResult<PathingCapabilities>> GetCapabilitiesAsync(CancellationToken token = default)
