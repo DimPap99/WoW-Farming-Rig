@@ -192,7 +192,10 @@ ServiceClients' `AtomicFile`, which the agent's sync uses too.
 **A cost-zone save reloads the planner's zones at once.** The `CostZoneWatcher` would reload
 too, half a second later; the second reload is harmless. A save is validated with
 `CostZoneLoader.Problem`, the same rules the loader applies, so a bad save is refused (400)
-instead of silently dropping zones at the next load.
+instead of silently dropping zones at the next load. Those rules include the rasterizer's work: a
+road walks each leg's whole bounding box, so a file may take at most
+`CostZoneLoader.MaxRasterCells` (2,000,000) cells, 63 times the largest real file. Count the work
+beside the loops that do it (`CostZones.RasterCells`) if the rasterizer changes.
 
 **The map art's numbers live twice.** `MapArtTable` (for the Control Center, through
 `ContinentInfo.Art`) and the `Configs` of `MapAssets/wwwroot/script/leaflet-watch.js` (BlazorServer's

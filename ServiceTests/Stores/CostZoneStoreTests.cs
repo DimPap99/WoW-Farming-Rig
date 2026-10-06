@@ -1,6 +1,8 @@
 using Contracts;
 using Contracts.Pathing;
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Newtonsoft.Json;
 
 using PathingService.CostZones;
@@ -9,7 +11,11 @@ using PathingService.Hosting;
 using PPather.Graph;
 using PPather.Navmesh;
 
+using System;
 using System.IO;
+using System.Linq;
+using System.Numerics;
+using System.Threading.Tasks;
 
 using IOPath = System.IO.Path;
 
@@ -53,8 +59,7 @@ public sealed class CostZoneStoreTests
         Assert.Equal(Roads.Roads[0].Points, set.Roads[1429].Roads[0].Points);
         Assert.Equal(Danger.Circles, set.Danger[1429].Circles);
         Assert.Equal(Danger.Rectangles, set.Danger[1429].Rectangles);
-        Assert.True(CostZoneLoader.TryLoad(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
-            data.Config().Road, "Azeroth", out CostZones zones));
+        Assert.True(CostZoneLoader.TryLoad(NullLogger.Instance, data.Config().Road, "Azeroth", out CostZones zones));
         Assert.False(zones.IsEmpty);
     }
 
@@ -69,6 +74,95 @@ public sealed class CostZoneStoreTests
         Assert.Equal(StoreOutcome.Invalid, saved.Outcome);
         Assert.Equal(CostZoneLoader.Problem(new RoadData { Roads = [new RoadSegment("wide", 99, [new(0, 0)])] }), saved.Error);
         Assert.False(Directory.Exists(IOPath.Combine(data.Config().Road, "Azeroth")));
+    }
+
+    [Fact]
+    public void A_road_that_would_take_too_long_to_load_is_refused_naming_it()
+    {
+        using TempDataRoot data = new();
+        CostZoneStore store = new(data.Config());
+        // Two points, corner to corner: the leg's bounding box is the whole map, about 2.6e7 cells.
+        RoadZones diagonal = new([
+            new RoadLine("short", 2, [new(0, 0), new(100, 100)]),
+            new RoadLine("diagonal", 64, [new(-40000, -40000), new(40000, 40000)]),
+        ]);
+
+        StoreResult saved = store.SaveRoads("Azeroth", 1429, diagonal);
+
+        Assert.Equal(StoreOutcome.Invalid, saved.Outcome);
+        Assert.Contains("road 'diagonal'", saved.Error);
+        Assert.Contains("add points along it", saved.Error);
+        Assert.False(Directory.Exists(IOPath.Combine(data.Config().Road, "Azeroth")));
+    }
+
+    [Fact]
+    public void Danger_zones_that_would_take_too_long_to_load_are_refused()
+    {
+        using TempDataRoot data = new();
+        // Each rectangle is within the size cap, about 90,000 cells; thirty of them are not.
+        DangerRectangle[] many = [.. Enumerable.Range(0, 30)
+            .Select(i => new DangerRectangle($"r{i}", i * 100, 0, (i * 100) + 5000, 5000, 1))];
+
+        StoreResult saved = new CostZoneStore(data.Config()).SaveDanger("Azeroth", 1429, new([], many));
+
+        Assert.Equal(StoreOutcome.Invalid, saved.Outcome);
+        Assert.Contains("danger zones would take", saved.Error);
+        Assert.Contains("rectangle 'r0'", saved.Error);
+    }
+
+    [Fact]
+    public async Task A_file_on_disk_past_the_cap_is_skipped_and_the_rest_load()
+    {
+        using TempDataRoot data = new();
+        string continent = IOPath.Combine(data.Config().Road, "Azeroth");
+        Directory.CreateDirectory(continent);
+        File.WriteAllText(IOPath.Combine(continent, "1429.json"), JsonConvert.SerializeObject(CostZoneMapping.ToModel(Roads)));
+        // As a writer that skips the check would leave it: a zig-zag from corner to corner.
+        Vector2[] zigzag = [.. Enumerable.Range(0, 200).Select(i => i % 2 == 0 ? new Vector2(-40000, -40000) : new Vector2(40000, 40000))];
+        File.WriteAllText(IOPath.Combine(continent, "1430.json"), JsonConvert.SerializeObject(new RoadData
+        {
+            Roads = [new RoadSegment("zigzag", 64, zigzag)],
+        }));
+
+        (bool complete, CostZones zones) = await Task.Run(() =>
+            {
+                bool all = CostZoneLoader.TryLoad(NullLogger.Instance, data.Config().Road, "Azeroth", out CostZones loaded);
+                return (all, loaded);
+            }, TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.False(complete);
+        Assert.False(zones.IsEmpty);
+        Assert.Equal(1f, zones.CostFactor(-90f, -1825f));
+    }
+
+    [Fact]
+    public void Every_zone_file_in_the_repository_is_well_within_the_cap()
+    {
+        string[] files = Directory.GetFiles(IOPath.Combine(TestData.RepoJson, "road"), "*.json", SearchOption.AllDirectories);
+
+        Assert.NotEmpty(files);
+        foreach (string file in files)
+        {
+            string text = File.ReadAllText(file);
+            (string? problem, double cells) = IOPath.GetFileName(IOPath.GetDirectoryName(file)) == CostZoneLoader.DangerZoneFolder
+                ? Check(JsonConvert.DeserializeObject<DangerZoneData>(text)!)
+                : Check(JsonConvert.DeserializeObject<RoadData>(text)!);
+
+            Assert.Null(problem);
+            Assert.True(cells < CostZoneLoader.MaxRasterCells / 10, $"{file}: {cells} cells");
+        }
+    }
+
+    private static (string? Problem, double Cells) Check(RoadData data)
+    {
+        return (CostZoneLoader.Problem(data), data.Roads.Sum(r => CostZones.RasterCells(r)));
+    }
+
+    private static (string? Problem, double Cells) Check(DangerZoneData data)
+    {
+        return (CostZoneLoader.Problem(data),
+            data.Circles.Sum(c => CostZones.RasterCells(c)) + data.Rectangles.Sum(r => CostZones.RasterCells(r)));
     }
 
     [Fact]

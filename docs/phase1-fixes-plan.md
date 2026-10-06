@@ -1,6 +1,6 @@
 # Phase 1 review - the fixes: plan and handoff
 
-**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1, 1.2. A max-level review of Phase 1
+**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1, 1.2, 1.3. A max-level review of Phase 1
 (84c93499..7ef44187, the Pathing Service, the planner, the contracts, the pathing client and
 `ServiceTests`), checked against the code as of e71c5781, found what is now items 32 to 46 of
 [known-issues.md](known-issues.md). It also corrected items 2 and 12 and the floor-memory design
@@ -93,7 +93,7 @@ on the machine it ran on. Line numbers below are as of e71c5781.
 - **Trap:** `List` runs on every refresh of the library. Read only the start of each of the 546
   files, not the whole file.
 
-### 1.3 A cost-zone file can pass validation and hang every load (item 33)
+### 1.3 A cost-zone file can pass validation and hang every load (item 33) - done
 
 - **Facts:**
   - `CostZoneLoader.Problem` (`:156`) caps width (64), points per segment (50,000), coordinates
