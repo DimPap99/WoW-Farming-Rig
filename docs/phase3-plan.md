@@ -1,8 +1,7 @@
 # Phase 3 - plan, progress and what is left
 
-**Status (2026-10-06):** all six steps and the finishing docs are built. Steps 1 to 5 are pushed;
-step 6 and the docs are on `main` locally, not pushed yet. What is left needs Windows, and most of it
-a game: the Windows checklist below (item 1 passed), then decision 7, deleting BlazorServer's
+**Status (2026-10-06):** all six steps and the finishing docs are built and pushed to `main`. What
+is left needs Windows, and most of it a game: the Windows checklist below (item 1 passed), then decision 7, deleting BlazorServer's
 Forever runs page. This file holds the whole plan as agreed, what each step delivered and how it
 was checked, and the list to test on Windows. The design itself is
 [service-architecture.md](service-architecture.md); what was found along the way is in
@@ -296,7 +295,7 @@ and stop it, and read its log. Built and checked on the Windows PC with simulate
 - `docs/pathing-api.md`: the Control Center's pages as they are now (the world view, the fleet),
   the Bot Manager and the agents; `docs/configuration.md`: HeadlessServer's agent options; the
   README's feature summary.
-- Merged fast-forward to `main`; push when asked.
+- Merged fast-forward to `main` and pushed.
 
 ## Windows checklist
 
