@@ -99,7 +99,10 @@ the management side is down.
    effect without a restart, because `PPatherService` already watches them.
 4. **One planner implementation.** `PPather/Planning/RoutePlanner` serves the Pathing Service
    now and the agent's local mode later. A path previewed in the Control Center is the path
-   the bot will compute, and a parity test enforces that.
+   the bot will compute on a Classic install without game archives, and a parity test
+   (`RoutePlannerParityTests`) enforces that. With archives the bot seeds a missing height from
+   the geometry (canopy, terrain, `startIndoors`) while the planner takes the navmesh surface, and
+   the test skips; Forever plans differently too ([known issues](known-issues.md), items 40 and 45).
 5. **Failures are typed.** A route request returns `Found`, `Partial`, `NoPath`, `NotBaked`, `Unavailable`
    or `BadRequest`. "Service down" must never read as "no path", which is what the RemoteV1
    client does today with a 429.
@@ -150,7 +153,7 @@ Pathing Service on the same PC, or commit the authored files to the repository.
 | Endpoint | Body / query | Answer |
 |---|---|---|
 | `POST /api/v1/routes/find` | `RouteRequest(Client, UiMapId, Space: World\|Map, From, To, Tuning, Search: Band\|Continent)` | `RouteResponse(Status, Points, Smoothed, ElapsedMs, Detail)`; a `Partial` route holds the points as far as the search got; `BadRequest` (400) for tuning past 10 yards of jitter or edge margin |
-| `GET /api/v1/capabilities` | | `PathingCapabilities(ApiVersion, Client, Era, PathsAreSmoothed, Continents)` |
+| `GET /api/v1/capabilities` | | `PathingCapabilities(ApiVersion, Client, Era, PathsAreSmoothed, BakedContinents, GameFiles)`: the continents with tiles on disk, and whether bakes can run here |
 | `GET /api/v1/health` | | baked tiles per continent and resident lanes |
 | `GET /api/v1/paths?filter=` | | `RecordedPathInfo[]` |
 | `GET/PUT/DELETE /api/v1/paths/{name}` | `Point3[]` on PUT | `RecordedPath` / 204 / 404 |

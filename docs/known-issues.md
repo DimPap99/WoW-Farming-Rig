@@ -250,16 +250,16 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - **Fix (not started):** take the read lock and wait for the point's own tile, as `FindPath`
       does for its corridor.
 
-45. **Docs that promise more than the code does.**
-    - `service-architecture.md`, rule 4: "a parity test enforces" that a preview is the bot's
-      path, but `RoutePlannerParityTests` skips when the bot side has game archives. With them
-      the bot seeds a missing height from the geometry (`Search.CreateWorldLocation`: canopy,
-      terrain, `startIndoors`), while the planner always takes the navmesh surface. Parity holds
-      for disk-only Classic installs; Forever is item 40.
-    - `service-architecture.md`, the endpoint table: capabilities carries `BakedContinents` and
-      `GameFiles`, not `Continents`.
-    - **Fix:** correct the text; rule 4 needs the parity test, or the claim, to cover installs
-      with archives.
+45. **Parity holds only for disk-only Classic installs.**
+    - **Where:** `service-architecture.md`, rule 4, and `RoutePlannerParityTests`.
+    - **Cause:** with game archives the bot seeds a missing height from the geometry
+      (`Search.CreateWorldLocation`: canopy, terrain, `startIndoors`), while the planner always
+      takes the navmesh surface, and the parity test skips when the bot side has archives.
+      Forever is item 40.
+    - **Effect:** a preview can differ from what a bot with archives walks. Rule 4 says so since
+      the Phase 1 review, which also corrected the endpoint table's capabilities and reload rows.
+    - **Fix (not started):** a parity test for installs with archives, or planning as they do;
+      until then rule 4 claims disk-only Classic installs only.
 
 46. **Smaller findings.** (The null cost-zone entry, the continent names, `%2F` in path names and
     the planner's exception per map point, with item 2, are fixed: see "Fixed".)
