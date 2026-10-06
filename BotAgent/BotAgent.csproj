@@ -2,8 +2,9 @@
 
   <!-- The resident bot agent's machinery, without the bot (docs/service-architecture.md): its
        identity, the link it dials out to the Bot Manager over, the run host (one run at a time,
-       stop releases input first), telemetry and its log stream. Plain net10.0 and no Core, so
-       ServiceTests runs it on Linux against fake runtimes; HeadlessServer gives it Core's. -->
+       stop releases input first), the data sync, telemetry and its log stream. Plain net10.0 and
+       no Core, so ServiceTests runs it on Linux against fake runtimes; HeadlessServer gives it
+       Core's. DataConfig names the data folders the sync writes to, as it does for everything. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -19,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Contracts\Contracts.csproj" />
+    <ProjectReference Include="..\DataConfig\DataConfig.csproj" />
     <ProjectReference Include="..\ServiceClients\ServiceClients.csproj" />
   </ItemGroup>
 

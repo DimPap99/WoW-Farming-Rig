@@ -34,6 +34,26 @@ public sealed class ServiceHttp(HttpClient http, string service)
         }
     }
 
+    /// <summary>A body as it is, not JSON: a file's bytes exactly as the service stores them.</summary>
+    public async Task<ServiceResult<byte[]>> GetBytesAsync(string uri, CancellationToken token)
+    {
+        try
+        {
+            using HttpResponseMessage response = await http.GetAsync(uri, token).ConfigureAwait(false);
+            return response.IsSuccessStatusCode
+                ? new(await response.Content.ReadAsByteArrayAsync(token).ConfigureAwait(false), (int)response.StatusCode, null)
+                : new(default, (int)response.StatusCode, await ErrorAsync(response, token).ConfigureAwait(false));
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new(default, 0, Unreachable(ex));
+        }
+    }
+
     public async Task<ServiceResult<T>> SendAsync<T>(HttpMethod method, string uri, object? body, CancellationToken token)
     {
         try

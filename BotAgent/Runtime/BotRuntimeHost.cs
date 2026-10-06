@@ -269,7 +269,17 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
     {
         foreach (IRunPreparation preparation in preparations)
         {
-            RunPreparation prepared = preparation.PrepareAsync(assignment, run.Stop.Token).GetAwaiter().GetResult();
+            RunPreparation prepared;
+            try
+            {
+                prepared = preparation.PrepareAsync(assignment, run.Stop.Token).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException) when (run.Stop.IsCancellationRequested)
+            {
+                // A stop while pulling data is a stop like any other, not the run failing.
+                return new BotRunResult(BotRunOutcome.Stopped, "stopped before it started");
+            }
+
             if (prepared.Message is not null)
             {
                 run.Message = prepared.Message;

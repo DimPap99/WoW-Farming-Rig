@@ -34,7 +34,9 @@ Run two or three, each with its own name and identity file. It registers, stream
 and its log, and obeys Start and Stop: a run "waits for a click" for `--Sim:ClickSeconds` (5),
 then walks a circle in Durotar, fighting, looting and resting by the clock, a log line a second,
 until it is stopped or its time bound is up. `--Sim:Client=som` reports a Classic client, and a
-Forever assignment is then refused, as the real agent refuses it. **On a game PC never fake bots
+Forever assignment is then refused, as the real agent refuses it. `--Sim:Data=<folder>
+--PathingService:Url=<url>` adds the real data sync: each run first pulls its files into a data root
+in that folder, so the console shows "Syncing data" and the sync's line. **On a game PC never fake bots
 with `HeadlessServer --agent`:** it sees the WoW client and would start a real run.
 
 ## BakeTool

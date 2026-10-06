@@ -12,9 +12,9 @@ override; `BakeTool --root` exists precisely because of that.
 
 | key | properties | why |
 |---|---|---|
-| **era** (`ClientEra`) | `Navmesh`, `Leaflet`, `Road`, `AreaGrid` | clients that share a world share these |
+| **era** (`ClientEra`) | `Navmesh`, `Leaflet`, `Road` (`RoadOf(era)` for any era), `AreaGrid` | clients that share a world share these |
 | **client** (`Exp`) | `ExpDbc`, `Subzones`, `ExpArea`, `NpcSpawnLocations`, `ExpHistory`, ... | id spaces and addon mappings differ per client |
-| **neither** | `MPQ`, `Class`, `Path`, `PPather`, `Locations` | one directory, whatever you point it at |
+| **neither** | `MPQ`, `Class`, `Path`, `ForeverRoutes`, `PPather`, `Locations`, `Sync` | one directory, whatever you point it at |
 
 `ClientEra`: vanilla/tbc/wrath and their `legacy_*` → `precata`; `cata`/`legacy_cata` →
 `cata`; `mop`/`legacy_mop` → `mop`.
@@ -34,6 +34,14 @@ routes the bot through solid geometry. Mists is deliberately excluded from the s
 whitelist: its art was never compared. Measure before adding to it, and never turn it
 into a blanket "fall back if missing" — that would serve precata *Azeroth* art to a cata
 client, which is a different world.
+
+**`Eras` is every era `ClientEra` gives a known client** (`precata`, `cata`, `mop`, `forever`). A
+folder is named after an era, so an era from a request (the Pathing Service's sync, `?era=`) is
+taken only when it is one of these. Add to it when `ClientEra` gains an era.
+
+**`ForeverRouteFolder` is the one spelling of `_forever`.** `ForeverRouteFile.Folder` (SharedLib)
+is defined from it, and `ForeverRoutes` is the folder. `Sync` (`.sync` in the root) is where an
+agent keeps what it last synced from the Pathing Service and the local changes it kept aside.
 
 **`Locations` holds `teleport_locations.txt`, the one copy.** Each line carries its own map id,
 so it serves every client; the map (`/locations`) and the Pathing Service's location catalog

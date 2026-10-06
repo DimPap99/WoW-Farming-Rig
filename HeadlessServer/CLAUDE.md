@@ -3,15 +3,17 @@
 Same bot as `BlazorServer`, minus the web front end, on the Generic Host. A class profile on the
 command line runs at once, as it always has; `--agent` keeps the process as this PC's bot agent
 (`docs/service-architecture.md`): it dials out to the Bot Manager, runs one assignment at a time
-(Classic or WoW: Forever), and streams telemetry. It is also the working directory benchmarks chdir
-into.
+(Classic or WoW: Forever), pulls each run's files from the Pathing Service first, and streams
+telemetry. A logon task keeps it running (`install-agent-task.ps1`). It is also the working
+directory benchmarks chdir into.
 
 ```
 Program.cs                    config, Serilog, CommandLineParser, then the host; ends the process
 HeadlessArguments.cs          the command line's two readers apart (configuration keys / options)
 RunOptions.cs                 the CLI surface
 DependencyInjection.cs        StartupConfig options from RunOptions (a Classic run's composition)
-Hosting/HeadlessHost.cs       the Generic Host: BotAgent + the runtimes below
+Hosting/HeadlessHost.cs       the Generic Host: BotAgent, its data sync, and the runtimes below
+Hosting/ResidentHost.cs       runs the host; an agent's is built again after a failure; exit codes
 Hosting/HeadlessLogging.cs    Serilog: file, debug, console, and the agent's log stream
 Hosting/StartFromCommandLine  a profile given on the command line runs at once
 Hosting/AgentProcess.cs       the way out for a run that cannot be torn down (exit code 75)
@@ -23,6 +25,8 @@ Runtimes/ClassProfileFolder   Json/class, for the manager's Classic assignments
 headless_appsettings.json     options (note the prefix - NOT appsettings.json)
 data_config.json, addon_config.json, frame_config.json, agent_identity.json   beside it, gitignored
 run.bat / rundev.bat / build.bat / install.bat / loadall.bat
+run-agent.ps1                 the agent in a loop: started again unless it exits 0 (run-agent.log)
+install-agent-task.ps1        the logon task that runs run-agent.ps1; uninstall-agent-task.ps1 removes it
 ```
 
 ## Running
@@ -31,7 +35,15 @@ run.bat / rundev.bat / build.bat / install.bat / loadall.bat
 .\build.bat
 .\run.bat Warrior_1.json -m Local -p <wow-pid>                      # as always: runs, Ctrl+C stops it
 .\run.bat --agent --manager http://botbox:5030 --name "PC 1"       # resident agent
+.\run.bat --agent --manager http://botbox:5030 --pathing-service http://botbox:5010   # syncing runs first
+powershell -ExecutionPolicy Bypass -File .\install-agent-task.ps1    # the agent at every logon
 ```
+
+The logon task runs `run-agent.ps1`, which runs the Release build (`dotnet run -c Release
+--no-build`) in a loop: build first. Its settings are this folder's `headless_appsettings.json`;
+`-Manager`, `-PathingService` and `-Name` put them on the agent's command line instead. Ctrl+C in
+the agent's window stops it (keys released first) and ends the loop; `uninstall-agent-task.ps1`
+removes the task and leaves a running agent alone.
 
 **The class profile is positional, not an option.** There is no `-c`/`--classconfig`; it comes
 first and bare, and it is needed unless `--agent` is given. Passing `-c Warrior_1.json` fails to parse.
@@ -48,6 +60,7 @@ Long forms take two dashes (`--mode`); `CommandLineParser` rejects `-mode`.
 | `--agent` | stay resident: run what the Bot Manager assigns; a profile given too starts at once |
 | `--manager <url>` | the Bot Manager (`BotManager:Url`); none: the agent runs on its own |
 | `--name <name>` | what the manager calls this agent (`Agent:Name`); the machine name by default |
+| `--pathing-service <url>` | the Pathing Service runs sync from first (`PathingService:Url`); none: this PC's copies |
 | `-m, --mode` | `Local` (default) / `RemoteV1` / `RemoteV3` |
 | `-p, --pid` | WoW process id — needed when several clients run |
 | `-r, --reader` | screen reader backend |
@@ -57,8 +70,8 @@ Long forms take two dashes (`--mode`); `CommandLineParser` rejects `-mode`.
 | `-t/-s/-v` | targeting / skinning / target-vs-add overlays |
 | `--loadonly` | load the class config, report, exit — no bot |
 
-The key for a manager on another PC is never on the command line: `ApiKey` (or `BotManager:ApiKey`)
-in `headless_appsettings.json` or the environment.
+The key for a manager or a Pathing Service on another PC is never on the command line: `ApiKey` (or
+`BotManager:ApiKey`, `PathingService:ApiKey`) in `headless_appsettings.json` or the environment.
 
 ## Things that will bite you
 
@@ -79,8 +92,24 @@ run composes Core for the client the probe found, then disposes it.
 **Stop releases input first.** A stop (a command, Ctrl+C, a logoff, the host stopping) cancels the
 run's token; the run turns the bot off, which releases what it holds, and only then is torn down.
 A run that has not ended after `Agent:StopGraceMs` (10 s) has its keys released from outside; one
-that still does not end is abandoned and the process exits with 75, which the logon task's loop
-restarts. See `Game/CLAUDE.md` for why the order matters.
+that still does not end is abandoned and the process exits with 75, which `run-agent.ps1` starts
+again. See `Game/CLAUDE.md` for why the order matters.
+
+**An agent's host is built again; its process is started again.** `ResidentHost` decides after each
+host: a stop (Ctrl+C, a logoff, the task ending) ends the process with the host's code; a failure
+(the host threw before it was asked to stop, or a background service faulted) builds a new host after
+3 s in the same process, or, with a run still under way, ends it with 75, since only a new process
+takes a run's threads. On .NET 10 a faulted `BackgroundService` stops the host and `Run()` returns
+as after a stop, exit code 0 (.NET 11 changes this), so faults are read from the services'
+`ExecuteTask`; without that, a broken link would end the agent with 0 and `run-agent.ps1` would not
+start it again. A profile run without `--agent` is never built again: a failure exits 1.
+
+**Every run syncs first, when a Pathing Service is set.** With `PathingService:Url` (or
+`--pathing-service`), a run, an assignment or a profile on the command line alike, pulls its files
+into `../Json` before it starts (BotAgent's `DataSync`): in a git checkout they then show as local
+changes. `Json/.sync/` (gitignored) holds what was synced and the local changes kept aside. The
+logging overrides for `System.Net.Http.HttpClient` and `Polly` in `headless_appsettings.json` keep
+its HTTP client out of the console; keep them when copying settings around.
 
 **Forever runs only as an agent assignment.** A Forever route goes through Core's `ForeverRun`
 with the trial runner's gates: the verified profile, the preflight, a click into the game window

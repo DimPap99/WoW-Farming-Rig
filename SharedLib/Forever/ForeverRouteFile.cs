@@ -19,8 +19,8 @@ public sealed record ForeverRoute(string Name, IReadOnlyList<ForeverTask> Tasks,
 /// </summary>
 public static class ForeverRouteFile
 {
-    /// <summary>The folder under <c>Json/path</c> that holds the route files.</summary>
-    public const string Folder = "_forever";
+    /// <summary>The folder under <c>Json/path</c> that holds the route files (<see cref="DataConfig.ForeverRoutes"/>).</summary>
+    public const string Folder = DataConfig.ForeverRouteFolder;
 
     private static readonly JsonSerializerSettings Settings = new()
     {

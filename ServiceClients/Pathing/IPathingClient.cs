@@ -53,6 +53,15 @@ public interface IPathingClient
 
     Task<ServiceResult> ReloadCostZonesAsync(CancellationToken token = default);
 
+    /// <summary>Every file of a sync set with its size and hash, for an agent to compare its copies with.</summary>
+    /// <param name="set">One of <see cref="SyncSets"/>.</param>
+    /// <param name="era">The era of <see cref="SyncSets.CostZones"/>; null for the other sets.</param>
+    Task<ServiceResult<SyncManifest>> GetSyncManifestAsync(string set, string? era = null, CancellationToken token = default);
+
+    /// <summary>One file of a sync set, its bytes exactly as the service stores them.</summary>
+    /// <param name="name">Its path in the set's folder, <c>/</c> between subfolders.</param>
+    Task<ServiceResult<byte[]>> GetSyncFileAsync(string set, string name, string? era = null, CancellationToken token = default);
+
     Task<ServiceResult<WorldInfo>> GetWorldAsync(CancellationToken token = default);
 
     /// <param name="uiMapId">The zone.</param>

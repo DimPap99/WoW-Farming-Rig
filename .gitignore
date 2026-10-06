@@ -306,6 +306,8 @@ HeadlessServer/addon_config.json
 HeadlessServer/data_config.json
 # The resident agent's id (BotAgent): one per PC, never shared
 **/agent_identity.json
+# What the agent last synced from the Pathing Service, and the local changes it kept aside
+Json/.sync/
 
 # BenchmarkDotNet artifacts
 **/BenchmarkDotNet.Artifacts/

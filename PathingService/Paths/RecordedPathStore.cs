@@ -5,6 +5,8 @@ using Newtonsoft.Json;
 
 using PathingService.Hosting;
 
+using ServiceClients;
+
 using SharedLib.Converters;
 
 using System;

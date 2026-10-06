@@ -129,6 +129,17 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
         return SendAsync(HttpMethod.Post, PathingApi.CostZonesReload, null, token);
     }
 
+    public Task<ServiceResult<SyncManifest>> GetSyncManifestAsync(string set, string? era = null, CancellationToken token = default)
+    {
+        return GetAsync<SyncManifest>($"{PathingApi.Sync}/{Uri.EscapeDataString(set)}{EraQuery(era)}", token);
+    }
+
+    public Task<ServiceResult<byte[]>> GetSyncFileAsync(string set, string name, string? era = null, CancellationToken token = default)
+    {
+        return service.GetBytesAsync(
+            $"{PathingApi.Sync}/{Uri.EscapeDataString(set)}/{PathingApi.SyncFiles}/{EscapeSegments(name)}{EraQuery(era)}", token);
+    }
+
     public Task<ServiceResult<WorldInfo>> GetWorldAsync(CancellationToken token = default)
     {
         return GetAsync<WorldInfo>(PathingApi.World, token);
@@ -228,8 +239,13 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
         return service.SendAsync(method, uri, body, token);
     }
 
-    // Each segment escaped on its own, so a subfolder's '/' stays a separator.
     private static string PathUri(string name)
+    {
+        return $"{PathingApi.Paths}/{EscapeSegments(name)}";
+    }
+
+    // Each segment escaped on its own, so a subfolder's '/' stays a separator.
+    private static string EscapeSegments(string name)
     {
         string[] segments = name.Split('/');
         for (int i = 0; i < segments.Length; i++)
@@ -237,7 +253,12 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
             segments[i] = Uri.EscapeDataString(segments[i]);
         }
 
-        return $"{PathingApi.Paths}/{string.Join('/', segments)}";
+        return string.Join('/', segments);
+    }
+
+    private static string EraQuery(string? era)
+    {
+        return era is null ? string.Empty : $"?era={Uri.EscapeDataString(era)}";
     }
 
     private static string ForeverRouteUri(string name)

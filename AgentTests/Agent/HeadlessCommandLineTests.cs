@@ -49,7 +49,7 @@ public sealed class HeadlessCommandLineTests
     public void A_class_profile_or_agent_is_needed()
     {
         RunOptions none = Parse();
-        RunOptions agent = Parse("--agent", "--manager", "http://botbox:5030", "--name", "PC1");
+        RunOptions agent = Parse("--agent", "--manager", "http://botbox:5030", "--name", "PC1", "--pathing-service", "http://botbox:5010");
         RunOptions profile = Parse("Warrior_1.json");
         RunOptions loadOnlyAgent = Parse("--agent", "--loadonly");
 
@@ -57,7 +57,7 @@ public sealed class HeadlessCommandLineTests
         Assert.Null(agent.Problem);
         Assert.Null(profile.Problem);
         Assert.NotNull(loadOnlyAgent.Problem);
-        Assert.Equal(["BotManager:Url=http://botbox:5030", "Agent:Name=PC1"],
+        Assert.Equal(["BotManager:Url=http://botbox:5030", "Agent:Name=PC1", "PathingService:Url=http://botbox:5010"],
             agent.ConfigurationValues().Select(pair => $"{pair.Key}={pair.Value}"));
     }
 

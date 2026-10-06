@@ -7,6 +7,8 @@ using PathingService.Hosting;
 using PPather.Graph;
 using PPather.Navmesh;
 
+using ServiceClients;
+
 using System;
 using System.Collections.Generic;
 using System.IO;

@@ -33,6 +33,15 @@ public sealed record PathingServiceOptions(Uri Url, string? ApiKey = null)
         return new PathingServiceOptions(uri, ServiceKeyConfig.For(configuration, Position));
     }
 
+    /// <summary>
+    /// The options when <c>PathingService:Url</c> is set, else null: an agent with no service
+    /// configured syncs nothing and runs on its own copies.
+    /// </summary>
+    public static PathingServiceOptions? FromIfConfigured(IConfiguration configuration)
+    {
+        return string.IsNullOrWhiteSpace(configuration[UrlKey]) ? null : From(configuration);
+    }
+
     /// <summary>The address only: the key never reaches a log.</summary>
     public override string ToString()
     {

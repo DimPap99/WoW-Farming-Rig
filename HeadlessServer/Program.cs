@@ -16,8 +16,9 @@ namespace HeadlessServer;
 
 /// <summary>
 /// The bot without a UI, and this PC's resident bot agent. A class profile on the command line runs
-/// at once, as it always has; <c>--agent</c> keeps the process for the Bot Manager's assignments.
-/// It runs on the Generic Host, so Ctrl+C or a logoff stops it cleanly: a run releases input first.
+/// at once, as it always has; <c>--agent</c> keeps the process for the Bot Manager's assignments, and
+/// builds its host again if it fails (<see cref="ResidentHost"/>). It runs on the Generic Host, so
+/// Ctrl+C or a logoff stops it cleanly: a run releases input first.
 /// </summary>
 public static class Program
 {
@@ -81,9 +82,8 @@ public static class Program
             return ClassicRuntime.LoadOnly(options.ClassConfig!, options, configuration, loggerFactory) ? ExitOk : ExitError;
         }
 
-        using IHost host = HeadlessHost.Build(configuration, environment, options, sink);
-        host.Run();
-        return Environment.ExitCode;
+        // An agent's host is built again when it fails; a profile's run ends with its host.
+        return ResidentHost.Run(() => HeadlessHost.Build(configuration, environment, options, sink), log, resident: options.Agent);
     }
 
     // --help and --version come back as NotParsed too, but they are a satisfied request.
