@@ -159,9 +159,9 @@ Pathing Service on the same PC, or commit the authored files to the repository.
 | `POST /api/v1/forever/routes/check` | `ForeverRouteDraft` | `ForeverRouteInfo`, nothing saved |
 | `GET /api/v1/area?mapId&x&y` | | `AreaAtPoint(AreaId, Z, UiMapId)`: the baked area, its zone (a sub-area's parent), the ground's height; 400 beyond the edge of the world (17,066.67 yards from 0) |
 | `GET /api/v1/costzones/{continent}` | | `CostZoneSet` (roads and danger zones by uiMap) |
-| `PUT /api/v1/costzones/{continent}/roads/{uiMapId}` | `RoadZones` | 204, or 400 with the reason |
-| `PUT /api/v1/costzones/{continent}/danger/{uiMapId}` | `DangerZones` | 204, or 400 with the reason |
-| `POST /api/v1/costzones/reload` | | 204 |
+| `PUT /api/v1/costzones/{continent}/roads/{uiMapId}` | `RoadZones` | 204, or 400 with the reason; 409 when saved but not in use, because another file of the continent does not load (named) |
+| `PUT /api/v1/costzones/{continent}/danger/{uiMapId}` | `DangerZones` | as the roads |
+| `POST /api/v1/costzones/reload` | | 204, or 409 naming the file that does not load |
 | `GET /api/v1/sync/{set}?era=` | | `SyncManifest(Set, Era, Files)`: each file's name, size and SHA-256 with CRLF read as LF; sets `paths`, `forever-routes`, `costzones` (by era, any era); 400 for an unknown set or era |
 | `GET /api/v1/sync/{set}/files/{**name}?era=` | | the file's bytes as stored; 400 for a name outside the set, 404 |
 | `GET /api/v1/world` | | `WorldInfo(Client, Era, HasMap, Continents, Zones, NpcFlags)` |

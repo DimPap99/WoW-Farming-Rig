@@ -1,6 +1,6 @@
 # Phase 1 review - the fixes: plan and handoff
 
-**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1, 1.2, 1.3, 1.4. A max-level review of Phase 1
+**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1 to 1.5. A max-level review of Phase 1
 (84c93499..7ef44187, the Pathing Service, the planner, the contracts, the pathing client and
 `ServiceTests`), checked against the code as of e71c5781, found what is now items 32 to 46 of
 [known-issues.md](known-issues.md). It also corrected items 2 and 12 and the floor-memory design
@@ -142,7 +142,7 @@ on the machine it ran on. Line numbers below are as of e71c5781.
   no longer opens it for every call; tested with 120 503s and then a route that is found.
 - Item 30 (the log noise) shrinks with this, but stays its own item.
 
-### 1.5 A cost-zone save answers 204 when the reload failed (item 41)
+### 1.5 A cost-zone save answers 204 when the reload failed (item 41) - done
 
 - **Where:** `CostZoneEndpoints.Saved`, `RoutePlanner.ReloadCostZones` (`:522-555`).
 - **Fix:**
@@ -223,7 +223,7 @@ on the machine it ran on. Line numbers below are as of e71c5781.
     the canonical case) rather than letters and digits only;
   - refuse `%` in a path name (no file in `Json/path` has one).
 - **Item 45, the docs:**
-  - the endpoint table: `BakedContinents` and `GameFiles`; reload answers 204 or 409;
+  - the endpoint table: `BakedContinents` and `GameFiles` (reload's 204 or 409 went in with 1.5);
   - narrow rule 4 to what holds today, disk-only Classic installs, until step 3.
 
 ## Step 2 - review Phase 2

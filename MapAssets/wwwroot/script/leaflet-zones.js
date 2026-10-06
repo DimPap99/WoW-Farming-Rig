@@ -381,8 +381,15 @@ async function costZoneSave(uiMapId) {
 /// Never throws: the road and danger files are written back independently, and
 /// one failing must not abandon the other half-saved - that leaves a shape gone
 /// from the map but still on disk, which looks exactly like "delete did nothing".
+/// A 409 is a file saved but not in use: another file of the continent keeps its
+/// zones from reloading, and the detail names it.
 async function costZonePut(path, body) {
     const result = await pathingFetch(path, pathingJson('PUT', body));
+    if (result.status === 409) {
+        mapNotice(`Cost zones saved, not in use yet: ${result.error}`);
+        return true;
+    }
+
     if (!result.ok) {
         mapNotice(`Cost zones not saved: ${result.error}`);
     }

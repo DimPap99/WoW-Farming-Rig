@@ -40,8 +40,19 @@ public static class CostZoneLoader
         out CostZones zones, float roadFactor = CostZones.DefaultRoadFactor,
         float roadCoreHalfWidth = CostZones.DefaultRoadCoreHalfWidth)
     {
-        zones = Load(logger, roadRoot, continent, roadFactor, roadCoreHalfWidth, out bool complete);
-        return complete;
+        return TryLoad(logger, roadRoot, continent, out zones, out _, roadFactor, roadCoreHalfWidth);
+    }
+
+    /// <summary>
+    /// <see cref="TryLoad(ILogger, string, string, out CostZones, float, float)"/>, saying what
+    /// failed: the first file that was unreadable or invalid, relative to the road root, and why.
+    /// </summary>
+    public static bool TryLoad(ILogger logger, string roadRoot, string continent,
+        out CostZones zones, out string? failure, float roadFactor = CostZones.DefaultRoadFactor,
+        float roadCoreHalfWidth = CostZones.DefaultRoadCoreHalfWidth)
+    {
+        zones = Load(logger, roadRoot, continent, roadFactor, roadCoreHalfWidth, out failure);
+        return failure is null;
     }
 
     public static CostZones Load(ILogger logger, string roadRoot, string continent,
@@ -50,9 +61,9 @@ public static class CostZoneLoader
         Load(logger, roadRoot, continent, roadFactor, roadCoreHalfWidth, out _);
 
     private static CostZones Load(ILogger logger, string roadRoot, string continent,
-        float roadFactor, float roadCoreHalfWidth, out bool complete)
+        float roadFactor, float roadCoreHalfWidth, out string? failure)
     {
-        complete = true;
+        failure = null;
 
         string continentDir = IOPath.Join(roadRoot, continent);
         if (!Directory.Exists(continentDir))
@@ -65,13 +76,14 @@ public static class CostZoneLoader
 
         foreach (string file in Directory.GetFiles(continentDir, "*.json"))
         {
-            if (TryRead(logger, file, out RoadData? road) && road != null && Validate(logger, file, road, roadCoreHalfWidth))
+            string? problem = Read(logger, file, out RoadData? road) ?? Rejected(logger, file, Problem(road!, roadCoreHalfWidth));
+            if (problem is null)
             {
-                roads.Add(road);
+                roads.Add(road!);
             }
             else
             {
-                complete = false;
+                failure ??= $"{IOPath.GetRelativePath(roadRoot, file)}: {problem}";
             }
         }
 
@@ -80,13 +92,14 @@ public static class CostZoneLoader
         {
             foreach (string file in Directory.GetFiles(dangerDir, "*.json"))
             {
-                if (TryRead(logger, file, out DangerZoneData? danger) && danger != null && Validate(logger, file, danger))
+                string? problem = Read(logger, file, out DangerZoneData? danger) ?? Rejected(logger, file, Problem(danger!));
+                if (problem is null)
                 {
-                    dangerZones.Add(danger);
+                    dangerZones.Add(danger!);
                 }
                 else
                 {
-                    complete = false;
+                    failure ??= $"{IOPath.GetRelativePath(roadRoot, file)}: {problem}";
                 }
             }
         }
@@ -139,24 +152,14 @@ public static class CostZoneLoader
 
     private static bool IsSaneCoord(float v) => float.IsFinite(v) && MathF.Abs(v) <= CoordLimit;
 
-    private static bool Validate(ILogger logger, string file, RoadData data, float roadCoreHalfWidth)
+    // Logs why a file that read is not used; the problem passes through.
+    private static string? Rejected(ILogger logger, string file, string? problem)
     {
-        string? problem = Problem(data, roadCoreHalfWidth);
         if (problem != null)
         {
             logger.LogWarning("Cost zone file {File} rejected: {Problem}.", file, problem);
         }
-        return problem == null;
-    }
-
-    private static bool Validate(ILogger logger, string file, DangerZoneData data)
-    {
-        string? problem = Problem(data);
-        if (problem != null)
-        {
-            logger.LogWarning("Cost zone file {File} rejected: {Problem}.", file, problem);
-        }
-        return problem == null;
+        return problem;
     }
 
     /// <summary>
@@ -299,18 +302,19 @@ public static class CostZoneLoader
         return cells > MaxRasterCells ? TooMuchWork("danger zones", cells, most, mostCells) : null;
     }
 
-    private static bool TryRead<T>(ILogger logger, string file, out T? value) where T : class
+    // Why the file could not be read, or null when value holds it.
+    private static string? Read<T>(ILogger logger, string file, out T? value) where T : class
     {
         try
         {
             value = JsonConvert.DeserializeObject<T>(File.ReadAllText(file));
-            return value != null;
+            return value != null ? null : "it is empty";
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed reading cost zone file {File}", file);
             value = null;
-            return false;
+            return $"it could not be read: {ex.Message}";
         }
     }
 }

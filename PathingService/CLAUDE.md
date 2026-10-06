@@ -189,8 +189,12 @@ for its line endings); a file comes back as raw bytes. Names pass each folder's 
 would refuse is still listed: this is a file mirror, the run checks. Writes everywhere go through
 ServiceClients' `AtomicFile`, which the agent's sync uses too.
 
-**A cost-zone save reloads the planner's zones at once.** The `CostZoneWatcher` would reload
-too, half a second later; the second reload is harmless. A save is validated with
+**A cost-zone save reloads the planner's zones at once.** Only its continent's, and only if a lane
+is open there (a lane reads its files when it opens). The `CostZoneWatcher` would reload too, half
+a second later; the second reload is harmless, as reloads of a lane run one at a time, from read to
+swap. A reload is all or nothing: one file of the continent that does not load keeps the previous
+zones, so a save that cannot apply answers 409, saved but not in use, naming that file
+(`CostZoneLoader.TryLoad`'s failure). Both zone pages show it as saved. A save is validated with
 `CostZoneLoader.Problem`, the same rules the loader applies, so a bad save is refused (400)
 instead of silently dropping zones at the next load. Those rules include the rasterizer's work: a
 road walks each leg's whole bounding box, so a file may take at most
