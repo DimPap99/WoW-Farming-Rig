@@ -22,7 +22,7 @@ Wrath 3.3.5 is not planned because the bot requires *interact with target*, whic
 
 - Reads game state through the `DataToColor` add-on and supports configurable combat, looting, gathering, vendors, mail, trainers, and class profiles on supported clients.
 - Navigates with an in-process DotRecast navmesh. Pre-baked tiles can be downloaded by era, so normal navigation does not need local game archives or an external pathing server.
-- Offers a Blazor dashboard for configuration and monitoring, a headless host, and a Pathing Service that plans routes and stores recorded paths and road and danger-zone costs. The service runs on Linux and macOS as well as Windows. The project is moving to separate services with one bot agent per PC; see [service architecture](docs/service-architecture.md).
+- Offers a Blazor dashboard for configuration and monitoring, a headless host, and central services that run on Linux and macOS as well as Windows. The Pathing Service plans routes and stores recorded paths, Forever routes and road and danger-zone costs. The Bot Manager keeps the bots and their assignments. The Control Center shows every bot with a console each, beside the world map, route designer, cost zones and bakes. Each game PC runs one resident bot agent: it starts at logon, pulls a run's files from the Pathing Service first, and keeps playing while the services are down. See [service architecture](docs/service-architecture.md).
 - Supports generated grind routes, keybinding detection, and DXGI or Windows Graphics Capture screen readers.
 - Shows a read-only Forever diagnostic dashboard with visual health and power percentages, map position, target state, cooldown fill, and action-slot metadata. This port does not start the bot or send game input.
 
@@ -48,7 +48,7 @@ For a **supported** client on Windows 10 or later:
 
 3. Build and launch the dashboard with `BlazorServer\build.bat` and `BlazorServer\run.bat`. Start the WoW client, complete the add-on setup in the browser, load a class profile, and press **Start**.
 
-The [installation guide](docs/installation.md) covers display requirements, add-on setup, capture backends, and headless operation. The [Pathing Service and Control Center](docs/pathing-api.md) (route planning, live 3D view, map, path editing and bakes) also run on Linux and macOS. Already cloned without submodules? Run `git submodule update --init --recursive` before building.
+The [installation guide](docs/installation.md) covers display requirements, add-on setup, capture backends, and headless operation. The [central services](docs/pathing-api.md) (the Pathing Service, the Bot Manager and the Control Center: route planning, the world map, route design, bakes and the fleet of bots) also run on Linux and macOS. Already cloned without submodules? Run `git submodule update --init --recursive` before building.
 
 ## Documentation
 

@@ -10,13 +10,13 @@ Start with the [project README](../README.md) for the support matrix and quick s
 | Understand the app | [Overview](overview.md) · [Features](features.md) · [User interface](user-interface.md) · [Modes](modes.md) |
 | Configure behavior | [Class profiles](class-profiles.md) · [Goals](goals.md) · [Mail goal](mail-goal.md) · [Requirements](requirements.md) · [Interrupt requirements](interrupt-requirements.md) |
 | Configure navigation | [Navigation](navigation.md) · [Recording a route](route-recording.md) · [Legacy pathing setup](legacy-pathing-setup.md) |
-| Other operations | [Macros](macros.md) · [Pathing API](pathing-api.md) · [Troubleshooting](troubleshooting.md) |
+| Other operations | [Macros](macros.md) · [Central services and bot agents](pathing-api.md) · [Troubleshooting](troubleshooting.md) |
 | Upgrade settings | [Keybinding migration](keybinding-migration.md) · [Pathing configuration migration](config-migration.md) |
 | WoW: Forever | [Port status and diagnostics](forever-port.md) · [Activities and the selector](forever-activities.md) · [Agenda and tasks](forever-tasks.md) · [Movement](forever-movement.md) · [Route files](forever-routes.md) |
 
 ## Design and development
 
-- [Service architecture](service-architecture.md): where the project is heading - Pathing Service, Bot Manager, Control Center, one agent per PC
+- [Service architecture](service-architecture.md): Pathing Service, Bot Manager, Control Center, one agent per PC; [Phase 3's plan and Windows checklist](phase3-plan.md)
 - [Known issues and findings](known-issues.md): spotted problems, where they live and when they go away
 - [Architecture](architecture.md) and [technical challenges](technical-challenges.md)
 - [DotRecast fork](dotrecast-fork.md) and [upstream issue draft](dotrecast-upstream-issue.md)

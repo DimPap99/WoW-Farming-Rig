@@ -85,7 +85,7 @@ A few use case when you need to run `install.bat`
 
 For normal quick startup of `HeadlessServer` please look at the `HeadlessServer\run.bat` or `HeadlessServer\rundev.bat`.
 
-**Required** cli parameter: relative [Class Configuration](class-profiles.md#class-configuration) file name under the [/Json/class/](../Json/class) folder.
+**Required** cli parameter, unless `--agent` is given: relative [Class Configuration](class-profiles.md#class-configuration) file name under the [/Json/class/](../Json/class) folder.
 
 **Optional** cli parameters:
 
@@ -93,6 +93,10 @@ Long forms take **two** dashes (`--mode`), short forms one (`-m`).
 
 | cli | Description | Default Value | Possible Values |
 | ---- | ---- | ---- | ---- |
+| `--agent` | Stay resident as this PC's bot agent and run what the Bot Manager assigns | `false` | - |
+| `--manager` | The Bot Manager the agent dials out to (`BotManager:Url`) | none: on its own | e.g. `http://botbox:5030` |
+| `--name` | What the Bot Manager calls this agent (`Agent:Name`) | the machine name | - |
+| `--pathing-service` | The Pathing Service a run's files are synced from before it starts (`PathingService:Url`) | none: this PC's copies | e.g. `http://botbox:5010` |
 | `-m`<br>`--mode` | Pathfinder type | `Local` | `Local` or `RemoteV1` or `RemoteV3` |
 | `-p`<br>`--pid` | World of Warcraft process id | `-1` | open up task manager to find PID |
 | `-r`<br>`--reader` | Addon data screen reader backend | `DXGI` | `DXGI` or `WGC`. See [Screen Capture Methods](installation.md#screen-capture-methods) |
@@ -130,6 +134,16 @@ e.g. run from Powershell optional parameters, only loads the profile then exits 
 cd C:\WoW-Farming-Rig\HeadlessServer
 .\run.bat Hunter_1.json -m Local --loadonly
 ```
+
+e.g. as this PC's bot agent, run from the Control Center through the Bot Manager, with each run's
+files synced from the Pathing Service first
+```ps
+cd C:\WoW-Farming-Rig\HeadlessServer
+.\run.bat --agent --manager http://botbox:5030 --pathing-service http://botbox:5010
+```
+
+To start the agent at every logon and keep it running, install its logon task once with
+`install-agent-task.ps1`; see [The Bot Manager and the agents](pathing-api.md#the-bot-manager-and-the-agents).
 
 ## WoW Client - Interface Options
 

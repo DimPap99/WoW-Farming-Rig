@@ -1,10 +1,10 @@
 # Phase 3 - plan, progress and what is left
 
-**Status (2026-10-05):** steps 1 to 5 of 6 are on `main` (1 to 4 pushed; step 5 was built and
-checked on the Windows PC). Step 6, the finishing docs, and every check that needs Windows and a
-game are left. Item 1 of the Windows checklist passed. **Next: step 6.** This file holds the
-whole plan as agreed, what each step delivered and how it was checked, what remains, and the list
-to test on Windows. The design itself is
+**Status (2026-10-06):** all six steps and the finishing docs are built. Steps 1 to 5 are pushed;
+step 6 and the docs are on `main` locally, not pushed yet. What is left needs Windows, and most of it
+a game: the Windows checklist below (item 1 passed), then decision 7, deleting BlazorServer's
+Forever runs page. This file holds the whole plan as agreed, what each step delivered and how it
+was checked, and the list to test on Windows. The design itself is
 [service-architecture.md](service-architecture.md); what was found along the way is in
 [known-issues.md](known-issues.md).
 
@@ -212,38 +212,91 @@ and stop it, and read its log. Built and checked on the Windows PC with simulate
   user at the PC), and each bot's position as a marker in the 3D live view (the watch hub can
   draw it; "The bot's live view" in the design doc's Phase 3 starting notes).
 
-### Step 6 - data sync, logon task, restart loop - TO DO
+### Step 6 - data sync, logon task, restart loop - DONE (`c3544d5d`)
 
-- Pathing Service: `GET /api/v1/sync/{set}?era=` (manifest: name, size, SHA-256 of the text with
-  CRLF read as LF) and `GET /api/v1/sync/{set}/files/{**name}?era=` (raw bytes). Sets:
-  `forever-routes`, `costzones` (`Json/road/<era>`, any known era), `paths` (`Json/path` minus
-  `_forever`). Names checked (`PathName`, `ForeverRouteLibrary.TryResolve`). Contracts in
-  `Contracts/Pathing`, client calls in `IPathingClient`.
-- `BotAgent/Sync/DataSync : IRunPreparation` (the run host already calls preparations, state
-  "Syncing"): for Forever, the route and the era's cost zones; for Classic, the profile's paths
-  (every `PathFilename`, path group and the override, read from the profile JSON) and the cost
-  zones. Compare hashes, download what differs, back up a local change before replacing it, write
-  atomically, keep `.sync/state.json`, never delete. Service down or not configured
-  (`PathingService:Url` unset): run on local copies and say so; a missing local file refuses.
-- HeadlessServer: a restart loop around the host (as `BlazorServer/Program.Main`); the process
-  exit code 75 means "start me again".
-- `HeadlessServer/install-agent-task.ps1` / `uninstall-agent-task.ps1`: a Task Scheduler task at
-  logon, current user, interactive, limited, restart on failure, running `run-agent.ps1`, which
-  starts the agent again unless it exits 0. Parse-check with `pwsh` on Linux; really test on Windows.
-- Tests: the sync endpoints (bytes identical, comments kept, names refused, era); `DataSync` against
-  the in-memory Pathing Service (download, skip identical, CRLF counts as identical, back up a local
-  edit, never delete, service offline).
-- Note for the docs: on a bot PC that is a git checkout, synced files show as local changes.
+- **The sync endpoints** (`PathingService/Sync`). `GET /api/v1/sync/{set}` answers a `SyncManifest`:
+  each file's name, size and `SyncHash` (SHA-256 with CRLF read as LF).
+  `GET /api/v1/sync/{set}/files/{**name}` answers the file's bytes as stored. The sets
+  (`Contracts.Pathing.SyncSets`) are `paths` (`Json/path` without `_forever`), `forever-routes`, and
+  `costzones`, which needs `?era=`, one of `DataConfig.Eras`, whatever `--exp` the service runs. Names
+  pass each folder's own rules (`PathName`, `ForeverRouteLibrary.TryResolve`, relative names for
+  zones). The `paths` manifest (554 files, 1.7 MB) answers in about 15 ms, so nothing is cached.
+- **`BotAgent/Sync/DataSync`**, a run's preparation (state `Syncing`).
+  - What it pulls:
+    - a Forever run: its route;
+    - a Classic run: the override, and every path the profile names;
+    - both: the cost zones of the running client's era (`AgentGame.Era`). With no client running
+      there is no era to sync, and the runtime refuses the run next anyway.
+  - It fetches only what differs. A local copy that differs from what `Json/.sync/state.json` says
+    was last synced is kept in `Json/.sync/backup/<time>/` first. It writes atomically and never
+    deletes.
+  - With the service down, or none set (`PathingService:Url`), the run uses this PC's copies and the
+    line says so. A route or an override this PC lacks refuses the run, with why.
+  - A stop while syncing ends the run "stopped before it started": `BotRuntimeHost` catches the
+    cancellation.
+- **`ProfilePaths`** reads a profile's JSON (comments and trailing commas allowed). It takes every
+  `PathFilename`, `OverridePathFilename` and `PathsFilenames`, at any depth and in any letter case,
+  and reads `\` as `/`. The 101 repository profiles name 66 paths, all in the library.
+- **Shared pieces.**
+  - ServiceClients: `SyncHash`; `AtomicFile`, moved from the Pathing Service, with `WriteAllBytes`;
+    `IPathingClient.GetSyncManifestAsync`/`GetSyncFileAsync`, `ServiceHttp.GetBytesAsync`,
+    `PathingServiceOptions.FromIfConfigured`.
+  - DataConfig: `ForeverRoutes` (`ForeverRouteFile.Folder` is defined from `ForeverRouteFolder`),
+    `RoadOf(era)`, `Eras` and `Sync`. BotAgent references DataConfig now.
+- **HeadlessServer.**
+  - `--pathing-service`, and the sync in the host, so a profile run on the command line syncs too
+    when a service is set.
+  - `ResidentHost`, in agent mode: a host that fails is built again after 3 s. A run still under
+    way, or a restart asked for, ends the process with 75 instead.
+  - Found while planning: on .NET 10 a faulted `BackgroundService` stops the host and `Run()`
+    returns with exit code 0 (Microsoft's breaking-change note moves that to .NET 11), so faults are
+    read from the services' `ExecuteTask`.
+  - `run-agent.ps1` starts the agent again unless it exits 0. It waits 5 s, doubling to 5 min while
+    the agent keeps failing within a minute, and logs to `run-agent.log`.
+  - `install-agent-task.ps1` registers the logon task: current user, interactive, limited,
+    minimized, restart on failure, no time limit, one instance. `uninstall-agent-task.ps1` removes
+    it and leaves a running agent alone.
+- **Logging.** `headless_appsettings.json` sets `System.Net.Http.HttpClient: Warning` and
+  `Polly: Fatal`. Polly logs its last failed attempt at Error, with the stack trace, and that
+  reached the Control Center's console: a simulated agent showed it in the browser check.
+- **Verified on Linux, 2026-10-06.**
+  - Tests: 339 in all (`ServiceTests/Api/SyncApiTests`, `ServiceTests/Agent/DataSyncTests` and
+    `ProfilePathsTests`, `AgentTests/Agent/ResidentHostTests` and `DataSyncCompositionTests`).
+  - The real HeadlessServer agent (no game) ran against a scratch Pathing Service and Bot Manager on
+    side ports, each with a data root of its own:
+    - A Forever assignment pulled `crossroads_trip.json` byte for byte and recorded it; then the run
+      was refused with "no WoW client".
+    - A local edit made while the file also changed centrally: the edit went to
+      `.sync/backup/<time>/forever-routes/` and the central version replaced it. The next start
+      said "Up to date".
+    - `Druid_10_bear.json` with a path override pulled 3 files: the override,
+      `_pack\1-20\Night elf\09-11_Teldrassil_Near Lake Al'Ameth.json` and its vendor path.
+      `Druid_1-10.json` pulled its 8 path groups.
+    - With the service stopped, a start said it uses this PC's copies, after about 4 s of retries.
+      A route the PC lacked was refused with that reason. Once the service was back, the next run
+      pulled straight away.
+    - No HTTP or Polly line reached the log.
+  - `run-agent.ps1` under pwsh 7, against a Release build:
+    - after `kill -9` it logged "ended with 137 (it failed)" and started the agent again 5 s later;
+    - after a SIGTERM the agent exited 0 and the loop ended;
+    - `--` reaches dotnet: the arguments are one splatted array.
+  - In Chrome, a simulated agent with `--Sim:Data`: the console showed "Syncing data" while the sync
+    waited on a stopped service, then the sync's line, then "Waiting for a click".
+  - The install and uninstall scripts parse. `ScheduledTasks` exists only on Windows, so registering
+    the task is Windows checklist item 11.
 
-### Finishing - TO DO
+### Finishing - DONE
 
-- `docs/service-architecture.md`: "Phase 3 as built" (replacing "Phase 3 starting notes"), the status
-  line, the Windows checklist.
-- `docs/known-issues.md`: anything new from step 6; item 24 once the runs page is deleted.
-- CLAUDE.md files: PathingService (sync), root (ControlCenter's and Utilities' were done in step 5).
+- `docs/service-architecture.md`: the status line, "Phase 3 as built" in place of the starting
+  notes, the sync endpoints.
+- `docs/known-issues.md`: item 31 (a file deleted centrally stays on the bot PCs), and the agent's
+  log levels under item 30. Item 24 waits for the runs page to go.
+- CLAUDE.md files: the root, BotAgent, HeadlessServer, PathingService, DataConfig, Utilities.
 - `docs/forever-routes.md`: running a route from the Control Center through an agent.
-- README's feature summary if it changes.
-- Merge to `main` and push.
+- `docs/pathing-api.md`: the Control Center's pages as they are now (the world view, the fleet),
+  the Bot Manager and the agents; `docs/configuration.md`: HeadlessServer's agent options; the
+  README's feature summary.
+- Merged fast-forward to `main`; push when asked.
 
 ## Windows checklist
 
@@ -255,8 +308,8 @@ Windows PC can run these; report what happens next to each.
 and `frame_config.json` from BlazorServer.
 
 1. **Build and tests.** `dotnet build WoWFarmingRig.sln`, `dotnet build Utilities/ForeverControllerTrial`,
-   `dotnet build Utilities/ForeverVisualReader`, `dotnet test` (202 expected; tile tests skip without
-   the precata tiles). `dotnet run --project Utilities/ForeverVisualReader -c Release -- --logic-test`
+   `dotnet build Utilities/ForeverVisualReader`, `dotnet test` (202 expected then, 339 since step 6;
+   tile tests skip without the precata tiles). `dotnet run --project Utilities/ForeverVisualReader -c Release -- --logic-test`
    runs the Forever logic checks, which now import `SharedLib.Forever`.
    **Passed on Windows, 2026-10-05.** All three build with no errors. `dotnet test`: 201 passed,
    1 skipped (the minimap tiles); the precata navmesh is on that PC, so the tile tests ran.
@@ -303,8 +356,28 @@ and `frame_config.json` from BlazorServer.
    releases the keys, reports the run Abandoned and exits with code 75 (known issue 23 is one way:
    a Classic run started while the addon's data is not on screen).
 10. **Logoff.** With a run going, sign out of Windows: the run stops and releases (SIGTERM path).
-11. **After step 6:** the logon task (`install-agent-task.ps1`), a reboot, the agent starting at
-    logon and rejoining; the restart loop; the sync into a git checkout.
+11. **The logon task, the restart loop and the sync.** Only the last point needs the game.
+    - `HeadlessServer\build.bat`, then
+      `powershell -ExecutionPolicy Bypass -File HeadlessServer\install-agent-task.ps1 -Manager http://localhost:5030 -PathingService http://localhost:5010`
+      (or set both in `headless_appsettings.json` and pass neither). Task Scheduler lists
+      "WoW Farming Rig agent": at logon of this user, only when logged on, without highest
+      privileges.
+    - Log off and on (or reboot): a minimized window runs the agent, the fleet page shows the bot
+      online, and `HeadlessServer\run-agent.log` says "Starting the agent".
+    - End `HeadlessServer.exe` in Task Manager: the window logs that it ended and starts it again in
+      5 s, and the bot comes back online. Ctrl+C in the window: "Application is shutting down",
+      "The agent was stopped (exit 0)", and it stays down until the next logon or
+      `Start-ScheduledTask -TaskName "WoW Farming Rig agent"`.
+    - The sync into the git checkout:
+      - Save a new route in the Control Center's Forever routes and assign it. Start pulls it into
+        `Json\path\_forever` ("Pulled 1 file ...") before the run asks for the click, or is refused
+        with "no WoW client"; `git status` shows the file.
+      - Edit it locally, change it in the Control Center and start again: the edit is in
+        `Json\.sync\backup\<time>\`.
+      - Stop the Pathing Service and start: the console says the run uses this PC's copies.
+    - `uninstall-agent-task.ps1` removes the task; a running agent keeps running until Ctrl+C.
+    - With the game: a Classic assignment whose profile's paths are only on the Pathing Service
+      pulls them, and the bot walks them.
 
 When these pass, decision 7 applies: delete BlazorServer's Forever runs page and its host (known
 issue 24).
@@ -326,3 +399,10 @@ The scratch setup used for steps 1-4 (it lives outside the repository; recreate 
 - Background jobs ignore SIGINT in a non-interactive shell: stop an agent with SIGTERM.
 - `WebApplicationFactory` builds its server lazily and not thread-safely: start it (`_ = factory.Server`)
   before another thread uses it (see `ServiceTests/Agent/AgentUnderTest.cs`, `ManagerSlot.Bring`).
+- Step 6's sync check needs two data roots: the service's (as above) and the agent's (only `class`
+  linked). The agent's `HeadlessServer.dll` runs from a folder whose `data_config.json` points at its
+  root, with a copy of `headless_appsettings.json`. Side ports 5210/5220/5230 keep clear of the
+  user's services (5010-5030) and the browser checks (5110-5130).
+- `cd dir && nohup cmd &` backgrounds the whole list: `$!` is the subshell, not dotnet. Find the
+  process by its port (`ss -ltnp`), and remember that `pgrep -f` matches the shell running it too
+  (check `/proc/<pid>/exe`).
