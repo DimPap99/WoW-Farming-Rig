@@ -96,6 +96,9 @@ public sealed class NavmeshTileCache : IDisposable
     private readonly System.Collections.Concurrent.ConcurrentDictionary<(int x, int z), long> resident = [];
     // Guarded by stateLock.
     private readonly HashSet<(int x, int z)> emptyTiles = [];
+    // Tiles on disk that a disk-only cache could not read, warned about once each; read again on
+    // the next request, since a writer may not have finished them. Guarded by stateLock.
+    private readonly HashSet<(int x, int z)> unreadableTiles = [];
     // Tiles currently queued or baking - avoids duplicate work. Guarded by stateLock.
     private readonly HashSet<(int x, int z)> inFlight = [];
     private readonly object stateLock = new();
@@ -415,13 +418,17 @@ public sealed class NavmeshTileCache : IDisposable
 
         try
         {
-            DtMeshData? data = LoadOrBake(tx, tz, request.RequirePersistence);
+            DtMeshData? data = LoadOrBake(tx, tz, request.RequirePersistence, out bool unreadable);
 
             if (data == null)
             {
-                lock (stateLock)
+                // A tile that could not be read is not known to be empty: the next request reads it again.
+                if (!unreadable)
                 {
-                    emptyTiles.Add((tx, tz));
+                    lock (stateLock)
+                    {
+                        emptyTiles.Add((tx, tz));
+                    }
                 }
             }
             else
@@ -479,17 +486,52 @@ public sealed class NavmeshTileCache : IDisposable
         }
     }
 
-    private DtMeshData? LoadOrBake(int tx, int tz, bool requirePersistence = false)
+    // The tile from disk, else baked when the cache has a world; null for a tile with nothing on
+    // it. A disk-only cache that cannot read the file answers null with unreadable set, and leaves
+    // the file alone: it can never bake it again, and the file may be one a writer (a bake in
+    // another process, download-navmesh.ps1) has not finished.
+    private DtMeshData? LoadOrBake(int tx, int tz, bool requirePersistence, out bool unreadable)
     {
+        unreadable = false;
         string path = TilePath(tx, tz);
 
         if (File.Exists(path))
         {
             try
             {
-                using FileStream fs = File.OpenRead(path);
-                using BinaryReader br = new(fs);
-                return new DtMeshDataReader().Read(br, NavmeshSettings.VertsPerPoly);
+                DtMeshData? read;
+                using (FileStream fs = File.OpenRead(path))
+                using (BinaryReader br = new(fs))
+                {
+                    read = new DtMeshDataReader().Read(br, NavmeshSettings.VertsPerPoly);
+                }
+
+                lock (stateLock)
+                {
+                    unreadableTiles.Remove((tx, tz));
+                }
+
+                return read;
+            }
+            catch (Exception ex) when (world == null)
+            {
+                unreadable = true;
+                bool first;
+                lock (stateLock)
+                {
+                    first = unreadableTiles.Add((tx, tz));
+                }
+
+                if (first)
+                {
+                    logger.LogWarning(ex, "Navmesh tile {Path} could not be read; it is kept, and read again when a route needs it", path);
+                }
+                else if (logger.IsEnabled(LogLevel.Debug))
+                {
+                    logger.LogDebug("Navmesh tile {Path} still could not be read: {Reason}", path, ex.Message);
+                }
+
+                return null;
             }
             catch (Exception ex)
             {

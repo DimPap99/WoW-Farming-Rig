@@ -227,17 +227,16 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - **Fix (not started):** watch the tile folder (or its newest write, as the coverage cache
       does) and close the lanes it touches.
 
-39. **A disk-only tile cache deletes a tile it fails to read.**
-    - **Where:** `PPather/Navmesh/NavmeshTileCache.LoadOrBake`.
-    - **Cause:** a tile that does not parse is deleted to be baked again, even by a cache with no
-      world, which can never bake it. Bakes (`File.Create`) and `download-navmesh.ps1`
-      (extracting into the folder) write tiles in place.
-    - **Effect:** on Linux, a planner lane that reads a tile mid-write unlinks it and marks it
-      empty: the tile is gone from the shared folder and routes through it answer NoPath
-      (checked across two processes). On Windows the delete fails while the writer has the file
-      open, so nothing is lost.
-    - **Fix (not started):** delete only when the cache can bake; write tiles under a temporary
-      name and rename.
+39. **Tiles are written in place.**
+    - **Where:** bakes (`NavmeshTileCache.LoadOrBake`, `File.Create`) and `download-navmesh.ps1`
+      (extracting into the folder).
+    - **Effect:** another process can read a tile while it is written. A disk-only cache used to
+      delete such a tile and count it empty for good; since the Phase 1 review it keeps it and
+      reads it again on a later request (see "Fixed"), so what is left is one request that routes
+      as if the tile were missing.
+    - **Fix (not started):** write each tile under a temporary name and rename it; the download
+      script extracts into a temporary folder and moves the tiles in. The bytes do not change, but
+      run the bake gate (`PPather/CLAUDE.md`) when the bake's writer changes.
 
 40. **The planner does not plan Forever the way the Forever bot does.**
     - **Where:** `RoutePlanner` with `--exp=forever` (`WithSurfaceHeight`, the lane's
@@ -315,6 +314,14 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       (`StatusCodeSelector` in `PathingServiceRegistration`); the manager needs the same lines.
 
 ## Fixed
+
+39. **A disk-only tile cache deleted a tile it failed to read** (Phase 1 review, 2026-10-06). A
+    tile that did not parse was deleted to be baked again, even by a cache with no world, which
+    can never bake it, and then counted empty for the cache's life. On Linux a planner lane that
+    read a tile mid-write unlinked it from the shared folder. A disk-only cache now keeps the file,
+    warns once, does not count the tile as empty and reads it again on a later request; a cache
+    with game files still deletes and rebakes it. The bot without game files does the same. Left:
+    writers still write in place (item 39, open).
 
 46. **A request the Pathing Service could not read answered 500** (item 46's first finding; Phase
     1 review, 2026-10-06). A null entry in a cost-zone array (`{"roads":[null]}`) threw in
