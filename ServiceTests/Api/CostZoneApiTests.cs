@@ -13,6 +13,10 @@ using SharedLib;
 
 using System.IO;
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 using IOPath = System.IO.Path;
@@ -70,6 +74,45 @@ public sealed class CostZoneApiTests
         ServiceResult saved = await client.SaveRoadsAsync("Azeroth", 1429, Roads, TestContext.Current.CancellationToken);
 
         Assert.True(saved.Ok, saved.Error);
+    }
+
+    [Theory]
+    [InlineData(PathingApi.Roads, """{"roads":[null]}""", "roads[0] is missing")]
+    [InlineData(PathingApi.Roads, """{"roads":[{"name":"a","width":2,"points":[{"x":1,"y":2}]},null]}""", "roads[1] is missing")]
+    [InlineData(PathingApi.Danger, """{"circles":[null],"rectangles":[]}""", "circles[0] is missing")]
+    [InlineData(PathingApi.Danger, """{"circles":[],"rectangles":[null]}""", "rectangles[0] is missing")]
+    public async Task A_missing_entry_is_a_bad_request(string kind, string body, string why)
+    {
+        using TempDataRoot data = new(withMapData: true);
+        using PathingServiceFactory factory = new(data.Root);
+
+        using HttpResponseMessage response = await factory.CreateClient().PutAsync($"{PathingApi.CostZones}/Azeroth/{kind}/1429",
+            new StringContent(body, Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(why, await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+    }
+
+    // Minimal APIs throw these in Development, the environment run.sh and the tests use.
+    [Fact]
+    public async Task A_request_the_service_cannot_read_is_a_bad_request_not_its_failure()
+    {
+        using TempDataRoot data = new(withMapData: true);
+        using PathingServiceFactory factory = new(data.Root);
+        HttpClient http = factory.CreateClient();
+
+        using HttpResponseMessage points = await http.PutAsync($"{PathingApi.CostZones}/Azeroth/{PathingApi.Roads}/1429",
+            new StringContent("""{"roads":[{"name":"a","width":2,"points":[null]}]}""", Encoding.UTF8, "application/json"),
+            TestContext.Current.CancellationToken);
+        using HttpResponseMessage json = await http.PutAsync($"{PathingApi.CostZones}/Azeroth/{PathingApi.Roads}/1429",
+            new StringContent("{not json", Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
+        using HttpResponseMessage number = await http.GetAsync($"{PathingApi.Area}?mapId=0&x=abc&y=1", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, points.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, json.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, number.StatusCode);
+        JsonElement problem = await number.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Contains("float x", problem.GetProperty("detail").GetString());
     }
 
     // The planner opens a lane on a continent whose tile folder exists, even an empty one; a

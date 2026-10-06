@@ -288,9 +288,7 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - **Fix:** correct the text; rule 4 needs the parity test, or the claim, to cover installs
       with archives.
 
-46. **Smaller findings.**
-    - A null element in a cost-zone array (`{"roads":[null]}`) answers 500, which the client
-      retries, instead of 400 (`CostZoneMapping`). No client sends one.
+46. **Smaller findings.** (The first, a null cost-zone entry answering 500, is fixed: see "Fixed".)
     - Continent names are checked for letters and digits only, not against the client's
       continents (`CostZoneStore`). On Linux `azeroth` saves with 204 into a folder nothing
       reads; the data sync then writes it into `Azeroth\` on a Windows bot, which applies it
@@ -310,8 +308,21 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - `GET /costzones/{continent}` lists numeric file names only, while the loader applies every
       `*.json` in the folder; a legacy `{continent}.json` is listed but never applied, and one
       unreadable file fails the whole GET.
+    - The Bot Manager answers 500 to a request it cannot read (a body that is not the contract's
+      JSON, a query that is not a number) when it runs in Development, as `run.sh` runs it: minimal
+      APIs throw there, and `UseExceptionHandler` makes it a 500. Its client does not repeat a
+      POST, but a GET is repeated. The Pathing Service answers 400 since the Phase 1 review
+      (`StatusCodeSelector` in `PathingServiceRegistration`); the manager needs the same lines.
 
 ## Fixed
+
+46. **A request the Pathing Service could not read answered 500** (item 46's first finding; Phase
+    1 review, 2026-10-06). A null entry in a cost-zone array (`{"roads":[null]}`) threw in
+    `CostZoneMapping`, and in Development, where `run.sh` runs the service, minimal APIs throw on a
+    body or query they cannot bind, which `UseExceptionHandler` turned into a 500. A client takes a
+    500 for the service's own failure (and repeated it, until item 37). A null entry is now refused
+    first ("roads[3] is missing"), and a `BadHttpRequestException` answers its own status, 400,
+    with its message as the detail. The Bot Manager has the same handler: see item 46.
 
 43. **On Windows, `_forever./x.json` got past the Forever guard** (Phase 1 review, 2026-10-06).
     The guard compared the raw first segment with `_forever`, and segments could end in a dot,

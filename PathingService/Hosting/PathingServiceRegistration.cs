@@ -1,6 +1,7 @@
 using Contracts;
 
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -71,7 +72,19 @@ public static class PathingServiceRegistration
         services.AddSignalR().AddMessagePackProtocol();
 
         services.ConfigureHttpJsonOptions(options => ContractJson.Apply(options.SerializerOptions));
-        services.AddProblemDetails();
+        // A request the service cannot read (a body that is not the contract's JSON, a query that is
+        // not a number) is the caller's mistake: 400 with why. Minimal APIs answer so themselves in
+        // Production, but in Development, where run.sh runs, they throw, and the exception handler
+        // would answer 500, which a client takes for the service's own failure.
+        services.AddExceptionHandler(options => options.StatusCodeSelector = ex =>
+            ex is BadHttpRequestException bad ? bad.StatusCode : StatusCodes.Status500InternalServerError);
+        services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
+        {
+            if (context.Exception is BadHttpRequestException bad)
+            {
+                context.ProblemDetails.Detail = bad.Message;
+            }
+        });
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(swagger => swagger.SwaggerDoc("v1", new OpenApiInfo { Title = ApiTitle, Version = "v1" }));
 

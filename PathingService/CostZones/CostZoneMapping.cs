@@ -12,7 +12,7 @@ namespace PathingService.CostZones;
 /// Wire shapes to the engine's models and back. The engine models stay the file format (they
 /// are what <see cref="PPather.Navmesh.CostZoneLoader"/> reads), and they carry engine
 /// behaviour the wire has no use for. A null array is passed through as null, so the loader's
-/// own validation reports it.
+/// own validation reports it; a null entry in one is refused first (<see cref="MissingEntry(RoadZones)"/>).
 /// </summary>
 public static class CostZoneMapping
 {
@@ -109,6 +109,24 @@ public static class CostZoneMapping
         }
 
         return new DangerZoneData { Circles = circles!, Rectangles = rectangles! };
+    }
+
+    /// <summary>The first entry of the request that is null, as "roads[3] is missing"; null when none is.</summary>
+    public static string? MissingEntry(RoadZones zones)
+    {
+        return MissingEntry("roads", zones.Roads);
+    }
+
+    /// <inheritdoc cref="MissingEntry(RoadZones)"/>
+    public static string? MissingEntry(DangerZones zones)
+    {
+        return MissingEntry("circles", zones.Circles) ?? MissingEntry("rectangles", zones.Rectangles);
+    }
+
+    private static string? MissingEntry<T>(string name, T[]? entries) where T : class
+    {
+        int missing = entries is null ? -1 : Array.IndexOf(entries, null);
+        return missing < 0 ? null : $"{name}[{missing}] is missing";
     }
 
     /// <summary>A mode the engine does not know, which a numeric enum on the wire could carry; null when all are known.</summary>

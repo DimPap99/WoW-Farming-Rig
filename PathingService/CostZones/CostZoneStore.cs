@@ -73,7 +73,7 @@ public sealed class CostZoneStore(DataConfig dataConfig)
     /// <summary>Replaces one map's roads; no roads deletes its file.</summary>
     public StoreResult SaveRoads(string continent, int uiMapId, RoadZones? zones)
     {
-        if ((TargetProblem(continent, uiMapId) ?? (zones is null ? "a road set is required" : null)) is string problem)
+        if ((TargetProblem(continent, uiMapId) ?? (zones is null ? "a road set is required" : CostZoneMapping.MissingEntry(zones))) is string problem)
         {
             return StoreResult.Invalid(problem);
         }
@@ -91,7 +91,7 @@ public sealed class CostZoneStore(DataConfig dataConfig)
     /// <summary>Replaces one map's danger zones; none deletes its file.</summary>
     public StoreResult SaveDanger(string continent, int uiMapId, DangerZones? zones)
     {
-        if ((TargetProblem(continent, uiMapId) ?? (zones is null ? "a danger zone set is required" : null)) is string problem)
+        if ((TargetProblem(continent, uiMapId) ?? (zones is null ? "a danger zone set is required" : CostZoneMapping.MissingEntry(zones))) is string problem)
         {
             return StoreResult.Invalid(problem);
         }
