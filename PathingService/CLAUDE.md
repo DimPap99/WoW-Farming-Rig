@@ -162,7 +162,9 @@ resets the engine, so a continent's triangle cache (gigabytes) never stays resid
   agreeing with this service.
 
 **Names are checked once, in `PathName`.** Relative, `/` between folders, plain segments, ends
-in `.json`, and never under `_forever/` (Forever route files, a different format). The old
+in `.json`, and never under `_forever/` (Forever route files, a different format). A plain segment
+does not end in a dot or a space: Windows drops those, so `_forever./x.json` would open a Forever
+route there; the `_forever/` guard runs again on the resolved path. The old
 controller joined any name onto the folder. Continent names in the cost-zone and navmesh routes
 are the client's own continents only, for the same reason.
 

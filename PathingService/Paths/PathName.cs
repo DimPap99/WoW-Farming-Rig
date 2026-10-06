@@ -86,6 +86,13 @@ public static class PathName
             return false;
         }
 
+        // Again on the path the OS will open, in case it rewrites a name the segments allowed.
+        if (IsUnder(Path.Join(rootFull, ForeverRouteFile.Folder), fullPath))
+        {
+            error = $"{ForeverRouteFile.Folder}/ holds Forever route files, not recorded paths";
+            return false;
+        }
+
         canonical = name;
         return true;
     }
@@ -103,13 +110,14 @@ public static class PathName
     }
 
     /// <summary>
-    /// Whether <paramref name="segment"/> is one plain file or folder name: not empty, not
-    /// <c>.</c> or <c>..</c>, no surrounding spaces, and no character that is forbidden on
-    /// any OS, so a name means the same file everywhere.
+    /// Whether <paramref name="segment"/> is one plain file or folder name: not empty, no
+    /// surrounding spaces, not ending in a dot (so not <c>.</c> or <c>..</c> either), and no
+    /// character that is forbidden on any OS, so a name means the same file everywhere. Windows
+    /// drops a trailing dot, so <c>_forever./x.json</c> would open <c>_forever\x.json</c> there.
     /// </summary>
     public static bool IsPlainSegment(string segment)
     {
-        return segment.Length > 0 && segment is not ("." or "..") && segment.Trim() == segment &&
+        return segment.Length > 0 && !segment.EndsWith('.') && segment.Trim() == segment &&
                segment.AsSpan().IndexOfAny(ForbiddenChars) < 0 && !HasControlChar(segment);
     }
 

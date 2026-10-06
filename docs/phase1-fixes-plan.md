@@ -1,6 +1,6 @@
 # Phase 1 review - the fixes: plan and handoff
 
-**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1 to 1.5. A max-level review of Phase 1
+**Status (2026-10-06):** step 1 under way on `fix/phase1-review`; done: 1.1 to 1.6. A max-level review of Phase 1
 (84c93499..7ef44187, the Pathing Service, the planner, the contracts, the pathing client and
 `ServiceTests`), checked against the code as of e71c5781, found what is now items 32 to 46 of
 [known-issues.md](known-issues.md). It also corrected items 2 and 12 and the floor-memory design
@@ -161,7 +161,7 @@ on the machine it ran on. Line numbers below are as of e71c5781.
   and BlazorServer's map (`MapAssets/wwwroot/script/leaflet-zones.js`). Make sure both show a 409's
   detail.
 
-### 1.6 Windows lets `_forever./x.json` past the guard (item 43)
+### 1.6 Windows lets `_forever./x.json` past the guard (item 43) - done
 
 - **Where:** `PathName.IsPlainSegment` (`:110`). `Trim()` already refuses surrounding spaces.
 - **Fix:** refuse a segment that ends in `.`. Windows drops a single trailing period from any
