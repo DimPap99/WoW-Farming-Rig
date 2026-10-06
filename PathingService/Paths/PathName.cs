@@ -21,8 +21,9 @@ public static class PathName
 
     public const int MaxLength = 200;
 
-    // Refused in any segment, on every OS, so a name means the same file everywhere.
-    private static readonly SearchValues<char> ForbiddenChars = SearchValues.Create("<>:\"|?*\\");
+    // Refused in any segment, on every OS, so a name means the same file everywhere; and %, as a
+    // name whose / came escaped (%2F, as Swagger UI sends a whole name) would save as one flat file.
+    private static readonly SearchValues<char> ForbiddenChars = SearchValues.Create("<>:\"|?*\\%");
 
     private static readonly StringComparison FileSystemCase =
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;

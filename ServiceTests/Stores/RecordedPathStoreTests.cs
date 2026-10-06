@@ -156,6 +156,7 @@ public sealed class RecordedPathStoreTests
     [InlineData("a//b.json")]
     [InlineData(" padded.json")]
     [InlineData("")]
+    [InlineData("_herb%2FElwynn.json")]
     public void Names_that_could_leave_the_folder_are_refused(string name)
     {
         using TempDataRoot data = new();
