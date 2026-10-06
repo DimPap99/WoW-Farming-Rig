@@ -168,6 +168,37 @@ public sealed class RecordedPathStoreTests
         Assert.Empty(Directory.EnumerateFiles(data.Root, "*", SearchOption.AllDirectories));
     }
 
+    // Windows drops a segment's trailing dot, and a last segment's trailing dots and spaces, so these
+    // would open another file there: _forever./x.json is _forever\x.json, a Forever route.
+    [Theory]
+    [InlineData("_forever./x.json")]
+    [InlineData("_FOREVER./x.json")]
+    [InlineData("a./b.json")]
+    [InlineData("x.json.")]
+    [InlineData("x.json ")]
+    [InlineData("_forever /x.json")]
+    public void Names_that_Windows_would_rewrite_are_refused(string name)
+    {
+        using TempDataRoot data = new();
+        RecordedPathStore store = new(data.Config());
+
+        StoreResult saved = store.Save(name, Points);
+
+        Assert.Equal(StoreOutcome.Invalid, saved.Outcome);
+        Assert.Equal(StoreOutcome.Invalid, store.Delete(name).Outcome);
+        Assert.Empty(Directory.EnumerateFiles(data.Root, "*", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void A_dot_inside_a_name_is_plain()
+    {
+        using TempDataRoot data = new();
+        RecordedPathStore store = new(data.Config());
+
+        Assert.Equal(StoreOutcome.Done, store.Save("Troll.Orc/c.json", Points).Outcome);
+        Assert.Equal(Points, store.Get("Troll.Orc/c.json").Value!.Points);
+    }
+
     [Fact]
     public void Points_must_be_finite_and_present()
     {

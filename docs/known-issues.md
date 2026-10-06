@@ -264,16 +264,6 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - **Fix (not started):** a test that reaches the memory: a start the planner cannot give a
       height, on stacked floors, or a route that widens.
 
-43. **On Windows, `_forever./x.json` gets past the Forever guard.**
-    - **Where:** `PathingService/Paths/PathName`.
-    - **Cause:** the guard compares the raw first segment with `_forever` and allows trailing
-      dots, while Windows path normalization drops a segment's single trailing period, so the
-      file is `_forever\x.json`.
-    - **Effect:** on a Windows host a PUT to `/api/v1/paths` overwrites a Forever route file with
-      a point array, and a DELETE removes it. Not testable on Linux.
-    - **Fix (not started):** refuse segments that end in a dot or a space, and check the guard on
-      the resolved path.
-
 44. **Height lookups read the navmesh without the tile lock.**
     - **Where:** `NavmeshPathfinder.TryGetHeight`, which `RoutePlanner` uses for `/area` and for
       route endpoints at height 0.
@@ -322,6 +312,13 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       unreadable file fails the whole GET.
 
 ## Fixed
+
+43. **On Windows, `_forever./x.json` got past the Forever guard** (Phase 1 review, 2026-10-06).
+    The guard compared the raw first segment with `_forever`, and segments could end in a dot,
+    which Windows drops, so a PUT to `/api/v1/paths` could overwrite a Forever route file with a
+    point array, and a DELETE remove it. `PathName` refuses a segment that ends in a dot (spaces
+    were already refused) and checks the guard again on the resolved path. Tested on Linux by the
+    names; the rewrite itself happens only on Windows.
 
 41. **A cost-zone save answered 204 when the reload failed** (Phase 1 review, 2026-10-06). The
     reload is all or nothing per continent, and the save dropped its result, so with one invalid
