@@ -13,7 +13,7 @@ override; `BakeTool --root` exists precisely because of that.
 | key | properties | why |
 |---|---|---|
 | **era** (`ClientEra`) | `Navmesh`, `Leaflet`, `Road` (`RoadOf(era)` for any era), `AreaGrid` | clients that share a world share these |
-| **client** (`Exp`) | `ExpDbc`, `Subzones`, `ExpArea`, `NpcSpawnLocations`, `ExpHistory`, ... | id spaces and addon mappings differ per client |
+| **client** (`Exp`) | `ExpDbc`, `Subzones`, `ExpArea`, `NpcSpawnLocations`, `Quests`, `ExpHistory`, ... | id spaces and addon mappings differ per client |
 | **neither** | `MPQ`, `Class`, `Path`, `ForeverRoutes`, `PPather`, `Locations`, `Sync` | one directory, whatever you point it at |
 
 `ClientEra`: vanilla/tbc/wrath and their `legacy_*` → `precata`; `cata`/`legacy_cata` →

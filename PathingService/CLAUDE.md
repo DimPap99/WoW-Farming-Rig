@@ -50,7 +50,8 @@ World/WorldCatalog.cs              zones with bounds, continents, NPC types, NPC
                                    (elites, herbs, veins, skinnable, mailboxes); creatures by name
 World/MapArtTable.cs               where each era's minimap art lies on its continents (ContinentInfo.Art)
 World/ClientContinents.cs          the one continent rule: the client's own, any case, answered in its case
-World/WorldEndpoints.cs            /api/v1/world, /world/npcs, /world/npcs/search, /world/spawns
+World/QuestCatalog.cs              quests given in a zone, found by name, and one with every place (SharedLib's QuestBook)
+World/WorldEndpoints.cs            /api/v1/world, /world/npcs, /world/npcs/search, /world/spawns, /world/quests
 Catalog/LocationCatalog.cs         curated spots + Json/locations/teleport_locations.txt
 Catalog/TestRoutes.cs              known-trouble routes as RouteRequests
 Catalog/CatalogEndpoints.cs        /api/v1/catalog/locations, /testroutes

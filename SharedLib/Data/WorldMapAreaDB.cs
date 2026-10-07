@@ -272,4 +272,21 @@ public sealed class WorldMapAreaDB
             : wmas.Values.FirstOrDefault(x => x.AreaID == areaIdHit);
     }
 
+    /// <summary>
+    /// The area what is in <paramref name="zone"/> counts for: its hit box, so a city's NPCs count
+    /// for the city. A continent's map has no area (AreaID 0), which every continent shares, so it
+    /// is its own: Eastern Kingdoms must not count Azeroth's world map, which leaves Booty Bay out.
+    /// </summary>
+    public WorldMapArea HitBoxOf(in WorldMapArea zone)
+    {
+        return zone.AreaID == 0 ? zone : GetByAreaIdHit(zone.AreaID);
+    }
+
+    /// <summary>Whether world point (<paramref name="worldX"/>, <paramref name="worldY"/>) lies inside <paramref name="area"/>'s map.</summary>
+    public static bool Holds(in WorldMapArea area, float worldX, float worldY)
+    {
+        Vector3 map = ToMap_FlipXY(new Vector3(worldX, worldY, 0), area);
+        return map.X is > 0 and < 100 && map.Y is > 0 and < 100;
+    }
+
 }

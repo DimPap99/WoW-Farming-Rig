@@ -22,6 +22,9 @@ StartupConfig/       DI options bound from configuration
 Data/                ContinentDB, WorldMapArea(DB), SubZoneArea, Creature, Item, Spell, NpcFlags
 Forever/             WoW: Forever's route model, data only: route files, task records, ForeverUntil,
                      map points and areas (the bot runs them; the Pathing Service checks and serves them)
+Quests/              QuestBook: a client's quests, the objects and items they name, every creature and
+                     every NPC spawn (Json/quests, dbc, npcspawnlocations), and the places a quest sends
+                     a character to - the one answer the Pathing Service and the bot both give
 AddonDataProviderType/ClientVersion.cs   the enum everything version-switches on
 NpcFinder/           NPC nameplate detection (colour matching, line segments)
 ImageProvider/, Screen/   capture interfaces only

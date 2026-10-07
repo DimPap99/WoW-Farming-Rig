@@ -85,6 +85,15 @@ public static class PathingApi
     /// <summary><c>GET ?uiMapId=&amp;layer=</c>: the <see cref="SpawnPoint"/>s of one of the <see cref="SpawnLayers"/> in a zone.</summary>
     public const string Spawns = World + "/spawns";
 
+    /// <summary>
+    /// <c>GET ?uiMapId=</c>: the <see cref="QuestSummary"/>s of the quests given in a zone;
+    /// <c>GET {Quests}/{id}</c>: one quest's <see cref="QuestDetail"/>, with every place it sends a character to.
+    /// </summary>
+    public const string Quests = World + "/quests";
+
+    /// <summary><c>GET ?name=</c>: the <see cref="QuestSummary"/>s of quests whose name holds the text.</summary>
+    public const string QuestSearch = Quests + "/search";
+
     /// <summary><c>GET</c> the <see cref="NamedLocation"/>s the route search offers.</summary>
     public const string Locations = Root + "/catalog/locations";
 
