@@ -3,7 +3,7 @@
 The central service from `docs/service-architecture.md`. It plans routes over the baked navmesh
 for many callers at once, and it is where navigation data is authored and administered:
 recorded paths, road and danger-zone costs, bakes and area grids. It serves the map's world
-data and streams what it plans to the watch hub. Bots keep planning in their own process; this
+data and streams the routes it plans to the watch hub. Bots keep planning in their own process; this
 service owns the data and plans for the UI (the Control Center).
 
 Plain `net10.0`, so it runs on Linux and macOS. It references `Contracts`, `PPather`,
@@ -31,7 +31,8 @@ Program.cs                         host: validation on build, default URL, loggi
 Hosting/PathingServiceRegistration AddPathingService / UsePathingService - the composition root
 Hosting/PathingLogging.cs          Serilog to console + daily file (LogFile)
 Hosting/StoreResult.cs             store outcomes (incl. Conflict) and their one mapping to HTTP
-Hosting/ServiceKeyGuard.cs         the key (ServiceClients' ServiceKeyPolicy): other machines need ApiKey
+Hosting/ServiceKeyGuard.cs         the key (ServiceClients' ServiceKeyPolicy): other machines need ApiKey;
+                                   no write another site made a browser send
 Routes/RouteHandler.cs             RouteRequest -> RoutePlanner -> RouteResponse (the only mapping)
 Routes/RouteEndpoints.cs           POST /api/v1/routes/find
 Paths/PathName.cs                  the one check every path name passes
@@ -48,21 +49,19 @@ World/WorldDataFiles.cs            the map's static data routes (Contracts' Worl
 World/WorldCatalog.cs              zones with bounds, continents, NPC types, NPCs by zone; a zone's layers
                                    (elites, herbs, veins, skinnable, mailboxes); creatures by name
 World/MapArtTable.cs               where each era's minimap art lies on its continents (ContinentInfo.Art)
+World/ClientContinents.cs          the one continent rule: the client's own, any case, answered in its case
 World/WorldEndpoints.cs            /api/v1/world, /world/npcs, /world/npcs/search, /world/spawns
 Catalog/LocationCatalog.cs         curated spots + Json/locations/teleport_locations.txt
 Catalog/TestRoutes.cs              known-trouble routes as RouteRequests
 Catalog/CatalogEndpoints.cs        /api/v1/catalog/locations, /testroutes
-Navmesh/BakeAdmin.cs               the admin-only engine: bake, clear, area grids, terrain
+Navmesh/BakeAdmin.cs               the jobs: bake, clear, area grids; one at a time, an engine each
 Navmesh/ForeverGameFiles.cs        ForeverCasc:* -> Forever's CASC geometry
 Navmesh/NavmeshEndpoints.cs        /api/v1/navmesh, /api/v1/bake, /api/v1/areagrids
 Navmesh/NavmeshViews.cs            the navmesh as a map draws it: a continent's relief, one tile's polygons
 Navmesh/StartupBakes.cs            --bake= / --bake-area=
-Watch/WatchHub.cs                  /watchHub (MessagePack): viewers, Replay, Terrain, WatchRoutes
-Watch/WatchBroadcaster.cs          planner events and drawings -> the hub, one send loop
-Watch/NavmeshTileMesh.cs           a Detour tile as triangles
-Watch/TerrainMesh.cs               the game geometry under a navmesh tile, by kind
-Watch/WatchDrawing.cs              /api/v1/watch/*: checks, map -> world with navmesh heights
-Watch/WatchEndpoints.cs            the hub and the draw endpoints
+Watch/WatchHub.cs                  /watchHub (MessagePack): route watchers (WatchRoutes)
+Watch/WatchBroadcaster.cs          the planner's routes -> the route watchers, one send loop
+Watch/WatchEndpoints.cs            the hub and POST /api/v1/watch/clear
 Status/StatusEndpoints.cs          /api/v1/capabilities, /api/v1/health
 Status/CoverageCache.cs            baked tile counts, at most every 15 s
 ```
@@ -81,7 +80,15 @@ in-memory test server has) is always served; one from another machine only with 
 `X-Api-Key` header, and not at all while no key is configured. Bound beyond localhost without a key
 (`--urls=http://0.0.0.0:5010`), the service stops right after it starts. The check runs before the
 API, the hub and the world data. The Control Center and BlazorServer forward the browser's calls with
-the key, so a browser never holds it.
+the key, so a browser never holds it; each applies the same rules to its own caller first
+(`ServiceClients/Security/ForwardPolicy`), as the service serves whoever stands behind them.
+
+**No write that another site made a browser send.** Any page can make a browser send a body-less
+POST (`bake/cancel`, `areagrids`, `costzones/reload`, `watch/clear`) to a local address without a
+CORS preflight, and this machine needs no key. So a write whose `Sec-Fetch-Site` is not same-origin or
+none, or whose `Origin` is another host, answers 403 (`ServiceKeyPolicy.CrossSiteRefusal`); clients
+that are not browsers send neither header. The forwarders check it themselves and take those headers
+off, so a forwarded page is not read as another site.
 
 **A route that does not exist is an answer, not an error.** `Found`, `Partial`, `NoPath` and
 `NotBaked` are HTTP 200. Only `BadRequest` (400) and `Unavailable` (503, a continent busy past the
@@ -123,36 +130,33 @@ Forever's height-less walker on its floor and makes repeat requests cheap (see
 request to carry the bot's last floor, so the service stays stateless. A cache keyed by
 client id comes only if repeat requests turn out too slow.
 
-**The planner never bakes; `BakeAdmin` does, on its own engine.** An endpoint on a tile with no
-`.dnm` answers `NotBaked`, naming the point. Bakes, area grids and terrain run on one
-`PPatherService` that never answers a route, one job at a time (they share its continent and
-geometry); a second job is refused with 409 and what is running. Without game files
-(`Json/MPQ`, or `ForeverCasc:Install` for Forever) they are refused up front.
+**The planner never bakes; `BakeAdmin` does, one job at a time.** An endpoint on a tile with no
+`.dnm` answers `NotBaked`, naming the point. Bakes, area grids and cache clears are jobs: one at a
+time, and a job is under way until its task has ended, however it ended (a cancel is checked inside
+the bake, never handed to `Task.Run`, which would skip a task cancelled before it started and leave
+the admin "baking" for good). A second job is refused with 409 and what is running. Each job that
+reads game files opens its own `PPatherService`, which never answers a route, and lets it go at its
+end, so nothing one job learned outlives it (a continent whose archives failed to open once). Without
+game files they are refused up front: `Json/MPQ` for the classic clients, and for Forever only
+`ForeverCasc:Install` - `Json/MPQ` is one folder for every client, and Forever's continents open from
+another client's archives too. `--bake` with `--bake-area` runs the area grid after the bake.
 
-**Whatever changes tiles on disk closes lanes.** A lane remembers a tile that was missing as
-empty for its whole life (known issue 12). A bake closes the lanes of what it baked when it
-ends, a cache clear the continent's lane after deleting; the next route reopens a lane on
-what is on disk. A query waiting on a closed lane moves to the fresh one.
+**Tiles that appear count; tiles deleted or replaced are let go.** A lane that did not find a tile
+looks for it on disk again a second later (`NavmeshTileCache.MissingTileRecheck`, one stat), so
+tiles a bake, a download or a copy writes count without a restart, for any writer (known issues 12,
+38 and 52); the bot's own cache does the same. A lane holds the tiles it read, so what deletes or
+replaces tiles tells the planner (`RoutePlanner.TilesChanged`): `BakeAdmin` does after a clear,
+whatever the delete managed, and after a bake, once its tile workers have stopped. The lane lets go
+of its tiles between queries and reads them again as routes need them; it is never closed. The tile
+graph in memory is compared with the tiles at most every 30 s and built again once changed tiles
+have been left alone for 10 s.
 
-**The watch hub sends points as `[x, y, z]`.** Both views read a point that way. MessagePack
-writes a `System.Numerics.Vector3` as a map of its fields, so send `float[]`s
-(`WatchBroadcaster.Wire`), never a `Vector3`. And no LZ4: the browser's MessagePack reader does
-not know MessagePack-CSharp's compression extension.
-
-**Opening a view resets nothing.** A late viewer calls `Replay` and gets the lanes' resident
-tiles and the last five routes, sent to it alone. PathingAPI reset its single engine for every
-new 3D page; a service planning for others must not.
-
-**A route watcher gets routes, not the scene.** A connection that calls `WatchRoutes` (the Control
-Center's Live view) joins the `routes` group: each route the planner answers comes to it as one
-`routePlanned` with a `WatchRoute` (the contract's types, its continent, its status; a .NET client
-reads it, the browsers' scene does not), the remembered ones first, and `clear`. Scene messages go
-to every connection but the route watchers (`AllExcept`), and tile meshes are built only while a
-viewer of the scene is connected, so a watcher costs the service no meshes.
-
-**Terrain is extracted, sent and dropped.** The Terrain toggle sends up to 25 tile indices;
-`BakeAdmin.TryExtractTerrain` loads those ADTs, sends each tile's mesh to that viewer only and
-resets the engine, so a continent's triangle cache (gigabytes) never stays resident.
+**The watch hub streams routes, nothing else.** A connection that calls `WatchRoutes` (the Control
+Center's Live view) joins the `routes` group: each route the planner answers - busy ones included -
+comes to it as one `routePlanned` with a `WatchRoute` (the contract's types, its continent, its
+status), the last five with points first, and `clear` after `POST /api/v1/watch/clear`. The scene
+the 3D view and the old map drew (tile meshes, terrain, drawings) is gone with them (known issue
+55). No LZ4: a reader without MessagePack-CSharp's compression extension, a browser's, gets garbage.
 
 **Formats on disk are the old ones, byte for byte.**
 - Recorded paths are written as `PathController.SavePath` wrote them (System.Text.Json with
@@ -168,8 +172,8 @@ in `.json`, and never under `_forever/` (Forever route files, a different format
 does not end in a dot or a space: Windows drops those, so `_forever./x.json` would open a Forever
 route there; the `_forever/` guard runs again on the resolved path. `%` is refused too: a `/`
 sent as `%2F` would make one flat file. The old controller joined any name onto the folder.
-Continent names in the cost-zone and navmesh routes are the client's own continents only, for the
-same reason; the cost-zone store takes them in any case and saves under the client's own.
+Continent names in the cost-zone, navmesh and bake routes are the client's own world continents
+only, for the same reason, by one rule (`ClientContinents`): any case, then the client's own case.
 
 **The path folder holds more than recorded paths.** The class profiles' path groups
 (`PathsFilenames`, `1-8_*.json`: `PathSettings` with requirements, commented) live beside the

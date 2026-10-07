@@ -19,8 +19,9 @@ WoWFarmingRig.sln
 │   ├── PathingService/     Minimal API — concurrent route planning, the authoring API
 │   │                       for recorded paths and cost zones, bakes, world data and
 │   │                       the watch hub (net10.0, any OS)
-│   ├── ControlCenter/      Blazor Server — the central UI: live 3D view, map, path
-│   │                       library and editor; a client of the Pathing Service
+│   ├── ControlCenter/      Blazor Server — the central UI on one world view: live
+│   │                       routes, the map, the route designer, bakes and the fleet;
+│   │                       a client of the Pathing Service and the Bot Manager
 │   ├── Contracts/          Wire types and route constants for services and clients
 │   └── ServiceClients/     Typed HTTP clients for the services
 │

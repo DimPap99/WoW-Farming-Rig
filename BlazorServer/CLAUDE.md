@@ -55,7 +55,17 @@ ordering at shutdown is how held movement keys get stranded.
 **The map authors through the Pathing Service.** `/api/v1/*` is forwarded (YARP) to
 `PathingService:Url` (default `http://localhost:5010`): recorded paths, cost zones, navmesh
 coverage and bakes on the map are the service's. With no service running the forwarder answers
-502 and those layers say "offline"; the map's tiles and data are served from this host's own
-`Json` folder and keep working. Run the service against the same `Json` the bot reads (same PC,
-or changes committed) until the agent's data sync exists (Phase 3). There are no controllers here
-any more.
+502 and the map says "offline" on its notice line until the service answers; the map's tiles and
+data are served from this host's own `Json` folder and keep working. A malformed
+`PathingService:Url` is logged and answered 502 with why; it never stops the bot. Run the service
+against the same `Json` the bot reads (same PC, or changes committed) until the agent's data sync
+exists (Phase 3). There are no controllers here any more.
+
+**The forward is a door to the Pathing Service.** This host listens on `*:5000` and adds the
+service's key, while the service serves this machine and its key whoever stands behind it. So the
+forward applies the rules to its own caller first (`ServiceClients/Security/ForwardPolicy`, known
+issue 47): this PC gets anything; another machine on the LAN reads and authors what the map authors
+(paths, roads, danger zones: `ForwardPolicy.LeafletMapAuthors`), but deletes no tiles and starts or
+cancels no bake or area grid without the key (403, which the bake panel shows); no page on another
+site writes at all; a request this host forwarded itself is refused (508). Bake and clear from the
+bot PC itself, or from the Control Center.

@@ -127,9 +127,18 @@ the management side is down.
 - **Security.** Everything binds to localhost by default. A request from this machine is always
   served; one from another machine needs the shared key (`ApiKey`) in the `X-Api-Key` header, on
   every manager and pathing endpoint and hub, and without a configured key it is refused. A service
-  bound beyond localhost without a key stops right after it starts. The rules live once, in
-  `ServiceClients/Security/ServiceKeyPolicy`; clients send the key from `<Service>:ApiKey`, else
-  `ApiKey`, and the Control Center and BlazorServer add it when they forward the browser's calls.
+  bound beyond localhost without a key stops right after it starts. A write that a page on another
+  site made a browser send (`Sec-Fetch-Site`, else `Origin`) is refused too: any page can send a
+  body-less POST to a local address. The rules live once, in `ServiceClients/Security/ServiceKeyPolicy`;
+  clients send the key from `<Service>:ApiKey`, else `ApiKey`.
+- **Forwarders are doors.** The Control Center and BlazorServer forward the browser's calls to the
+  Pathing Service and add the key, so the browser never holds it - and the service serves their
+  machine and their key whoever stands behind them. Each applies the rules to its own caller first
+  (`ServiceClients/Security/ForwardPolicy`): its machine gets anything; another machine reads, plus
+  what that host's pages author (BlazorServer: paths and zones), and anything else only with the key;
+  no page on another site writes; a request a forwarder forwarded is refused, which stops a forwarder
+  pointed at itself. Hosted centrally, the Control Center needs logins: an admin role for what changes
+  every bot (tiles, bakes, stopping bots), users for the rest. Not built yet.
 - **Versioning.** Routes carry `/api/v1`, and agents send a protocol version when they
   register.
 
@@ -154,7 +163,7 @@ Pathing Service on the same PC, or commit the authored files to the repository.
 |---|---|---|
 | `POST /api/v1/routes/find` | `RouteRequest(Client, UiMapId, Space: World\|Map, From, To, Tuning, Search: Band\|Continent)` | `RouteResponse(Status, Points, Smoothed, ElapsedMs, Detail)`; a `Partial` route holds the points as far as the search got; `BadRequest` (400) for tuning past 10 yards of jitter or edge margin |
 | `GET /api/v1/capabilities` | | `PathingCapabilities(ApiVersion, Client, Era, PathsAreSmoothed, BakedContinents, GameFiles)`: the continents with tiles on disk, and whether bakes can run here |
-| `GET /api/v1/health` | | baked tiles per continent and resident lanes |
+| `GET /api/v1/health` | | `PathingHealth(Client, Era, Coverage, Lanes, Bake, Instance)`: baked tiles per continent, resident lanes, the bake, and this run of the service (new at every start) |
 | `GET /api/v1/paths?filter=` | | `RecordedPathInfo[]` |
 | `GET/PUT/DELETE /api/v1/paths/{name}` | `Point3[]` on PUT | `RecordedPath` / 204 / 404 |
 | `GET /api/v1/forever/routes` | | `ForeverRouteInfo[]`, each checked as a run loads it |
@@ -176,12 +185,15 @@ Pathing Service on the same PC, or commit the authored files to the repository.
 | `GET /api/v1/navmesh/{continent}/tiles` | | `NavmeshTile[]` (bounds, resident) |
 | `GET /api/v1/navmesh/{continent}/tiles/{x}/{z}` | | `NavmeshTileGeometry` (the tile's walkable polygons, for drawing); 404 when not baked |
 | `GET /api/v1/navmesh/{continent}/overview` | | `NavmeshOverview` (one walkable height per baked tile: a map's relief) |
-| `DELETE /api/v1/navmesh/{continent}` | | `CacheCleared`; 409 while a job runs |
+| `DELETE /api/v1/navmesh/{continent}` | | `CacheCleared`; 409 while a job runs, or when a tile in use kept the delete from finishing (ask again) |
 | `GET/POST /api/v1/bake` | `BakeRequest(Continent?, AdtX?, AdtY?)` on POST | `BakeStatus`; 202, 400, or 409 (busy, no game files) |
 | `POST /api/v1/bake/cancel` | | `BakeStatus`; 409 when none runs |
 | `POST /api/v1/areagrids?continent` | | 202; 409 without game files |
-| `POST /api/v1/watch/paths`, `/watch/markers`, `/watch/clear` | `WatchPath`, `WatchMarker` | 202; 400 with the reason, such as a point beyond the edge of the world |
-| `/watchHub` (SignalR, MessagePack) | `Replay()`, `Terrain(continent, tiles)`, `WatchRoutes()` (routes only, no scene) | `drawPath`, `drawLine`, `drawSphere`, `removeMesh`, `clear`, `log`, `addNavmeshTile`, `addTerrainTile`; to route watchers `routePlanned(WatchRoute)` and `clear` |
+| `POST /api/v1/watch/clear` | | 202: the remembered routes are forgotten and every route watcher is told |
+| `/watchHub` (SignalR, MessagePack) | `WatchRoutes()` | to route watchers `routePlanned(WatchRoute)`, every route the planner answers, busy ones included, the last five with points first; `clear` |
+
+A continent in these routes is one of the client's world continents, in any case, answered and
+stored in the client's own (`ClientContinents`).
 | `/tiles`, `/dbc`, `/area`, `/npcspawnlocations`, `/mailboxlocations`, `/path`, `/locations` | | the map's world data files (`WorldData`) |
 
 ## Bot Manager contracts (v1)
@@ -206,7 +218,8 @@ keeps on its PC, and the account, character and client are what it reports.
 
 Planning happens in **continent lanes**. Each lane is a disk-only `NavmeshPathfinder` with its
 cost zones and a lock. Lanes never evict each other, so mixed-continent callers no longer
-thrash. Every request gets fresh query memory (see "Findings"), a lane busy beyond its wait
+thrash. A lane looks again for a tile it did not find, a second later, so tiles written while it
+runs count; tiles deleted or replaced are let go when the planner is told (`TilesChanged`). Every request gets fresh query memory (see "Findings"), a lane busy beyond its wait
 budget answers `Unavailable` rather than 429, and an endpoint on an unbaked tile answers
 `NotBaked`.
 
@@ -240,8 +253,8 @@ The heavy lifting lives in reusable classes:
 | `PPather/Navmesh/NavmeshQueryMemory` | the per-walker state that `NavmeshPathfinder` kept in fields |
 | `PPather/Navmesh/CostZoneWatcher`, `NavmeshSettings.CacheDirectory` | extracted from `PPatherService`; also used by the planner |
 | `PathingService/Paths/RecordedPathStore`, `CostZones/CostZoneStore` | the formats the deleted `Frontend/Controllers` wrote, in one place |
-| `PathingService/Navmesh/BakeAdmin` | PathingAPI's bake endpoints: one admin-only `PPatherService` for bakes, area grids and terrain, never for queries |
-| `PathingService/Watch/WatchBroadcaster` | PathingAPI's broadcaster, fed by `RoutePlanner`'s events instead of one engine's |
+| `PathingService/Navmesh/BakeAdmin` | PathingAPI's bake endpoints: bakes, area grids and cache clears as jobs, one at a time, each on a `PPatherService` of its own that never answers a route |
+| `PathingService/Watch/WatchBroadcaster` | PathingAPI's broadcaster, now routes only: `RoutePlanner`'s answers to the route watchers |
 | `ServiceClients/Pathing/PathEditor`, `ZoneMath` | the path editing model (recorder and editor) and map-world arithmetic for clients |
 | agent `BotRuntimeHost` + `IBotRuntimeFactory` | `ForeverRunHost` / `ForeverRunOutput`; builds a Classic or Forever runtime per run (composition only) |
 | `BotAgent/Sync/DataSync`, `PathingService/Sync/SyncLibrary` | the data sync: a run's files from the Pathing Service before it starts, compared by `ServiceClients/Sync/SyncHash` |
