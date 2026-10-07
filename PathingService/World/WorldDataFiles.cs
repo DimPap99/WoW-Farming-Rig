@@ -20,13 +20,11 @@ public static class WorldDataFiles
         DataConfig data = app.Services.GetRequiredService<DataConfig>();
 
         // A continent whose art an earlier era supplies is served from that era's folder, and
-        // its route goes first: static files run in order, so the specific route must win.
+        // its route goes first: static files run in order, so the specific route must win. Like
+        // every folder here it is created when missing, so tiles downloaded later are served.
         foreach ((string continent, string folder) in data.SharedTileFolders())
         {
-            if (Directory.Exists(folder))
-            {
-                Serve(app, folder, $"{WorldData.Tiles}/{continent}");
-            }
+            Serve(app, folder, $"{WorldData.Tiles}/{continent}");
         }
 
         Serve(app, data.Leaflet, WorldData.Tiles);
