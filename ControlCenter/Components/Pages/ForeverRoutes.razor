@@ -129,7 +129,13 @@ else
 
                         @* The route as the text says, drawn as it is written: the travel's legs planned, the roams' areas. *@
                         <div class="pa-route-map">
-                            <WorldView Scene="@scene" Picking="@picking" OnPick="PickedAsync">
+                            <WorldView @ref="view" Scene="@scene" Picking="@picking" OnPick="PickedAsync" OnMarker="MarkerClickedAsync">
+                                <Panel Title="Layers" Icon="layers" Position="top-left" Collapsed="true">
+                                    <WorldLayers @ref="layers" Id="pa-forever-layers" World="@world"
+                                                 Continent="@(scene.Continent.Length == 0 ? null : scene.Continent)" OnChanged="LayersChanged"
+                                                 OnFocus="CenterAsync" OnWaypoint="PickAtAsync"
+                                                 WaypointTitle="Pick it: its coordinates, to insert in the text" />
+                                </Panel>
                                 <div class="pa-route-pick">
                                     <div class="pa-actions">
                                         <button class="pa-btn @(picking ? "pa-btn--primary" : null)" type="button" @onclick="() => picking = !picking"
@@ -202,8 +208,11 @@ else
     private sealed record Picked(ZoneInfo Zone, string Text);
 
     private ElementReference editor;
+    private WorldView? view;
+    private WorldLayers? layers;
     private WorldSnapshot? world;
     private WorldScene scene = WorldScene.Empty(string.Empty);
+    private WorldMarker[] routeMarkers = [];
     private RouteLegs legs = null!;
     private readonly CancellationTokenSource plans = new();
     private bool redrawQueued;
@@ -325,7 +334,37 @@ else
             shapes.Add(WorldShape.Of("travel", WorldShapes.Points, WorldKinds.Waypoints, travel));
         }
 
-        scene = new WorldScene(continent, [.. routes], [.. markers], ZoneLabels.Of(world, continent), frame, [.. shapes]);
+        routeMarkers = [.. markers];
+        scene = new WorldScene(continent, [.. routes], [.. layers?.Markers ?? [], .. routeMarkers], ZoneLabels.Of(world, continent), frame,
+            [.. shapes]);
+    }
+
+    // The layers' markers changed: the route's stay over them.
+    private void LayersChanged()
+    {
+        scene = scene with { Markers = [.. layers?.Markers ?? [], .. routeMarkers], Frame = false, FrameOn = null };
+    }
+
+    private async Task MarkerClickedAsync(string id)
+    {
+        if (layers is not null)
+        {
+            await layers.MarkerClickedAsync(id);
+        }
+    }
+
+    private async Task CenterAsync(Point3 at)
+    {
+        if (view is not null)
+        {
+            await view.CenterOnAsync(at);
+        }
+    }
+
+    // A place of the layers' quest, picked as a click on the map would pick it.
+    private async Task PickAtAsync(Point3 at)
+    {
+        await PickedAsync(new WorldPoint(at.X, at.Y, at.Z));
     }
 
     // A point clicked: named on the map of the zone the area grid puts it in.

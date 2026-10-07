@@ -16,8 +16,15 @@ public sealed class QuestApiTests
 {
     private const string Forever = "forever";
     private const int ElwynnForest = 1429;
+    private const int Durotar = 1411;
     private const int KoboldCampCleanup = 7;
     private const int WolvesAcrossTheBorder = 33;
+
+    // Stormwind City's, given inside Elwynn Forest's map.
+    private const int HarlanNeedsAResupply = 333;
+
+    // The Valley of Trials', a sub-area of Durotar, given where Durotar's and the Barrens' maps overlap.
+    private const int LazyPeons = 5441;
 
     [Fact]
     public async Task A_zone_lists_the_quests_given_in_it_with_their_givers()
@@ -35,6 +42,24 @@ public sealed class QuestApiTests
         Assert.Equal(0, kobolds.GiverMapId);
         Assert.True(elwynn.Value!.Length > 20, $"{elwynn.Value.Length} quests in Elwynn");
         Assert.Equal(elwynn.Value.OrderBy(q => q.MinLevel).Select(q => q.MinLevel), elwynn.Value.Select(q => q.MinLevel));
+    }
+
+    [Fact]
+    public async Task A_zone_lists_the_quests_of_its_quest_log_not_those_of_a_city_its_map_holds()
+    {
+        using PathingServiceFactory factory = new(TestData.RepoJson, Forever);
+        PathingClient client = new(factory.CreateClient());
+
+        ServiceResult<QuestSummary[]> elwynn = await client.GetQuestsAsync(ElwynnForest, TestContext.Current.CancellationToken);
+        ServiceResult<QuestSummary[]> durotar = await client.GetQuestsAsync(Durotar, TestContext.Current.CancellationToken);
+        ServiceResult<QuestDetail> peons = await client.GetQuestAsync(LazyPeons, TestContext.Current.CancellationToken);
+        ServiceResult<QuestDetail> kobolds = await client.GetQuestAsync(KoboldCampCleanup, TestContext.Current.CancellationToken);
+
+        Assert.Contains(elwynn.Value!, q => q.Id == KoboldCampCleanup);
+        Assert.DoesNotContain(elwynn.Value!, q => q.Id == HarlanNeedsAResupply);
+        Assert.Contains(durotar.Value!, q => q.Id == LazyPeons);
+        Assert.Equal(Durotar, peons.Value!.UiMapId);
+        Assert.Equal(ElwynnForest, kobolds.Value!.UiMapId);
     }
 
     [Fact]

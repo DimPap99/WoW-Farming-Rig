@@ -475,7 +475,11 @@ public sealed class RoutePlanner : IDisposable
                 graph = NavmeshTileGraph.Build(dir, logger);
                 try
                 {
-                    graph.Save(dir, stamp);
+                    // Nothing baked has nowhere to keep it, and nothing worth keeping.
+                    if (stamp.Count > 0)
+                    {
+                        graph.Save(dir, stamp);
+                    }
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -506,7 +510,7 @@ public sealed class RoutePlanner : IDisposable
             }
 
             comparedAt = Stopwatch.GetTimestamp();
-            TileSetStamp now = Directory.Exists(dir) ? TileSetStamp.Of(dir) : default;
+            TileSetStamp now = TileSetStamp.Of(dir);
             return now != stamp &&
                    DateTime.UtcNow - new DateTime(now.NewestTicks, DateTimeKind.Utc) >= TileGraphQuiet;
         }

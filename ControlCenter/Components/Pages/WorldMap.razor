@@ -11,11 +11,12 @@
 <PageTitle>Map · Control Center</PageTitle>
 
 @* What is where in a zone, on the world view: NPCs by type, elites, herbs, veins, skinnable
-   creatures, mailboxes and named places, each a layer to turn on; creatures searched by name on
-   the continent; points marked and lines, areas and circles drawn, with their coordinates and what
-   they measure. *@
+   creatures, mailboxes, named places and quest givers, each a layer to turn on (WorldLayers); a
+   quest, from the zone's or found by name, with every place it sends a character to (/map?quest=7
+   opens one); creatures searched by name on the continent; points marked and lines, areas and
+   circles drawn, with their coordinates and what they measure. *@
 
-<WorldView @ref="view" Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="MarkedAsync" OnMarker="MarkerClicked"
+<WorldView @ref="view" Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="MarkedAsync" OnMarker="MarkerClickedAsync"
            OnEdited="EditedAsync" OnSelected="ShapeSelected">
     <Panel Title="Map" Icon="map" Position="top-left" Class="pa-panel--tall">
         @if (world is null)
@@ -25,40 +26,10 @@
         else
         {
             <div class="pa-form">
-                <div class="pa-field">
-                    <label class="pa-label" for="pa-map-zone">Zone</label>
-                    <select class="pa-select" id="pa-map-zone" value="@uiMap" @onchange="ZoneChosenAsync">
-                        <option value="0" disabled>Choose a zone</option>
-                        @foreach (IGrouping<string, ZoneInfo> group in Zones.GroupBy(z => z.Continent))
-                        {
-                            <optgroup label="@group.Key">
-                                @foreach (ZoneInfo zone in group)
-                                {
-                                    <option value="@zone.UiMapId">@zone.Name</option>
-                                }
-                            </optgroup>
-                        }
-                    </select>
-                </div>
+                <WorldLayers @ref="layers" Id="pa-map" World="@world" UiMap="@uiMap" UiMapChanged="ZoneChanged" QuestId="@Quest"
+                             OnChanged="LayersChanged" OnFocus="CenterAsync" />
 
-                <div class="pa-field">
-                    <span class="pa-label">Show</span>
-                    <div class="pa-layers">
-                        @foreach (Layer layer in Layers)
-                        {
-                            <label class="pa-check pa-layer" title="@layer.Title">
-                                <input type="checkbox" checked="@shown.Contains(layer.Id)" disabled="@(uiMap == 0)"
-                                       @onchange="e => ToggleAsync(layer, e.Value is true)" />
-                                <span class="pa-dot pa-layer-dot" style="background: @layer.Color" aria-hidden="true"></span>
-                                @layer.Name
-                                @if (points.TryGetValue(layer.Id, out SpawnPoint[]? found))
-                                {
-                                    <span class="pa-faint">@found.Length.ToString("N0", CultureInfo.InvariantCulture)</span>
-                                }
-                            </label>
-                        }
-                    </div>
-                </div>
+                <div class="pa-divider"></div>
 
                 <ResultLine Text="@result" Kind="@resultKind" />
 
@@ -124,11 +95,8 @@
 }
 
 @code {
-    /// <summary>A layer of the map: what it shows, and how its markers look (its kind is the colour in world-view.js).</summary>
-    private sealed record Layer(string Id, string Name, string Kind, string Color, string Title);
-
-    // NPC types as layers too: their ids are the NpcFlags names, the service's.
-    private static readonly string[] NpcTypes = ["vendor", "repair", "trainer", "flightmaster", "innkeeper"];
+    /// <summary>A quest to show, by id: <c>/map?quest=7</c>.</summary>
+    [SupplyParameterFromQuery(Name = "quest")] public int Quest { get; set; }
 
     /// <summary>A mark: a point, or a shape drawn to measure or to keep - a line, a polygon, a rectangle, a circle.</summary>
     private sealed record Mark(string Id, string Shape, Point3[] Points, float Radius);
@@ -142,14 +110,12 @@
         new(WorldShapes.Circle, "Draw a circle: its centre, then a point on its edge", "Circle"),
     ];
 
-    private const string PlacesLayer = "places";
-
     private WorldView? view;
+    private WorldLayers? layers;
     private WorldSnapshot? world;
     private int uiMap;
+    private bool frameZone;
     private string? tool;
-    private readonly HashSet<string> shown = [];
-    private readonly Dictionary<string, SpawnPoint[]> points = [];
     private string search = string.Empty;
     private NpcInfo[] found = [];
     private NpcInfo? chosen;
@@ -163,23 +129,6 @@
     private ZoneInfo? Zone => world?.Zone(uiMap);
 
     private int MapId => Zone?.MapId ?? -1;
-
-    // Zones only, on continents with tiles: a continent's or the world's map lists nothing of its own.
-    private IEnumerable<ZoneInfo> Zones => world is null
-        ? []
-        : world.World.Zones.Where(z => z.AreaId != 0 && world.CanRoute(z.Continent)).OrderBy(z => z.Continent).ThenBy(z => z.Name);
-
-    private IEnumerable<Layer> Layers =>
-    [
-        .. NpcTypes.Where(t => world?.World.NpcFlags.ContainsKey(t) == true)
-            .Select(t => new Layer(t, char.ToUpperInvariant(t[0]) + t[1..] + "s", WorldKinds.Npc, "#39c5cf", $"NPCs who are a {t}, where each first spawns")),
-        new(SpawnLayers.Elite, "Elites", "elite", "#e5534b", "Elite, rare and boss creatures, every spawn"),
-        new(SpawnLayers.Herb, "Herbs", "herb", "#57ab5a", "Herb nodes"),
-        new(SpawnLayers.Vein, "Veins", "vein", "#c69026", "Mining veins"),
-        new(SpawnLayers.Skinnable, "Skinnable", "skinnable", "#d4b45a", "Creatures that can be skinned, every spawn"),
-        new(SpawnLayers.Mailbox, "Mailboxes", "mailbox", "#6cb6ff", "Mailboxes"),
-        new(PlacesLayer, "Places", "place", "#e6edf3", "The named places routes are planned between"),
-    ];
 
     protected override async Task OnInitializedAsync()
     {
@@ -203,77 +152,27 @@
         });
     }
 
-    private async Task ZoneChosenAsync(ChangeEventArgs e)
+    // The layers' zone is the page's: a creature found elsewhere goes, and the zone is framed once its layers are read.
+    private void ZoneChanged(int chosenMap)
     {
-        if (!int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int chosenMap))
-        {
-            return;
-        }
-
         uiMap = chosenMap;
-        points.Clear();
         found = [];
         chosen = null;
-        foreach (Layer layer in Layers.Where(l => shown.Contains(l.Id)))
-        {
-            await ReadAsync(layer);
-        }
-
-        Show(frame: true);
+        frameZone = true;
     }
 
-    private async Task ToggleAsync(Layer layer, bool on)
+    private void LayersChanged()
     {
-        if (on)
-        {
-            shown.Add(layer.Id);
-            await ReadAsync(layer);
-        }
-        else
-        {
-            shown.Remove(layer.Id);
-        }
-
-        Show();
+        Show(frame: frameZone);
+        frameZone = false;
     }
 
-    // A layer's points in the zone, read once per zone.
-    private async Task ReadAsync(Layer layer)
+    private async Task CenterAsync(Point3 at)
     {
-        if (Zone is not ZoneInfo zone || points.ContainsKey(layer.Id))
+        if (view is not null)
         {
-            return;
+            await view.CenterOnAsync(at);
         }
-
-        try
-        {
-            if (layer.Id == PlacesLayer)
-            {
-                points[layer.Id] = [.. world!.LocationsOn(zone.Continent).Select(p => new SpawnPoint(0, p.Name, p.Position))];
-                return;
-            }
-
-            ServiceResult<SpawnPoint[]> read = layer.Kind == WorldKinds.Npc
-                ? Npcs(await pathing.GetNpcsAsync(zone.UiMapId, layer.Id, Token))
-                : await pathing.GetSpawnsAsync(zone.UiMapId, layer.Id, Token);
-            if (read.Ok)
-            {
-                points[layer.Id] = read.Value;
-                Say(null, ResultKind.Info);
-            }
-            else
-            {
-                Say($"{layer.Name}: {read.Error}", ResultKind.Error);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
-
-    private static ServiceResult<SpawnPoint[]> Npcs(ServiceResult<NpcInfo[]> npcs)
-    {
-        return new ServiceResult<SpawnPoint[]>(npcs.Value?.Select(n => new SpawnPoint(n.Entry, n.Name, n.Position)).ToArray(), npcs.Status, npcs.Error);
     }
 
     private async Task SearchKeyAsync(KeyboardEventArgs e)
@@ -320,9 +219,14 @@
         }
     }
 
-    private void MarkerClicked(string id)
+    private async Task MarkerClickedAsync(string id)
     {
-        // A marker's title says what it is; a click on a found creature keeps it chosen.
+        // A marker's title says what it is; a click on a quest giver picks its quest, one on a found creature keeps it chosen.
+        if (layers is not null && await layers.MarkerClickedAsync(id))
+        {
+            return;
+        }
+
         if (found.FirstOrDefault(n => $"found-{n.Entry.ToString(CultureInfo.InvariantCulture)}" == id) is NpcInfo npc)
         {
             chosen = npc;
@@ -465,23 +369,11 @@
         resultKind = kind;
     }
 
-    // Every shown layer's markers, the creature found and the marked points.
+    // Every shown layer's markers and the quest's, the creature found and the marked points.
     private void Show(bool frame = false)
     {
         string continent = Zone?.Continent ?? world?.World.Continents.FirstOrDefault(c => c.Tiles > 0)?.Name ?? string.Empty;
-        List<WorldMarker> markers = [];
-        foreach (Layer layer in Layers.Where(l => shown.Contains(l.Id)))
-        {
-            if (points.TryGetValue(layer.Id, out SpawnPoint[]? at))
-            {
-                for (int i = 0; i < at.Length; i++)
-                {
-                    SpawnPoint p = at[i];
-                    markers.Add(WorldMarker.At($"{layer.Id}-{i.ToString(CultureInfo.InvariantCulture)}", layer.Kind, p.At, null,
-                        p.Detail is null ? p.Name : $"{p.Name} · {p.Detail}"));
-                }
-            }
-        }
+        List<WorldMarker> markers = [.. layers?.Markers ?? []];
 
         foreach (NpcInfo npc in found)
         {

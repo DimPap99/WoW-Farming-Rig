@@ -180,9 +180,9 @@ Pathing Service on the same PC, or commit the authored files to the repository.
 | `GET /api/v1/world/npcs?uiMapId&flag` | | `NpcInfo[]` of that type in the zone |
 | `GET /api/v1/world/npcs/search?mapId&name` | | `NpcInfo[]` of creatures on the continent whose name holds the text (50 at most) |
 | `GET /api/v1/world/spawns?uiMapId&layer` | | `SpawnPoint[]`: every elite, herb, vein, skinnable spawn or mailbox in the zone (`SpawnLayers`) |
-| `GET /api/v1/world/quests?uiMapId` | | `QuestSummary[]`: the quests given in the zone, by level, with where each is given |
+| `GET /api/v1/world/quests?uiMapId` | | `QuestSummary[]`: the zone's quests (those its quest log lists; a class or profession quest where its giver stands), by level, with where each is given |
 | `GET /api/v1/world/quests/search?name` | | `QuestSummary[]` of quests whose name holds the text (50 at most) |
-| `GET /api/v1/world/quests/{id}` | | `QuestDetail`: where it is given and handed in, what it asks (kill, use, collect, explore), and every place for each - an item with the creatures that drop it, the objects that hold it and the vendors that sell it; 404 |
+| `GET /api/v1/world/quests/{id}` | | `QuestDetail`: its zone, where it is given and handed in, what it asks (kill, use, collect, explore), and every place for each - an item with the creatures that drop it, the objects that hold it and the vendors that sell it; the quests before and after it, named; 404 |
 | `GET /api/v1/catalog/locations` | | `NamedLocation[]` (curated spots and teleports) |
 | `GET /api/v1/catalog/testroutes` | | `TestRoute[]` with ready `RouteRequest`s |
 | `GET /api/v1/navmesh/{continent}/tiles` | | `NavmeshTile[]` (bounds, resident) |

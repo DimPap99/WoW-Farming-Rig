@@ -14,6 +14,8 @@ using SharedLib;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Json;
 using System.Threading.Tasks;
 
 using Xunit;
@@ -69,6 +71,24 @@ public sealed class NavmeshApiTests
         Assert.Equal((int)HttpStatusCode.Conflict, foreverBake.Status);
         Assert.Contains("ForeverCasc", foreverBake.Error);
         Assert.Equal((int)HttpStatusCode.Conflict, foreverGrid.Status);
+    }
+
+    // The world view asks for the relief of any continent it shows; one nothing was baked for has
+    // none, which threw for the missing folder (500).
+    [Fact]
+    public async Task A_continent_with_nothing_baked_has_an_empty_relief()
+    {
+        using TempDataRoot data = new(withMapData: true);
+        using PathingServiceFactory factory = new(data.Root);
+        HttpClient http = factory.CreateClient();
+
+        NavmeshOverview? overview = await http.GetFromJsonAsync<NavmeshOverview>($"{PathingApi.Navmesh}/Azeroth/{PathingApi.Overview}",
+            ContractJson.Options, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(overview);
+        Assert.Empty(overview.Tiles);
+        Assert.Empty(overview.Heights);
+        Assert.False(Directory.Exists(NavmeshSettings.CacheDirectory(data.Config(), new NavmeshBakeOptions(), "Azeroth")));
     }
 
     [Fact]

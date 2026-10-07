@@ -1256,6 +1256,11 @@ kbd {
     border-radius: var(--pa-radius);
 }
 
+/* The layers over this map, at its top left, stop above a picked point's box. */
+.pa-route-map .pa-panel--top-left {
+    max-height: calc(100% - 2 * var(--pa-gap) - 96px);
+}
+
 /* Over the map: pick a point, then put its coordinates in the text. */
 .pa-route-pick {
     position: absolute;
@@ -1979,6 +1984,57 @@ kbd {
     border: 1px solid var(--pa-border-strong);
     border-radius: var(--pa-radius-sm);
     background: var(--pa-surface-2);
+}
+
+/* The layers on a page whose own panel is at the left: at the right, above the readout and below
+   the tools. */
+.pa-panel--layers {
+    bottom: calc(var(--pa-gap) + 28px);
+    max-height: calc(100% - var(--pa-gap) - 28px - 220px);
+}
+
+/* A quest picked: its name over what the quest log says, then each part and where it is. */
+.pa-quest-head {
+    align-items: center;
+    gap: 6px;
+}
+
+.pa-quest-text {
+    margin: 0;
+    font-size: 12px;
+}
+
+/* A part of the quest: what to do, and under it where. */
+.pa-quest-part {
+    display: flex;
+    flex-direction: column;
+    padding: 3px 0;
+    white-space: normal;
+}
+
+.pa-quest-part .pa-faint {
+    font-size: 11.5px;
+}
+
+.pa-quest-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 6px;
+    font-size: 12px;
+}
+
+/* A quest of the chain, a button that reads as a link. */
+.pa-quest-links .pa-link {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    cursor: pointer;
+}
+
+.pa-quest-links .pa-link:hover {
+    text-decoration: underline;
 }
 
 /* The map page's layers: a check, its colour, its name and how many it shows. */

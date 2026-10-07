@@ -55,7 +55,9 @@ throws. `TryAdd` means the first client loaded wins for a given map id.
 
 **`WorldMapAreaDB` reads `dbc/<client>/WorldMapArea.json` and throws if it is absent** —
 that is the failure a new client hits before `ReadDBC_CSV -v <client>` has been run. The
-file is per **client**, not per era, because id spaces differ.
+file is per **client**, not per era, because id spaces differ. A sub-area's zone
+(`TryGetZoneOfArea`) comes from the file's sub-area rows, else from `AreaTable.json` beside it:
+Forever's map file has no sub-area rows at all.
 
 **Casing matters off Windows.** `WorldMapArea.json` is requested by that exact name by
 the frontend; a lowercase file on disk works locally and 404s on Linux/macOS.
