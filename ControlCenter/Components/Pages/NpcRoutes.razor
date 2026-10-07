@@ -113,6 +113,8 @@
     private bool picking;
     private bool loading;
     private bool busy;
+    // Bumped by every zone or type chosen: a list asked for an earlier one comes back too late.
+    private int listing;
     private string? result;
     private ResultKind resultKind;
     private RouteResponse? route;
@@ -122,7 +124,7 @@
 
     private NpcInfo? Npc => npcs.FirstOrDefault(n => n.Entry == npcEntry);
 
-    private bool Ready => start.HasValue && Npc is not null;
+    private bool Ready => Endpoints() is not null;
 
     private string StartText => start is Point3 s && world is not null
         ? ZoneLabels.Where(zoneLookup.Known(world, Zone?.MapId ?? -1, s), s)
@@ -177,19 +179,27 @@
         Draw(frame: true);
     }
 
+    // Blazor runs the next event while a handler awaits, so two quick changes overlap: only the list
+    // asked for last is taken, whichever answer comes back first.
     private async Task ListNpcsAsync()
     {
+        int mine = ++listing;
         npcs = [];
         npcEntry = 0;
+        loading = uiMap != 0;
         if (uiMap == 0)
         {
             return;
         }
 
-        loading = true;
         try
         {
             ServiceResult<NpcInfo[]> listed = await pathing.GetNpcsAsync(uiMap, type, Token);
+            if (mine != listing)
+            {
+                return;
+            }
+
             npcs = listed.Value ?? [];
             npcEntry = npcs.Length > 0 ? npcs[0].Entry : 0;
             Say(listed.Ok ? null : listed.Error, ResultKind.Error);
@@ -199,7 +209,10 @@
         }
         finally
         {
-            loading = false;
+            if (mine == listing)
+            {
+                loading = false;
+            }
         }
     }
 
@@ -248,20 +261,29 @@
 
         try
         {
+            Point3 rolled = default;
             for (int throws = 1; throws <= MaxThrows; throws++)
             {
                 Point3 map = new((Random.Shared.NextSingle() * MapSpan) + MapMargin, (Random.Shared.NextSingle() * MapSpan) + MapMargin, 0);
                 Point3 at = ZoneMath.ToWorld(zone, map);
                 ServiceResult<AreaAtPoint> area = await pathing.GetAreaAsync(zone.MapId, at.X, at.Y, Token);
-                start = at with { Z = area.Value?.Z ?? 0 };
+                if (uiMap != zone.UiMapId)
+                {
+                    // Another zone was chosen meanwhile: a start in this one is no longer wanted.
+                    return;
+                }
+
+                rolled = at with { Z = area.Value?.Z ?? 0 };
                 if (area.Value is not AreaAtPoint answer || (answer.UiMapId == zone.UiMapId && answer.Z != 0) || answer.UiMapId == 0)
                 {
                     break;
                 }
             }
 
-            await zoneLookup.LearnAsync(zone.MapId, [start!.Value], Token);
+            start = rolled;
             route = null;
+            Draw();
+            await zoneLookup.LearnAsync(zone.MapId, [rolled], Token);
             Draw();
         }
         catch (OperationCanceledException)
@@ -269,20 +291,40 @@
         }
     }
 
-    private (Point3 From, Point3 To) Endpoints()
+    // Null until the NPC and the start are both known.
+    private (Point3 From, Point3 To)? Endpoints()
     {
-        Point3 npc = Npc!.Position;
-        return reversed ? (npc, start!.Value) : (start!.Value, npc);
+        if (Npc is not NpcInfo npc || start is not Point3 at)
+        {
+            return null;
+        }
+
+        return reversed ? (npc.Position, at) : (at, npc.Position);
     }
 
     private async Task FindAsync()
     {
-        (Point3 from, Point3 to) = Endpoints();
+        // Find is enabled only once both ends are known, but a click can be on its way as they change:
+        // the server never checks a button's disabled.
+        if (Endpoints() is not (Point3 from, Point3 to))
+        {
+            return;
+        }
+
+        int asked = uiMap;
         busy = true;
         Say("Searching...", ResultKind.Info);
         try
         {
-            route = await pathing.FindRouteAsync(new RouteRequest(null, uiMap, CoordinateSpace.World, from, to), Token);
+            RouteResponse found = await pathing.FindRouteAsync(new RouteRequest(null, asked, CoordinateSpace.World, from, to), Token);
+            if (uiMap != asked || Endpoints() != (from, to))
+            {
+                // The zone, the NPC or the start changed while it was out: the answer is to another question.
+                Say(null, ResultKind.Info);
+                return;
+            }
+
+            route = found;
             (result, resultKind) = RouteResults.Describe(route);
             Draw(frame: true);
         }
@@ -319,9 +361,8 @@
         }
 
         List<WorldRoute> routes = [];
-        if (route is not null && Ready)
+        if (route is not null && Endpoints() is (Point3 a, Point3 b))
         {
-            (Point3 a, Point3 b) = Endpoints();
             routes.AddRange(RouteDrawing.Of("route", "Route", route.Status, route.Points, a, b, route.Detail, markers));
         }
 
