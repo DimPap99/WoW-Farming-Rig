@@ -13,4 +13,6 @@ public sealed record ForeverRunOptions
     public IReadOnlyList<ForeverTask> Tasks { get; init; } = [];
     /// <summary>The agenda starts over after its last task, as a farming loop.</summary>
     public bool RepeatTasks { get; init; }
+    /// <summary>Walks plan with the era's authored cost zones, as the run's route asks (<c>"CostZones": "Apply"</c>).</summary>
+    public bool ApplyCostZones { get; init; }
 }

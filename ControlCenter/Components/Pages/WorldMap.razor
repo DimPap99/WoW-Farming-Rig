@@ -1,5 +1,3 @@
-@page "/map"
-
 @inherits ControlCenterComponent
 
 @inject IPathingClient pathing
@@ -8,15 +6,13 @@
 @inject ZoneLookup zoneLookup
 @inject IJSRuntime js
 
-<PageTitle>Map · Control Center</PageTitle>
-
 @* What is where in a zone, on the world view: NPCs by type, elites, herbs, veins, skinnable
    creatures, mailboxes, named places and quest givers, each a layer to turn on (WorldLayers); a
    quest, from the zone's or found by name, with every place it sends a character to (/map?quest=7
    opens one); creatures searched by name on the continent; points marked and lines, areas and
    circles drawn, with their coordinates and what they measure. *@
 
-<WorldView @ref="view" Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="MarkedAsync" OnMarker="MarkerClickedAsync"
+<WorldModeView @ref="view" Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="MarkedAsync" OnMarker="MarkerClickedAsync"
            OnEdited="EditedAsync" OnSelected="ShapeSelected">
     <Panel Title="Map" Icon="map" Position="top-left" Class="pa-panel--tall">
         @if (world is null)
@@ -87,7 +83,7 @@
             </div>
         }
     </Panel>
-</WorldView>
+</WorldModeView>
 
 @if (!status.Online)
 {
@@ -110,7 +106,7 @@
         new(WorldShapes.Circle, "Draw a circle: its centre, then a point on its edge", "Circle"),
     ];
 
-    private WorldView? view;
+    private WorldModeView? view;
     private WorldLayers? layers;
     private WorldSnapshot? world;
     private int uiMap;

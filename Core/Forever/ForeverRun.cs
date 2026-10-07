@@ -245,7 +245,11 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
                 output.Line($"Roaming the {area} until {roam.Kills} kills.");
             }
             if (request.Route is { } route)
-                runOptions = runOptions with { Tasks = route.Tasks, RepeatTasks = route.Repeat };
+            {
+                runOptions = runOptions with { Tasks = route.Tasks, RepeatTasks = route.Repeat, ApplyCostZones = route.ApplyCostZones };
+                if (route.ApplyCostZones)
+                    output.Line("The route plans with the authored cost zones.");
+            }
 
             // The autonomous run uses the profile verified for the logged-in class;
             // the bounded route trial exists for the Paladin only.

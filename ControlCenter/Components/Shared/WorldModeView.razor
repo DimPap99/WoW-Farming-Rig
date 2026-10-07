@@ -1,0 +1,62 @@
+@* What a page shows on the world view, as one mode of the World workspace (Pages/WorldWorkspace) or alone. Hosted
+   by the workspace (a WorldModeSlot cascaded), it binds the workspace's one view - its scene, tools and
+   events - while its mode is shown, and renders only its panels; alone, as a test renders it, it shows a
+   world view of its own. The parameters are WorldView's. *@
+
+@implements IDisposable
+
+@if (Slot is null)
+{
+    <WorldView @ref="own" Scene="@Scene" Picking="@Picking" OnPick="@OnPick" Tools="@Tools" Tool="@Tool" ToolChanged="@ToolChanged"
+               OnDrawn="@OnDrawn" OnEdited="@OnEdited" OnSelected="@OnSelected" OnMarker="@OnMarker">
+        @ChildContent
+    </WorldView>
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    [CascadingParameter] public WorldModeSlot? Slot { get; set; }
+
+    [Parameter, EditorRequired] public WorldScene Scene { get; set; } = WorldScene.Empty(string.Empty);
+
+    [Parameter] public bool Picking { get; set; }
+
+    [Parameter] public EventCallback<WorldPoint> OnPick { get; set; }
+
+    [Parameter] public WorldTool[]? Tools { get; set; }
+
+    [Parameter] public string? Tool { get; set; }
+
+    [Parameter] public EventCallback<string?> ToolChanged { get; set; }
+
+    [Parameter] public EventCallback<WorldDrawn> OnDrawn { get; set; }
+
+    [Parameter] public EventCallback<WorldEdited> OnEdited { get; set; }
+
+    [Parameter] public EventCallback<string?> OnSelected { get; set; }
+
+    [Parameter] public EventCallback<string> OnMarker { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private WorldView? own;
+
+    protected override void OnParametersSet()
+    {
+        Slot?.Bind(this);
+    }
+
+    /// <summary>Centres the view on a world point, closing in when it is zoomed far out.</summary>
+    public Task CenterOnAsync(Point3 at)
+    {
+        return (Slot?.View ?? own)?.CenterOnAsync(at) ?? Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        Slot?.Unbind(this);
+    }
+}

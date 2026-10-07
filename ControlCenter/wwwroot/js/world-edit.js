@@ -4,10 +4,11 @@
 // edited. The pointer's work is local while it lasts - a draft being drawn, a handle being dragged -
 // and the finished geometry goes to the page, which sends the shapes back in its next scene.
 //
-// Tools: a point is one click; a line, a polygon or points take a click per vertex and end with
-// Enter, a click on the last vertex (a double-click) or, for a polygon, on the first; a rectangle
-// takes two corners; a circle its centre, then a point on its rim. Escape drops the draft, then the
-// tool; Backspace takes the last vertex back.
+// Tools: a point is one click (on a marker, it says which, for the page to snap to); a line, a
+// polygon or points take a click per vertex and end with Enter, a click on the last vertex (a
+// double-click) or, for a polygon, on the first; a rectangle takes two corners; a circle its centre,
+// then a point on its rim; a path is drawn freehand, pressed and dragged along the way. Escape drops
+// the draft, then the tool; Backspace takes the last vertex back.
 //
 // Handles, on the selected shape when it can be edited: drag a vertex to move it, drag the dot
 // between two vertices to insert one, right-click a vertex (or press Delete after touching it) to
@@ -42,6 +43,7 @@
     const CASING_PX = 3;
     const MIN_VERTICES = { line: 2, polygon: 3, points: 1 };
     const FINISH_PX = 9;        // a click this close to the draft's last (or a polygon's first) vertex finishes it
+    const STROKE_PX = 4;        // a freehand path takes a point each time the pointer has moved this far
     const MAX_NUMBERED = 60;    // waypoints beyond this many are numbered first and last only
     const FEW_NUMBERED = 12;    // this many or fewer are numbered at any zoom; more only close in
     const FONT = 'ui-sans-serif, system-ui, Segoe UI, sans-serif';
@@ -62,6 +64,7 @@
             selected: null,
             overHandle: false,
             drag: null,          // { shape, handle }
+            stroke: false,       // a freehand path is being drawn: the draft is its points
             active: null,        // { id, index }: the vertex last touched, for Delete
         };
     }
@@ -253,8 +256,9 @@
             }));
         }
 
+        // A freehand path is a line, not a point every few pixels.
         result.push(new deck.ScatterplotLayer({
-            id: 'draft-points', data: edit.draft, getPosition: p => p, getFillColor: DRAFT_COLOR,
+            id: 'draft-points', data: edit.tool === 'path' ? [] : edit.draft, getPosition: p => p, getFillColor: DRAFT_COLOR,
             getLineColor: [10, 14, 19], stroked: true, radiusUnits: 'pixels', getRadius: 5,
             lineWidthUnits: 'pixels', getLineWidth: 1.5, parameters: over,
         }));
@@ -318,8 +322,11 @@
             const p = positionOf(edit, info);
             if (!p) return true;
 
+            // A path is drawn by dragging; a click alone draws nothing.
+            if (edit.tool === 'path') return true;
+
             if (edit.tool === 'point') {
-                emitDrawn(edit, 'point', [p], 0);
+                emitDrawn(edit, 'point', [p], 0, layer === 'markers' && info.object ? info.object.id : null);
                 return true;
             }
 
@@ -360,22 +367,24 @@
         return false;
     }
 
-    function near(view, info, point) {
+    function near(view, info, point, px) {
         const viewport = view.deck.getViewports()[0];
         if (!viewport || info.x === undefined) return false;
         const [x, y] = viewport.project(point);
-        return Math.hypot(x - info.x, y - info.y) <= FINISH_PX;
+        return Math.hypot(x - info.x, y - info.y) <= (px || FINISH_PX);
     }
 
+    // The draft as drawn so far, sent; a freehand stroke ends with it, the rest of the drag drawing nothing.
     function finish(edit) {
         const min = MIN_VERTICES[edit.tool] || 1;
         if (edit.draft.length >= min) emitDrawn(edit, edit.tool, edit.draft, 0);
         edit.draft = [];
+        edit.stroke = false;
         edit.helpers.render();
     }
 
-    function emitDrawn(edit, tool, points, radius) {
-        edit.helpers.emit('OnShapeDrawn', tool, flat(edit, points), round(radius));
+    function emitDrawn(edit, tool, points, radius, marker) {
+        edit.helpers.emit('OnShapeDrawn', tool, flat(edit, points), round(radius), marker || null);
     }
 
     // World x, y, z triples, to a tenth of a yard; an unknown height is sent as 0.
@@ -403,9 +412,19 @@
         edit.overHandle = !!(info.layer && info.layer.id === 'handles' && info.object);
     }
 
-    /** A drag began: true when it is a handle's, so the map must not pan. */
+    /** A drag began: true when it is a handle's or draws a path, so the map must not pan. */
     function dragStart(view, info) {
         const edit = view.edit;
+        if (edit.tool === 'path') {
+            const p = positionOf(edit, info);
+            if (!p) return false;
+            edit.stroke = true;
+            edit.draft = [p];
+            edit.cursor = null;
+            edit.helpers.render();
+            return true;
+        }
+
         if (!info.layer || info.layer.id !== 'handles' || !info.object) return false;
         const shape = editing(edit);
         if (!shape) return false;
@@ -423,6 +442,15 @@
 
     function drag(view, info) {
         const edit = view.edit;
+        if (edit.stroke) {
+            const p = info.x === undefined ? null : edit.helpers.groundAt(info.x, info.y, null);
+            if (p && (edit.draft.length === 0 || !near(view, info, edit.draft[edit.draft.length - 1], STROKE_PX))) {
+                edit.draft.push(p);
+                edit.helpers.render();
+            }
+            return true;
+        }
+
         if (!edit.drag) return false;
         // The pointer is on the handle itself: the ground is looked up under it.
         const p = info.x === undefined ? null : edit.helpers.groundAt(info.x, info.y, null);
@@ -448,6 +476,14 @@
 
     function dragEnd(view) {
         const edit = view.edit;
+        if (edit.stroke) {
+            edit.stroke = false;
+            if (edit.draft.length > 1) emitDrawn(edit, 'path', edit.draft, 0);
+            edit.draft = [];
+            edit.helpers.render();
+            return true;
+        }
+
         if (!edit.drag) return false;
         const { shape } = edit.drag;
         edit.drag = null;
@@ -491,6 +527,7 @@
         switch (event.key) {
             case 'Escape':
                 if (edit.draft.length > 0) {
+                    edit.stroke = false;
                     edit.draft = [];
                     edit.helpers.render();
                 } else if (edit.tool) {

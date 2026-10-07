@@ -4,8 +4,10 @@ The Control Center from `docs/service-architecture.md`: the place to watch route
 and cost zones, administer bakes, and run the fleet - a console per bot - for every bot. It holds
 no data and plans nothing. It is a client of the Pathing Service and the Bot Manager, and it never
 references `PPather`, `Core`, `Game`, `WinAPI` or `Frontend`: only `Contracts` and
-`ServiceClients`. Every page that shows the world is on one map, the world view (deck.gl); the
-Leaflet map is BlazorServer's alone now (`MapAssets`), and the Babylon 3D view is gone.
+`ServiceClients`. Every page that shows the world is a mode of one page, the World workspace
+(`/world`), over one map, the world view (deck.gl); the Leaflet map is BlazorServer's alone now
+(`MapAssets`), and the Babylon 3D view is gone. How it came to be and what is next:
+`docs/world-workspace-plan.md`.
 
 ## Run
 
@@ -48,24 +50,26 @@ World/WorldScene.cs                what a page shows on the world view: routes, 
 World/RouteDrawing.cs              a route's lines by how it ended (found, partial + gap, none, planning)
 World/ZoneLabels.cs                zone names on a continent; a point as a player reads it
 World/AdtGrid.cs                   the bake API's ADT grid (x down from the world's edge along x)
-Routes/RouteLegs.cs                the route designer's legs: one request per pair of waypoints, kept
-                                   by their ends, four at a time
-Routes/ForeverExport.cs            a designed route as a Forever route file (travel per zone, roams)
-Routes/RecordedPaths.cs            library files as waypoints and back (one zone's map coordinates)
-Routes/ForeverRouteSketch.cs       a Forever route's text read leniently for drawing as it is written
+(ServiceClients/Routes)            the route designer's model, shared with every client: RouteEditor
+                                   (nodes, legs, undo), RouteLegs, RoutePoints, the Forever route writer
+                                   and reader, RecordedPaths, ForeverRouteSketch
 Components/App.razor, Routes.razor the document; InteractiveServer without prerendering
 Components/Layout/                 MainLayout (rail), NavMenu, StatusBar
-Components/Shared/                 ControlCenterComponent (base), WorldView, WorldLayers (what is
-                                   where: NPCs, nodes, quests), Panel, BusyButton, ResultLine,
-                                   OfflineNotice, Terminal, Aria, Words (counts and yards), Dialogs
-                                   (confirm), JsTeardown, ...
+Components/Shared/                 ControlCenterComponent (base), WorldView, WorldModeView and
+                                   WorldModeSlot (a page as a mode of the workspace), WorldLayers (what
+                                   is where: NPCs, nodes, quests), Panel, BusyButton, ResultLine,
+                                   OfflineNotice, Terminal, Aria, Words (counts, yards, durations),
+                                   Dialogs (confirm), JsTeardown, ...
 Components/Bots/                   BotCard, BotState, BotLive, BotCommands, AssignmentForm,
                                    RunHistory, BotLog, FeedChip; BotFormat (words and styles)
 Components/Designer/               the route designer's sections: RouteLibrary (open, save, delete
-                                   recorded paths), ForeverSave (the route as a Forever route file);
-                                   not Components/Routes, which would clash with the router
-Components/Pages/                  LiveView (/), WorldMap (/map), RouteMap (/routes, the route
-                                   designer), NpcRoutes, CostZones (/cost-zones), Navmesh (/navmesh),
+                                   recorded paths), ForeverLibrary (open a Forever route file as nodes,
+                                   save the design as one); not Components/Routes, which would clash
+                                   with the router
+Components/Pages/                  WorldWorkspace (/, /world?mode=...: the modes below over one view),
+                                   its modes WorldMap (explore), RouteMap (route, the designer),
+                                   NpcRoutes (npcs), CostZones (costs), Navmesh (navmesh), LiveView
+                                   (live); OldWorldPages (their old addresses, sent to their modes);
                                    ForeverRoutes (/forever-routes), Fleet (/fleet), BotConsole
                                    (/fleet/{agentId}), ApiReference
 wwwroot/css/site.css               the whole theme and its own small reset (no Bootstrap); pa- prefixed
@@ -172,7 +176,7 @@ browser check to wait on (with each marker's place on the screen). A click on a 
 as `OnMarker` (not while `Picking`). How the pages moved here: `docs/world-view-plan.md`; where they
 go next - one World workspace with modes, node kinds, cost models: `docs/world-workspace-plan.md`.
 
-**What is where is one component, `WorldLayers`.** The Map page, the route designer and the Forever
+**What is where is one component, `WorldLayers`.** The Map page (Explore), the route designer and the Forever
 routes page each hold one: a zone's NPCs by type, elites, herbs, veins, skinnable creatures,
 mailboxes, places and quest givers as layers, and a quest - from the zone's, found by name, or named by
 the page (`QuestId`; the Map page's `/map?quest=7`) - with each part and where it is, drawn in the
@@ -231,11 +235,43 @@ should. deck.gl's `CollisionFilterExtension` did not thin overlapping zone names
 a changed `wwwroot` script is served as it was built until the Control Center is built again:
 rebuild before a browser check.
 
-**The designer plans each leg once.** `RouteLegs` keys a leg by its ends to a tenth of a yard
-(the precision the map sends) and the search, so the whole list of waypoints coming back from an
-edit replans only the legs whose ends moved. A waypoint with height 0 takes the ground's from the
-first leg found through it. Library files are one zone's map coordinates with no height (as the bot
-records them; a file with heights is world yards); the zone is guessed from the file name.
+**The world pages are modes of one page, and a mode once shown stays.** `WorldWorkspace` (`/` and
+`/world?mode=explore|route|npcs|costs|navmesh|live`) owns the one `WorldView` and hosts each page as a
+mode through a cascaded `WorldModeSlot`: the page renders `WorldModeView` where it rendered `WorldView`
+(the same parameters), which binds its scene, tools and events to the slot and renders only the
+page's panels; the workspace shows the bound view of the mode shown and sends it the view's events.
+Every bind of the shown mode re-renders the workspace, whatever changed - a scene, picking, a tool:
+NPC routes' "pick the start" changes picking alone, and the view must hear it.
+Rendered without a slot - a test renders a page by itself - `WorldModeView` shows a world view of its
+own. A mode is made the first time it is shown and then kept, hidden (`hidden` on its container), so
+switching keeps the camera and each mode's work: a route being designed, cost zones not saved, marks.
+A mode's scene that was shown before goes back without its framing; a mode shown for the first time
+frames what it shows, as the page did. The workspace reads `mode` from the address itself and
+switches after the location change is through: as a `[SupplyParameterFromQuery]`, the change re-rendered
+the workspace inside the framework's notice to query readers, the mode it made (Explore reads `quest`)
+subscribed meanwhile, and the circuit ended ("Collection was modified"). The old addresses (`/map`,
+`/routes`, `/npc-routes`, `/cost-zones`, `/navmesh`, `/live`) are `OldWorldPages`, sent to their
+modes with their query (`/map?quest=7` opens Explore on quest 7). The modes keep their own layers
+panel each; sharing the layers between modes is not built (`docs/known-issues.md`).
+
+**The route designer edits a `RouteEditor` and plans each leg once.** The design (`RouteDesign`:
+nodes, loop, cost zones) and every edit with its undo live in `ServiceClients/Routes`, so any client
+can design routes; the page only draws and asks. A node is shape, required, stop or area, and the leg
+from it replanned (the navmesh's way, planned under the design's cost-zone choice, `RouteRequest.CostZones`)
+or exact (the line as drawn); Compare draws each leg's other kind faintly. `RouteLegs` keys a leg by its
+ends to a tenth of a yard (the precision the map sends), the search and the cost zones, so the nodes
+coming back from an edit (`RouteEditor.Reshape`: one moved, inserted or removed) replan only the legs
+whose ends moved; an exact leg asks nothing unless compared. A node with height 0 takes the ground's
+from a way planned through it (`TakeHeights`, which is no edit). Ctrl+Z and Ctrl+Y reach the page
+through `pathingUi.watchUndo` - not in a text box, and not while an element of the page is inside a
+`[hidden]` mode, or a hidden designer would undo edits nobody sees. The Path tool draws freehand (a drag that the tools
+stop before the map pans), made sparse into shape nodes on exact legs (`AddPath`); a point placed on a
+marker says which (`WorldDrawn.Marker`), and the layers say what it stands for (`WorldLayers.PlaceOf`:
+an NPC of a type layer makes a stop by name; a quest giver, which may be an object, one at the quest's
+start). Library files are one zone's map coordinates with no height (as the bot records
+them; a file with heights is world yards); the zone is guessed from the file name. A Forever route file
+opens as nodes (`ForeverRouteReader`), naming what a design cannot hold, and the text page links to it
+("Open as nodes", `/world?mode=route&forever=x.json`).
 
 **A point's zone comes from the service's area grid.** Zone maps overlap a lot - Durotar's covers
 the east of the Barrens, the Barrens' the south of Durotar - so no rule on the map rectangles
@@ -264,7 +300,8 @@ ports where nothing listens (`ClosedPort`) unless a test hands it a fake manager
 the shell), at an address of the test's (`uri`, for a page that reads its query). `ControlCenterTests` checks the shell, the map assets and a 502 from the forwarding;
 `ControlCenterForwardTests` the forward rules against a listener that echoes the headers it got;
 `PathingStatusTests` the poller's health check and when pages read again; `WorldLayersTests` the
-layers and a quest against a Forever service in memory;
+layers and a quest against a Forever service in memory; `WorldWorkspaceTests` the modes, the old
+addresses and the designer's cost-zone choice per client; `ServiceTests/Routes` the designer's model;
 `ServiceTests/Fleet` the feed against the in-memory manager, the pollers, the log join, the
 assignment draft and the fleet pages. A render there is a first render only: what goes wrong on
 a re-render (a duplicate `@key`) shows in a browser - drive one with Playwright .NET and the

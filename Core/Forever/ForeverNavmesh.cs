@@ -27,8 +27,20 @@ public static class ForeverNavmesh
     /// <summary>
     /// A pathfinder over already-baked tiles only; it never bakes. The client
     /// reports no player height, so endpoints resolve to the ground under them.
+    /// It plans with <paramref name="zones"/>: none unless the run's route
+    /// applies them (<see cref="CostZonesOf"/>).
     /// </summary>
-    public static NavmeshPathfinder OpenDiskOnly(ILogger logger, string cacheDirectory) =>
+    public static NavmeshPathfinder OpenDiskOnly(ILogger logger, string cacheDirectory, CostZones? zones = null) =>
         new(logger, null, cacheDirectory, new NavmeshBakeOptions(),
-            new NavmeshQueryOptions { PreferGroundUnderPoint = true });
+            new NavmeshQueryOptions { PreferGroundUnderPoint = true })
+        { Zones = zones ?? CostZones.Empty };
+
+    /// <summary>
+    /// The authored roads and danger zones of <paramref name="continent"/> for
+    /// Forever (<c>Json/road/forever</c>, which the agent's data sync brings),
+    /// read as the Pathing Service's planner reads them, so a route that
+    /// applies them is walked as the Control Center previews it.
+    /// </summary>
+    public static CostZones CostZonesOf(ILogger logger, DataConfig data, string continent) =>
+        CostZoneLoader.Load(logger, data.Road, continent, roadCoreHalfWidth: new NavmeshQueryOptions().RoadCore);
 }

@@ -41,6 +41,12 @@ is not saved, with the step that is wrong.
 | `UIMapId` | the map the coordinates are on (1411 Durotar, 1413 The Barrens, 1420 Tirisfal Glades; `--where` prints it) |
 | `Steps` | the steps, in order; at least one |
 | `Repeat` | `true` starts over after the last step, a farming loop that runs until the time bound |
+| `CostZones` | `"Apply"` plans every walk with the era's authored roads and danger zones (`Json/road/forever/<continent>`, which the agent's data sync brings before a run); `"Ignore"`, or none, plans without them, as runs always did. By name only, in any case: anything else, a number too, is refused | `"Ignore"` |
+
+The Control Center's route designer previews a route's legs under the same choice, so what it
+draws is what the run plans. A route it designs writes each leg drawn as **Exact** as `Via` points
+10 yards apart along the line, so the run walks the line as drawn; a **Replanned** leg is only its
+ends, and the run finds the navmesh's way between them as it walks.
 
 A point is `[x, y]`, each from 0 to 100. Any zone in the map data will do, and
 a route may cross into the next zone of the same continent: give the steps

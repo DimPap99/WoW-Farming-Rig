@@ -1,9 +1,39 @@
 # World workspace - one screen for the map, routes, costs and the navmesh
 
-**Status (2026-10-07):** a handoff; nothing here is built yet. Written at the end of the Forever
-world-data work (branch `feature/forever-world-data`: QuestieDB's data, the quest API, the layers
-panel, the Forever `Visit` and `Quest` steps). Read [world-view-plan.md](world-view-plan.md) first -
-how the pages moved onto the deck.gl world view - and the gotchas in `ControlCenter/CLAUDE.md`.
+**Status (2026-10-07):** a handoff, now being built (see "Decisions" just below and "Built so far"
+at the end). Written at the end of the Forever world-data work (branch `feature/forever-world-data`:
+QuestieDB's data, the quest API, the layers panel, the Forever `Visit` and `Quest` steps). Read
+[world-view-plan.md](world-view-plan.md) first - how the pages moved onto the deck.gl world view - and
+the gotchas in `ControlCenter/CLAUDE.md`.
+
+## Decisions (2026-10-07, the user's answers)
+
+1. **Forever routes: the text page stays; Route mode reads and writes route files as nodes.** The
+   text page is the one lossless editor (comments, every step kind). Route mode saves a design as a
+   route file, and opens one as nodes: Travel points (`Via` as Shape, `To` as Required, evenly
+   spaced points on a line as an Exact leg), `Roam` as an Area node, `Visit` as a Stop node - of an
+   NPC by name at its spawn, by role or to a quest's start or end where the route has come to. What
+   it cannot carry (comments, `Quest` steps, a step's pulls, seed, minutes or level, a visit to an NPC
+   not found) it names, and saving over the file asks first. (The user left this one to us.)
+2. **Leg kinds, two modes:** **Exact** - walked as drawn: the export writes points every
+   `RoutePoints.ExactSpacingYards` (10) along the line as `Via`s, which the bot passes within 6 yd;
+   **Replanned** - the navmesh's way between the nodes, found again by the bot as it walks: the
+   export writes only the nodes, and the designer shows the replanned result (the planner's route
+   under the route's cost-zone choice). Kinds are per leg, with a default for new legs and "all
+   legs"; Compare draws the other kind faintly under each leg.
+3. **Forever runs apply cost zones when the route says so, two modes: Apply and Ignore.** A route
+   file's `"CostZones": "Apply"` makes its run load the era's authored zones (`Json/road/forever`)
+   for the continent; without it (or `"Ignore"`) a run loads none, as before. The designer plans
+   legs under the same choice (`RouteRequest.CostZones`), so the preview is what the bot plans.
+   Classic is unchanged: its bot always applies zones, and the designer defaults to Apply there.
+4. **Code shape (the user's words: classes to call from the local planner or through the API, no
+   abstraction for its own sake, compact):** wire types in Contracts (`NodeKind`, `LegKind`,
+   `CostZoneUse`, `RouteNode`); the engine's half in PPather (`RouteQuery.Zones`: the lane's zones,
+   none, or later a cost model's, per query - what the bot's local planner gets once
+   `LocalPathingApi` moves onto `RoutePlanner`); the client's half in `ServiceClients/Routes`
+   (`RouteDesign` with undo and redo, `RouteLegs` planning each leg through a delegate - the HTTP
+   client, or an in-process planner -, `RoutePoints`, the Forever and recorded-path writers), usable
+   by the Control Center, BlazorServer and the agent alike. No interface where a delegate does.
 
 ## What the user asked for
 
@@ -47,7 +77,9 @@ camera, the zone, the layers and anything unsaved: a route being designed is los
 - `WorldLayers` (`Components/Shared`): the layers, a zone's quests and one quest's places, as
   `Markers`; `OnChanged`, `OnFocus`, `OnWaypoint` and `QuestActions` let a page use them.
 - `RouteLegs` (one route request per leg, kept by its ends), `ForeverExport`, `RecordedPaths`,
-  `RouteLibrary`, `ForeverSave`, `ZoneLookup`, `WorldCache`, `PathingStatus`.
+  `RouteLibrary`, `ForeverSave`, `ZoneLookup`, `WorldCache`, `PathingStatus`. (Since built:
+  `RouteLegs`, `RecordedPaths` and the export - now `ForeverRouteWriter` - live in
+  `ServiceClients/Routes`, and `ForeverSave` is `ForeverLibrary`; see "Built so far".)
 
 ### How costs work today - read before designing cost models
 
@@ -313,16 +345,53 @@ Each phase ships on its own.
 
 ## Open questions for the user
 
-1. The landing page: the World workspace (in which mode?) or the Fleet?
-2. Forever route files: keep the text page as the place to edit them, or edit them as nodes in Route
-   mode, comments becoming notes on nodes?
-3. A Straight leg in a Forever route: walked exactly (dense `Via` points), or planned on the mesh
-   between its points?
+1. The landing page: the World workspace (in which mode?) or the Fleet? (Until answered, `/` opens
+   the workspace in Live mode, which is what `/` showed before.)
+2. ~~Forever route files: text page or nodes?~~ Both: "Decisions", 1.
+3. ~~A Straight leg: walked exactly or planned on the mesh?~~ Both, per leg: "Decisions", 2.
 4. Cost models: one set per era shared by every bot, or chosen per route?
-5. Should Forever runs apply cost zones and models (known issue 40)?
+5. ~~Should Forever runs apply cost zones?~~ When the route says so: "Decisions", 3. Models: later.
 6. Are towns from NPC clusters good enough for a first version?
 
 ## A first session
 
 Phase 1 with Explore and Route as modes, then phase 2's node kinds, Straight legs and undo: the
 user's "design a route myself".
+
+## Built so far (2026-10-07)
+
+On `feature/forever-world-data`, after the handoff above. Read with the "Decisions" at the top.
+
+- **The workspace (phase 1).** `ControlCenter/Components/Pages/WorldWorkspace` on `/` and `/world`: six
+  modes - Explore, Route, NPC routes, Costs, Navmesh, Live - on a strip over one `WorldView`. Each page
+  became a mode by rendering `WorldModeView` where it rendered `WorldView` (`WorldModeSlot` binds it);
+  a mode is made when first shown and kept, so the camera and each mode's work (the route designed,
+  cost zones not saved, marks) carry over. NPC routes stayed a mode rather than folding into Explore,
+  so nothing it did was lost. The old addresses come to their modes (`OldWorldPages`); the rail is
+  World, Fleet, Forever routes, API. Not built: shared layers between modes and state that outlives
+  the page (known issue 62), remembered mode and camera per browser, the inspector, Ctrl+K search.
+- **Design a route (phase 2, most of it).** `ServiceClients/Routes`: `RouteEditor` (nodes of the four
+  kinds - shape, required, stop, area -, a leg kind on each node for the leg it starts, undo and redo
+  over whole designs, the map's edits as one node moved, inserted or removed), `RouteLegs` (moved
+  here; keyed by the cost-zone choice too), `RoutePoints` (what a bot follows), `ForeverRouteWriter`
+  (the export, node kinds as steps) and `ForeverRouteReader` (a route file back as nodes),
+  `RecordedPaths` (a design saved as its points). Route mode: node kinds in an inspector, a leg kind
+  per leg (Replanned or Exact) with a kind for new legs and "all", Compare, Loop, cost zones Apply or
+  Ignore (a Forever design starts with Ignore, a Classic one with Apply), the Path tool (freehand),
+  a node on an NPC marker visits it, undo and redo (buttons, Ctrl+Z, Ctrl+Y), the route's length,
+  running time and climb. Not built: insert by clicking a leg (dragging the dot between two nodes
+  does it), herbs and veins near the route, Optional and Avoid nodes (phase 5).
+- **Cost zones per request and for Forever runs.** `RouteRequest.CostZones` (Apply, the default, or
+  Ignore) through `RouteQuery.Zones` in the planner; a Forever route file's `"CostZones": "Apply"`
+  makes its run load the era's zones (known issue 40, its cost-zone half). The Forever routes page
+  previews a file's legs under its choice.
+- **Tests.** `ServiceTests`: the editor, the points, the writer and the reader (a design written and
+  read back), the planner and the API with and without zones, the route file's field, the workspace
+  and its old addresses; `AgentTests`: the Forever navmesh with and without zones. A browser check
+  (Playwright, headless Chrome) drove the designer on Classic tiles - nodes, leg kinds, undo and redo
+  from the keyboard, a required node, a drawn path, an area, Ignore, Compare, Loop - and every mode
+  in turn, the route kept.
+
+Next, in the order the phases give: known issue 61 (a line check, and the start-up check passing an
+off-mesh `Via` by), the layers shared between modes (62), then the navmesh's nodes (phase 3) and cost
+models (phase 4).

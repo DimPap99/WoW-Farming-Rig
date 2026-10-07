@@ -92,21 +92,22 @@ A page whose service is down says so, and comes back by itself.
 
 | page | what it is for |
 |---|---|
-| **Live view** (`/`) | Every route the Pathing Service plans, from any caller, as it plans it; and the known-trouble **test routes**, each run as a real route request. |
-| **Map** (`/map`) | What is where in a zone: NPCs by type, elites, herbs, veins, skinnable creatures, mailboxes, places and quest givers; creatures found by name. A quest - from the zone's, found by name, or `/map?quest=7` - shows where it is given and handed in and every place of what it asks (the creatures to kill, those that drop what it needs, the objects, the vendors), in zone map coordinates. Points, lines and shapes can be drawn and measured, with their zone map coordinates. |
+| **World** (`/`, `/world`) | Every page that shows the world, as a mode over one map, picked on the strip above it (`/world?mode=...`). Switching keeps the camera and each mode's work; the old addresses (`/map`, `/routes`, ...) open their mode. |
+| World: **Explore** | What is where in a zone: NPCs by type, elites, herbs, veins, skinnable creatures, mailboxes, places and quest givers; creatures found by name. A quest - from the zone's, found by name, or `/world?mode=explore&quest=7` - shows where it is given and handed in and every place of what it asks (the creatures to kill, those that drop what it needs, the objects, the vendors), in zone map coordinates. Points, lines and shapes can be drawn and measured, with their zone map coordinates. |
+| World: **Route** | The route designer. Nodes are clicked on the map (on an NPC, a stop that visits it), taken from named places or a quest's places, or drawn as a path; areas are drawn to roam. A node is a shape node (bends the route; a stuck bot passes it by), a required one (the route passes it whatever prices the legs), a stop or an area. Each leg is **replanned** (the navmesh's way, drawn as the planner answers it under the route's cost-zone choice, Apply or Ignore) or **exact** (walked as drawn); Compare draws the other kind beside each. Loop, undo and redo (Ctrl+Z, Ctrl+Y), the route's length and running time. Recorded paths open and save here, and Forever route files open as nodes and save. |
+| World: **NPC routes** | Route to an NPC of a type in a zone, from a random start. |
+| World: **Costs** | Roads routes are drawn towards, and danger zones they avoid or never cross: draw, edit, save. |
+| World: **Navmesh** | Where the navmesh is baked and which tiles the planner holds. Bake an ADT or a continent, or rebuild the area grid. |
+| World: **Live** | Every route the Pathing Service plans, from any caller, as it plans it; and the known-trouble **test routes**, each run as a real route request. |
 | **Fleet** (`/fleet`) | Every bot the Bot Manager knows: its state, client, vitals, activity, place and assignment, with Start and Stop. A bot's **console** adds the assignment form, the run history and the bot's log. |
-| **Routes** (`/routes`) | The route designer: waypoints clicked on the map or taken from named places or a quest's places, each leg planned, with the Map's layers. Recorded paths open, change and save here, and a route saves as a Forever route. |
-| **NPC routes** | Route to an NPC of a type in a zone, from a random start. |
-| **Cost zones** | Roads routes are drawn towards, and danger zones they avoid or never cross: draw, edit, save. |
-| **Navmesh** | Where the navmesh is baked and which tiles the planner holds. Bake an ADT or a continent, or rebuild the area grid. |
-| **Forever routes** | WoW: Forever route files as text, checked as a run loads them and drawn beside the text, with the Map's layers: a place's coordinates, or a quest's steps, go into the text. |
+| **Forever routes** | WoW: Forever route files as text, comments and every kind of step, checked as a run loads them and drawn beside the text (planned as the run plans: with the cost zones only when the route applies them), with the Map's layers: a place's coordinates, or a quest's steps, go into the text. **Open as nodes** takes a saved file to the route designer. |
 | **API** | The Pathing Service's Swagger: every endpoint with examples. |
 
 ## Baking
 
 Baking needs the game files where the Pathing Service runs: the archives in `Json\MPQ` for the
 Classic clients, `ForeverCasc:Install` for WoW: Forever. Without them the bake controls say so.
-Start a bake from the **Navmesh** page (the ADT chosen on the map, or the whole continent; cancel;
+Start a bake from the World page's **Navmesh** mode (the ADT chosen on the map, or the whole continent; cancel;
 clear a continent's tiles), with `--bake=`, or through `POST /api/v1/bake`. When a bake ends, the
 planner looks at the disk again, so the new tiles are used by the next route.
 

@@ -189,9 +189,9 @@
     }
 
     [JSInvokable]
-    public Task OnShapeDrawn(string shape, float[] points, float radius)
+    public Task OnShapeDrawn(string shape, float[] points, float radius, string? marker)
     {
-        return OnDrawn.InvokeAsync(new WorldDrawn(shape, WorldPoints.Unflatten(points), radius));
+        return OnDrawn.InvokeAsync(new WorldDrawn(shape, WorldPoints.Unflatten(points), radius, marker));
     }
 
     [JSInvokable]
@@ -278,6 +278,7 @@
         WorldShapes.Points => @<svg class="pa-world-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="2.5,12.5 7,6 13.5,3.5" stroke-dasharray="2 2" /><circle cx="2.5" cy="12.5" r="1.6" /><circle cx="7" cy="6" r="1.6" /><circle cx="13.5" cy="3.5" r="1.6" /></svg>,
         WorldShapes.Rectangle => @<svg class="pa-world-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="9" /></svg>,
         WorldShapes.Circle => @<svg class="pa-world-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /></svg>,
+        WorldShapes.Path => @<svg class="pa-world-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 12.5c2.5 0 2.2-5 5-5s2.2 4 4.5 4 2-6 2.5-8" /></svg>,
         _ => @<span>@shape</span>,
     };
 

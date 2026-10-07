@@ -74,7 +74,43 @@
         }
     }
 
-    window.pathingUi = { loadScript, log, storageGet, storageSet, relayout, insertAtCursor, copy };
+    // The page that hears Ctrl+Z and Ctrl+Y now, the token it registered with, and an element of its own.
+    let undoTarget = null;
+    let undoToken = null;
+    let undoElement = null;
+
+    // Ctrl+Z undoes and Ctrl+Y (or Ctrl+Shift+Z) redoes, except in a text box, which keeps its own, and not
+    // for a page hidden now (a mode of the World page another mode is shown over).
+    document.addEventListener('keydown', e => {
+        if (!undoTarget || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+        if (undoElement && (!undoElement.isConnected || undoElement.closest('[hidden]'))) return;
+        const key = e.key.toLowerCase();
+        const target = e.target;
+        if ((key !== 'z' && key !== 'y') ||
+            (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)))) return;
+        e.preventDefault();
+        undoTarget.invokeMethodAsync('OnUndoKey', key === 'y' || e.shiftKey).catch(() => { });
+    });
+
+    /**
+     * Ctrl+Z and Ctrl+Y go to the page's OnUndoKey(redo), while its element is shown, until unwatchUndo is called
+     * with the same token.
+     */
+    function watchUndo(target, token, element) {
+        undoTarget = target;
+        undoToken = token;
+        undoElement = element || null;
+    }
+
+    function unwatchUndo(token) {
+        if (undoToken === token) {
+            undoTarget = null;
+            undoToken = null;
+            undoElement = null;
+        }
+    }
+
+    window.pathingUi = { loadScript, log, storageGet, storageSet, relayout, insertAtCursor, copy, watchUndo, unwatchUndo };
 
     // The shared map scripts call a global log().
     if (typeof window.log !== 'function') {

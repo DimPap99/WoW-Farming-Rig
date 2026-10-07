@@ -41,6 +41,24 @@ public sealed class PathingApiTests
     }
 
     [Fact]
+    public async Task A_route_may_ignore_the_cost_zones_a_forever_run_does_not_apply()
+    {
+        Assert.SkipUnless(TestData.HasPrecataTiles, TestData.NoTiles);
+        using PathingServiceFactory factory = new(TestData.RepoJson);
+        PathingClient client = new(factory.CreateClient());
+        // Goldshire to Eastvale Logging Camp, along Elwynn's authored road when the zones apply.
+        RouteRequest request = new(TestData.Client, 1429, CoordinateSpace.World, new Point3(-9464f, 62f, 0), new Point3(-9467f, -1276f, 0));
+
+        RouteResponse applied = await client.FindRouteAsync(request, TestContext.Current.CancellationToken);
+        RouteResponse ignored = await client.FindRouteAsync(request with { CostZones = CostZoneUse.Ignore },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(RouteStatus.Found, applied.Status);
+        Assert.Equal(RouteStatus.Found, ignored.Status);
+        Assert.NotEqual(applied.Points, ignored.Points);
+    }
+
+    [Fact]
     public async Task A_route_that_stops_short_answers_partial_with_its_points_and_where_it_stops()
     {
         Assert.SkipUnless(TestData.HasPrecataTiles, TestData.NoTiles);

@@ -164,6 +164,9 @@
     /// <summary>A layer: what it shows, how its markers look (the kind is the colour in world-view.js), and what it is.</summary>
     private sealed record Layer(string Id, string Name, string Kind, string Color, string Title);
 
+    /// <summary>A marker's place, and whom a route visits there when someone is: an NPC by name, or where a quest is given or handed in.</summary>
+    public sealed record LayerPlace(Point3 At, StopTarget? Stop);
+
     /// <summary>The named places routes are planned between, from the world the page has.</summary>
     public const string PlacesLayer = "places";
 
@@ -347,6 +350,43 @@
         }
 
         return id.StartsWith(LayerPrefix, StringComparison.Ordinal) || id.StartsWith(QuestPrefix, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// What one of this panel's markers stands for, for a route to go to: where it is, and whom to visit there - an
+    /// NPC of a type layer by name; where a quest is given, at its giver (an NPC or an object), or given or handed
+    /// in, at the quest's own places. Null for a marker that is not this panel's.
+    /// </summary>
+    public LayerPlace? PlaceOf(string id)
+    {
+        string[] parts = id.Split(':');
+        if (id.StartsWith(LayerPrefix, StringComparison.Ordinal) && parts.Length == 3 && points.TryGetValue(parts[1], out SpawnPoint[]? at) &&
+            Index(parts[2], at.Length) is int spawn)
+        {
+            return new LayerPlace(at[spawn].At, NpcTypes.Contains(parts[1]) ? new StopTarget(Npc: at[spawn].Name) : null);
+        }
+
+        if (id.StartsWith(GiverPrefix, StringComparison.Ordinal) && parts.Length == 2 &&
+            int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int questId) &&
+            zoneQuests.FirstOrDefault(q => q.Id == questId) is { GiverAt: Point3 giverAt })
+        {
+            return new LayerPlace(giverAt, new StopTarget(QuestStart: questId));
+        }
+
+        if (id.StartsWith(QuestPrefix, StringComparison.Ordinal) && parts.Length == 3 && quest is QuestDetail picked &&
+            Index(parts[1], picked.Parts.Length) is int part && Index(parts[2], picked.Parts[part].Places.Length) is int spot)
+        {
+            QuestPartKind kind = picked.Parts[part].Kind;
+            return new LayerPlace(picked.Parts[part].Places[spot].At,
+                kind == QuestPartKind.Start ? new StopTarget(QuestStart: picked.Id) : kind == QuestPartKind.End ? new StopTarget(QuestEnd: picked.Id) : null);
+        }
+
+        return null;
+
+        static int? Index(string text, int count)
+        {
+            return int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index) && index >= 0 && index < count ? index : null;
+        }
     }
 
     private async Task ZoneChosenAsync(ChangeEventArgs e)

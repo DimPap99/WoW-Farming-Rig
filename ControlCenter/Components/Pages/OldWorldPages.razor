@@ -1,0 +1,19 @@
+@page "/map"
+@page "/routes"
+@page "/npc-routes"
+@page "/cost-zones"
+@page "/navmesh"
+@page "/live"
+
+@inject NavigationManager navigation
+
+@* The world pages' old addresses: each page is a mode of the World workspace now (WorldWorkspace.razor), and
+   its address comes there, its query kept (/map?quest=7 opens Explore on quest 7). *@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Uri uri = new(navigation.Uri);
+        navigation.NavigateTo(WorldWorkspace.AddressOf(uri.AbsolutePath, uri.Query), replace: true);
+    }
+}
