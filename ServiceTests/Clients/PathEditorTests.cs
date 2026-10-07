@@ -76,6 +76,36 @@ public sealed class PathEditorTests
         Assert.Equal([A, B, C], editor.ToArray());
     }
 
+    // Phase 2 review, known issue 56: after Halve the selected point stood at a smaller place, and the
+    // search for it went on from the old one: Previous and Next did nothing, Remove cleared the selection.
+    [Fact]
+    public void The_selection_survives_a_halving()
+    {
+        Vector3 d = new(40, 10, 0);
+        Vector3 e = new(50, 10, 0);
+        PathEditor editor = new([A, B, C, d, e]);
+        editor.Select(e, 4);
+
+        editor.Halve();
+
+        Assert.Equal([A, C, e], editor.ToArray());
+        Assert.Equal(e, editor.Selected);
+        Assert.True(editor.TryGetNeighbour(-1, out Vector3 previous, out int index));
+        Assert.Equal(C, previous);
+        Assert.Equal(1, index);
+
+        // A selected point that the halving drops hands the selection to the one kept before it.
+        editor.Double();
+        editor.Select(editor.Points[1], 1);
+        editor.Halve();
+        Assert.Equal([A, C, e], editor.ToArray());
+        Assert.Equal(A, editor.Selected);
+
+        editor.Select(C, 1);
+        editor.RemoveSelected();
+        Assert.Equal(e, editor.Selected);
+    }
+
     [Fact]
     public void Neighbours_stop_at_the_ends()
     {
