@@ -1,5 +1,3 @@
-@page "/cost-zones"
-
 @inherits ControlCenterComponent
 
 @inject IPathingClient pathing
@@ -8,14 +6,12 @@
 @inject ZoneLookup zoneLookup
 @inject IJSRuntime js
 
-<PageTitle>Cost zones · Control Center</PageTitle>
-
 @* Roads routes are drawn towards, and danger zones they avoid or never cross, drawn on the world
    view. Each is kept in the file of the zone it was drawn in; changes collect until Save writes
    those zones' files, which the Pathing Service checks with the loader's own rules and applies to
    the next route at once - no rebake. *@
 
-<WorldView @ref="view" Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="DrawnAsync" OnEdited="Edited" OnSelected="ShapeSelected">
+<WorldModeView @ref="view" Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="DrawnAsync" OnEdited="Edited" OnSelected="ShapeSelected">
     <Panel Title="Cost zones" Icon="warning" Position="top-left" Class="pa-panel--tall">
         @if (world is null)
         {
@@ -116,7 +112,7 @@
             </div>
         }
     </Panel>
-</WorldView>
+</WorldModeView>
 
 @if (!status.Online)
 {
@@ -162,7 +158,7 @@
         public bool IsRoad => Shape == WorldShapes.Line;
     }
 
-    private WorldView? view;
+    private WorldModeView? view;
     private WorldSnapshot? world;
     private string continent = string.Empty;
     private WorldScene scene = WorldScene.Empty(string.Empty);

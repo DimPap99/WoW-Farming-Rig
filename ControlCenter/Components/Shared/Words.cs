@@ -22,4 +22,12 @@ public static class Words
     {
         return string.Create(CultureInfo.InvariantCulture, $"{area:N0} sq yd");
     }
+
+    /// <summary>"45 s", "2 min 56 s", "1 h 3 min".</summary>
+    public static string Duration(System.TimeSpan span)
+    {
+        return span.TotalHours >= 1 ? string.Create(CultureInfo.InvariantCulture, $"{(int)span.TotalHours} h {span.Minutes} min")
+            : span.TotalMinutes >= 1 ? string.Create(CultureInfo.InvariantCulture, $"{span.Minutes} min {span.Seconds} s")
+            : string.Create(CultureInfo.InvariantCulture, $"{span.Seconds} s");
+    }
 }

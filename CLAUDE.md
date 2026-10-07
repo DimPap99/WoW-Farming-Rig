@@ -62,10 +62,10 @@ before working in one.
 - `Frontend/` ✎ - BlazorServer's pages and components (the bot's dashboard, its map page)
 - `MapAssets/` ✎ - The Leaflet map's scripts, libraries and styles, static files only; served by
   BlazorServer
-- `ControlCenter/` ✎ - The central web UI on :5020, every world page on one deck.gl map (the world view):
-  live routes, the map, the route designer, NPC routes, cost zones, navmesh and bakes, Forever routes,
-  and the fleet with a console per bot; a client of the Pathing Service and the Bot Manager,
-  references Contracts and ServiceClients only
+- `ControlCenter/` ✎ - The central web UI on :5020: the World workspace - every world page as a mode
+  over one deck.gl map (explore, the route designer, NPC routes, cost zones, navmesh and bakes, live
+  routes) -, Forever route files as text, and the fleet with a console per bot; a client of the Pathing
+  Service and the Bot Manager, references Contracts and ServiceClients only
 - `PPather/` ✎ - Pathfinding (DotRecast navmesh + legacy spot A*, MPQ reading)
 - `PathingService/` ✎ - The Pathing Service: concurrent route planning, the authoring API (paths, cost
   zones), world data, bakes and the watch hub; plain `net10.0`, never references Core/Game/WinAPI/Frontend
@@ -75,7 +75,9 @@ before working in one.
 - `Contracts/` - Wire types and route constants shared by every service and client; no dependencies
 - `ServiceClients/` - Typed clients for the services (`IPathingClient`, `IBotManagerClient`), shared by UI and
   agent, the key rules every service applies (`Security/ServiceKeyPolicy`), assignment rules, the path
-  editing model (`PathEditor`) and map-world arithmetic (`ZoneMath`)
+  editing model (`PathEditor`), map-world arithmetic (`ZoneMath`) and the route design model (`Routes/`:
+  `RouteEditor` with node and leg kinds and undo, `RouteLegs` planning through any planner, what a bot
+  follows of a design, the Forever route writer and reader)
 - `ServiceTests/` - xUnit tests for the services, the planner and the stores; runs on Linux
 - `AgentTests/` - xUnit tests that need Core (Forever's run, the agent's runtimes); the Windows TFM,
   but nothing in it attaches to a game, so it runs on Linux too

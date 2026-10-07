@@ -47,6 +47,9 @@ public sealed class ForeverRouteFileTests
         { $"{{ {Head}, \"Steps\": [ {{ \"Quest\": {{ \"Id\": 5441 }} }} ] }}", "step 1: a Quest needs an Until" },
         { $"{{ {Head}, \"Steps\": [ {{ \"Quest\": {{ \"Until\": {{ \"Kills\": 5 }} }} }} ] }}", "step 1: a Quest needs its Id" },
         { $"{{ {Head}, \"Steps\": [ {{ \"Visit\": {{ \"Roll\": \"vendor\" }} }} ] }}", "Roll" },
+        { $"{{ {Head}, \"CostZones\": \"Sometimes\", \"Steps\": [ {{ \"Travel\": {{ \"To\": [52, 44] }} }} ] }}", "not Sometimes" },
+        // A number would mean one thing to the run and another to the Control Center: names only.
+        { $"{{ {Head}, \"CostZones\": 1, \"Steps\": [ {{ \"Travel\": {{ \"To\": [52, 44] }} }} ] }}", "CostZones is \"Apply\" or \"Ignore\"" },
     };
 
     [Fact]
@@ -127,6 +130,20 @@ public sealed class ForeverRouteFileTests
         Assert.Equal(fromFile.Name, fromText.Name);
         Assert.Equal(fromFile.Repeat, fromText.Repeat);
         Assert.Equal(Names(fromFile.Tasks), Names(fromText.Tasks));
+    }
+
+    [Theory]
+    [InlineData("", false)]
+    [InlineData(", \"CostZones\": \"Ignore\"", false)]
+    [InlineData(", \"CostZones\": \"Apply\"", true)]
+    [InlineData(", \"costZones\": \"apply\"", true)]
+    public void A_route_plans_with_the_cost_zones_only_when_it_says_so(string field, bool applied)
+    {
+        string json = $"{{ {Head}{field}, \"Steps\": [ {{ \"Travel\": {{ \"To\": [52, 44] }} }} ] }}";
+
+        Assert.True(ForeverRouteFile.TryParse(json, "zones.json", Maps, out ForeverRoute route, out string error), error);
+
+        Assert.Equal(applied, route.ApplyCostZones);
     }
 
     [Fact]

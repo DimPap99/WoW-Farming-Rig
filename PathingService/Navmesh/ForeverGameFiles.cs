@@ -1,3 +1,5 @@
+using Contracts;
+
 using ForeverCasc;
 
 using Microsoft.Extensions.Configuration;
@@ -18,7 +20,7 @@ public static class ForeverGameFiles
 {
     public const string Section = "ForeverCasc";
 
-    public const string ForeverClient = "forever";
+    public const string ForeverClient = GameClients.Forever;
 
     public const string DefaultProduct = "wow_classic_beta";
 

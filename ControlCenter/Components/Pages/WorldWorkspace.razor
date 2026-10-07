@@ -1,0 +1,196 @@
+@page "/"
+@page "/world"
+
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.Extensions.Primitives
+
+@inherits ControlCenterComponent
+
+@inject NavigationManager navigation
+
+<PageTitle>@active.Label · Control Center</PageTitle>
+
+@* The World workspace: every page that shows the world, as modes over one world view - explore what is
+   where, design a route, route to an NPC, edit the cost zones, look after the navmesh, watch the routes
+   planned. Each mode is the page it was, hosted through a WorldModeSlot: its WorldModeView binds this
+   page's view while it is shown. A mode once shown stays, hidden, while another is: switching keeps the
+   camera, and each mode's work - a route being designed, cost zones not saved, marks. /world?mode=route
+   opens one; the old addresses (/map, /routes, ...) come here (OldWorldPages). *@
+
+<WorldView @ref="view" Scene="@scene" Picking="@(Bound?.Picking ?? false)" OnPick="PickAsync" Tools="@Bound?.Tools" Tool="@Bound?.Tool"
+           ToolChanged="ToolChangedAsync" OnDrawn="DrawnAsync" OnEdited="EditedAsync" OnSelected="SelectedAsync" OnMarker="MarkerAsync">
+    <nav class="pa-modes" aria-label="Modes of the world view">
+        @foreach (WorldMode mode in Modes)
+        {
+            <a class="pa-mode-tab @(mode == active ? "is-active" : null)" href="@AddressOf(mode)" title="@mode.Hint"
+               aria-current="@(mode == active ? "page" : null)">
+                <span class="oi oi-@mode.Icon" aria-hidden="true"></span>
+                <span class="pa-mode-name">@mode.Label</span>
+            </a>
+        }
+    </nav>
+
+    @foreach (WorldMode mode in visited)
+    {
+        <div class="pa-mode" hidden="@(mode != active)" @key="mode.Id">
+            <CascadingValue Value="@slots[mode.Id]" IsFixed="true">
+                <DynamicComponent Type="@mode.Page" />
+            </CascadingValue>
+        </div>
+    }
+</WorldView>
+
+@code {
+    /// <summary>
+    /// A mode of the workspace: its id in the address (<c>/world?mode=route</c>), its name, icon and what it is
+    /// for, the page it shows, and the address that page had.
+    /// </summary>
+    public sealed record WorldMode(string Id, string Label, string Icon, string Hint, Type Page, string OldAddress);
+
+    public const string Explore = "explore";
+    public const string Route = "route";
+    public const string NpcRoute = "npcs";
+    public const string Costs = "costs";
+    public const string Navmesh = "navmesh";
+    public const string Live = "live";
+
+    public static readonly WorldMode[] Modes =
+    [
+        new(Explore, "Explore", "map", "What is where in a zone: NPCs, nodes, quests and places; creatures by name; marks that measure",
+            typeof(WorldMap), "map"),
+        new(Route, "Route", "signpost", "Design a route: nodes of every kind, legs replanned or exact; save it as a recorded path or a Forever route",
+            typeof(RouteMap), "routes"),
+        new(NpcRoute, "NPC routes", "people", "Route to an NPC of a type in a zone, from a start picked or rolled", typeof(NpcRoutes), "npc-routes"),
+        new(Costs, "Costs", "warning", "Roads routes are drawn towards, and danger zones they avoid or never cross",
+            typeof(CostZones), "cost-zones"),
+        new(Navmesh, "Navmesh", "grid-three-up", "Where the navmesh is baked, the tiles the planner holds, and baking more",
+            typeof(Pages.Navmesh), "navmesh"),
+        new(Live, "Live", "pulse", "Every route the Pathing Service plans, as it plans it; and the test routes", typeof(LiveView), "live"),
+    ];
+
+    /// <summary>The query parameter naming the mode shown: one of the ids of <see cref="Modes"/>; the live view when none or another.</summary>
+    public const string ModeParameter = "mode";
+
+    private readonly Dictionary<string, WorldModeSlot> slots = [];
+    private readonly List<WorldMode> visited = [];
+    private WorldView? view;
+    private WorldMode active = Modes[^1];
+    private WorldScene scene = WorldScene.Empty(string.Empty);
+    private WorldScene? presentedFrom;
+
+    private WorldModeView? Bound => slots.GetValueOrDefault(active.Id)?.Bound;
+
+    /// <summary>The address of an old world page as the mode it is now, its query kept: <c>/map?quest=7</c> is <c>world?mode=explore&amp;quest=7</c>.</summary>
+    public static string AddressOf(string oldPath, string query)
+    {
+        WorldMode mode = Modes.FirstOrDefault(m => m.OldAddress.Equals(oldPath.Trim('/'), StringComparison.OrdinalIgnoreCase)) ?? Modes[^1];
+        string rest = query.TrimStart('?');
+        return $"world?{ModeParameter}={mode.Id}{(rest.Length > 0 ? "&" + rest : string.Empty)}";
+    }
+
+    private static string AddressOf(WorldMode mode)
+    {
+        return $"world?{ModeParameter}={mode.Id}";
+    }
+
+    protected override void OnInitialized()
+    {
+        Subscribe(() => navigation.LocationChanged += LocationChanged, () => navigation.LocationChanged -= LocationChanged);
+        Show(ModeIn(navigation.Uri));
+    }
+
+    // Another mode asked for, shown once the location change is through: a mode shown the first time may take a
+    // query parameter (Explore's quest), and the framework's list of those must not change while it tells them.
+    private void LocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (new Uri(e.Location).AbsolutePath.TrimEnd('/') is not ("" or "/world"))
+        {
+            return;
+        }
+
+        WorldMode mode = ModeIn(e.Location);
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Yield();
+            if (!Token.IsCancellationRequested && mode != active)
+            {
+                Show(mode);
+                StateHasChanged();
+            }
+        });
+    }
+
+    private static WorldMode ModeIn(string uri)
+    {
+        string? id = QueryHelpers.ParseQuery(new Uri(uri).Query).TryGetValue(ModeParameter, out StringValues value) ? value.ToString() : null;
+        return Modes.FirstOrDefault(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase)) ?? Modes.First(m => m.Id == Live);
+    }
+
+    private void Show(WorldMode mode)
+    {
+        active = mode;
+        if (!visited.Contains(mode))
+        {
+            visited.Add(mode);
+            slots[mode.Id] = new WorldModeSlot(mode.Id, () => view, SlotChanged);
+        }
+
+        Present();
+    }
+
+    // The shown mode bound new parameters - a scene, picking, a tool -: the view takes them. A hidden mode's wait.
+    private void SlotChanged(WorldModeSlot slot)
+    {
+        if (slot.Mode == active.Id)
+        {
+            Present();
+            StateHasChanged();
+        }
+    }
+
+    // The shown mode's scene for the view; one it showed before goes again without its framing, as when the
+    // mode comes back, so the camera stays where it is.
+    private void Present()
+    {
+        if (slots.GetValueOrDefault(active.Id) is not WorldModeSlot slot || slot.Bound?.Scene is not WorldScene current ||
+            ReferenceEquals(current, presentedFrom))
+        {
+            return;
+        }
+
+        scene = ReferenceEquals(current, slot.LastShown) ? current with { Frame = false, FrameOn = null } : current;
+        presentedFrom = current;
+        slot.LastShown = current;
+    }
+
+    // The view's events go to the shown mode.
+    private Task PickAsync(WorldPoint point)
+    {
+        return Bound?.OnPick.InvokeAsync(point) ?? Task.CompletedTask;
+    }
+
+    private Task ToolChangedAsync(string? tool)
+    {
+        return Bound?.ToolChanged.InvokeAsync(tool) ?? Task.CompletedTask;
+    }
+
+    private Task DrawnAsync(WorldDrawn drawn)
+    {
+        return Bound?.OnDrawn.InvokeAsync(drawn) ?? Task.CompletedTask;
+    }
+
+    private Task EditedAsync(WorldEdited edited)
+    {
+        return Bound?.OnEdited.InvokeAsync(edited) ?? Task.CompletedTask;
+    }
+
+    private Task SelectedAsync(string? id)
+    {
+        return Bound?.OnSelected.InvokeAsync(id) ?? Task.CompletedTask;
+    }
+
+    private Task MarkerAsync(string id)
+    {
+        return Bound?.OnMarker.InvokeAsync(id) ?? Task.CompletedTask;
+    }
+}

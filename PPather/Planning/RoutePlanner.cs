@@ -26,7 +26,9 @@ namespace PPather.Planning;
 /// continents run in parallel and never evict each other's engine, which is what
 /// <see cref="PPatherService"/> does when its single active continent changes. Every query
 /// brings fresh <see cref="NavmeshQueryMemory"/> and its own <see cref="NavmeshQueryTuning"/>,
-/// so one caller's floor, corridor or jitter cannot leak into another's route.
+/// so one caller's floor, corridor or jitter cannot leak into another's route. A query may also
+/// bring its own cost zones (<see cref="RouteQuery.Zones"/>: none, for a run that ignores them),
+/// which price it alone; the lane keeps the continent's authored ones for every other query.
 /// </para>
 /// <para>
 /// It plans the way the bot's <c>LocalPathingApi</c> does on a disk-only install: the same
@@ -153,31 +155,20 @@ public sealed class RoutePlanner : IDisposable
             return FindAcross(lane, continent, area, query, from, to, start, token);
         }
 
-        if (!lane.Gate.Wait(laneWait, token))
+        Graph.Path? path = null;
+        Vector3 resolvedFrom = from;
+        Vector3 resolvedTo = to;
+        NavmeshPathfinder.NavmeshStats stats = default;
+        NavmeshQueryTuning tuning = query.Tuning;
+        if (!OnLane(lane, token, query.Zones, nav =>
+            {
+                resolvedFrom = WithSurfaceHeight(nav, from);
+                resolvedTo = WithSurfaceHeight(nav, to);
+                path = nav.FindPath(resolvedFrom, resolvedTo, null, nav.CreateMemory(), tuning, out stats);
+                lane.Served(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            }))
         {
             return Planned(StayedBusy(continent, start), from, to, []);
-        }
-
-        Graph.Path? path;
-        Vector3 resolvedFrom;
-        Vector3 resolvedTo;
-        NavmeshPathfinder.NavmeshStats stats;
-        try
-        {
-            // The caller may have gone while it waited (a client's attempt timed out): the lane
-            // goes to the next query, not to a search nobody will read.
-            token.ThrowIfCancellationRequested();
-
-            NavmeshPathfinder nav = lane.Pathfinder;
-            resolvedFrom = WithSurfaceHeight(nav, from);
-            resolvedTo = WithSurfaceHeight(nav, to);
-
-            path = nav.FindPath(resolvedFrom, resolvedTo, null, nav.CreateMemory(), query.Tuning, out stats);
-            lane.Served(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
-        }
-        finally
-        {
-            lane.Gate.Release();
         }
 
         if (path == null || path.locations.Count == 0)
@@ -255,12 +246,13 @@ public sealed class RoutePlanner : IDisposable
         NavmeshTileGraph graph = TileGraph(continent);
         NavmeshQueryMemory memory = lane.Pathfinder.CreateMemory();
         NavmeshQueryTuning tuning = query.Tuning;
+        CostZones? zones = query.Zones;
 
         Vector3 resolvedFrom = from;
         Vector3 resolvedTo = to;
         int startNode = -1;
         int endNode = -1;
-        if (!OnLane(lane, token, nav =>
+        if (!OnLane(lane, token, zones, nav =>
             {
                 resolvedFrom = WithSurfaceHeight(nav, from);
                 resolvedTo = WithSurfaceHeight(nav, to);
@@ -299,7 +291,7 @@ public sealed class RoutePlanner : IDisposable
             Vector3 legStart = world.Count > 0 ? world[^1] : resolvedFrom;
             Graph.Path? leg = null;
             NavmeshPathfinder.NavmeshStats stats = default;
-            if (!OnLane(lane, token, nav => leg = nav.FindPath(legStart, legEnd, null, memory, tuning, out stats)))
+            if (!OnLane(lane, token, zones, nav => leg = nav.FindPath(legStart, legEnd, null, memory, tuning, out stats)))
             {
                 return Planned(StayedBusy(continent, start), resolvedFrom, resolvedTo, []);
             }
@@ -420,23 +412,29 @@ public sealed class RoutePlanner : IDisposable
             : -1;
     }
 
-    // Work on the lane's pathfinder under its gate; false when the lane stayed busy.
-    // Throws when the caller has gone, even once the gate is taken, as Find does.
-    private bool OnLane(Lane lane, CancellationToken token, Action<NavmeshPathfinder> work)
+    // Work on the lane's pathfinder under its gate, priced by the query's cost zones (the lane's own when
+    // null), which the lane has back before the gate goes on; false when the lane stayed busy. Throws when
+    // the caller has gone, even once the gate is taken: the lane goes to the next query, not to a search
+    // nobody will read (a client's attempt timed out while it waited).
+    private bool OnLane(Lane lane, CancellationToken token, CostZones? zones, Action<NavmeshPathfinder> work)
     {
         if (!lane.Gate.Wait(laneWait, token))
         {
             return false;
         }
 
+        NavmeshPathfinder nav = lane.Pathfinder;
+        CostZones own = nav.Zones;
         try
         {
             token.ThrowIfCancellationRequested();
-            work(lane.Pathfinder);
+            nav.Zones = zones ?? own;
+            work(nav);
             return true;
         }
         finally
         {
+            nav.Zones = own;
             lane.Gate.Release();
         }
     }
@@ -876,6 +874,9 @@ public sealed class RoutePlanner : IDisposable
         }
     }
 
+    // A continent's pathfinder, its gate and its stats. The pathfinder's Zones are read and set only under the
+    // gate: a query prices its work there with its own (OnLane) and gives the lane's back before the gate goes on,
+    // and a reload swaps the lane's there too, so neither sees the other's.
     private sealed class Lane(string continent, NavmeshPathfinder pathfinder) : IDisposable
     {
         private long queries;

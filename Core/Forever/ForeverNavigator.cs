@@ -90,6 +90,8 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
     private readonly MouseCameraInput camera;
     private readonly WorldMapAreaDB maps;
     private readonly DataConfig data;
+    // The run's policy; whether walks plan with the authored cost zones is the route's to say.
+    private readonly ForeverRunOptions runOptions;
 
     // Movement is pressed on the controller thread, but a stop arrives on
     // another one. The lock orders the two, and once halted, an update that
@@ -127,13 +129,14 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
 
     public ForeverNavigator(ILogger<ForeverNavigator> logger,
         ConfigurableInput input, MouseCameraInput camera,
-        WorldMapAreaDB maps, DataConfig data)
+        WorldMapAreaDB maps, DataConfig data, ForeverRunOptions? runOptions = null)
     {
         this.logger = logger;
         this.input = input;
         this.camera = camera;
         this.maps = maps;
         this.data = data;
+        this.runOptions = runOptions ?? new ForeverRunOptions();
     }
 
     /// <summary>
@@ -1199,7 +1202,8 @@ public sealed class ForeverNavigator : IForeverFacing, IDisposable
         if (nav is null || navCache != cache)
         {
             nav?.Dispose();
-            nav = ForeverNavmesh.OpenDiskOnly(logger, cache);
+            nav = ForeverNavmesh.OpenDiskOnly(logger, cache,
+                runOptions.ApplyCostZones ? ForeverNavmesh.CostZonesOf(logger, data, area.Continent) : null);
             navCache = cache;
         }
         return true;

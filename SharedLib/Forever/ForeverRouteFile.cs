@@ -9,7 +9,9 @@ using System.IO;
 namespace SharedLib.Forever;
 
 /// <summary>A route loaded from a file: its tasks in order, and whether it starts over after the last.</summary>
-public sealed record ForeverRoute(string Name, IReadOnlyList<ForeverTask> Tasks, bool Repeat);
+/// <param name="ApplyCostZones">Its run plans with the era's authored cost zones (roads, danger zones); without
+/// them unless the file says <c>"CostZones": "Apply"</c>.</param>
+public sealed record ForeverRoute(string Name, IReadOnlyList<ForeverTask> Tasks, bool Repeat, bool ApplyCostZones = false);
 
 /// <summary>
 /// Route files: the agenda as data, kept in <c>Json/path/_forever</c>. A route
@@ -20,7 +22,8 @@ public sealed record ForeverRoute(string Name, IReadOnlyList<ForeverTask> Tasks,
 /// when the step begins; a step may name another map. The file loads into the
 /// same tasks the <see cref="ForeverTasks"/> API builds, and a mistake is refused
 /// with the step it is in. A field the format does not know is refused too, so a
-/// misspelt name never silently does nothing.
+/// misspelt name never silently does nothing. <c>"CostZones": "Apply"</c> has
+/// the run plan with the authored cost zones (<see cref="ForeverRoute.ApplyCostZones"/>).
 /// </summary>
 public static class ForeverRouteFile
 {
@@ -77,6 +80,11 @@ public static class ForeverRouteFile
             return false;
         }
         string name = string.IsNullOrWhiteSpace(parsed.Name) ? Path.GetFileNameWithoutExtension(file) : parsed.Name;
+        if (!TryCostZones(parsed.CostZones, out bool applyCostZones))
+        {
+            error = $"{name}: CostZones is \"{ApplyCostZones}\" or \"{IgnoreCostZones}\", not {parsed.CostZones}";
+            return false;
+        }
         List<ForeverTask> tasks = new(steps.Count);
         for (int i = 0; i < steps.Count; i++)
         {
@@ -87,9 +95,22 @@ public static class ForeverRouteFile
             }
             tasks.Add(task);
         }
-        route = new(name, tasks, parsed.Repeat);
+        route = new(name, tasks, parsed.Repeat, applyCostZones);
         error = string.Empty;
         return true;
+    }
+
+    /// <summary>The <c>CostZones</c> that has a run plan with the authored cost zones; Contracts' <c>CostZoneUse</c> names it so too.</summary>
+    public const string ApplyCostZones = "Apply";
+
+    /// <summary>The <c>CostZones</c> that has a run plan without them, as one that gives none does.</summary>
+    public const string IgnoreCostZones = "Ignore";
+
+    // Whether a run plans with the cost zones: Apply or Ignore by name, in any case; none is Ignore.
+    private static bool TryCostZones(string? given, out bool apply)
+    {
+        apply = string.Equals(given, ApplyCostZones, StringComparison.OrdinalIgnoreCase);
+        return given is null || apply || string.Equals(given, IgnoreCostZones, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>The roles a <c>Visit</c> names most, for the message that refuses another.</summary>
@@ -253,6 +274,7 @@ public static class ForeverRouteFile
         public int UIMapId { get; set; }
         public List<RouteStep>? Steps { get; set; }
         public bool Repeat { get; set; }
+        public string? CostZones { get; set; }
     }
 
     internal sealed class RouteStep

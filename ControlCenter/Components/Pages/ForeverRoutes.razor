@@ -74,6 +74,13 @@ else
                             <span class="pa-chip pa-chip--warn" title="The text differs from the saved file">unsaved</span>
                         }
                         <span class="pa-spacer"></span>
+                        @if (!isNew)
+                        {
+                            <a class="pa-btn" href="@($"world?mode={WorldWorkspace.Route}&forever={Uri.EscapeDataString(selected)}")"
+                               title="Open the saved file as nodes on the World page's Route mode, to change its way on the map">
+                                <span class="oi oi-signpost" aria-hidden="true"></span> Open as nodes
+                            </a>
+                        }
                         <BusyButton Icon="check" Busy="@busy" OnClick="CheckAsync" Title="What a run would make of this text, without saving it">
                             Check
                         </BusyButton>
@@ -298,17 +305,19 @@ else
             return;
         }
 
-        if (!ForeverRouteSketch.TryRead(text, out List<ForeverStepSketch> steps, out string error))
+        if (!ForeverRouteSketch.TryRead(text, out ForeverSketch read, out string error))
         {
             sketch = error;
             return;
         }
 
+        ForeverStepSketch[] steps = read.Steps;
+
         List<Point3> travel = [];
         List<WorldShape> shapes = [];
         string? continent = null;
         int mapId = -1;
-        for (int i = 0; i < steps.Count; i++)
+        for (int i = 0; i < steps.Length; i++)
         {
             if (world.Zone(steps[i].UiMapId) is not ZoneInfo zone)
             {
@@ -338,13 +347,15 @@ else
         sketch = null;
         ContinentInfo? info = world.Continent(continent);
         WorldSnapshot snapshot = world;
-        legs.Plan(travel, RouteSearch.Band, at => snapshot.ZoneAt(info?.MapId ?? mapId, at)?.UiMapId ?? 0, plans.Token);
+        // Planned as the run plans: with the cost zones only when the route applies them.
+        legs.Plan(travel.Zip(travel.Skip(1)), RouteSearch.Band, read.CostZones, at => snapshot.ZoneAt(info?.MapId ?? mapId, at)?.UiMapId ?? 0,
+            plans.Token);
 
         List<WorldRoute> routes = [];
         List<WorldMarker> markers = [];
         for (int i = 0; i + 1 < travel.Count; i++)
         {
-            Leg leg = legs.Get(travel[i], travel[i + 1], RouteSearch.Band);
+            Leg leg = legs.Get(travel[i], travel[i + 1], RouteSearch.Band, read.CostZones);
             routes.AddRange(RouteDrawing.Of($"leg-{i}", $"Leg {i + 1} to {i + 2}", leg.Status, leg.Points, travel[i], travel[i + 1], leg.Detail, markers));
         }
 

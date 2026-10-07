@@ -1,0 +1,234 @@
+@* The route designer's Forever routes: a route file opens as nodes (ForeverRouteReader), naming what a
+   design cannot hold, and the design saves as a route file a run is assigned (ForeverRouteWriter), which
+   the Pathing Service checks as a run loads it before saving it. The Forever routes page stays the place
+   to edit a file as text, comments and every kind of step. *@
+
+@inherits ControlCenterComponent
+
+@inject IPathingClient pathing
+@inject IJSRuntime js
+@inject ZoneLookup zones
+
+<details class="pa-details" open="@(Open is not null)">
+    <summary>Forever route</summary>
+    <div class="pa-form">
+        <div class="pa-field">
+            <label class="pa-label" for="pa-route-forever">File</label>
+            <input class="pa-input" id="pa-route-forever" list="pa-route-forever-files" autocomplete="off" placeholder="my_route.json"
+                   @bind="name" @bind:event="oninput" />
+            <datalist id="pa-route-forever-files">
+                @foreach (ForeverRouteInfo route in routes)
+                {
+                    <option value="@route.Name">@route.Title</option>
+                }
+            </datalist>
+        </div>
+        <div class="pa-actions">
+            <BusyButton Class="pa-grow" Icon="folder" Busy="@busy" Disabled="@(File is null)" OnClick="() => OpenAsync(name.Trim())"
+                        Title="Open the route file as nodes">
+                Open
+            </BusyButton>
+            <BusyButton Class="pa-btn--primary pa-grow" Icon="data-transfer-upload" Busy="@busy"
+                        Disabled="@(name.Trim().Length == 0 || Design.Nodes.Length == 0)" OnClick="SaveAsync" Title="@SaveTitle">
+                Save
+            </BusyButton>
+        </div>
+        <ResultLine Text="@result" Kind="@resultKind" />
+        @if (saved is not null)
+        {
+            <a class="pa-link" href="@($"forever-routes/{Uri.EscapeDataString(saved)}")">Open @saved in Forever routes</a>
+        }
+    </div>
+</details>
+
+@code {
+    [Parameter, EditorRequired] public WorldSnapshot World { get; set; } = null!;
+
+    /// <summary>The continent the design is on.</summary>
+    [Parameter, EditorRequired] public string Continent { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public RouteDesign Design { get; set; } = RouteDesign.Empty;
+
+    /// <summary>The design has changes no file holds: opening a route file instead asks first.</summary>
+    [Parameter] public bool Dirty { get; set; }
+
+    /// <summary>A route file to open once, as the address asks (<c>/world?mode=route&amp;forever=x.json</c>).</summary>
+    [Parameter] public string? Open { get; set; }
+
+    /// <summary>A route file opened as a design, on its continent.</summary>
+    public sealed record OpenedRoute(RouteDesign Design, string File, string Continent);
+
+    [Parameter] public EventCallback<OpenedRoute> OnOpened { get; set; }
+
+    private ForeverRouteInfo[] routes = [];
+    private string name = string.Empty;
+    // The file opened, and what of it the design does not hold: saving over it asks first.
+    private string? opened;
+    private List<string> left = [];
+    private string? openedAsked;
+    private string? saved;
+    private bool busy;
+    private string? result;
+    private ResultKind resultKind;
+
+    private ForeverRouteInfo? File => routes.FirstOrDefault(r => r.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private string SaveTitle => "Travel through the nodes (required ones as To, the rest as Via), visit the stops and roam the areas" +
+                                (Design.Loop ? ", round and round" : string.Empty) +
+                                (Design.CostZones == CostZoneUse.Apply ? ", with the cost zones applied" : ", without the cost zones");
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ListAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open is string file && file != openedAsked)
+        {
+            openedAsked = file;
+            await OpenAsync(file);
+        }
+    }
+
+    private async Task ListAsync()
+    {
+        try
+        {
+            routes = (await pathing.ListForeverRoutesAsync(Token)).Value ?? [];
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task OpenAsync(string file)
+    {
+        if (Dirty && !await js.ConfirmAsync($"Open {file} instead of the route shown? It is not saved.", Token))
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            ServiceResult<ForeverRouteDocument> read = await pathing.GetForeverRouteAsync(file, Token);
+            if (!read.Ok)
+            {
+                Show(read.Error, ResultKind.Error);
+                return;
+            }
+
+            if (!ForeverRouteSketch.TryRead(read.Value.Text, out ForeverSketch sketch, out string error))
+            {
+                Show($"{file} cannot be read as nodes: {error}", ResultKind.Error);
+                return;
+            }
+
+            if (sketch.Steps.FirstOrDefault(s => s.Points.Length > 0) is not ForeverStepSketch placed ||
+                World.Zone(placed.UiMapId) is not ZoneInfo zone || World.Continent(zone.Continent) is not ContinentInfo continent)
+            {
+                Show($"{file} names no point on a map of this world: open it in Forever routes", ResultKind.Error);
+                return;
+            }
+
+            // Where each NPC a visit names stands on the route's continent: its first spawn of that name, all asked at once.
+            string[] names = [.. sketch.Steps.Select(s => s.Visit?.Npc).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)];
+            ServiceResult<NpcInfo[]>[] searched = await Task.WhenAll(names.Select(n => pathing.SearchNpcsAsync(continent.MapId, n, Token)));
+            Dictionary<string, Point3> npcs = new(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < names.Length; i++)
+            {
+                if (searched[i].Value?.FirstOrDefault(n => n.Name.Equals(names[i], StringComparison.OrdinalIgnoreCase)) is NpcInfo found)
+                {
+                    npcs[names[i]] = found.Position;
+                }
+            }
+
+            RouteDesign design = ForeverRouteReader.ToDesign(sketch, World.World.Zones, n => npcs.TryGetValue(n, out Point3 at) ? at : null,
+                out left);
+            if (read.Value.Text.Contains("//", StringComparison.Ordinal))
+            {
+                left.Add("its comments");
+            }
+
+            name = file;
+            opened = file;
+            await OnOpened.InvokeAsync(new OpenedRoute(design, file, continent.Name));
+            Show(left.Count == 0
+                    ? $"Opened {file}: {Words.Count(design.Nodes.Length, "node")}"
+                    : $"Opened {file}: {Words.Count(design.Nodes.Length, "node")}; not held as nodes: {string.Join("; ", left)}",
+                left.Count == 0 ? ResultKind.Ok : ResultKind.Warn);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        string file = name.Trim();
+        if (World.Continent(Continent) is not ContinentInfo continent || file.Length == 0)
+        {
+            return;
+        }
+
+        if (!file.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            file += ".json";
+        }
+
+        busy = true;
+        try
+        {
+            // Each node's zone from the service's area grid: a step names its points on that zone's map.
+            int mapId = continent.MapId;
+            await zones.LearnAsync(mapId, [.. Design.Nodes.Select(n => n.At)], Token);
+
+            string title = System.IO.Path.GetFileNameWithoutExtension(file).Replace('_', ' ');
+            if (!ForeverRouteWriter.TryWrite(title, Design, p => zones.Known(World, mapId, p), World.World.Zones, mapId,
+                    out string text, out string error))
+            {
+                Show(error, ResultKind.Error);
+                return;
+            }
+
+            await ListAsync();
+            bool exists = routes.Any(r => r.Name.Equals(file, StringComparison.OrdinalIgnoreCase));
+            string question = file.Equals(opened, StringComparison.OrdinalIgnoreCase) && left.Count > 0
+                ? $"Save over {file}? These are not in the design and go: {string.Join("; ", left)}."
+                : $"Replace the Forever route {file}?";
+            if (exists && !await js.ConfirmAsync(question, Token))
+            {
+                return;
+            }
+
+            ServiceResult written = await pathing.SaveForeverRouteAsync(file, text, Token);
+            saved = written.Ok ? file : null;
+            name = written.Ok ? file : name;
+            if (written.Ok)
+            {
+                opened = file;
+                left = [];
+            }
+
+            Show(written.Ok ? $"Saved {file}: a run can be assigned it" : written.Error, written.Ok ? ResultKind.Ok : ResultKind.Error);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void Show(string? text, ResultKind kind)
+    {
+        result = text;
+        resultKind = kind;
+    }
+}
