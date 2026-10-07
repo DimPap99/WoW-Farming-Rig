@@ -3,6 +3,7 @@ using Contracts.Pathing;
 using Newtonsoft.Json;
 
 using PathingService.Hosting;
+using PathingService.World;
 
 using PPather.Graph;
 using PPather.Navmesh;
@@ -26,7 +27,7 @@ namespace PathingService.CostZones;
 /// <see cref="CostZoneLoader"/> keeps reading the same files. Unlike those controllers, a save
 /// is checked with the loader's own rules first.
 /// </summary>
-public sealed class CostZoneStore(DataConfig dataConfig, WorldMapAreaDB maps)
+public sealed class CostZoneStore(DataConfig dataConfig, ClientContinents continents)
 {
     /// <summary>A continent's old single road file (<c>{continent}.json</c>) is read as this uiMap.</summary>
     public const int LegacyRoadUiMap = 0;
@@ -116,26 +117,16 @@ public sealed class CostZoneStore(DataConfig dataConfig, WorldMapAreaDB maps)
         return IOPath.Join(dataConfig.Road, continent, CostZoneLoader.DangerZoneFolder);
     }
 
-    // Continent names become folder names, so only the client's own are taken, and in their own
-    // case (azeroth is Azeroth): the bot reads Azeroth\, and on Linux the service would not read
-    // azeroth/. The old controllers took any non-empty string.
+    // Continent names become folder names (ClientContinents); the old controllers took any non-empty string.
     private string? ContinentProblem(ref string continent)
     {
-        if (string.IsNullOrEmpty(continent))
+        if (continents.Resolve(continent) is not string resolved)
         {
-            return "a continent name is required";
+            return continents.Refusal(continent);
         }
 
-        foreach (WorldMapArea area in maps.Values)
-        {
-            if (area.Continent.Equals(continent, StringComparison.OrdinalIgnoreCase))
-            {
-                continent = area.Continent;
-                return null;
-            }
-        }
-
-        return $"'{continent}' is not a continent of {dataConfig.Exp}";
+        continent = resolved;
+        return null;
     }
 
     private string? TargetProblem(ref string continent, int uiMapId)

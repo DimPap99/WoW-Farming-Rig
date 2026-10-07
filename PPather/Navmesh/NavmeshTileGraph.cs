@@ -155,8 +155,11 @@ public sealed class NavmeshTileGraph
         return null;
     }
 
-    /// <summary>The graph kept in <paramref name="cacheDir"/> when the tiles have not changed since, else null.</summary>
-    public static NavmeshTileGraph? TryLoad(string cacheDir)
+    /// <summary>
+    /// The graph kept in <paramref name="cacheDir"/> when the tiles have not changed since it was built
+    /// (<paramref name="stamp"/>, the tiles as they are now: <see cref="TileSetStamp.Of"/>), else null.
+    /// </summary>
+    public static NavmeshTileGraph? TryLoad(string cacheDir, TileSetStamp stamp)
     {
         string file = Path.Combine(cacheDir, FileName);
         if (!File.Exists(file))
@@ -164,7 +167,6 @@ public sealed class NavmeshTileGraph
             return null;
         }
 
-        TileSetStamp stamp = TileSetStamp.Of(cacheDir);
         using BinaryReader reader = new(File.OpenRead(file));
         if (reader.ReadInt32() != Magic || reader.ReadInt32() != FormatVersion || TileSetStamp.Read(reader) != stamp)
         {

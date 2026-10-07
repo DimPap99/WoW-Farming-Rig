@@ -6,17 +6,17 @@ using Microsoft.Extensions.Options;
 
 using PathingService.Hosting;
 using PathingService.Status;
+using PathingService.World;
 
 using PPather;
+using PPather.Navmesh;
 using PPather.Planning;
 using PPather.Storage;
 
 using SharedLib;
-using SharedLib.Data;
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -25,34 +25,49 @@ using WowTriangles;
 namespace PathingService.Navmesh;
 
 /// <summary>
-/// The jobs that read game files: bakes, area-grid extraction and terrain for the 3D view, plus
-/// deleting baked tiles. They run on one <see cref="PPatherService"/> kept for exactly that - it
-/// never answers a route, the planner's lanes do - created on first use, because it opens the
-/// client's archives. One job at a time: they share that engine's continent and geometry.
+/// The jobs that change what is baked: bakes and area-grid extraction, which read game files, and
+/// deleting baked tiles. One job at a time, and a job is under way until its task has ended, however
+/// it ended. Each job that reads game files opens its own <see cref="PPatherService"/> - one that
+/// never answers a route; the planner's lanes do - and lets it go at its end, so nothing one job
+/// learned (a continent whose archives failed to open, a continent's triangle cache of gigabytes)
+/// outlives it.
 /// <para>
-/// A lane remembers a tile that was missing as empty for its whole life, so whatever changes the
-/// tiles on disk closes the lanes it touched (docs/known-issues.md, item 12).
+/// A job tells the planner what changed once its tile workers have stopped
+/// (<see cref="RoutePlanner.TilesChanged"/>, <see cref="RoutePlanner.ForgetAreaGrids"/>;
+/// docs/known-issues.md, items 12, 52 and 53).
 /// </para>
 /// </summary>
 public sealed class BakeAdmin : IDisposable
 {
-    /// <summary>The most terrain tiles one request extracts; a 5 by 5 block around the view.</summary>
-    public const int MaxTerrainTiles = 25;
-
     /// <summary>The ADT grid is 64 by 64.</summary>
     public const int AdtGridSize = 64;
 
     public const string NoGameFiles =
-        "no game files on the Pathing Service's host: baking, area grids and terrain need the client's archives " +
+        "no game files on the Pathing Service's host: baking and area grids need the client's archives " +
         "(Json/MPQ, or ForeverCasc:Install for WoW: Forever)";
 
-    private enum Job
+    /// <summary>How long a delete that found a tile in use waits before it tries once more.</summary>
+    public static readonly TimeSpan ClearRetryDelay = TimeSpan.FromMilliseconds(250);
+
+    private enum JobKind
     {
-        None,
         Bake,
         AreaGrid,
-        Terrain,
         Clear
+    }
+
+    // One job, and a task that ends when the job has, however it ended.
+    private sealed class Job(JobKind kind, string? continent, PPatherService? engine)
+    {
+        public JobKind Kind { get; } = kind;
+
+        /// <summary>Its continent; null for every continent.</summary>
+        public string? Continent { get; } = continent;
+
+        /// <summary>Its own engine; a clear needs none.</summary>
+        public PPatherService? Engine { get; } = engine;
+
+        public Task Ended { get; set; } = Task.CompletedTask;
     }
 
     private readonly DataConfig data;
@@ -61,17 +76,17 @@ public sealed class BakeAdmin : IDisposable
     private readonly IOptions<NavmeshQueryOptions> queryOptions;
     private readonly RoutePlanner planner;
     private readonly CoverageCache coverage;
+    private readonly ClientContinents continents;
     private readonly ILogger<PPatherService> engineLogger;
     private readonly ILogger<BakeAdmin> logger;
     private readonly Func<IGameFileSource>? gameFiles;
 
     private readonly Lock gate = new();
-    private PPatherService? engine;
-    private Job job;
-    private string? bakingContinent;
+    private Job? job;
+    private BakeStatus lastBake = BakeStatus.Idle;
 
     public BakeAdmin(DataConfig data, WorldMapAreaDB maps, IOptions<NavmeshBakeOptions> bakeOptions,
-        IOptions<NavmeshQueryOptions> queryOptions, RoutePlanner planner, CoverageCache coverage,
+        IOptions<NavmeshQueryOptions> queryOptions, RoutePlanner planner, CoverageCache coverage, ClientContinents continents,
         IConfiguration configuration, ILogger<PPatherService> engineLogger, ILogger<BakeAdmin> logger)
     {
         this.data = data;
@@ -80,27 +95,56 @@ public sealed class BakeAdmin : IDisposable
         this.queryOptions = queryOptions;
         this.planner = planner;
         this.coverage = coverage;
+        this.continents = continents;
         this.engineLogger = engineLogger;
         this.logger = logger;
         gameFiles = ForeverGameFiles.From(configuration, data.Exp, logger);
     }
 
-    /// <summary>Whether this host can read game geometry: archives in <c>Json/MPQ</c>, or a configured Forever install.</summary>
-    public bool HasGameFiles => gameFiles is not null || MPQTriangleSupplier.GetArchiveNames(data).Length > 0;
+    /// <summary>
+    /// Whether this host can read game geometry: archives in <c>Json/MPQ</c>, or for WoW: Forever only
+    /// a configured install (<c>ForeverCasc</c>). <c>Json/MPQ</c> is one folder for every client, and
+    /// Forever's continents open from another client's archives too, so they would bake that client's
+    /// geometry into Forever's tiles.
+    /// </summary>
+    public bool HasGameFiles => gameFiles is not null ||
+                                (!ForeverGameFiles.IsForever(data.Exp) && MPQTriangleSupplier.GetArchiveNames(data).Length > 0);
 
+    /// <summary>The running bake, or the last one.</summary>
     public BakeStatus Status
     {
         get
         {
-            PPatherService? current = engine;
-            return current is null ? BakeStatus.Idle : ToContract(current.BakeStatus);
+            Job? current;
+            BakeStatus last;
+            lock (gate)
+            {
+                current = job;
+                last = lastBake;
+            }
+
+            return current is { Kind: JobKind.Bake, Engine: PPatherService engine } && !current.Ended.IsCompleted
+                ? ToContract(engine.BakeStatus)
+                : last;
+        }
+    }
+
+    /// <summary>Completes once no job is under way: the current job has ended, however it ended.</summary>
+    public Task Idle
+    {
+        get
+        {
+            lock (gate)
+            {
+                return job?.Ended ?? Task.CompletedTask;
+            }
         }
     }
 
     /// <summary>Starts a bake in the background.</summary>
     public StoreResult<BakeStatus> Start(BakeRequest request)
     {
-        if (BakeProblem(request) is string problem)
+        if (BakeProblem(request, out string? continent) is string problem)
         {
             return StoreResult<BakeStatus>.Invalid(problem);
         }
@@ -112,24 +156,22 @@ public sealed class BakeAdmin : IDisposable
 
         lock (gate)
         {
-            if (job != Job.None)
+            if (Busy() is string busy)
             {
-                return StoreResult<BakeStatus>.Conflict(Busy());
+                return StoreResult<BakeStatus>.Conflict(busy);
             }
 
+            Job bake = new(JobKind.Bake, continent, NewEngine());
             (int x, int y)? adt = request.AdtX is int x && request.AdtY is int y ? (x, y) : null;
-            if (!EngineLocked().StartBake(request.Continent, adt))
-            {
-                return StoreResult<BakeStatus>.Conflict("a bake is already running");
-            }
-
-            job = Job.Bake;
-            bakingContinent = request.Continent;
+            bake.Engine!.StartBake(continent, adt);
+            bake.Ended = bake.Engine.BakeTask.ContinueWith(_ => EndBake(bake), CancellationToken.None,
+                TaskContinuationOptions.None, TaskScheduler.Default);
+            job = bake;
         }
 
         if (logger.IsEnabled(LogLevel.Information))
         {
-            logger.LogInformation("Bake started: {Scope}", request.Continent ?? "every continent");
+            logger.LogInformation("Bake started: {Scope}", continent ?? "every continent");
         }
 
         return StoreResult<BakeStatus>.Done(Status);
@@ -137,65 +179,86 @@ public sealed class BakeAdmin : IDisposable
 
     public StoreResult<BakeStatus> Cancel()
     {
-        return engine?.CancelBake() == true
+        Job? current;
+        lock (gate)
+        {
+            current = job;
+        }
+
+        return current is { Kind: JobKind.Bake, Engine: PPatherService engine } && !current.Ended.IsCompleted && engine.CancelBake()
             ? StoreResult<BakeStatus>.Done(Status)
             : StoreResult<BakeStatus>.Conflict("no bake is running");
     }
 
-    /// <summary>Deletes every baked tile of <paramref name="continent"/>, stale settings hashes included.</summary>
+    /// <summary>
+    /// Deletes every baked tile of <paramref name="continent"/>, stale settings hashes included. The
+    /// planner lets go of the continent's tiles afterwards, whatever the delete managed.
+    /// </summary>
     public StoreResult<CacheCleared> Clear(string continent)
     {
-        if (ContinentProblem(continent) is string problem)
+        if (continents.Resolve(continent) is not string resolved)
         {
-            return StoreResult<CacheCleared>.Invalid(problem);
+            return StoreResult<CacheCleared>.Invalid(continents.Refusal(continent));
         }
 
-        PPatherService work;
+        TaskCompletionSource ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (gate)
         {
-            if (job != Job.None)
+            if (Busy() is string busy)
             {
-                return StoreResult<CacheCleared>.Conflict(Busy());
+                return StoreResult<CacheCleared>.Conflict(busy);
             }
 
-            job = Job.Clear;
-            work = EngineLocked();
+            job = new Job(JobKind.Clear, resolved, null) { Ended = ended.Task };
         }
 
         try
         {
-            long freed = work.ClearNavmeshCache(continent);
+            long freed;
+            try
+            {
+                freed = PPatherService.ClearNavmeshCache(data, resolved);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // A tile a lane is reading cannot be deleted on Windows; it is read in milliseconds.
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation("Deleting the tiles of {Continent} met a file in use ({Reason}); trying once more",
+                        resolved, ex.Message);
+                }
 
-            // After the delete: a lane opened while it ran may hold tiles that are gone now.
-            planner.CloseLanes(continent);
-            coverage.Invalidate();
+                Thread.Sleep(ClearRetryDelay);
+                freed = PPatherService.ClearNavmeshCache(data, resolved);
+            }
 
             if (logger.IsEnabled(LogLevel.Information))
             {
-                logger.LogInformation("Navmesh tiles of {Continent} deleted: {Bytes} bytes", continent, freed);
+                logger.LogInformation("Navmesh tiles of {Continent} deleted: {Bytes} bytes", resolved, freed);
             }
 
-            return StoreResult<CacheCleared>.Done(new CacheCleared(continent, freed));
+            return StoreResult<CacheCleared>.Done(new CacheCleared(resolved, freed));
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return StoreResult<CacheCleared>.Conflict(ex.Message);
+            logger.LogWarning("Not every tile of {Continent} could be deleted: {Reason}", resolved, ex.Message);
+            return StoreResult<CacheCleared>.Conflict($"not every tile of {resolved} could be deleted ({ex.Message}); ask again");
         }
         finally
         {
-            lock (gate)
-            {
-                job = Job.None;
-            }
+            // Whatever the delete managed: a lane may hold tiles that are gone now.
+            TilesChanged(resolved);
+            ended.SetResult();
         }
     }
 
     /// <summary>Extracts the area-id grid of <paramref name="continent"/>, or of every continent, in the background.</summary>
     public StoreResult StartAreaGrid(string? continent)
     {
-        if (continent is not null && ContinentProblem(continent) is string problem)
+        string? resolved = null;
+        if (continent is not null && (resolved = continents.Resolve(continent)) is null)
         {
-            return StoreResult.Invalid(problem);
+            return StoreResult.Invalid(continents.Refusal(continent));
         }
 
         if (!HasGameFiles)
@@ -203,175 +266,157 @@ public sealed class BakeAdmin : IDisposable
             return StoreResult.Conflict(NoGameFiles);
         }
 
-        PPatherService work;
         lock (gate)
         {
-            if (job != Job.None)
+            if (Busy() is string busy)
             {
-                return StoreResult.Conflict(Busy());
+                return StoreResult.Conflict(busy);
             }
 
-            job = Job.AreaGrid;
-            work = EngineLocked();
+            Job grid = new(JobKind.AreaGrid, resolved, NewEngine());
+            grid.Ended = Task.Run(() => RunAreaGrid(grid));
+            job = grid;
         }
-
-        _ = Task.Run(() =>
-        {
-            try
-            {
-                work.BuildAreaGrid(continent);
-                if (logger.IsEnabled(LogLevel.Information))
-                {
-                    logger.LogInformation("Area grid extracted: {Scope}", continent ?? "every continent");
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Area grid extraction failed: {Scope}", continent ?? "every continent");
-            }
-            finally
-            {
-                planner.ForgetAreaGrids(continent);
-                work.Reset();
-                lock (gate)
-                {
-                    job = Job.None;
-                }
-            }
-        });
 
         return StoreResult.Done;
     }
 
-    /// <summary>
-    /// Reads the game geometry under navmesh tiles of <paramref name="continent"/> and hands each
-    /// tile's mesh to <paramref name="send"/>, then lets the geometry go: a continent's triangle
-    /// cache runs to gigabytes. Runs on the caller's thread; false with the reason when it cannot.
-    /// </summary>
-    public bool TryExtractTerrain(string continent, IReadOnlyList<(int X, int Z)> tiles, Action<Watch.TerrainMesh> send,
-        CancellationToken token, out string reason)
-    {
-        if (!HasGameFiles)
-        {
-            reason = NoGameFiles;
-            return false;
-        }
-
-        if (ContinentProblem(continent) is string problem)
-        {
-            reason = problem;
-            return false;
-        }
-
-        PPatherService work;
-        lock (gate)
-        {
-            if (job != Job.None)
-            {
-                reason = Busy();
-                return false;
-            }
-
-            job = Job.Terrain;
-            work = EngineLocked();
-        }
-
-        try
-        {
-            work.Initialise(ContinentDB.NameToId[continent]);
-            if (work.TriangleWorld is not ChunkedTriangleCollection world)
-            {
-                reason = $"the game files have no geometry for {continent}";
-                return false;
-            }
-
-            foreach ((int x, int z) in tiles)
-            {
-                token.ThrowIfCancellationRequested();
-                send(Watch.TerrainMesh.Extract(world, continent, x, z));
-            }
-
-            reason = string.Empty;
-            return true;
-        }
-        finally
-        {
-            work.Reset();
-            lock (gate)
-            {
-                job = Job.None;
-            }
-        }
-    }
-
+    /// <summary>Cancels a running bake and waits a while for its job to end, so its last tiles are whole.</summary>
     public void Dispose()
     {
-        PPatherService? current = engine;
-        if (current is null)
+        Job? current;
+        lock (gate)
+        {
+            current = job;
+        }
+
+        if (current is null || current.Ended.IsCompleted)
         {
             return;
         }
 
-        current.CancelBake();
-        current.BakeEnded -= OnBakeEnded;
-        current.Dispose();
+        current.Engine?.CancelBake();
+        try
+        {
+            current.Ended.Wait(NavmeshTileCache.WorkerShutdownTimeout + TimeSpan.FromSeconds(5));
+        }
+        catch (AggregateException)
+        {
+            // Logged where it failed.
+        }
     }
 
-    // The caller holds the gate.
-    private PPatherService EngineLocked()
+    private PPatherService NewEngine()
     {
-        if (engine is null)
-        {
-            engine = new PPatherService(engineLogger, data, maps, bakeOptions, queryOptions, gameFiles);
-            engine.BakeEnded += OnBakeEnded;
-        }
-
-        return engine;
+        return new PPatherService(engineLogger, data, maps, bakeOptions, queryOptions, gameFiles);
     }
 
-    // On the bake's thread, once it is over.
-    private void OnBakeEnded(PPatherService.NavmeshBakeStatus status)
+    // On the bake's own thread, once it is over.
+    private void EndBake(Job bake)
     {
-        string? continent;
-        lock (gate)
+        PPatherService engine = bake.Engine!;
+        BakeStatus final = ToContract(engine.BakeStatus);
+        try
         {
-            continent = bakingContinent;
+            // Lets go of the bake's tile cache, which waits for its workers to finish the tile each
+            // has in hand: after this nothing writes tiles any more.
+            Close(engine);
         }
-
-        planner.CloseLanes(continent);
-        coverage.Invalidate();
-        engine?.Reset();
-
-        lock (gate)
+        finally
         {
-            job = Job.None;
-            bakingContinent = null;
+            TilesChanged(bake.Continent);
+            lock (gate)
+            {
+                lastBake = final;
+            }
         }
 
         if (logger.IsEnabled(LogLevel.Information))
         {
-            logger.LogInformation("Bake ended ({Message}): {Done} tiles baked, {OnDisk} already present; lanes of {Scope} reopen on the next route",
-                status.Message, status.TilesDone, status.TilesAlreadyOnDisk, continent ?? "every continent");
+            logger.LogInformation("Bake ended ({Message}): {Done} tiles baked, {OnDisk} already present",
+                final.Message, final.TilesDone, final.TilesAlreadyOnDisk);
         }
     }
 
-    private string Busy()
+    private void RunAreaGrid(Job grid)
     {
-        return job switch
+        string scope = grid.Continent ?? "every continent";
+        try
         {
-            Job.Bake => Status is { } s ? $"a bake is running: {s.Continent} {s.AdtDone}/{s.AdtTotal} ADT ({s.Message})" : "a bake is running",
-            Job.AreaGrid => "an area grid is being extracted",
-            Job.Terrain => "terrain is being extracted for a viewer",
-            Job.Clear => "baked tiles are being deleted",
-            _ => "the admin engine is idle",
-        };
+            if (grid.Engine!.BuildAreaGrid(grid.Continent))
+            {
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation("Area grid extracted: {Scope}", scope);
+                }
+            }
+            else
+            {
+                logger.LogWarning("Area grid extraction skipped part of {Scope}; the lines above say why", scope);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Area grid extraction failed: {Scope}", scope);
+        }
+        finally
+        {
+            planner.ForgetAreaGrids(grid.Continent);
+            Close(grid.Engine!);
+        }
     }
 
-    private string? BakeProblem(BakeRequest request)
+    private void Close(PPatherService engine)
     {
-        if (request.Continent is not null && ContinentProblem(request.Continent) is string problem)
+        try
         {
-            return problem;
+            engine.Reset();
+            engine.Dispose();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "The admin engine did not close cleanly");
+        }
+    }
+
+    // Tells the planner and the coverage what changed; a failure here must not keep the job going.
+    private void TilesChanged(string? continent)
+    {
+        try
+        {
+            planner.TilesChanged(continent);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "The planner could not let go of the tiles of {Scope}", continent ?? "every continent");
+        }
+
+        coverage.Invalidate();
+    }
+
+    // Why a new job must wait, or null. The caller holds the gate.
+    private string? Busy()
+    {
+        if (job is null || job.Ended.IsCompleted)
+        {
+            return null;
+        }
+
+        if (job.Kind == JobKind.Bake)
+        {
+            BakeStatus s = ToContract(job.Engine!.BakeStatus);
+            return $"a bake is running: {s.Continent} {s.AdtDone}/{s.AdtTotal} ADT ({s.Message})";
+        }
+
+        return job.Kind == JobKind.AreaGrid ? "an area grid is being extracted" : "baked tiles are being deleted";
+    }
+
+    private string? BakeProblem(BakeRequest request, out string? continent)
+    {
+        continent = null;
+        if (request.Continent is not null && (continent = continents.Resolve(request.Continent)) is null)
+        {
+            return continents.Refusal(request.Continent);
         }
 
         if (request.AdtX.HasValue != request.AdtY.HasValue)
@@ -381,7 +426,7 @@ public sealed class BakeAdmin : IDisposable
 
         if (request.AdtX is int x && request.AdtY is int y)
         {
-            if (request.Continent is null)
+            if (continent is null)
             {
                 return "a continent is required when baking a single ADT";
             }
@@ -393,15 +438,6 @@ public sealed class BakeAdmin : IDisposable
         }
 
         return null;
-    }
-
-    // Continents are folder names, so only the client's own are taken.
-    private string? ContinentProblem(string continent)
-    {
-        IEnumerable<string> known = coverage.Read().Select(c => c.Continent);
-        return known.Contains(continent, StringComparer.Ordinal)
-            ? null
-            : $"'{continent}' is not a continent of {data.Exp}; use one of {string.Join(", ", known)}";
     }
 
     private static BakeStatus ToContract(PPatherService.NavmeshBakeStatus s)
