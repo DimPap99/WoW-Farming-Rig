@@ -21,12 +21,21 @@ public abstract class ControlCenterComponent : ComponentBase, IDisposable
 {
     private readonly List<Action> cleanup = [];
     private CancellationTokenSource? cts;
+    private bool disposed;
 
-    /// <summary>Cancelled when the component goes away, so a page left mid-call stops waiting.</summary>
+    /// <summary>
+    /// Cancelled when the component goes away, so a page left mid-call stops waiting; already cancelled
+    /// when first read after that, so work a page starts late (a poll after an await) never runs on.
+    /// </summary>
     protected CancellationToken Token
     {
         get
         {
+            if (disposed)
+            {
+                return new CancellationToken(canceled: true);
+            }
+
             if (cts is null)
             {
                 // Cancelled but not disposed: a continuation that reads Token after the
@@ -61,6 +70,7 @@ public abstract class ControlCenterComponent : ComponentBase, IDisposable
 
     public void Dispose()
     {
+        disposed = true;
         for (int i = cleanup.Count - 1; i >= 0; i--)
         {
             cleanup[i]();
