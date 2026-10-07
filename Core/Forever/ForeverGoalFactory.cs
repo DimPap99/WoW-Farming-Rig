@@ -65,6 +65,7 @@ public static class ForeverGoalFactory
             services.AddScoped<ForeverThreatActivity>();
             services.AddScoped<ForeverLootActivity>();
             services.AddScoped<ForeverRestActivity>();
+            services.AddScoped<ForeverWorldData>();
             services.AddScoped<ForeverTaskActivity>();
             services.AddScoped(scope => ForeverAgenda.For(scope.GetRequiredService<ForeverRunOptions>()));
             services.AddScoped<GoapGoal, ForeverAutonomousGoal>();

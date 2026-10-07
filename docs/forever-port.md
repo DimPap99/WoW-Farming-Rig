@@ -205,8 +205,10 @@ Forever code:
   trial runner (now a command line over it) and the resident agent start it.
 - `SharedLib/Forever/` - the route model, data only: `ForeverRouteFile` (route
   files), the task records and the `ForeverTasks` API, `ForeverUntil`,
-  `ForeverMapPoint` and `ForeverArea`. The Pathing Service reads it to check and
-  serve route files (`PathingService/Forever`), and the Control Center edits them.
+  `ForeverMapPoint` and `ForeverArea`, and `ForeverDestinations` (a visit's or a
+  quest's place in the world data, `SharedLib/Quests`). The Pathing Service reads
+  it to check and serve route files (`PathingService/Forever`), and the Control
+  Center edits them. `Core/Forever/ForeverWorldData` reads the world data for a run.
 - `Core/Goals/ForeverAutonomousGoal.cs`, `ForeverTrialGoal.cs`,
   `Core/GoalsComponent/ForeverCastGate.cs`, `Core/GOAP/ForeverGoapWorldState.cs`,
   `Core/ForeverDiagnosticController.cs`, `Core/Session/NoGrindSessionHandler.cs`.
@@ -1643,7 +1645,7 @@ live.
 
 Built on it since: `TravelTo`, `RoamArea` and route files that chain them
 (see "Travelling", "Roaming an area" and "Route files" below). Quests come
-later as more step kinds and conditions on the same agenda ("Quests (later)").
+as more step kinds and conditions on the same agenda ("Quests").
 
 ### Travelling (2026-10-04)
 
@@ -2105,9 +2107,18 @@ body that was not a beast, which looks like the coin slot not reporting
 
 Offline, `--logic-test` has 302 checks.
 
-### Quests (later)
+### Quests
 
-Not designed yet; this note records what the design above leaves room for.
+Started 2026-10-07: Forever's world data comes from QuestieDB
+(`scripts/extract-questiedb.py`: every NPC with its roles and the sides it serves,
+every spawn, node and quest), the Control Center shows it (its layers and a quest
+with every place it sends a character to), and two step kinds use it: `Visit`
+(the nearest NPC of a role who serves the character's side, an NPC by name, where
+a quest is given or handed in) and `Quest` (roam the camp of what a quest asks to
+kill or gather, until kills, minutes or a level). See
+[forever-routes.md](forever-routes.md). What follows is still to come.
+
+The first note, written before any of that, records what the design above leaves room for.
 While levelling, quests should work together with grinding on one route: walk
 to coordinates, speak to an NPC to take or hand in a quest, roam an area until
 the quest's objectives are done, and grind on. In this design a quest needs

@@ -122,7 +122,11 @@ else
                             <p class="pa-faint">
                                 Coordinates are the zone map's, 0 to 100. A step is a <code>Travel</code> (to <code>To</code>, through
                                 <code>Via</code>) or a <code>Roam</code> (inside <code>Area</code> until <code>Until</code> holds:
-                                <code>Kills</code>, <code>Minutes</code> or <code>Level</code>). See <code>docs/forever-routes.md</code>.
+                                <code>Kills</code>, <code>Minutes</code> or <code>Level</code>); a <code>Visit</code> goes to the nearest
+                                <code>Role</code> (<code>vendor</code>, <code>innkeeper</code>, <code>classtrainer</code>...), an
+                                <code>Npc</code>, or where a quest is given (<code>QuestStart</code>) or handed in (<code>QuestEnd</code>); a
+                                <code>Quest</code> roams where quest <code>Id</code> sends until <code>Until</code> holds. A quest's id is in
+                                the map's Layers. See <code>docs/forever-routes.md</code>.
                             </p>
                         </aside>
                         </div>
@@ -134,7 +138,14 @@ else
                                     <WorldLayers @ref="layers" Id="pa-forever-layers" World="@world"
                                                  Continent="@(scene.Continent.Length == 0 ? null : scene.Continent)" OnChanged="LayersChanged"
                                                  OnFocus="CenterAsync" OnWaypoint="PickAtAsync"
-                                                 WaypointTitle="Pick it: its coordinates, to insert in the text" />
+                                                 WaypointTitle="Pick it: its coordinates, to insert in the text">
+                                        <QuestActions Context="quest">
+                                            <button class="pa-btn" type="button" @onclick="() => InsertQuestAsync(quest)"
+                                                    title="Put its steps where the cursor is in the text: go where it is given, roam its camp, go where it is handed in">
+                                                <span class="oi oi-code" aria-hidden="true"></span> Insert its steps
+                                            </button>
+                                        </QuestActions>
+                                    </WorldLayers>
                                 </Panel>
                                 <div class="pa-route-pick">
                                     <div class="pa-actions">
@@ -178,7 +189,9 @@ else
           // map's, 0 to 100, as the game shows them; "UIMapId" names the map (1411 is
           // Durotar), and a step may name another with its own "UIMapId". A step is a
           // Travel (walk to "To", through the "Via" points) or a Roam (hunt inside
-          // "Area" until "Until" holds: "Kills", "Minutes" or "Level").
+          // "Area" until "Until" holds: "Kills", "Minutes" or "Level"); a Visit goes
+          // to the nearest "Role" (vendor, innkeeper...), an "Npc", or a quest's
+          // "QuestStart" or "QuestEnd"; a Quest roams where quest "Id" sends.
           "Name": "New route",
           "UIMapId": 1411,
           "Steps": [
@@ -203,6 +216,12 @@ else
 
     /// <summary>The map is drawn again this long after the typing stops, and while legs are being planned.</summary>
     private const int RedrawMs = 400;
+
+    /// <summary>A quest's steps inserted roam its camp this long: the data has no counts, so the person sets the end.</summary>
+    private const int QuestMinutes = 15;
+
+    /// <summary>How the template indents a step.</summary>
+    private const string StepIndent = "    ";
 
     /// <summary>A point clicked on the map: its zone, and its coordinates on that zone's map as the text writes them.</summary>
     private sealed record Picked(ZoneInfo Zone, string Text);
@@ -399,6 +418,26 @@ else
         if (picked is not null)
         {
             await js.InvokeVoidAsync("pathingUi.insertAtCursor", Token, editor, picked.Text);
+        }
+    }
+
+    // A quest's steps as a route writes them, for the text, ending on a new line at the steps' indent so
+    // a step after the cursor keeps its own; taking and handing the quest in are still the player's.
+    private async Task InsertQuestAsync(QuestDetail quest)
+    {
+        string id = quest.Id.ToString(CultureInfo.InvariantCulture);
+        string steps = $$"""
+            { "Visit": { "QuestStart": {{id}} } },  // {{quest.Name}}
+                { "Quest": { "Id": {{id}}, "Until": { "Minutes": {{QuestMinutes}} } } },
+                { "Visit": { "QuestEnd": {{id}} } },
+
+            """ + StepIndent;
+        try
+        {
+            await js.InvokeVoidAsync("pathingUi.insertAtCursor", Token, editor, steps);
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or OperationCanceledException)
+        {
         }
     }
 

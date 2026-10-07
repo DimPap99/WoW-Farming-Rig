@@ -65,7 +65,9 @@
                     </button>
                     <strong class="pa-grow">@picked.Name</strong>
                 </div>
-                <span class="pa-faint pa-quest-text" title="@Taken(picked)">@Level(picked.Level, picked.MinLevel)@SideWord(picked.Side)@ZoneWord(picked)</span>
+                <span class="pa-faint pa-quest-text" title="@Taken(picked)">
+                    @Level(picked.Level, picked.MinLevel)@SideWord(picked.Side)@ZoneWord(picked) · quest @picked.Id.ToString(CultureInfo.InvariantCulture)
+                </span>
                 @foreach (string line in picked.Text)
                 {
                     <p class="pa-faint pa-quest-text">@line</p>
@@ -89,6 +91,10 @@
                     </li>
                 }
             </ul>
+            @if (QuestActions is not null)
+            {
+                @QuestActions(picked)
+            }
             @if (picked.PreAll.Length > 0 || picked.PreAny.Length > 0 || picked.Next is not null)
             {
                 <div class="pa-quest-links">
@@ -212,6 +218,9 @@
 
     /// <summary>Take this place as a waypoint; without it, places offer no such button.</summary>
     [Parameter] public EventCallback<Point3> OnWaypoint { get; set; }
+
+    /// <summary>What the page does with the quest picked, under its parts: the Forever page inserts its steps.</summary>
+    [Parameter] public RenderFragment<QuestDetail>? QuestActions { get; set; }
 
     /// <summary>What taking a place does, on its button.</summary>
     [Parameter] public string WaypointTitle { get; set; } = "Add it to the route as a waypoint";
@@ -722,7 +731,7 @@
     };
 
     private static string SummaryTitle(QuestSummary q) =>
-        $"{Level(q.Level, q.MinLevel)}{SideWord(q.Side)}{(q.Giver is null ? string.Empty : $" · from {q.Giver}")}";
+        FormattableString.Invariant($"{Level(q.Level, q.MinLevel)}{SideWord(q.Side)}{(q.Giver is null ? string.Empty : $" · from {q.Giver}")} · quest {q.Id}");
 
     // What limits who takes it, beyond its level and side.
     private static string Taken(QuestDetail q)

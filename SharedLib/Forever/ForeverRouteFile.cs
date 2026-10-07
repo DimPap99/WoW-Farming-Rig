@@ -1,5 +1,7 @@
 using Newtonsoft.Json;
 
+using SharedLib.Data;
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -12,10 +14,13 @@ public sealed record ForeverRoute(string Name, IReadOnlyList<ForeverTask> Tasks,
 /// <summary>
 /// Route files: the agenda as data, kept in <c>Json/path/_forever</c>. A route
 /// is a list of steps on one zone map, in the coordinates a player reads (0 to
-/// 100), each step a <c>Travel</c> or a <c>Roam</c>; a step may name another
-/// map. The file loads into the same tasks the <see cref="ForeverTasks"/> API
-/// builds, and a mistake is refused with the step it is in. A field the format
-/// does not know is refused too, so a misspelt name never silently does nothing.
+/// 100), each step a <c>Travel</c> or a <c>Roam</c>, or one that names its place
+/// by who or what is there - a <c>Visit</c> (the nearest vendor, an NPC, where a
+/// quest is given) or a <c>Quest</c> (roam where a quest's creatures are), found
+/// when the step begins; a step may name another map. The file loads into the
+/// same tasks the <see cref="ForeverTasks"/> API builds, and a mistake is refused
+/// with the step it is in. A field the format does not know is refused too, so a
+/// misspelt name never silently does nothing.
 /// </summary>
 public static class ForeverRouteFile
 {
@@ -87,14 +92,22 @@ public static class ForeverRouteFile
         return true;
     }
 
+    /// <summary>The roles a <c>Visit</c> names most, for the message that refuses another.</summary>
+    public const string CommonRoles = "vendor, repair, innkeeper, flightmaster, trainer, classtrainer, professiontrainer, banker or stablemaster";
+
     private static bool TryStep(RouteStep step, int routeMap, WorldMapAreaDB maps, out ForeverTask task, out string why)
     {
         task = null!;
-        if ((step.Travel is null) == (step.Roam is null))
+        int kinds = (step.Travel is null ? 0 : 1) + (step.Roam is null ? 0 : 1) + (step.Visit is null ? 0 : 1) + (step.Quest is null ? 0 : 1);
+        if (kinds != 1)
         {
-            why = "a step is either a Travel or a Roam";
+            why = "a step is one of a Travel, a Roam, a Visit or a Quest";
             return false;
         }
+        if (step.Visit is { } visit)
+            return TryVisit(visit, out task, out why);
+        if (step.Quest is { } quest)
+            return TryQuest(quest, out task, out why);
         if (step.Travel is { } travel)
         {
             int map = travel.UIMapId ?? routeMap;
@@ -128,9 +141,86 @@ public static class ForeverRouteFile
         ForeverArea shape = ForeverArea.FromCorners(roamMap, corners);
         if (!shape.TryToWorld(maps, out _, out _, out why))
             return false;
-        if (roam.Until is not { } until || until.Kills is null && until.Minutes is null && until.Level is null)
+        if (!TryUntil(roam.Until, "a Roam", out ForeverUntil ends, out why))
+            return false;
+        task = ForeverTasks.RoamArea(shape, ends, roam.Pulls, roam.Seed);
+        return true;
+    }
+
+    // Exactly one of who or what to visit; the place itself is found when the step begins.
+    private static bool TryVisit(VisitStep visit, out ForeverTask task, out string why)
+    {
+        task = null!;
+        int named = (visit.Role is null ? 0 : 1) + (visit.Npc is null ? 0 : 1) + (visit.QuestStart is null ? 0 : 1) +
+                    (visit.QuestEnd is null ? 0 : 1);
+        if (named != 1)
         {
-            why = "a Roam needs an Until with Kills, Minutes or Level, or it would never end";
+            why = "a Visit names one of a Role, an Npc, a QuestStart or a QuestEnd";
+            return false;
+        }
+        if (visit.Title is not null && (visit.Role is null || string.IsNullOrWhiteSpace(visit.Title)))
+        {
+            why = "a Visit's Title goes with a Role, and holds a word of the NPC's title";
+            return false;
+        }
+
+        ForeverVisitTarget target;
+        if (visit.Role is { } role)
+        {
+            string name = role.Trim().ToLowerInvariant();
+            if (name == nameof(NpcFlags.None).ToLowerInvariant() || !NpcFlagsExtensions.ToDictionary().ContainsKey(name))
+            {
+                why = $"{role} is not an NPC role: {CommonRoles}";
+                return false;
+            }
+            target = ForeverVisitTarget.Nearest(name, visit.Title?.Trim());
+        }
+        else if (visit.Npc is { } npc)
+        {
+            if (string.IsNullOrWhiteSpace(npc))
+            {
+                why = "a Visit's Npc needs the NPC's name";
+                return false;
+            }
+            target = ForeverVisitTarget.Npc(npc.Trim());
+        }
+        else
+        {
+            int quest = visit.QuestStart ?? visit.QuestEnd!.Value;
+            if (quest < 1)
+            {
+                why = "a quest id is 1 or more";
+                return false;
+            }
+            target = visit.QuestStart is not null ? ForeverVisitTarget.QuestStart(quest) : ForeverVisitTarget.QuestEnd(quest);
+        }
+
+        task = ForeverTasks.Visit(target, visit.Pulls);
+        why = string.Empty;
+        return true;
+    }
+
+    private static bool TryQuest(QuestStep quest, out ForeverTask task, out string why)
+    {
+        task = null!;
+        if (quest.Id < 1)
+        {
+            why = "a Quest needs its Id, 1 or more";
+            return false;
+        }
+        if (!TryUntil(quest.Until, "a Quest", out ForeverUntil ends, out why))
+            return false;
+        task = ForeverTasks.QuestArea(quest.Id, ends, quest.Pulls, quest.Seed);
+        return true;
+    }
+
+    // A step that hunts ends by kills, minutes or a level, or it would never end.
+    private static bool TryUntil(UntilStep? until, string step, out ForeverUntil ends, out string why)
+    {
+        ends = ForeverUntil.Never;
+        if (until is null || until.Kills is null && until.Minutes is null && until.Level is null)
+        {
+            why = $"{step} needs an Until with Kills, Minutes or Level, or it would never end";
             return false;
         }
         if (until.Kills is < 1 || until.Minutes is <= 0 || until.Level is < 1)
@@ -138,8 +228,8 @@ public static class ForeverRouteFile
             why = "Until needs Kills and Level of at least 1, and Minutes above 0";
             return false;
         }
-        task = ForeverTasks.RoamArea(shape, new ForeverUntil(until.Kills, Minutes: until.Minutes, Level: until.Level),
-            roam.Pulls, roam.Seed);
+        ends = new ForeverUntil(until.Kills, Minutes: until.Minutes, Level: until.Level);
+        why = string.Empty;
         return true;
     }
 
@@ -169,6 +259,8 @@ public static class ForeverRouteFile
     {
         public TravelStep? Travel { get; set; }
         public RoamStep? Roam { get; set; }
+        public VisitStep? Visit { get; set; }
+        public QuestStep? Quest { get; set; }
     }
 
     internal sealed class TravelStep
@@ -183,6 +275,24 @@ public static class ForeverRouteFile
     {
         public int? UIMapId { get; set; }
         public List<double[]>? Area { get; set; }
+        public UntilStep? Until { get; set; }
+        public ForeverPulls Pulls { get; set; } = ForeverPulls.Any;
+        public int? Seed { get; set; }
+    }
+
+    internal sealed class VisitStep
+    {
+        public string? Role { get; set; }
+        public string? Title { get; set; }
+        public string? Npc { get; set; }
+        public int? QuestStart { get; set; }
+        public int? QuestEnd { get; set; }
+        public ForeverPulls Pulls { get; set; } = ForeverPulls.None;
+    }
+
+    internal sealed class QuestStep
+    {
+        public int Id { get; set; }
         public UntilStep? Until { get; set; }
         public ForeverPulls Pulls { get; set; } = ForeverPulls.Any;
         public int? Seed { get; set; }

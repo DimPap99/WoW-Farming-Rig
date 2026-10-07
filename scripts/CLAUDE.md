@@ -156,6 +156,9 @@ QuestieDB commit. QuestieDB declares no license.
 type, family, skin loot, and the vendor and trainer kinds come from `Json/dbc/som/creatures.json`
 for the NPCs Forever shares with Classic; skinnable means skin loot or a beast. Forever's new NPCs
 have neither a role nor a type in QuestieDB yet, so a new vendor is not a vendor here until it has.
+Which sides an NPC serves is QuestieDB's `friendlyToFaction`, kept as `FriendlyTo` ("A", "H",
+"AH") in `creatures.json`: the faction templates (`factiontemplates.json`) call a neutral town's
+NPCs friendly to neither side, as they do hostile creatures, and the bot's visits go by it.
 
 **Check a regenerated Forever set against Classic.** The script converts every zone coordinate to
 world yards with Forever's `WorldMapArea` and compares the NPCs that exist once in both with

@@ -21,10 +21,12 @@ StartupConfig/       DI options bound from configuration
   StartupClientVersion.cs    which client is running
 Data/                ContinentDB, WorldMapArea(DB), SubZoneArea, Creature, Item, Spell, NpcFlags
 Forever/             WoW: Forever's route model, data only: route files, task records, ForeverUntil,
-                     map points and areas (the bot runs them; the Pathing Service checks and serves them)
+                     map points and areas (the bot runs them; the Pathing Service checks and serves them);
+                     ForeverDestinations: a visit's or a quest's place, the nearest, in the QuestBook
 Quests/              QuestBook: a client's quests, the objects and items they name, every creature and
                      every NPC spawn (Json/quests, dbc, npcspawnlocations), and the places a quest sends
-                     a character to - the one answer the Pathing Service and the bot both give
+                     a character to - the one answer the Pathing Service and the bot both give;
+                     QuestSides: a race's side, and the creatures that serve a side
 AddonDataProviderType/ClientVersion.cs   the enum everything version-switches on
 NpcFinder/           NPC nameplate detection (colour matching, line segments)
 ImageProvider/, Screen/   capture interfaces only

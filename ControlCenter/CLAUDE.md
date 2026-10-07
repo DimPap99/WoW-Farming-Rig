@@ -177,8 +177,9 @@ mailboxes, places and quest givers as layers, and a quest - from the zone's, fou
 the page (`QuestId`; the Map page's `/map?quest=7`) - with each part and where it is, drawn in the
 `WorldKinds.Quest*` colours (`world-view.js` and `PartColor` hold them twice). The page puts
 `Markers` in its scene whenever `OnChanged` comes, hands the view's marker clicks to
-`MarkerClickedAsync` (a giver's picks its first quest), and may take a place as a waypoint
-(`OnWaypoint`: the designer adds one, the Forever page picks its coordinates). A parent's re-render
+`MarkerClickedAsync` (a giver's picks its first quest), may take a place as a waypoint
+(`OnWaypoint`: the designer adds one, the Forever page picks its coordinates), and may add its own
+actions under a quest (`QuestActions`: the Forever page inserts the quest's `Visit` and `Quest` steps). A parent's re-render
 sets every parameter again, so the panel acts on a parameter only when it changed: it keeps its own
 zone unless the page binds `UiMap` (the Map page does, to frame the zone and search its continent),
 and a page that fixes the `Continent` keeps the zones on it; with none, a quest elsewhere takes the

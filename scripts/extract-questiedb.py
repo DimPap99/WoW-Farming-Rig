@@ -9,7 +9,8 @@ from Wowhead's Forever pages and from positions Questie's players recorded. Its 
 export merges those layers; this script runs that export, reads the result as data
 (no Lua is evaluated here) and writes:
 
-  Json/dbc/forever/creatures.json           every NPC: names, levels, rank, faction, roles
+  Json/dbc/forever/creatures.json           every NPC: names, levels, rank, faction, roles, and
+                                            which sides may deal with it (FriendlyTo: A, H, AH)
   Json/npcspawnlocations/forever/<map>.json every NPC spawn, world x/y (z 0: find the ground)
   Json/area/forever/<areaId>.json           per zone: vendors, trainers, repairers,
                                             innkeepers, flight masters, herbs, veins, skinnable
@@ -443,6 +444,9 @@ def main():
             "SkinLoot": known.get("SkinLoot", 0) if known else 0,
             "Family": known.get("Family", 0) if known else 0,
             "Type": known.get("Type", 0) if known else 0,
+            # QuestieDB's friendlyToFaction: the factions' templates call a neutral town's NPCs
+            # (Booty Bay, Gadgetzan) friendly to neither side, as they do hostile creatures.
+            "FriendlyTo": field(row, NPC["friendlyToFaction"]) or "",
         }
         creatures.append(creature)
         if creature["SkinLoot"] or creature["Type"] == CREATURE_TYPE_BEAST:
