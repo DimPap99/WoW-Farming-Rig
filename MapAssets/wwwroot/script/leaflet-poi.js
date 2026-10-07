@@ -104,6 +104,8 @@ function customPoiInit() {
         const worldPos = screenToWorld(LeafletMap.project(e.latlng, config.maxZoom));
         const response = await getAreaIdAndZFromService(worldPos);
         const zPos = response.z.toFixed(0);
+        // A height of 0 is "none given": whoever walks there finds the ground. Said, not hidden.
+        const zText = response.failed ? 'height unknown (the Pathing Service did not answer)' : zPos;
 
         L.popup({ closeButton: true, className: 'custom-poi-popup' })
             .setLatLng(e.latlng)
@@ -111,7 +113,7 @@ function customPoiInit() {
                 `<div class="custom-poi-form">` +
                 `<label>Add Custom POI</label>` +
                 `<div style="font-size:11px;color:#888;margin-bottom:4px;">` +
-                `${worldPos.x.toFixed(1)}, ${worldPos.y.toFixed(1)}, ${zPos}</div>` +
+                `${worldPos.x.toFixed(1)}, ${worldPos.y.toFixed(1)}, ${zText}</div>` +
                 `<input class="sidebar-input custom-poi-name-input" type="text" placeholder="POI name" style="margin-bottom:4px;" />` +
                 `<button class="sidebar-coord-btn custom-poi-add-btn">Add POI</button>` +
                 `</div>`)
