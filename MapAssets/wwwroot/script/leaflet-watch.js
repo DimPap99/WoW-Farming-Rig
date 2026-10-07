@@ -353,9 +353,18 @@ const TELEPORT_LOCATIONS_URL = '/locations/teleport_locations.txt';
 let pathingOfflineReported = false;
 
 // fetch() against the Pathing Service that never throws: { ok, status, body, error }. A service
-// that is down answers 502 or 504 through the proxy, or nothing at all; that is said once, and
-// the map keeps showing tiles and spawns without it.
+// that is down answers 502 or 504 through the proxy, or nothing at all; that is said once, on the
+// map, until the service answers again, and the map keeps showing tiles and spawns without it. A
+// write is not sent to a service that serves another era's data (pathingOtherEra).
 async function pathingFetch(path, init) {
+    if (init && init.method && init.method !== 'GET') {
+        const other = await pathingOtherEra();
+        if (other) {
+            mapNotice(other);
+            return { ok: false, status: 409, body: null, error: other };
+        }
+    }
+
     let response;
     try {
         response = await fetch(PATHING_API + path, init);
@@ -369,35 +378,133 @@ async function pathingFetch(path, init) {
         try { body = await response.json(); } catch { body = null; }
     }
 
-    if (response.ok) {
-        return { ok: true, status: response.status, body: body, error: null };
-    }
+    // Refusals come as problem details; detail is the sentence meant for a person.
+    const error = response.ok ? null : (body && (body.detail || body.title)) || `${response.status} ${response.statusText}`;
 
     if (response.status === 502 || response.status === 504) {
-        reportPathingOffline(`${response.status} ${response.statusText}`);
+        reportPathingOffline(error);
+    } else if (pathingOfflineReported) {
+        pathingOfflineReported = false;
+        mapNoticeClear(OFFLINE_NOTICE);
     }
 
-    // Refusals come as problem details; detail is the sentence meant for a person.
-    const error = (body && (body.detail || body.title)) || `${response.status} ${response.statusText}`;
-    return { ok: false, status: response.status, body: body, error: error };
+    return { ok: response.ok, status: response.status, body: body, error: error };
 }
 
 function pathingJson(method, body) {
     return { method: method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
+const OFFLINE_NOTICE = 'offline';
+
+// What the service serves (/capabilities): read at most every PATHING_SERVES_MS, as it may be
+// restarted with another --exp while the map is open.
+const PATHING_SERVES_MS = 30000;
+let pathingServes = null;
+let pathingServesAt = 0;
+
+// Why the map must not write to the service, or null: the service serves another era's data (a
+// Classic bot's map beside a service started with --exp=forever), and what the map saved would go
+// to that client's folders, its "Clear cache" delete that client's tiles. Unknown is not refused:
+// a service that does not answer refuses the write itself.
+async function pathingOtherEra() {
+    if (!pathingServes || Date.now() - pathingServesAt > PATHING_SERVES_MS) {
+        try {
+            const response = await fetch(PATHING_API + '/capabilities');
+            pathingServes = response.ok ? await response.json() : null;
+            pathingServesAt = Date.now();
+        } catch {
+            pathingServes = null;
+        }
+    }
+
+    const mine = clientEra(expansion);
+    if (!pathingServes || !pathingServes.era || pathingServes.era === mine) {
+        return null;
+    }
+
+    return `Not saved: this map is ${expansion} (${mine}), but the Pathing Service serves ${pathingServes.client} `
+        + `(${pathingServes.era}), and would save into that client's data. Start the service with --exp=${expansion}.`;
+}
+
 function reportPathingOffline(why) {
     if (pathingOfflineReported) return;
     pathingOfflineReported = true;
-    mapNotice(`Pathing Service offline (${why}): recorded paths, cost zones, navmesh coverage and bakes are unavailable`);
+    mapNotice(`Pathing Service offline (${why}): recorded paths, cost zones, navmesh coverage, bakes and heights are unavailable`,
+        'warn', OFFLINE_NOTICE);
 }
 
-// A message for the person at the map: the host's toast where there is one, the console always.
-function mapNotice(message) {
+// A message for the person at the map: refusals, failed saves and "offline" must be seen, not left
+// in the console. It goes on the map's own notice list (bottom left), and stays until closed; the
+// same message again is not listed twice. A notice given a key replaces the one before it with that
+// key, and mapNoticeClear(key) takes it away. Before the map exists, the console only.
+const MAX_NOTICES = 5;
+let noticeControl = null;
+let noticeMap = null;
+
+function mapNotice(message, kind = 'error', key = null) {
     console.warn(message);
-    if (window.pathingUi && typeof window.pathingUi.log === 'function') {
-        window.pathingUi.log(message);
+    const list = noticeList(true);
+    if (!list) return;
+
+    if (key) mapNoticeClear(key);
+    for (const existing of list.children) {
+        if (existing.dataset.message === message) {
+            list.prepend(existing);
+            return;
+        }
     }
+
+    const item = document.createElement('div');
+    item.className = `map-notice map-notice--${kind}`;
+    item.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    item.dataset.message = message;
+    if (key) item.dataset.key = key;
+
+    const text = document.createElement('span');
+    text.textContent = message;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'map-notice-close';
+    close.title = 'Dismiss';
+    close.setAttribute('aria-label', 'Dismiss');
+    close.textContent = '\u00d7';
+    close.addEventListener('click', () => item.remove());
+
+    item.append(text, close);
+    list.prepend(item);
+    while (list.children.length > MAX_NOTICES) {
+        list.lastElementChild.remove();
+    }
+}
+
+function mapNoticeClear(key) {
+    const list = noticeList(false);
+    if (!list) return;
+    for (const item of [...list.children]) {
+        if (item.dataset.key === key) item.remove();
+    }
+}
+
+// The notice list of the map now shown, made on first use; null while there is no map.
+function noticeList(create) {
+    if (!LeafletMap) return null;
+    if (noticeMap !== LeafletMap) {
+        if (!create) return null;
+        const NoticeControl = L.Control.extend({
+            options: { position: 'bottomleft' },
+            onAdd: function () {
+                const box = L.DomUtil.create('div', 'map-notices');
+                L.DomEvent.disableClickPropagation(box);
+                L.DomEvent.disableScrollPropagation(box);
+                return box;
+            }
+        });
+        noticeControl = new NoticeControl();
+        noticeControl.addTo(LeafletMap);
+        noticeMap = LeafletMap;
+    }
+    return noticeControl.getContainer();
 }
 
 // A recorded path's library name in a URL: each segment escaped, the '/' between them kept.

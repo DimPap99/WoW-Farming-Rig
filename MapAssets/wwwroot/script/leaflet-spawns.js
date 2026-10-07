@@ -83,8 +83,9 @@ async function addPoi(areaId) {
         if (poi.mapID !== config.MapID) continue;
         if (!contains(targetArea, poi)) continue;
 
+        // The area grid says which zone a place is in; without the service, the zone's own bounds do.
         const res = await getAreaIdAndZFromService(poi);
-        const zone = getZone(res.areaId);
+        const zone = res.failed ? targetArea : getZone(res.areaId);
         if (!zone || zone.AreaID !== targetArea.AreaID) continue;
 
         const latlng = worldTolatLng(poi.x, poi.y);
