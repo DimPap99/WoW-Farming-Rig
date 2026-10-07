@@ -190,7 +190,7 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
 35. **The planner blocks request threads.**
     - **Where:** `RoutePlanner`. Route queries, `/area` and each leg of a continent route wait on
       the lane's `SemaphoreSlim` synchronously for up to 10 s; cost-zone reloads and
-      `CloseLanes` wait with no limit.
+      `TilesChanged` (a bake's end, a cache clear) wait with no limit.
     - **Cause:** the endpoints are synchronous, and the request holding the gate blocks in
       `Task.WaitAll` on the tile workers, which are async and need pool threads too.
     - **Seen:** a model of a lane on Kestrel (12 CPUs). 64 concurrent requests needing about
@@ -200,18 +200,7 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       the same as "not baked", and keeps the thread even after its caller has gone (it takes no
       cancellation).
     - **Fix (not started):** `WaitAsync` behind async endpoints, and `/area` answering 503 when
-      busy, as routes do.
-
-38. **A planner lane never sees tiles that others write.** Item 12 fixed this for the service's
-    own bakes.
-    - **Where:** `RoutePlanner`'s lanes (a disk-only `NavmeshTileCache` keeps a missing tile as
-      empty); `CloseLanes` is called only by `BakeAdmin`.
-    - **Effect:** tiles from `download-navmesh.ps1`, a bot baking into the shared folder or
-      BakeTool stay empty to a running service: routes over them answer NoPath or Partial, or
-      detour, until a restart. The comment over `RoutePlanner.GetLane` and `PathingService/CLAUDE.md`
-      say downloads are picked up; `RoutePlannerWatchTests` asserts that they are not.
-    - **Fix (not started):** watch the tile folder (or its newest write, as the coverage cache
-      does) and close the lanes it touches.
+      busy, as routes do. The watch drawings, which waited once per point, are gone (item 55).
 
 39. **Tiles are written in place.**
     - **Where:** bakes (`NavmeshTileCache.LoadOrBake`, `File.Create`) and `download-navmesh.ps1`
@@ -246,7 +235,7 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       not wait for a tile that is already loading.
     - **Effect:** a point on a tile still loading gets height 0, or a route between baked points
       answers NoPath. Rarely, a tile read while it is evicted has its data cleared under it: a
-      500. Not seen; from the code (`ResidentTiles` and `TryLocatePoly` take the lock).
+      500. Not seen; from the code (`TryLocatePoly` takes the lock).
     - **Fix (not started):** take the read lock and wait for the point's own tile, as `FindPath`
       does for its corridor.
 
@@ -261,14 +250,14 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - **Fix (not started):** a parity test for installs with archives, or planning as they do;
       until then rule 4 claims disk-only Classic installs only.
 
-46. **Smaller findings.** (The null cost-zone entry, the continent names, `%2F` in path names and
-    the planner's exception per map point, with item 2, are fixed: see "Fixed".)
+46. **Smaller findings.** (The null cost-zone entry, the continent names and their one rule, `%2F`
+    in path names and the planner's exception per map point, with item 2, are fixed: see "Fixed".)
     - A cost-zone save's uiMap id is checked only for being not negative, not against the
       continent's maps, so the number of zone files in a continent, which every load reads, has no
       bound. A check would have to keep uiMap 0, the legacy single file's.
     - A lane is built under the planner's global lock (`RoutePlanner.GetLane`): 15-60 ms,
-      measured, in which every continent's queries and `/health` wait, again after each bake or
-      cache clear.
+      measured, in which every continent's queries and `/health` wait. Once per continent since
+      the Phase 2 review: a bake or a clear no longer closes the lane.
     - An endpoint on a tile with no geometry (open sea) answers NotBaked, "download or bake",
       rather than NoPath: a bake writes no file for an empty tile.
     - `GET /costzones/{continent}` lists numeric file names only, while the loader applies every
@@ -280,7 +269,155 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       POST, but a GET is repeated. The Pathing Service answers 400 since the Phase 1 review
       (`StatusCodeSelector` in `PathingServiceRegistration`); the manager needs the same lines.
 
+Items 47 to 56 come from the review of Phase 2 (7ef44187..4e65fd27, 2026-10-07), checked against
+0ec0be56. The report is outside the repository, at
+`~/RiderProjects/WoW-Farming-Rig-review/phase2/phase2-review.md` on the machine it ran on. They were
+fixed the same day on `fix/phase2-review` (see "Fixed"); what is left:
+
+47. **The Control Center has no logins.** (The forwarders' half is fixed: see "Fixed".)
+    - **Where:** the Control Center's pages, which call the Pathing Service and the Bot Manager from
+      the server with their keys; its proxy forwards to another machine reads only.
+    - **Effect:** whoever reaches the Control Center can delete tiles, bake, edit paths and zones,
+      and start or stop bots. Harmless while it binds localhost and one person uses it.
+    - **Fix (not started; with central hosting):** logins, with an admin role for what changes every
+      bot (deleting tiles, bakes and area grids, stopping bots) and users for the rest, checked by
+      the pages and the proxy; with cookie logins, anti-forgery on top of the cross-site rule.
+
+48. **Two pages editing one zone map overwrite each other.** (Deleting zones after a failed load is
+    fixed: see "Fixed".)
+    - **Where:** both zone pages save a zone map's whole road and danger lists
+      (`PUT costzones/{continent}/roads|danger/{uiMapId}`), as they hold them.
+    - **Effect:** an edit made in the Control Center after the bot's map loaded is overwritten by
+      that map's next save of the same zone map, and the other way round.
+    - **Fix (deferred to the database the authored data is to move to):** a save names the version
+      it was made from, and the service refuses a stale one.
+
+56. **Left from the Phase 2 review's smaller findings.**
+    - The agent host still stops on a malformed `PathingService:Url` (or `BotManager:Url`), and
+      `run-agent.ps1` restarts it into the same error: kept, as an agent that cannot sync must not
+      run a bot on stale copies. BlazorServer no longer stops for it.
+    - BlazorServer's own map (Frontend) still skips a shared-era tile folder that is missing when it
+      starts (Cataclysm only); the Pathing Service serves it since the review.
+    - The report's unverified cleanups are not done: magic strings in `ApiReference.razor` and
+      `Error.razor`, about 500 lines of `PPatherService` only PathingAPI used, `ControlCenterLogging`
+      copying `PathingLogging`, `WorldDataFiles` re-implementing Frontend's static files, the
+      MessagePack 3.1.8 pin nothing references, and the benchmark's copy of the test routes.
+
 ## Fixed
+
+52. **A lane kept a tile missing that was on disk** (Phase 2 review, 2026-10-07; item 12's fix one
+    layer too high). A disk-only `NavmeshTileCache` kept a tile it did not find in `emptyTiles` for
+    its life. Item 12 answered with a lane lifecycle that only `BakeAdmin` triggered, and a cancelled
+    bake closed the lanes before its tile workers stopped, so a route asked in those seconds kept the
+    late tiles empty; each entry point also treated a closed lane its own way (`/area` height 0, a
+    continent route Busy at once).
+    - Now the cache itself looks again: a tile it did not find is checked on disk again a second
+      later (`MissingTileRecheck`, one stat), whoever wrote it. The bot's own cache does the same,
+      so tiles downloaded while a bot runs are used.
+    - Lanes are never closed any more (`CloseLanes`, `Lane.Closed` and the retries are gone). What
+      deletes or replaces tiles calls `RoutePlanner.TilesChanged`: the lane lets go of its tiles
+      between queries; `BakeAdmin` calls it after a clear, and after a bake once its workers stopped.
+    - The tile graph is compared with the tiles at most every 30 s, and built again once changed
+      tiles have been left alone for 10 s.
+    - Tests: tiles that appear count a moment later; a lane told lets go of deleted tiles; a clear
+      through the API makes the planner let go (`NavmeshApiTests`).
+
+38. **A planner lane never saw tiles that others wrote** (Phase 1 review; fixed with item 52,
+    2026-10-07). Tiles from `download-navmesh.ps1`, a bot baking into the shared folder or BakeTool
+    count a second after they appear.
+
+47. **The forwarders opened the Pathing Service to whoever reached them** (Phase 2 review,
+    2026-10-07; the Control Center's logins are still open, item 47). BlazorServer listens on
+    `*:5000`, forwarded all of `/api/v1` from 127.0.0.1 and added the service's key, so any device
+    that could open the dashboard could delete a continent's tiles, bake, or overwrite paths, zones
+    and Forever routes, which the service refuses from other machines; the body-less admin POSTs
+    could even come from a web page the user visited.
+    - Each forwarder now applies the rules to its own caller first (`ServiceClients/Security/
+      ForwardPolicy`): its machine gets anything; another machine reads, plus what the host's pages
+      author (BlazorServer: paths, roads and danger zones), and anything else only with the key
+      (403); a request it forwarded itself is refused (508), which stops one pointed at itself. It
+      checks the browser's origin headers itself and takes them off, and adds a hop mark.
+    - Both services refuse a write that a page on another site made a browser send
+      (`ServiceKeyPolicy.CrossSiteRefusal`: `Sec-Fetch-Site`, else `Origin`; 403).
+    - The Control Center forwards only what its browser fetches: `/api/v1`, `/swagger`, `/tiles`
+      and `/path`; no longer `/watchHub` and the rest of the world data.
+    - Tests: `ForwardPolicyTests`, `ControlCenterForwardTests` (a listener that echoes the headers it
+      got), `ServiceKeyTests`.
+
+48. **The bot's map could delete a zone map's zones** (Phase 2 review, 2026-10-07; two pages editing
+    one zone map is still open, item 48). A save sends a zone map's whole lists, and a load that
+    failed (the service down when the page opened) left none loaded, silently: drawing one circle
+    then deleted the shipped roads of that zone map and replaced its danger zones, answering 204.
+    Now a page that has not read the zones reads them before it saves, and refuses with a notice
+    when it cannot; the read is shared between saves and dropped for a continent the map has left.
+
+49. **The bot's map showed no refusal, failed save or "offline"** (Phase 2 review, 2026-10-07).
+    `mapNotice` wrote to the console and to a toast only the Control Center had, and since 64aa9c22
+    no host showed them, so a refused road stayed drawn as if saved. It now writes to the map's own
+    notice line (bottom left), kept until closed; "offline" goes away when the service answers
+    again, and says why (a malformed `PathingService:Url` included). Area and height lookups that
+    fail say so; the teleport layer falls back to the zone's bounds, and a custom point placed while
+    the service is down says its height is unknown.
+
+50. **A health answer the Control Center did not expect ended every session** (Phase 2 review,
+    2026-10-07). The client reads a member a body lacks as null, and the status bar read
+    `health.Coverage`, `Bake` and `Lanes` unchecked: `PathingService:Url` set to the Bot Manager, or a
+    service on an older build, ended every page at its first render. `PathingStatus` now takes only
+    this version's Pathing Service health, and the API version from the capabilities; anything else
+    is the service offline with why. Tested with the Bot Manager's body and a Phase 1 body.
+
+51. **The Control Center kept the service's facts until the service came back** (Phase 2 review,
+    2026-10-07). `/world` (tile counts) and `/capabilities` (game files) were read once, so a
+    continent baked from its own Navmesh page stayed out of the zone pickers until a restart. Now
+    `/health` carries `Instance`, new at every start, and pages read again (`Reconnected`) when it
+    changes, when the continents with tiles change, and at the next poll after a read of the world
+    failed (`ServiceStatus.ReadAgain`); capabilities are read again every 30 s; offline, the status
+    bar shows nothing from before; a world read that missed its places is not kept.
+
+53. **The bake admin could wedge, and remembered a failed source** (Phase 2 review, 2026-10-07).
+    `StartBake` handed the bake's token to `Task.Run`, so a cancel before the task started skipped
+    the bake and its end, and every job answered 409 until a restart; one engine lived as long as
+    the process and never forgot a continent whose archives failed to open once; `--bake` with
+    `--bake-area` dropped the area grid; a clear that failed part-way answered 500 and skipped the
+    lanes. Now a job is under way until its task has ended, however it ended; the cancel is checked
+    inside the bake; each job has its own engine, let go at its end; startup jobs run in turn; a
+    clear tries once more after a moment, and the planner lets go of the tiles whatever it managed.
+    An area grid that skipped a continent no longer logs "extracted".
+
+54. **A Forever service without CASC baked from another client's archives** (Phase 2 review,
+    2026-10-07). `HasGameFiles` counted any archive in `Json/MPQ`, one folder for every client, and
+    Forever's continents open from them, so a bake wrote 3.3.5a geometry into Forever's tiles. A
+    Forever instance has game files only through `ForeverCasc` now.
+
+55. **The watch hub kept a scene nobody viewed** (Phase 2 review, 2026-10-07). Since 64aa9c22
+    nothing drew it, yet a drawing looked up every point's height on a lane and `Terrain` took the
+    bake admin's one job slot. Deleted: `WatchDrawing`, `POST /watch/paths` and `/markers`,
+    `Replay`, `Terrain`, the broadcaster's scene, `NavmeshTileMesh`, `TerrainMesh`,
+    `BakeAdmin.TryExtractTerrain`, the planner's tile events and the map's `leaflet-signalr.js`.
+    Route watchers, `POST /watch/clear` and `clear` stay.
+
+56. **Smaller findings of the Phase 2 review** (2026-10-07; what is left is item 56 above).
+    - A Busy answer reached no `RoutePlanned` watcher; it does now, from a continent route too.
+    - The bot's map wrote into whatever client the service served; a write to a service of another
+      era is refused with why.
+    - The bot's `CostZoneWatcher` was null when `Json/road/<era>` was missing at start; it creates
+      the folder and watches it.
+    - NPC routes: an answer for an earlier zone or type no longer wins, and a Find click sent as
+      the zone changes no longer ends the circuit.
+    - A component's `Token` read first after it went away is cancelled; `MainLayout` catches a
+      script that fails.
+    - `LocationCatalog` and `WorldCatalog` keep no failed read; the stackalloc is out of the loop.
+    - A continent map's NPCs and spawns use its own bounds (Eastern Kingdoms has Booty Bay again).
+    - `PathEditor` keeps its selection through Halve.
+    - The Pathing Service serves a shared-era tile folder created after it started.
+    - Docs: the retry comment, navigation.md's bake endpoints, technical-challenges.md's LZ4 and
+      3D view, `NavmeshTile`'s axes.
+
+46. **The continent rule disagreed with itself** (item 46's last finding; Phase 2 review,
+    2026-10-07). The cost-zone store took a continent in any case, while the bake admin and the
+    navmesh routes compared ordinally: `PUT costzones/azeroth/...` answered 204 and
+    `DELETE navmesh/azeroth` 400. One rule now, `ClientContinents`: the client's world continents,
+    any case, answered and stored in the client's own.
 
 2. **The planner's map routes changed frame at a gap** (the planner's half; Phase 1 review,
    2026-10-06). `RoutePlanner.WorldToMap` took each point in the map that held it, as the bot's
@@ -348,9 +485,9 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     file in the continent (an old road of width 100, say) every valid save answered 204 and changed
     nothing until the lane reopened. A save now reloads only its own continent and answers 409,
     saved but not in use, naming the file in the way and why (`CostZoneLoader.TryLoad` says what
-    failed; `POST /costzones/reload` names it too). Both zone pages, the world view's and
-    BlazorServer's map, show a 409 as saved, not in use yet. Reloads of a lane run one at a time
-    from their read to their swap, so the one that read last applies last.
+    failed; `POST /costzones/reload` names it too). Both zone pages show a 409 as saved, not in
+    use yet (BlazorServer's map only on the console until item 49). Reloads of a lane run one at a
+    time from their read to their swap, so the one that read last applies last.
 
 37. **The pathing client retried a busy service** (Phase 1 review, 2026-10-06). The standard
     resilience handler retried every 5xx, POST included: a 503 Busy (the lane had already waited
@@ -455,6 +592,9 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       missing tiles, copies them in, and checks that the route arrives only once the lane closed.
     - Fixed only for the service's own bakes and deletes. Tiles that anything else writes into
       the folder are still not seen: item 38.
+    - The Phase 2 review found a hole: a cancelled bake closed the lanes before its last tiles
+      were written. Fixed again, one layer down, in the tile cache: item 52, which replaced
+      `CloseLanes`.
 
 13. **File names were not checked** (Phase 2, 32ce9d46). `Frontend/Controllers` are deleted: the
     map authors through the Pathing Service, which refuses such names (`PathName`) and takes only
@@ -464,7 +604,8 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       wrote to `Json/path/path/<name>` (or failed for want of the folder).
 
 14. **Cost zones were not validated on save** (Phase 2, 32ce9d46). The service validates with
-    `CostZoneLoader.Problem` and answers 400 with the reason, which the map shows.
+    `CostZoneLoader.Problem` and answers 400 with the reason, which the map shows on its notice
+    line (it reached only the console from 64aa9c22 until item 49).
 
 18. **Routes and markers from the watch hub did not draw** (Phase 2, 31698e77). MessagePack
     writes a `System.Numerics.Vector3` as a map of its fields (`{X, Y, Z}`), while the 3D view
@@ -479,6 +620,7 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
 19. **BlazorServer's bake buttons called endpoints only PathingAPI had** (Phase 2, 32ce9d46).
     `api/PPather/Bake*` answered 404 on the bot's dashboard. BlazorServer now forwards `/api/v1`
     to the Pathing Service, which bakes when its host has the game files and says so otherwise.
+    The forward opened the service's whole API to whoever reached the dashboard until item 47.
 
 20. **`teleport_locations.txt` was loaded as a script** (Phase 2, 32ce9d46). BlazorServer's
     `App.razor` had a `<script>` tag for it, and Frontend removed it from its static assets

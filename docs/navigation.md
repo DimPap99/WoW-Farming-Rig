@@ -83,7 +83,8 @@ onward, where a client is tens of GB and there is no reason to keep one installe
 just to walk over tiles that are already baked. Two things still need the archives,
 and say so plainly rather than failing obscurely:
 
-* **Baking** tiles (`POST api/PPather/Bake`, `BakeTile`, area-grid extraction) - it reads ADT geometry.
+* **Baking** tiles and extracting area grids (the Pathing Service's `POST /api/v1/bake` and
+  `POST /api/v1/areagrids`, or `Utilities/BakeTool`) - they read ADT geometry.
 * **`Pathing:Engine=SpotAStar`** - it walks the triangle world directly and has no tile cache to fall back to.
 
 > Bake settings feed the tile cache directory name, so a disk-only install must be

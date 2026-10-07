@@ -50,7 +50,10 @@ falls back to it per continent when archives are missing. Baking, area-grid extr
 and SpotAStar are the only things that genuinely need `Json/MPQ` — they call
 `RequireGeometry()` and fail with a stated reason. A disk-only cache never deletes a tile
 it cannot read (it could not bake it again, and a writer may not have finished it): it
-warns once, does not count the tile as empty, and reads it again on a later request.
+warns once, does not count the tile as empty, and reads it again on a later request. A tile
+it did not find is looked for again a second later (`MissingTileRecheck`, one stat), so tiles
+downloaded or baked while it runs are used; a baking cache's empty tiles (nothing walkable) are
+known for its life. Tiles deleted or replaced under it need `Reset`, between queries.
 
 **Paths inside an MPQ are always backslash-separated.** Never `Path.Join` them; it
 yields `World/Maps/...` on macOS and matches nothing. Use interpolation with `\\`.

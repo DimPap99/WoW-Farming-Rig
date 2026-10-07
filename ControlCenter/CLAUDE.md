@@ -28,12 +28,12 @@ client and would start a real run.
 ```
 Program.cs                         host (a class, so tests can host it beside the service)
 Hosting/ControlCenterRegistration  AddControlCenter / UseControlCenter - the composition root
-Hosting/ServiceProxy.cs            YARP: /api/v1, /watchHub, /swagger and WorldData to the service
+Hosting/ServiceProxy.cs            YARP: /api/v1, /swagger, /tiles and /path to the service, the forward rules first
 Hosting/ServiceStatus.cs           the base of both pollers (2 s): Online, Error, Changed,
                                    Reconnected; ServiceDescription names a service for the pages
 Hosting/ControlCenterLogging.cs    Serilog to console + daily file
-Pathing/PathingStatus.cs           the Pathing Service's poller: + capabilities, health
-Pathing/WorldCache.cs              zones, continents, places, test routes; reloads on reconnect
+Pathing/PathingStatus.cs           the Pathing Service's poller: + capabilities, health; only that service's health counts
+Pathing/WorldCache.cs              zones, continents, places, test routes; read again on Reconnected
 Pathing/WatchFeed.cs               the routes the service plans, as a route watcher of /watchHub,
                                    connected while a page watches; WatchConnectionFactory
 Pathing/ZoneLookup.cs              a point's zone from the service's area grid, kept per cell
@@ -76,13 +76,21 @@ wwwroot/js/pathing-ui.js           script loader, toast, remembered rail state, 
 ## Things that will bite you
 
 **The browser talks only to the Control Center.** The world view's script fetches
-`/api/v1/navmesh/...` and a path's screenshot comes from the world data (`/path/...`) on its own
-origin; `ServiceProxy` forwards them to the Pathing Service (WebSockets included, for `/watchHub`),
-adding the service's key (`PathingService:ApiKey`, else `ApiKey`) so the browser never holds it.
-Hubs the pages follow (`WatchFeed`, `FleetFeed`) are followed from the server. Whoever reaches the
-Control Center reaches the services: keep it on localhost, or behind your own access control. A
-prefix the browser needs that is not in `ServiceProxy.PathingPrefixes` answers 404 here, not at
-the service.
+`/api/v1/navmesh/...`, `/api/v1/world` and `/api/v1/area`, the map art comes from `/tiles/...` and a
+path's screenshot from `/path/...`, all on its own origin; `ServiceProxy` forwards them to the
+Pathing Service, adding the service's key (`PathingService:ApiKey`, else `ApiKey`) so the browser
+never holds it. Hubs the pages follow (`WatchFeed`, `FleetFeed`) are followed from the server. A
+prefix the browser needs that is not in `ServiceProxy.PathingPrefixes` answers 404 here, not at the
+service.
+
+**The proxy is a door, and checks who knocks.** The service serves this machine and its key whoever
+stands behind the proxy, so the proxy applies the rules to its own caller first
+(`ServiceClients/Security/ForwardPolicy`, known issue 47): this machine is forwarded anything, another
+machine reads only (or anything with the key), no page on another site writes (403), and a request
+it forwarded itself comes back no further (508: `PathingService:Url` names a forwarder). The pages'
+own calls go from the server with the key, though: whoever reaches the Control Center can still bake
+and clear from its pages. Keep it on localhost until it has logins; when it is hosted centrally, the
+admin role is what may delete tiles, bake or stop bots, and users get the rest.
 
 **The Bot Manager is called from the server, never forwarded.** `/api/v1` is the root of both
 services, and here it belongs to the Pathing Service (`ServiceProxy`). Pages call the manager
@@ -92,7 +100,13 @@ so the browser never reaches it; don't add it to `ServiceProxy`.
 **A down service is a state, not an error.** Pages read their service's status (`PathingStatus`,
 `BotManagerStatus`, both a `ServiceStatus`) and show `OfflineNotice` with its `Service` and
 `Error` instead of calling; they come back by themselves when the poller sees the service again
-(`Reconnected`). Calls go through `IPathingClient` and `IBotManagerClient`, which never throw for
+(`Reconnected`). The client reads a member a body lacks as null, so `PathingStatus` takes only the
+Pathing Service's own health: a body without its members (the Bot Manager answers the same route, an
+older build) or of another `PathingApi.Version` is the service offline with why (known issue 50).
+`Reconnected` also comes when the service restarted, however quickly (`PathingHealth.Instance`), when
+the continents with tiles changed under it, and at the next poll after a cache's read failed
+(`ReadAgain`): what the pages pick from is never kept stale (known issue 51). Capabilities (game
+files) are read again every 30 s. Offline, the status bar shows nothing the service said before. Calls go through `IPathingClient` and `IBotManagerClient`, which never throw for
 a service that is down - only for the page's own cancellation (`Token`), which handlers catch. The
 clients retry queries, so a poll of a service that just went down takes a few seconds to say so.
 
@@ -215,8 +229,9 @@ lies furthest inside, continent maps last. The Forever export takes the looked-u
 holds the point (a step's points must be 0 to 100 on its map), else the guess.
 
 **The Babylon 3D view is gone from here.** Its Terrain toggle (the game geometry under 25 tiles,
-needing game files where the service runs) has no new home: whether the world view should draw it
-is open (`docs/world-view-plan.md`); the watch hub still answers `Terrain`.
+needing game files where the service runs) has no new home, and the watch hub no longer answers
+`Terrain` either: its scene went with the views that drew it (known issue 55). Drawing terrain on
+the world view would need a new endpoint (`docs/world-view-plan.md`).
 
 **Bind text a button depends on with `@bind:event="oninput"`.** A plain `@bind` updates on
 `change`, which fires only when the box loses focus, and clicking a disabled button does not take
@@ -229,6 +244,8 @@ focus away: the Forever routes page's Save and New stayed disabled after typing 
 ports where nothing listens (`ClosedPort`) unless a test hands it a fake manager client, and
 `RenderAsync` renders a page with `HtmlRenderer` (prerendering is off, so a plain GET returns only
 the shell). `ControlCenterTests` checks the shell, the map assets and a 502 from the forwarding;
+`ControlCenterForwardTests` the forward rules against a listener that echoes the headers it got;
+`PathingStatusTests` the poller's health check and when pages read again;
 `ServiceTests/Fleet` the feed against the in-memory manager, the pollers, the log join, the
 assignment draft and the fleet pages. A render there is a first render only: what goes wrong on
 a re-render (a duplicate `@key`) shows in a browser - drive one with Playwright .NET and the

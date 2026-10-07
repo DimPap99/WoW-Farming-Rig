@@ -1,8 +1,13 @@
 # Phase 1 review - the fixes: plan and handoff
 
-**Status (2026-10-07):** step 1 is done on `fix/phase1-review` (not pushed): 1.1 to 1.8, 1.8
+**Status (2026-10-07):** step 1 is done and merged into `main` (0ec0be56): 1.1 to 1.8, 1.8
 without the writer's side, and every independent item (42, 36, the rest of 46, the planner's half
-of 2, 45's text); see "Step 1 as built". Next: step 2. A max-level review of Phase 1
+of 2, 45's text); see "Step 1 as built". Step 2, the review of Phase 2, is done too: it found
+items 47 to 56 of known-issues and corrected items 12, 14, 19, 35, 38 and 41 (see "Step 2 as
+run"). The user decided 4 to 7 the same day, and the Phase 2 review's items are fixed on
+`fix/phase2-review` (not committed yet): see "Step 3, the Phase 2 items, as built". Next: the rest
+of step 3. A max-level
+review of Phase 1
 (84c93499..7ef44187, the Pathing Service, the planner, the contracts, the pathing client and
 `ServiceTests`), checked against the code as of e71c5781, found what is now items 32 to 46 of
 [known-issues.md](known-issues.md). It also corrected items 2 and 12 and the floor-memory design
@@ -257,36 +262,141 @@ Beyond the plan, found on the way:
 Moved to step 3: the tile writers (item 39, open); item 46's uiMap bound and the Bot Manager's
 500.
 
-## Step 2 - review Phase 2
+## Step 2 - review Phase 2 (the handoff)
 
-- **Run** `/code-review max 7ef44187..4e65fd27` (31698e77, 32ce9d46, 4e65fd27).
-- **Scope:** about 7,100 lines of code were added.
-  - About 1,200 were Control Center pages the world view has since replaced: `PathEditorPage`,
-    `PathLibrary`, `SearchPanel`, `Viewport3D`, `Map.razor`, `WatchNames.cs`.
-  - About 600 are the map scripts moving to `MapAssets`.
-  - Point the review at what survives: 31698e77 (`BakeAdmin`, world data, the catalog, the watch
-    hub and `WatchBroadcaster`, `CloseLanes` and the planner's events), and the PathingAPI
-    deletion (did anything still used go with it?).
-- **Check each finding** against the code after step 1, and against known issues 1 to 46.
-- **What the Phase 1 run taught:**
-  - Run at most 5 verifier agents at a time: 23 at once hit API errors.
-  - Have every agent write its verdict to a file as it goes: a usage limit cut the first run.
-  - Keep the reviewer's single report file as the one record.
-- **Afterwards:** add the findings to known-issues, and update step 3 here.
+To start, in a new session: "Read docs/phase1-fixes-plan.md, Step 2, and run it." The review is
+`/code-review max 7ef44187..4e65fd27`. Step 1 is merged: `main` is at 0ec0be56 on origin.
 
-## Step 3 - the structural fixes, after step 2
+**Phase 2 is three commits of 2026-10-05:**
+- 31698e77, Pathing Service: world data, catalog, bake admin and the watch hub (5,083 lines added).
+- 32ce9d46, Control Center replaces PathingAPI; the map's assets move to `MapAssets` (3,749 added,
+  9,581 deleted).
+- 4e65fd27, the docs for both.
+
+**Review the code that survives at HEAD.** Lines still from Phase 2 by `git blame`, of the file's
+length now:
+- The Pathing Service, the heart of it:
+  - `Navmesh/`: `BakeAdmin` (412 of 412), `StartupBakes` (70/70), `ForeverGameFiles` (63/63),
+    `NavmeshEndpoints` (87/128).
+  - `Watch/`: `WatchBroadcaster` (328/408), `WatchHub`, `WatchEndpoints`, `WatchDrawing`,
+    `NavmeshTileMesh`, `TerrainMesh`.
+  - `World/`: `WorldCatalog` (162/324), `WorldDataFiles`, `WorldEndpoints`; `Catalog/`:
+    `LocationCatalog`, `TestRoutes`, `CatalogEndpoints`; `Status/CoverageCache`.
+  - `PPather/Planning/RoutePlanner` (253/965): `CloseLanes`, a lane's `Closed`, the
+    `RoutePlanned`, `TileLoaded` and `TileUnloaded` events, `ResidentTiles`.
+  - Smaller parts: `PPatherService` (+32), `DataConfig` (+26), and the contracts
+    (`WatchContracts`, `WorldContracts`, `NavmeshContracts`, `WorldData`, `PathingApi`).
+- The Control Center's plumbing from 32ce9d46: `Hosting/ServiceProxy` (forwards with the key),
+  `ControlCenterRegistration`, `Pathing/PathingStatus`, `Pathing/WorldCache`,
+  `Layout/StatusBar.razor`, `Pages/NpcRoutes.razor` (189/330), `ServiceClients/Pathing/ZoneMath`,
+  the client methods it added, and BlazorServer's forward of `/api/v1` (`BlazorServer/Program.cs`,
+  `MapForwarder`).
+- The deletion of PathingAPI and `Frontend/Controllers`: did anything still used go with them (a
+  route, a script's call, a setting, a doc)?
+
+**Skip:** about 1,200 lines of Control Center pages the world view has replaced (`PathEditorPage`,
+`PathLibrary`, `SearchPanel`, `Viewport3D`, `Map.razor`, `WatchNames.cs`), about 600 lines of map
+scripts that only moved to `MapAssets`, and the docs except where they promise behaviour. Read the
+tests and `Benchmarks/PathingServiceBenchmark.cs` (496 lines) only as far as they guard the code.
+
+**Check every finding at HEAD.** 39 commits came after 4e65fd27, and 18 of them touch these files
+(Phase 3, the world view, step 1). Step 1 changed Phase 2 code itself:
+- `WatchDrawing` and `WatchEndpoints` refuse a point beyond the world (1.1);
+- a lane reloads its zones per continent and one reload at a time (1.5);
+- `WorldToMap` converts in the request's zone (item 2);
+- an unreadable request answers 400 (1.7);
+- the client reads and retries differently (36, 1.4).
+
+**Already known: cite, don't report again.**
+- Open: 35 (blocking waits: `WatchDrawing` asks once per point, `BakeAdmin`, `CloseLanes` with no
+  limit), 38 (only `BakeAdmin` closes lanes; tiles others write), 39 (bakes write tiles in place),
+  44 (height lookups without the tile lock, which `/area` and `WatchDrawing` use), 46 (a lane built
+  under the global lock, NotBaked on an empty tile, `GET /costzones`), 30 (the log).
+- Fixed by Phase 2 itself: 8, 11, 12, 13, 14, 18, 19, 20. A finding against one is a regression.
+
+**How to run it, from what the Phase 1 run taught:**
+- Reuse its setup in `~/RiderProjects/WoW-Farming-Rig-review/phase1/`. `COMMON.md` gives every
+  agent the range, a snapshot of the tree at the range's end and the rules (no changes to the
+  repository, no builds, scratch only); `VERIFY.md` gives a verifier one candidate and a fixed
+  block to return (verdict at the target, HEAD status, known-issues item, severity). Copy both to
+  `.../phase2/`, and change the range to 7ef44187..4e65fd27, the snapshot to 4e65fd27, HEAD to
+  the current `main` (0ec0be56 for the code), the known issues to 1 to 46, and the scratch path to
+  the new session's.
+- At most 5 verifier agents at a time: 23 at once hit API errors.
+- Every agent writes its verdict to `phase2/parts/` as it goes: a usage limit cut the Phase 1 run
+  with 18 verifiers unfinished.
+- One report, `phase2/phase2-review.md`: live findings first, most severe first, then those fixed
+  since; line numbers at 4e65fd27 unless marked HEAD.
+
+**Afterwards:**
+- Add the live findings to known-issues from 47, in its style (Where, Cause, Effect, Fix), and
+  correct any item the review shows to be wrong.
+- Update step 3 here with what the review adds, and add any decisions for the user.
+- Commit when the user asks. A fix waits for step 3 unless it is urgent and stands alone, as
+  step 1's did.
+
+## Step 2 as run (2026-10-07)
+
+- **The run:** `/code-review max 7ef44187..4e65fd27`, with ten finder angles and a coordinator's
+  pass of its own: 48 deduplicated candidates (V1-V48), verified at most 5 agents at a time.
+  - A usage limit stopped the first run at 01:23 with four verify batches done; the rest ran after
+    the reset.
+  - Every agent's notes and verdicts are in `~/RiderProjects/WoW-Farming-Rig-review/phase2/parts/`.
+  - The report is `phase2/phase2-review.md` beside them: 39 live findings, most severe first, the
+    design findings, the HEAD-only and moot ones, and the refuted ones.
+- **Severity:** nothing high. Five medium:
+  - BlazorServer's forward opens the Pathing Service's whole API to the LAN, with the key since
+    Phase 3 (item 47);
+  - the bot's map deletes a zone map's zones when it saves after a failed load (item 48);
+  - the bot's map shows no refusal, failed save or "offline" (item 49);
+  - a health body the Control Center does not expect ends every session (item 50);
+  - the Control Center keeps tile counts until the service comes back (item 51).
+- **The rest is low.** The bake admin's wedge and its memo (53), a cancelled bake's late tiles (52),
+  Forever baking from `Json/MPQ` (54), and the smaller findings (56).
+- **What the deletions took:** the bot's own cost-zone reload and its own area lookup, and
+  `--bake` with `--bake-area` together. No script call broke; the docs kept two stale names.
+- **Design findings** (the altitude angle), which shape step 3:
+  - item 12's fix belongs in the tile cache, not in a lane lifecycle (item 52);
+  - `BakeAdmin` wants a job object (item 53);
+  - the forwarders need the key rule themselves (item 47);
+  - the Control Center should read what changes from `/health` (item 51);
+  - the watch hub's scene half has had no viewer since 64aa9c22 and can be deleted (item 55);
+  - the continent rule exists three times (item 46).
+
+## Step 3, the Phase 2 items, as built (2026-10-07)
+
+On `fix/phase2-review`, from `main` at 0ec0be56; `dotnet test` 436 passed (401 before). Each item
+is in known-issues' "Fixed" with what changed; in short:
+
+- **Item 55 (decision 5):** the watch hub's scene is deleted, the route watchers kept. That took
+  `WatchDrawing`'s share of items 35 and 44, `BakeAdmin`'s terrain job and the planner's tile events
+  with it, and the map's `leaflet-signalr.js`.
+- **Items 38 and 52 (decision 6), in `NavmeshTileCache`:** a disk-only cache looks again for a tile it
+  did not find a second later (one stat); `Reset` lets go of everything, and a tile read before it is
+  not added after it. `CloseLanes`, `Lane.Closed`, the retries and the closed-lane checks are gone:
+  `RoutePlanner.TilesChanged` resets a lane's cache under its gate, and drops the tile graph, which
+  is also compared with the tiles every 30 s. The bot uses tiles downloaded while it runs.
+- **Item 53:** `BakeAdmin`'s jobs (bake, area grid, clear), one at a time, each on an engine of its
+  own; `StartBake` no longer hands its token to `Task.Run`; startup jobs in turn; a clear retries
+  once and always tells the planner. **Item 54:** Forever has game files only through `ForeverCasc`.
+  **Item 46's continent rule:** `ClientContinents`, for the store, the navmesh routes and the admin.
+- **Item 47 (decision 4):** `ServiceClients/Security/ForwardPolicy`, applied by BlazorServer's forward
+  and the Control Center's proxy to their own callers, and `ServiceKeyPolicy.CrossSiteRefusal` in
+  both services and both forwarders. Not built: logins on the Control Center (item 47, open).
+- **Items 48 to 50 (decision 7):** the bot's map saves no zone map it could not read, shows every
+  notice on its own notice line, and refuses writes to a service of another era; the Control Center
+  takes only the Pathing Service's own health. The lost update between two pages waits for the
+  database (item 48, open).
+- **Item 51:** `PathingHealth.Instance`; pages read again on a restart, on a change of the continents
+  with tiles, and after a failed world read (`ServiceStatus.ReadAgain`); capabilities every 30 s.
+- **Item 56:** each smaller finding, with a test where one can fail; what is left is item 56, open.
+
+## Step 3 - what is left
 
 - **Item 35, blocking waits:**
   - `WaitAsync` behind async endpoints;
   - `/area` answers 503 when busy;
-  - bounded waits in `CloseLanes` and the reloads.
-  - It touches the watch hub (`WatchDrawing`, which asks once per point) and `BakeAdmin`, from
-    Phase 2.
-- **Item 38, tiles that others write:**
-  - watch the tile folder, or its newest write as `CoverageCache` does, and close the lanes it
-    touches;
-  - correct the comment over `RoutePlanner.GetLane`, `PathingService/CLAUDE.md`, and
-    `RoutePlannerWatchTests`' assertion.
+  - bounded waits in `TilesChanged` and the reloads.
 - **Item 44, height lookups:** take the read lock, and wait for the point's own tile.
 - **Item 40, Forever parity:** first a decision for the user (below). Then resolve Forever
   endpoints the way the bot does (`TryResolveColumn`, `PreferGroundUnderPoint`).
@@ -297,6 +407,8 @@ Moved to step 3: the tile writers (item 39, open); item 46's uiMap bound and the
   maps (keeping uiMap 0), and the Bot Manager's 500 for a request it cannot read.
 - **Writers (item 39):** bakes and the download script write tiles under a temporary name and
   rename them; 1.8 left this out. Run the bake gate, which needs game files.
+- **With the central hosting plan:** logins and roles on the Control Center (item 47), and versioned
+  saves of authored data once it moves to a database (item 48).
 
 ## Decisions for the user
 
@@ -306,3 +418,17 @@ Moved to step 3: the tile writers (item 39, open); item 46's uiMap bound and the
    **Decided (2026-10-06): 409 after the write.**
 3. **Item 40:** do Forever routes get cost zones at all? Today the planner applies them and the
    bot does not. Open; it can wait until step 3.
+4. **Item 47:** may the bot's map, from the LAN, reach the Pathing Service's admin calls (delete
+   tiles, bake), or only what it authors (paths, zones)? Or must every LAN caller of a forwarder
+   carry the key, as the services ask? **Decided (2026-10-07): only what it authors.** The
+   dashboards run on every PC for now; later the Control Center is hosted centrally and everyone
+   connects to it, with an admin role for what can do damage and users for the rest, and only the
+   input simulation runs on the PCs. Not built yet.
+5. **Item 55:** delete the watch hub's scene half, which nothing has viewed since 64aa9c22, or keep
+   it for a viewer to come? **Decided (2026-10-07): delete it; the route watchers stay.**
+6. **Item 52:** fix item 12 in the tile cache (a missing tile is looked at again once its file
+   appears), which the bot shares, instead of the lanes' lifecycle. **Decided (2026-10-07): in the
+   cache.** The bot uses tiles downloaded while it runs.
+7. **Items 48 to 50:** fix them now, each standing alone as step 1's did, or with step 3?
+   **Decided (2026-10-07): fixed now, with the rest of the review's items.** Item 48's lost update
+   waits for the database the authored data is to move to.

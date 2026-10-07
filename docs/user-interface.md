@@ -29,6 +29,11 @@ Control Panel\System and Security\Windows Defender Firewall - Advanced Settings
 * Private, Public, Domain (You may get away with just Private)
 * Name "Wow bot"
 
+From another device the map still shows everything and saves recorded paths, roads and danger
+zones. Deleting baked tiles ("Clear cache") and starting or cancelling a bake work only on the bot's
+own PC, or from the Control Center: they change what every bot uses, and the dashboard has no login.
+The map says so when it refuses.
+
 ## Components
 
 The web UI is the primary way to interact with the bot. It shows what the bot is doing, allows you to configure settings, and provides debugging tools. Each component serves a specific purpose:
