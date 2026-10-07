@@ -79,6 +79,19 @@ public sealed class ZoneMathTests
         Assert.Equal(uiMapId, zone.UIMapId);
     }
 
+    // Forever's map file has no sub-areas: its area table gives a valley's zone.
+    [Theory]
+    [InlineData(9, 1429)]      // Northshire Valley, in Elwynn Forest
+    [InlineData(363, 1411)]    // the Valley of Trials, in Durotar
+    [InlineData(14, 1411)]
+    public void A_forever_area_lies_in_its_zone_by_the_area_table(int areaId, int uiMapId)
+    {
+        WorldMapAreaDB forever = new(new DataConfig { Root = TestData.RepoJson, Exp = "forever" });
+
+        Assert.True(forever.TryGetZoneOfArea(areaId, out WorldMapArea zone));
+        Assert.Equal(uiMapId, zone.UIMapId);
+    }
+
     [Fact]
     public void An_area_the_map_data_does_not_know_lies_in_no_zone()
     {

@@ -16,8 +16,15 @@ public sealed class WorldMapAreaDB
     private readonly WorldMapArea[] subzonesByNameLengthDesc;
     private readonly FrozenDictionary<int, WorldMapArea> zonesByAreaId;
     private readonly FrozenDictionary<int, WorldMapArea> subzonesByAreaId;
+    private readonly FrozenDictionary<int, int> areaParents;
 
     public const int AreaIDOffset = 1000000;
+
+    /// <summary>
+    /// Every area of a client and its parent, beside <c>WorldMapArea.json</c> where the client has it:
+    /// Forever's map file carries no sub-areas, so a town or a valley reaches its zone through this.
+    /// </summary>
+    public const string AreaTableFile = "AreaTable.json";
 
     public IEnumerable<WorldMapArea> Values => wmas.Values;
 
@@ -84,7 +91,23 @@ public sealed class WorldMapAreaDB
 
         subzones.Sort(static (a, b) => b.AreaName.Length.CompareTo(a.AreaName.Length));
         subzonesByNameLengthDesc = [.. subzones];
+
+        string areaTable = Path.Join(dataConfig.ExpDbc, AreaTableFile);
+        AreaRow[] areas = File.Exists(areaTable) ? JsonConvert.DeserializeObject<AreaRow[]>(File.ReadAllText(areaTable)) ?? [] : [];
+        Dictionary<int, int> parents = [];
+        foreach (AreaRow area in areas)
+        {
+            if (area.ParentAreaId > 0)
+            {
+                parents.TryAdd(area.AreaID, area.ParentAreaId);
+            }
+        }
+
+        areaParents = parents.ToFrozenDictionary();
     }
+
+    // A row of AreaTable.json, as much as the parents need.
+    private sealed record AreaRow(int AreaID, int ParentAreaId);
 
     public int GetAreaId(int uiMap)
     {
@@ -247,7 +270,8 @@ public sealed class WorldMapAreaDB
 
     /// <summary>
     /// The zone an area lies in: the zone itself, or a sub-area's (a town, a cave) parent zone - the
-    /// baked area grid stores the finest id. False for an id the map data does not know.
+    /// baked area grid stores the finest id, and a quest log names a valley. A parent comes from the
+    /// map data's sub-area rows, else from <see cref="AreaTableFile"/>. False for an id neither knows.
     /// </summary>
     public bool TryGetZoneOfArea(int areaId, out WorldMapArea zone)
     {
@@ -256,9 +280,10 @@ public sealed class WorldMapAreaDB
         {
             if (zonesByAreaId.TryGetValue(areaId, out zone))
                 return true;
-            if (!subzonesByAreaId.TryGetValue(areaId, out WorldMapArea subzone))
+            if (subzonesByAreaId.TryGetValue(areaId, out WorldMapArea subzone))
+                areaId = subzone.ParentAreaId;
+            else if (!areaParents.TryGetValue(areaId, out areaId))
                 break;
-            areaId = subzone.ParentAreaId;
         }
 
         zone = default;

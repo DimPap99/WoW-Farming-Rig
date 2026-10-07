@@ -305,6 +305,20 @@ fixed the same day on `fix/phase2-review` (see "Fixed"); what is left:
 
 ## Fixed
 
+57. **A continent with nothing baked answered its relief with 500** (2026-10-07, found with the
+    layers' browser check). `GET navmesh/{continent}/overview` built the tile graph of a folder that
+    did not exist: `TileSetStamp.Of` and `NavmeshTileGraph.Build` listed it and threw. The route
+    designer offered such continents ("(no tiles)") already; the layers made it common, as they show
+    on continents without tiles. A missing folder is now no tiles (`TileSetStamp.FilesOf`): an empty
+    relief, a graph kept in memory but not saved, and tiles that appear later count as before
+    (`NavmeshApiTests.A_continent_with_nothing_baked_has_an_empty_relief`).
+
+58. **Forever's sub-areas lay in no zone** (2026-10-07). Forever's `WorldMapArea.json` has no
+    sub-area rows, so `WorldMapAreaDB.TryGetZoneOfArea` knew no town or valley: `/api/v1/area` would
+    have answered uiMap 0 for one, and a quest of Northshire Valley belonged to no zone. It now walks
+    the client's `AreaTable.json` where the map file has no row (`AreaTableFile`;
+    `ZoneMathTests.A_forever_area_lies_in_its_zone_by_the_area_table`).
+
 52. **A lane kept a tile missing that was on disk** (Phase 2 review, 2026-10-07; item 12's fix one
     layer too high). A disk-only `NavmeshTileCache` kept a tile it did not find in `emptyTiles` for
     its life. Item 12 answered with a lane lifecycle that only `BakeAdmin` triggered, and a cancelled

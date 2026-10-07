@@ -18,9 +18,11 @@
    continent) and drawn in its status colour, so a leg that stops short or finds nothing shows
    where. Dragging a waypoint plans only its two legs again. Areas drawn on the map are the places
    a Forever route roams. The route is saved to the library as one zone's map coordinates, or as a
-   Forever route file, which the Pathing Service checks as a run loads it. *@
+   Forever route file, which the Pathing Service checks as a run loads it. The layers (NPCs, nodes,
+   quests) show what is where on the way; a quest's places can be taken as waypoints. *@
 
-<WorldView @ref="view" Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="Drawn" OnEdited="Edited" OnSelected="ShapeSelected">
+<WorldView @ref="view" Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="Drawn" OnEdited="Edited" OnSelected="ShapeSelected"
+           OnMarker="MarkerClickedAsync">
     <Panel Title="Route" Icon="signpost" Position="top-left" Class="pa-panel--tall">
         @if (world is null)
         {
@@ -150,6 +152,11 @@
             </div>
         }
     </Panel>
+
+    <Panel Title="Layers" Icon="layers" Position="bottom-right" Class="pa-panel--layers" Collapsed="true">
+        <WorldLayers @ref="layers" Id="pa-route-layers" World="@world" Continent="@(continent.Length == 0 ? null : continent)"
+                     OnChanged="() => Show()" OnFocus="CenterAsync" OnWaypoint="AddWaypoint" />
+    </Panel>
 </WorldView>
 
 @if (!status.Online)
@@ -186,6 +193,7 @@
     private RouteLegs legs = null!;
     private CancellationTokenSource plans = new();
     private WorldView? view;
+    private WorldLayers? layers;
     private WorldSnapshot? world;
     private string continent = string.Empty;
     private WorldScene scene = WorldScene.Empty(string.Empty);
@@ -353,11 +361,11 @@
         });
     }
 
-    // The legs as far as each goes, coloured by how it ended; the waypoints and areas as shapes.
+    // The legs as far as each goes, coloured by how it ended, over the layers' markers; the waypoints and areas as shapes.
     private void Show(bool frame = false)
     {
         List<WorldRoute> routes = [];
-        List<WorldMarker> markers = [];
+        List<WorldMarker> markers = [.. layers?.Markers ?? []];
         for (int i = 0; i + 1 < waypoints.Count; i++)
         {
             Point3 from = waypoints[i];
@@ -394,10 +402,9 @@
             pending += leg.Status is null ? 1 : 0;
         }
 
-        string legsOf = count == 1 ? "the leg" : $"{count} legs";
         return pending > 0 ? ($"Planning {pending} of {count} {(count == 1 ? "leg" : "legs")}...", ResultKind.Info)
-            : failed > 0 ? ($"{failed} of {legsOf} {(failed == 1 ? "has" : "have")} no route", ResultKind.Error)
-            : partial > 0 ? ($"{partial} of {legsOf} {(partial == 1 ? "stops" : "stop")} short", ResultKind.Warn)
+            : failed > 0 ? (count == 1 ? "The leg has no route" : $"{failed} of {count} legs {(failed == 1 ? "has" : "have")} no route", ResultKind.Error)
+            : partial > 0 ? (count == 1 ? "The leg stops short" : $"{partial} of {count} legs {(partial == 1 ? "stops" : "stop")} short", ResultKind.Warn)
             : (count == 1 ? "Route found" : $"All {count} legs found", ResultKind.Ok);
     }
 
@@ -468,6 +475,32 @@
     {
         selected = id ?? WaypointsId;
         Show();
+    }
+
+    private async Task MarkerClickedAsync(string id)
+    {
+        if (layers is not null)
+        {
+            await layers.MarkerClickedAsync(id);
+        }
+    }
+
+    // --- the layers ---------------------------------------------------------------------------
+
+    // A place of the layers' quest, as the last waypoint.
+    private void AddWaypoint(Point3 at)
+    {
+        waypoints.Add(at);
+        selected = WaypointsId;
+        Changed();
+    }
+
+    private async Task CenterAsync(Point3 at)
+    {
+        if (view is not null)
+        {
+            await view.CenterOnAsync(at);
+        }
     }
 
     // --- the panel ----------------------------------------------------------------------------

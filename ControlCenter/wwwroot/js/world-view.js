@@ -59,6 +59,12 @@
         mailbox: [108, 182, 255],
         place: [230, 237, 243],
         mark: [217, 112, 214],
+        quest: [250, 204, 21],
+        'quest-kill': [248, 81, 73],
+        'quest-loot': [240, 160, 50],
+        'quest-object': [86, 212, 221],
+        'quest-buy': [165, 214, 255],
+        'quest-explore': [210, 168, 255],
         leg: [88, 166, 255],
         recorded: [210, 168, 255],
         start: [63, 185, 80],
@@ -69,7 +75,8 @@
     // Kinds drawn dashed: where there is no route, only the straight line it should take.
     const DASHED = new Set(['gap', 'failed', 'pending']);
     // Markers that come by the hundred - spawns, nodes - drawn smaller.
-    const SMALL = new Set(['npc', 'elite', 'herb', 'vein', 'skinnable', 'mailbox', 'place']);
+    const SMALL = new Set(['npc', 'elite', 'herb', 'vein', 'skinnable', 'mailbox', 'place', 'quest-kill', 'quest-loot',
+        'quest-object']);
     const WATER = [44, 96, 150];
     const OUTLINE = [8, 12, 16, 110];
     const CASING = [8, 12, 16, 210];         // the dark under a route

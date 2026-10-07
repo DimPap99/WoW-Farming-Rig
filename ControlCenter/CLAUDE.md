@@ -55,9 +55,10 @@ Routes/RecordedPaths.cs            library files as waypoints and back (one zone
 Routes/ForeverRouteSketch.cs       a Forever route's text read leniently for drawing as it is written
 Components/App.razor, Routes.razor the document; InteractiveServer without prerendering
 Components/Layout/                 MainLayout (rail), NavMenu, StatusBar
-Components/Shared/                 ControlCenterComponent (base), WorldView, Panel, BusyButton,
-                                   ResultLine, OfflineNotice, Terminal, Aria, Words (counts and
-                                   yards), Dialogs (confirm), JsTeardown, ...
+Components/Shared/                 ControlCenterComponent (base), WorldView, WorldLayers (what is
+                                   where: NPCs, nodes, quests), Panel, BusyButton, ResultLine,
+                                   OfflineNotice, Terminal, Aria, Words (counts and yards), Dialogs
+                                   (confirm), JsTeardown, ...
 Components/Bots/                   BotCard, BotState, BotLive, BotCommands, AssignmentForm,
                                    RunHistory, BotLog, FeedChip; BotFormat (words and styles)
 Components/Designer/               the route designer's sections: RouteLibrary (open, save, delete
@@ -170,6 +171,21 @@ black once zoomed in. `worldView.describe()` reports each view's continent, grou
 browser check to wait on (with each marker's place on the screen). A click on a marker comes back
 as `OnMarker` (not while `Picking`). How the pages moved here: `docs/world-view-plan.md`.
 
+**What is where is one component, `WorldLayers`.** The Map page, the route designer and the Forever
+routes page each hold one: a zone's NPCs by type, elites, herbs, veins, skinnable creatures,
+mailboxes, places and quest givers as layers, and a quest - from the zone's, found by name, or named by
+the page (`QuestId`; the Map page's `/map?quest=7`) - with each part and where it is, drawn in the
+`WorldKinds.Quest*` colours (`world-view.js` and `PartColor` hold them twice). The page puts
+`Markers` in its scene whenever `OnChanged` comes, hands the view's marker clicks to
+`MarkerClickedAsync` (a giver's picks its first quest), and may take a place as a waypoint
+(`OnWaypoint`: the designer adds one, the Forever page picks its coordinates). A parent's re-render
+sets every parameter again, so the panel acts on a parameter only when it changed: it keeps its own
+zone unless the page binds `UiMap` (the Map page does, to frame the zone and search its continent),
+and a page that fixes the `Continent` keeps the zones on it; with none, a quest elsewhere takes the
+page to the zone it starts in. Zones are listed on every continent the view knows, "(no tiles)" where
+nothing is baked: the layers are data, and show on a view without ground. Only each part's middle is
+asked of `ZoneLookup` - a request per 16-yard cell, and a kill part has dozens of spawns.
+
 **The Live view watches routes, not a scene.** `WatchFeed` joins the service's watch hub as a route
 watcher (`WatchHubMethods.WatchRoutes`): it gets each route the planner answers as a `WatchRoute`,
 with its continent, and none of the 3D scene - no tiles, no drawings - so the service builds no
@@ -243,9 +259,10 @@ focus away: the Forever routes page's Save and New stayed disabled after typing 
 **Tests host it in memory.** `ServiceTests/Api/ControlCenterFactory` points both services at
 ports where nothing listens (`ClosedPort`) unless a test hands it a fake manager client, and
 `RenderAsync` renders a page with `HtmlRenderer` (prerendering is off, so a plain GET returns only
-the shell). `ControlCenterTests` checks the shell, the map assets and a 502 from the forwarding;
+the shell), at an address of the test's (`uri`, for a page that reads its query). `ControlCenterTests` checks the shell, the map assets and a 502 from the forwarding;
 `ControlCenterForwardTests` the forward rules against a listener that echoes the headers it got;
-`PathingStatusTests` the poller's health check and when pages read again;
+`PathingStatusTests` the poller's health check and when pages read again; `WorldLayersTests` the
+layers and a quest against a Forever service in memory;
 `ServiceTests/Fleet` the feed against the in-memory manager, the pollers, the log join, the
 assignment draft and the fleet pages. A render there is a first render only: what goes wrong on
 a re-render (a duplicate `@key`) shows in a browser - drive one with Playwright .NET and the

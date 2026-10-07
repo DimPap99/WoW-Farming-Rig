@@ -172,6 +172,26 @@ public static class WorldKinds
     /// <summary>Where a partial route stops.</summary>
     public const string Stop = "stop";
 
+    // Quests (the layers' panel, WorldLayers).
+
+    /// <summary>Where a quest is given or handed in: a zone's quest givers, a quest's start and end.</summary>
+    public const string Quest = "quest";
+
+    /// <summary>A creature a quest asks to kill.</summary>
+    public const string QuestKill = "quest-kill";
+
+    /// <summary>A creature that drops an item a quest needs.</summary>
+    public const string QuestLoot = "quest-loot";
+
+    /// <summary>An object a quest asks to use, or one that holds an item it needs.</summary>
+    public const string QuestObject = "quest-object";
+
+    /// <summary>A vendor who sells an item a quest needs.</summary>
+    public const string QuestBuy = "quest-buy";
+
+    /// <summary>A place a quest asks to go to.</summary>
+    public const string QuestExplore = "quest-explore";
+
     // Shapes.
 
     /// <summary>Points a route is planned through, numbered.</summary>

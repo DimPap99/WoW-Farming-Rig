@@ -32,5 +32,13 @@
 
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
+    /// <summary>Starts collapsed to its header; the person opens it.</summary>
+    [Parameter] public bool Collapsed { get; set; }
+
     private bool collapsed;
+
+    protected override void OnInitialized()
+    {
+        collapsed = Collapsed;
+    }
 }

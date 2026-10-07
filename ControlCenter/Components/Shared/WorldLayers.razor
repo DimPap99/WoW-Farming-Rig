@@ -1,0 +1,754 @@
+@inherits ControlCenterComponent
+
+@inject IPathingClient pathing
+@inject ZoneLookup zoneLookup
+
+@* What is where, on any page's world view: a zone's NPCs by type, elites, herbs, veins, skinnable
+   creatures, mailboxes, named places and the quests given there, each a layer to turn on; and one
+   quest, picked from the zone's or found by name, with every place it sends a character to, drawn
+   and listed in the zone map's coordinates. The page draws Markers in its scene, again on
+   OnChanged, hands the view's marker clicks to MarkerClickedAsync, and may take a place as a
+   waypoint (OnWaypoint). *@
+
+<div class="pa-form pa-world-layers">
+    @if (World is null)
+    {
+        <span class="pa-faint">The layers come with the world.</span>
+    }
+    else
+    {
+        <div class="pa-field">
+            <label class="pa-label" for="@($"{Id}-zone")">Zone</label>
+            <select class="pa-select" id="@($"{Id}-zone")" value="@uiMap" @onchange="ZoneChosenAsync">
+                <option value="0" disabled>Choose a zone</option>
+                @foreach (IGrouping<string, ZoneInfo> group in Zones.GroupBy(z => z.Continent))
+                {
+                    <optgroup label="@(World.CanRoute(group.Key) ? group.Key : $"{group.Key} (no tiles)")">
+                        @foreach (ZoneInfo zone in group)
+                        {
+                            <option value="@zone.UiMapId">@zone.Name</option>
+                        }
+                    </optgroup>
+                }
+            </select>
+        </div>
+
+        <div class="pa-field">
+            <span class="pa-label">Show</span>
+            <div class="pa-layers">
+                @foreach (Layer layer in Layers)
+                {
+                    <label class="pa-check pa-layer" title="@layer.Title">
+                        <input type="checkbox" checked="@shown.Contains(layer.Id)" disabled="@(uiMap == 0)"
+                               @onchange="e => ToggleAsync(layer, e.Value is true)" />
+                        <span class="pa-dot pa-layer-dot" style="background: @layer.Color" aria-hidden="true"></span>
+                        @layer.Name
+                        @if (Count(layer) is int count)
+                        {
+                            <span class="pa-faint">@count.ToString("N0", CultureInfo.InvariantCulture)</span>
+                        }
+                    </label>
+                }
+            </div>
+        </div>
+
+        <ResultLine Text="@result" Kind="@resultKind" />
+
+        <div class="pa-divider"></div>
+
+        @if (quest is QuestDetail picked)
+        {
+            <div class="pa-field">
+                <div class="pa-row pa-quest-head">
+                    <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="Back to the quests" @onclick="UnpickAsync">
+                        <span class="oi oi-chevron-left" aria-hidden="true"></span>
+                    </button>
+                    <strong class="pa-grow">@picked.Name</strong>
+                </div>
+                <span class="pa-faint pa-quest-text" title="@Taken(picked)">@Level(picked.Level, picked.MinLevel)@SideWord(picked.Side)@ZoneWord(picked)</span>
+                @foreach (string line in picked.Text)
+                {
+                    <p class="pa-faint pa-quest-text">@line</p>
+                }
+            </div>
+            <ul class="pa-waypoints" aria-label="What the quest asks, and where">
+                @foreach (QuestPart part in picked.Parts)
+                {
+                    <li class="pa-waypoint">
+                        <span class="pa-waypoint-n"><span class="pa-dot pa-layer-dot" style="background: @PartColor(part.Kind)" aria-hidden="true"></span></span>
+                        <button class="pa-waypoint-at pa-quest-part" type="button" title="@WhereTitle(part)" @onclick="() => FocusAsync(part)">
+                            <span>@Describe(part)</span>
+                            <span class="pa-faint">@Where(part)</span>
+                        </button>
+                        @if (OnWaypoint.HasDelegate && Middle(part) is Point3 at)
+                        {
+                            <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" title="@WaypointTitle" @onclick="() => OnWaypoint.InvokeAsync(at)">
+                                <span class="oi oi-plus" aria-hidden="true"></span>
+                            </button>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (picked.PreAll.Length > 0 || picked.PreAny.Length > 0 || picked.Next is not null)
+            {
+                <div class="pa-quest-links">
+                    @if (picked.PreAll.Length > 0)
+                    {
+                        <span class="pa-faint">After</span>
+                        @foreach (QuestLink link in picked.PreAll)
+                        {
+                            <button class="pa-link" type="button" @onclick="() => PickAsync(link.Id)">@link.Name</button>
+                        }
+                    }
+                    @if (picked.PreAny.Length > 0)
+                    {
+                        <span class="pa-faint">After one of</span>
+                        @foreach (QuestLink link in picked.PreAny)
+                        {
+                            <button class="pa-link" type="button" @onclick="() => PickAsync(link.Id)">@link.Name</button>
+                        }
+                    }
+                    @if (picked.Next is QuestLink next)
+                    {
+                        <span class="pa-faint">Then</span>
+                        <button class="pa-link" type="button" @onclick="() => PickAsync(next.Id)">@next.Name</button>
+                    }
+                </div>
+            }
+        }
+        else
+        {
+            <div class="pa-field">
+                <label class="pa-label" for="@($"{Id}-quest")">Quests</label>
+                <div class="pa-input-group">
+                    <input class="pa-input" id="@($"{Id}-quest")" placeholder="Find a quest by name" @bind="questSearch" @bind:event="oninput"
+                           @bind:after="QuestSearchEdited" @onkeydown="QuestSearchKeyAsync" />
+                    <button class="pa-btn pa-btn--icon" type="button" title="Find" disabled="@(questSearch.Trim().Length < MinSearch)" @onclick="QuestSearchAsync">
+                        <span class="oi oi-magnifying-glass" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </div>
+            @if (QuestList.Length > 0)
+            {
+                <span class="pa-faint">@QuestListTitle</span>
+                <ul class="pa-waypoints" aria-label="Quests">
+                    @foreach (QuestSummary q in QuestList)
+                    {
+                        <li class="pa-waypoint">
+                            <span class="pa-waypoint-n" title="@Level(q.Level, q.MinLevel)">@q.Level.ToString(CultureInfo.InvariantCulture)</span>
+                            <button class="pa-waypoint-at" type="button" title="@SummaryTitle(q)" @onclick="() => PickAsync(q.Id)">@q.Name</button>
+                            <span class="pa-waypoint-leg" title="@q.Side">@SideLetter(q.Side)</span>
+                        </li>
+                    }
+                </ul>
+            }
+            else if (foundQuests is null && shown.Contains(QuestsLayer) && Zone is ZoneInfo zone)
+            {
+                <span class="pa-faint">No quest the service knows is given in @zone.Name.</span>
+            }
+            else if (foundQuests is null)
+            {
+                <span class="pa-faint">Turn on Quests for the zone's, or find one by name: what it asks shows on the map.</span>
+            }
+        }
+    }
+</div>
+
+@code {
+    /// <summary>A layer: what it shows, how its markers look (the kind is the colour in world-view.js), and what it is.</summary>
+    private sealed record Layer(string Id, string Name, string Kind, string Color, string Title);
+
+    /// <summary>The named places routes are planned between, from the world the page has.</summary>
+    public const string PlacesLayer = "places";
+
+    /// <summary>Where the zone's quests are given.</summary>
+    public const string QuestsLayer = "quests";
+
+    /// <summary>A layer's point's marker id starts so.</summary>
+    public const string LayerPrefix = "layer:";
+
+    /// <summary>A quest giver's marker id: this, then the id of the first quest it gives.</summary>
+    public const string GiverPrefix = "giver:";
+
+    /// <summary>A place of the quest picked: this, then the part's index and the place's.</summary>
+    public const string QuestPrefix = "quest:";
+
+    // The service's shortest name to search for, and how many it finds at most (QuestCatalog.MaxFound).
+    private const int MinSearch = 2;
+    private const int MaxFound = 50;
+
+    // A part's places listed where the pointer rests on it.
+    private const int PlacesListed = 12;
+
+    // NPC types as layers: their ids are the NpcFlags names, the service's.
+    private static readonly string[] NpcTypes = ["vendor", "repair", "trainer", "flightmaster", "innkeeper"];
+
+    /// <summary>The world the page shows; null while it loads.</summary>
+    [Parameter, EditorRequired] public WorldSnapshot? World { get; set; }
+
+    /// <summary>
+    /// A zone the page chooses; the panel keeps its own choice otherwise. Bound (<c>@bind-UiMap</c>),
+    /// the page hears the person's choice too.
+    /// </summary>
+    [Parameter] public int UiMap { get; set; }
+
+    [Parameter] public EventCallback<int> UiMapChanged { get; set; }
+
+    /// <summary>
+    /// The continent the page shows: zones are chosen on it, and places elsewhere are listed, not
+    /// drawn. Null when the zone chosen takes the page to its continent, as on the Map page: a quest
+    /// picked elsewhere then takes it to the zone where the quest starts.
+    /// </summary>
+    [Parameter] public string? Continent { get; set; }
+
+    /// <summary>A quest to show once the world is there, by id (the Map page's <c>?quest=7</c>); 0 for none.</summary>
+    [Parameter] public int QuestId { get; set; }
+
+    /// <summary>The markers changed: the page draws its scene again with <see cref="Markers"/>.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    /// <summary>Centre the view here.</summary>
+    [Parameter] public EventCallback<Point3> OnFocus { get; set; }
+
+    /// <summary>Take this place as a waypoint; without it, places offer no such button.</summary>
+    [Parameter] public EventCallback<Point3> OnWaypoint { get; set; }
+
+    /// <summary>What taking a place does, on its button.</summary>
+    [Parameter] public string WaypointTitle { get; set; } = "Add it to the route as a waypoint";
+
+    /// <summary>Tells this panel's fields apart from another's on the same page.</summary>
+    [Parameter] public string Id { get; set; } = "pa-layers";
+
+    private readonly HashSet<string> shown = [];
+    private readonly Dictionary<string, SpawnPoint[]> points = [];
+    private int uiMap;
+    private int given;
+    private WorldSnapshot? seenWorld;
+    private string? seenContinent;
+    private int givenQuest;
+    private QuestSummary[] zoneQuests = [];
+    private QuestSummary[]? foundQuests;
+    private QuestDetail? quest;
+    private string questSearch = string.Empty;
+    private string? result;
+    private ResultKind resultKind;
+
+    /// <summary>Everything shown, for the page's scene: each shown layer's points, the quest givers, the quest picked.</summary>
+    public IReadOnlyList<WorldMarker> Markers { get; private set; } = [];
+
+    /// <summary>The zone chosen; null for none.</summary>
+    public ZoneInfo? Zone => World?.Zone(uiMap);
+
+    // The map the page shows: its continent's, else the zone's.
+    private int MapId => (Continent is null ? null : World?.Continent(Continent)?.MapId) ?? Zone?.MapId ?? -1;
+
+    // Zones only, on the continents the view shows: a continent's or the world's map lists nothing of its own.
+    // The layers are data, so a continent without tiles has them too, on a view without ground.
+    private IEnumerable<ZoneInfo> Zones => World is null
+        ? []
+        : World.World.Zones
+            .Where(z => z.AreaId != 0 && World.Continent(z.Continent) is not null &&
+                        (Continent is null || z.Continent.Equals(Continent, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(z => z.Continent).ThenBy(z => z.Name);
+
+    private IEnumerable<Layer> Layers =>
+    [
+        .. NpcTypes.Where(t => World?.World.NpcFlags.ContainsKey(t) == true)
+            .Select(t => new Layer(t, char.ToUpperInvariant(t[0]) + t[1..] + "s", WorldKinds.Npc, "#39c5cf", $"NPCs who are a {t}, where each first spawns")),
+        new(SpawnLayers.Elite, "Elites", "elite", "#e5534b", "Elite, rare and boss creatures, every spawn"),
+        new(SpawnLayers.Herb, "Herbs", "herb", "#57ab5a", "Herb nodes"),
+        new(SpawnLayers.Vein, "Veins", "vein", "#c69026", "Mining veins"),
+        new(SpawnLayers.Skinnable, "Skinnable", "skinnable", "#d4b45a", "Creatures that can be skinned, every spawn"),
+        new(SpawnLayers.Mailbox, "Mailboxes", "mailbox", "#6cb6ff", "Mailboxes"),
+        new(PlacesLayer, "Places", "place", "#e6edf3", "The named places routes are planned between"),
+        new(QuestsLayer, "Quests", WorldKinds.Quest, "#facc15", "Where the zone's quests are given: click one for what it asks"),
+    ];
+
+    private QuestSummary[] QuestList => foundQuests ?? (shown.Contains(QuestsLayer) ? zoneQuests : []);
+
+    private string QuestListTitle => foundQuests is not null
+        ? $"{Words.Count(foundQuests.Length, "quest")} called that{(foundQuests.Length == MaxFound ? ", the first" : string.Empty)}"
+        : $"{Words.Count(zoneQuests.Length, "quest")} given in {Zone?.Name}";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        bool read = false;
+        bool redraw = false;
+        if (UiMap != given)
+        {
+            // The page chose a zone; a page bound to the choice hears it back, which reads nothing again.
+            given = UiMap;
+            read = UiMap != uiMap;
+            uiMap = UiMap;
+        }
+
+        if (!ReferenceEquals(World, seenWorld))
+        {
+            // Read again, as when the service came back: it may serve another client now.
+            read |= seenWorld is not null;
+            seenWorld = World;
+        }
+
+        if (!string.Equals(Continent, seenContinent, StringComparison.OrdinalIgnoreCase))
+        {
+            seenContinent = Continent;
+            if (Continent is not null && Zone is ZoneInfo zone && !zone.Continent.Equals(Continent, StringComparison.OrdinalIgnoreCase))
+            {
+                uiMap = 0;
+                read = true;
+            }
+
+            // A quest's places on the new map show, those on the old one go.
+            redraw = quest is not null;
+        }
+
+        if (read && World is not null)
+        {
+            await ReadZoneAsync();
+        }
+        else if (redraw)
+        {
+            await ChangedAsync();
+        }
+
+        if (QuestId != givenQuest && World is not null)
+        {
+            givenQuest = QuestId;
+            if (QuestId > 0)
+            {
+                await PickAsync(QuestId);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A marker on the view was clicked: a quest giver's picks its first quest. False when the marker
+    /// is not this panel's.
+    /// </summary>
+    public async Task<bool> MarkerClickedAsync(string id)
+    {
+        if (id.StartsWith(GiverPrefix, StringComparison.Ordinal))
+        {
+            if (int.TryParse(id[GiverPrefix.Length..], NumberStyles.Integer, CultureInfo.InvariantCulture, out int questId))
+            {
+                await PickAsync(questId);
+            }
+
+            return true;
+        }
+
+        return id.StartsWith(LayerPrefix, StringComparison.Ordinal) || id.StartsWith(QuestPrefix, StringComparison.Ordinal);
+    }
+
+    private async Task ZoneChosenAsync(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int chosen))
+        {
+            await ChooseZoneAsync(chosen);
+        }
+    }
+
+    private async Task ChooseZoneAsync(int chosen)
+    {
+        uiMap = chosen;
+        await UiMapChanged.InvokeAsync(chosen);
+        await ReadZoneAsync();
+    }
+
+    // Every shown layer read again for the zone chosen now.
+    private async Task ReadZoneAsync()
+    {
+        int zone = uiMap;
+        points.Clear();
+        zoneQuests = [];
+        Say(null, ResultKind.Info);
+        foreach (Layer layer in Layers.Where(l => shown.Contains(l.Id)).ToArray())
+        {
+            await ReadAsync(layer);
+            if (uiMap != zone)
+            {
+                // Another zone was chosen meanwhile: its read draws.
+                return;
+            }
+        }
+
+        await ChangedAsync();
+    }
+
+    private async Task ToggleAsync(Layer layer, bool on)
+    {
+        if (on)
+        {
+            shown.Add(layer.Id);
+            await ReadAsync(layer);
+        }
+        else
+        {
+            shown.Remove(layer.Id);
+        }
+
+        await ChangedAsync();
+    }
+
+    // A layer's points in the zone, read once per zone; an answer for a zone no longer chosen is dropped.
+    private async Task ReadAsync(Layer layer)
+    {
+        if (Zone is not ZoneInfo zone || World is null || points.ContainsKey(layer.Id))
+        {
+            return;
+        }
+
+        try
+        {
+            if (layer.Id == QuestsLayer)
+            {
+                ServiceResult<QuestSummary[]> quests = await pathing.GetQuestsAsync(zone.UiMapId, Token);
+                if (uiMap == zone.UiMapId)
+                {
+                    zoneQuests = quests.Value ?? [];
+                    Say(quests.Ok ? null : $"Quests: {quests.Error}", ResultKind.Error);
+                }
+
+                return;
+            }
+
+            if (layer.Id == PlacesLayer)
+            {
+                points[layer.Id] = [.. World.LocationsOn(zone.Continent).Select(p => new SpawnPoint(0, p.Name, p.Position))];
+                return;
+            }
+
+            ServiceResult<SpawnPoint[]> read = layer.Kind == WorldKinds.Npc
+                ? Npcs(await pathing.GetNpcsAsync(zone.UiMapId, layer.Id, Token))
+                : await pathing.GetSpawnsAsync(zone.UiMapId, layer.Id, Token);
+            if (uiMap != zone.UiMapId)
+            {
+                return;
+            }
+
+            if (read.Ok)
+            {
+                points[layer.Id] = read.Value;
+            }
+            else
+            {
+                Say($"{layer.Name}: {read.Error}", ResultKind.Error);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static ServiceResult<SpawnPoint[]> Npcs(ServiceResult<NpcInfo[]> npcs)
+    {
+        return new ServiceResult<SpawnPoint[]>(npcs.Value?.Select(n => new SpawnPoint(n.Entry, n.Name, n.Position)).ToArray(), npcs.Status, npcs.Error);
+    }
+
+    private void QuestSearchEdited()
+    {
+        // An empty box goes back to the zone's quests.
+        if (questSearch.Trim().Length == 0)
+        {
+            foundQuests = null;
+        }
+    }
+
+    private async Task QuestSearchKeyAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await QuestSearchAsync();
+        }
+    }
+
+    private async Task QuestSearchAsync()
+    {
+        string name = questSearch.Trim();
+        if (name.Length < MinSearch)
+        {
+            return;
+        }
+
+        try
+        {
+            ServiceResult<QuestSummary[]> read = await pathing.SearchQuestsAsync(name, Token);
+            foundQuests = read.Value ?? [];
+            Say(read.Ok ? (foundQuests.Length == 0 ? "No quest is called that" : null) : read.Error, read.Ok ? ResultKind.Info : ResultKind.Error);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task PickAsync(int id)
+    {
+        try
+        {
+            ServiceResult<QuestDetail> read = await pathing.GetQuestAsync(id, Token);
+            if (!read.Ok)
+            {
+                Say(read.Error, ResultKind.Error);
+                return;
+            }
+
+            QuestDetail picked = read.Value;
+            quest = picked;
+            Say(null, ResultKind.Info);
+
+            // Where the page lets the layers choose its map, a quest of another zone takes it there: the quest log's
+            // zone, else, for a quest on another map, the zone where it starts.
+            ZoneInfo? home = World?.Zone(picked.UiMapId) ??
+                             (World is not null && FirstPlace(picked) is QuestSpot first && first.MapId != MapId
+                                 ? zoneLookup.Known(World, first.MapId, first.At)
+                                 : null);
+            if (Continent is null && home is { AreaId: > 0 } && home.AreaId != Zone?.AreaId && World?.Continent(home.Continent) is not null)
+            {
+                await ChooseZoneAsync(home.UiMapId);
+            }
+            else
+            {
+                await ChangedAsync();
+            }
+
+            // Each part named by its zone from the area grid, and the view on where the quest starts.
+            Point3[] middles = [.. picked.Parts.Select(Middle).OfType<Point3>()];
+            await LearnAsync(middles);
+            if (middles.Length > 0)
+            {
+                await OnFocus.InvokeAsync(middles[0]);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static QuestSpot? FirstPlace(QuestDetail picked)
+    {
+        return picked.Parts.SelectMany(p => p.Places).FirstOrDefault();
+    }
+
+    private async Task UnpickAsync()
+    {
+        quest = null;
+        await ChangedAsync();
+    }
+
+    private async Task FocusAsync(QuestPart part)
+    {
+        if (Middle(part) is Point3 at)
+        {
+            await OnFocus.InvokeAsync(at);
+        }
+    }
+
+    private async Task LearnAsync(Point3[] at)
+    {
+        if (MapId >= 0 && at.Length > 0)
+        {
+            await zoneLookup.LearnAsync(MapId, at, Token);
+        }
+    }
+
+    // The markers built again, and the page told.
+    private async Task ChangedAsync()
+    {
+        List<WorldMarker> markers = [];
+        foreach (Layer layer in Layers.Where(l => shown.Contains(l.Id)))
+        {
+            if (points.TryGetValue(layer.Id, out SpawnPoint[]? at))
+            {
+                for (int i = 0; i < at.Length; i++)
+                {
+                    SpawnPoint p = at[i];
+                    markers.Add(WorldMarker.At($"{LayerPrefix}{layer.Id}:{i.ToString(CultureInfo.InvariantCulture)}", layer.Kind, p.At, null,
+                        p.Detail is null ? p.Name : $"{p.Name} · {p.Detail}"));
+                }
+            }
+        }
+
+        // One marker a giver, naming every quest it gives; a click picks the first.
+        if (shown.Contains(QuestsLayer))
+        {
+            foreach (IGrouping<(float, float), QuestSummary> giver in zoneQuests
+                .Where(q => q.GiverAt is not null && q.GiverMapId == MapId)
+                .GroupBy(q => (MathF.Round(q.GiverAt!.Value.X), MathF.Round(q.GiverAt.Value.Y))))
+            {
+                QuestSummary first = giver.First();
+                string quests = string.Join("\n", giver.Select(q => $"{q.Level.ToString(CultureInfo.InvariantCulture)} {q.Name}"));
+                markers.Add(WorldMarker.At($"{GiverPrefix}{first.Id.ToString(CultureInfo.InvariantCulture)}", WorldKinds.Quest, first.GiverAt!.Value,
+                    null, $"{first.Giver}\n{quests}"));
+            }
+        }
+
+        if (quest is QuestDetail picked)
+        {
+            // Given and handed in at one place, as often: one marker, "!?".
+            Dictionary<Point3, int> givenAt = [];
+            for (int i = 0; i < picked.Parts.Length; i++)
+            {
+                QuestPart part = picked.Parts[i];
+                for (int j = 0; j < part.Places.Length; j++)
+                {
+                    QuestSpot spot = part.Places[j];
+                    if (spot.MapId != MapId)
+                    {
+                        continue;
+                    }
+
+                    if (part.Kind == QuestPartKind.End && givenAt.TryGetValue(spot.At, out int given))
+                    {
+                        markers[given] = markers[given] with { Label = "!?", Title = $"{markers[given].Title}\n{Describe(part)}" };
+                        continue;
+                    }
+
+                    if (part.Kind == QuestPartKind.Start)
+                    {
+                        givenAt.TryAdd(spot.At, markers.Count);
+                    }
+
+                    markers.Add(WorldMarker.At($"{QuestPrefix}{i.ToString(CultureInfo.InvariantCulture)}:{j.ToString(CultureInfo.InvariantCulture)}",
+                        PartKind(part.Kind), spot.At, Label(part.Kind), Describe(part)));
+                }
+            }
+        }
+
+        Markers = markers;
+        await OnChanged.InvokeAsync();
+    }
+
+    private int? Count(Layer layer)
+    {
+        return layer.Id == QuestsLayer
+            ? shown.Contains(QuestsLayer) && uiMap != 0 ? zoneQuests.Length : null
+            : points.TryGetValue(layer.Id, out SpawnPoint[]? at) ? at.Length : null;
+    }
+
+    // Where a part is on the page's map: its one place, or of a spread of spawns the one nearest their middle.
+    private Point3? Middle(QuestPart part)
+    {
+        QuestSpot[] here = [.. part.Places.Where(p => p.MapId == MapId)];
+        if (here.Length == 0)
+        {
+            return null;
+        }
+
+        float x = here.Average(p => p.At.X);
+        float y = here.Average(p => p.At.Y);
+        return here.MinBy(p => ((p.At.X - x) * (p.At.X - x)) + ((p.At.Y - y) * (p.At.Y - y)))!.At;
+    }
+
+    private string Where(QuestPart part)
+    {
+        int here = part.Places.Count(p => p.MapId == MapId);
+        if (here == 0)
+        {
+            return part.Places.Length == 0 ? "nowhere the data knows" : "on another map";
+        }
+
+        string at = Middle(part) is Point3 middle ? WhereIs(middle) : string.Empty;
+        return here == 1 ? at : $"{Words.Count(here, "place")} around {at}";
+    }
+
+    // Its places as a player reads them, the first dozen.
+    private string WhereTitle(QuestPart part)
+    {
+        QuestSpot[] here = [.. part.Places.Where(p => p.MapId == MapId)];
+        List<string> listed = [.. here.Take(PlacesListed).Select(p => WhereIs(p.At))];
+        if (here.Length > PlacesListed)
+        {
+            listed.Add($"and {Words.Count(here.Length - PlacesListed, "more place")}");
+        }
+
+        return string.Join("\n", listed);
+    }
+
+    private string WhereIs(Point3 at) => ZoneLabels.Where(World is null ? null : zoneLookup.Known(World, MapId, at), at);
+
+    private static string Describe(QuestPart part) => part.Kind switch
+    {
+        QuestPartKind.Start => $"Get it from {part.Name}",
+        QuestPartKind.End => $"Hand it in to {part.Name}",
+        QuestPartKind.Kill => $"Kill {part.Name}",
+        QuestPartKind.Use => $"Use {part.Name}",
+        QuestPartKind.Loot => $"{part.Item}: dropped by {part.Name}",
+        QuestPartKind.Gather => $"{part.Item}: from {part.Name}",
+        QuestPartKind.Buy => $"{part.Item}: sold by {part.Name}",
+        _ => part.Name,
+    };
+
+    private static string? Label(QuestPartKind kind) => kind switch
+    {
+        QuestPartKind.Start => "!",
+        QuestPartKind.End => "?",
+        _ => null,
+    };
+
+    private static string PartKind(QuestPartKind kind) => kind switch
+    {
+        QuestPartKind.Start or QuestPartKind.End => WorldKinds.Quest,
+        QuestPartKind.Kill => WorldKinds.QuestKill,
+        QuestPartKind.Loot => WorldKinds.QuestLoot,
+        QuestPartKind.Buy => WorldKinds.QuestBuy,
+        QuestPartKind.Explore => WorldKinds.QuestExplore,
+        _ => WorldKinds.QuestObject,
+    };
+
+    // The colours world-view.js gives those kinds.
+    private static string PartColor(QuestPartKind kind) => kind switch
+    {
+        QuestPartKind.Start or QuestPartKind.End => "#facc15",
+        QuestPartKind.Kill => "#f85149",
+        QuestPartKind.Loot => "#f0a032",
+        QuestPartKind.Buy => "#a5d6ff",
+        QuestPartKind.Explore => "#d2a8ff",
+        _ => "#56d4dd",
+    };
+
+    private static string Level(int level, int minLevel) => minLevel > 0 && minLevel != level
+        ? FormattableString.Invariant($"level {level}, from {minLevel}")
+        : FormattableString.Invariant($"level {level}");
+
+    private static string SideWord(string side) => side == "Both" ? string.Empty : $" · {side}";
+
+    private string ZoneWord(QuestDetail q) => World?.Zone(q.UiMapId) is ZoneInfo zone ? $" · {zone.Name}" : string.Empty;
+
+    private static string SideLetter(string side) => side switch
+    {
+        "Alliance" => "A",
+        "Horde" => "H",
+        _ => string.Empty,
+    };
+
+    private static string SummaryTitle(QuestSummary q) =>
+        $"{Level(q.Level, q.MinLevel)}{SideWord(q.Side)}{(q.Giver is null ? string.Empty : $" · from {q.Giver}")}";
+
+    // What limits who takes it, beyond its level and side.
+    private static string Taken(QuestDetail q)
+    {
+        List<string> notes = [];
+        if (q.MaxLevel > 0)
+        {
+            notes.Add(FormattableString.Invariant($"offered up to level {q.MaxLevel}"));
+        }
+
+        if (q.Classes != 0)
+        {
+            notes.Add("for some classes only");
+        }
+
+        if (q.Repeatable)
+        {
+            notes.Add("repeatable");
+        }
+
+        return string.Join(", ", notes);
+    }
+
+    private void Say(string? text, ResultKind kind)
+    {
+        result = text;
+        resultKind = kind;
+    }
+}
