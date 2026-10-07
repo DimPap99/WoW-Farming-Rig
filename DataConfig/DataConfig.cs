@@ -202,6 +202,14 @@ public sealed class DataConfig
     [JsonIgnore]
     public string MailboxLocations => Join(Root, "mailboxlocations", Exp);
 
+    /// <summary>
+    /// The client's quests, the objects with their spawns and the items quests need
+    /// (<c>quests.json</c>, <c>objects.json</c>, <c>items.json</c>), as
+    /// <c>scripts/extract-questiedb.py</c> writes them.
+    /// </summary>
+    [JsonIgnore]
+    public string Quests => Join(Root, "quests", Exp);
+
     [JsonIgnore]
     public string Mail => Join(Root, "mail");
 
