@@ -76,7 +76,8 @@ public sealed record WorldTool(string Shape, string Title, string Label);
 /// <param name="Shape">The tool's: one of <see cref="WorldShapes"/>.</param>
 /// <param name="Points">A rectangle's two opposite corners, a circle's centre; a height of 0 is unknown.</param>
 /// <param name="Radius">A circle's, in yards.</param>
-public sealed record WorldDrawn(string Shape, Point3[] Points, float Radius);
+/// <param name="Marker">A point placed on a marker: the marker's id, for the page to snap to what it stands for.</param>
+public sealed record WorldDrawn(string Shape, Point3[] Points, float Radius, string? Marker = null);
 
 /// <summary>An editable shape the pointer changed: its whole geometry as it is now.</summary>
 public sealed record WorldEdited(string Id, Point3[] Points, float Radius);
@@ -143,6 +144,9 @@ public static class WorldShapes
 
     /// <summary>A centre and a radius.</summary>
     public const string Circle = "circle";
+
+    /// <summary>As a tool, a line drawn freehand: press, drag along the way, let go; it comes back as its points.</summary>
+    public const string Path = "path";
 }
 
 /// <summary>How the view draws a route, a marker or a shape; the colours live in <c>world-view.js</c> and <c>world-edit.js</c>.</summary>
@@ -163,6 +167,15 @@ public static class WorldKinds
     /// <summary>A route shown faintly beside the one that matters, such as the ones planned before it.</summary>
     public const string Recent = "recent";
 
+    /// <summary>A leg walked as drawn: the straight line between its nodes.</summary>
+    public const string Exact = "exact";
+
+    /// <summary>A designed route's node it must pass, whatever prices its legs.</summary>
+    public const string NodeRequired = "node-required";
+
+    /// <summary>A designed route's node where the bot visits someone.</summary>
+    public const string NodeStop = "node-stop";
+
     /// <summary>A place to pick, such as an NPC to route to.</summary>
     public const string Npc = "npc";
 
@@ -171,6 +184,26 @@ public static class WorldKinds
 
     /// <summary>Where a partial route stops.</summary>
     public const string Stop = "stop";
+
+    // Quests (the layers' panel, WorldLayers).
+
+    /// <summary>Where a quest is given or handed in: a zone's quest givers, a quest's start and end.</summary>
+    public const string Quest = "quest";
+
+    /// <summary>A creature a quest asks to kill.</summary>
+    public const string QuestKill = "quest-kill";
+
+    /// <summary>A creature that drops an item a quest needs.</summary>
+    public const string QuestLoot = "quest-loot";
+
+    /// <summary>An object a quest asks to use, or one that holds an item it needs.</summary>
+    public const string QuestObject = "quest-object";
+
+    /// <summary>A vendor who sells an item a quest needs.</summary>
+    public const string QuestBuy = "quest-buy";
+
+    /// <summary>A place a quest asks to go to.</summary>
+    public const string QuestExplore = "quest-explore";
 
     // Shapes.
 

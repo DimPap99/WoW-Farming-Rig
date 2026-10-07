@@ -37,6 +37,25 @@ public static class WorldEndpoints
             .Produces<SpawnPoint[]>()
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
+        app.MapGet(PathingApi.Quests, (int uiMapId, QuestCatalog quests) => quests.InZone(uiMapId).ToHttp())
+            .WithTags(Tag)
+            .WithSummary("The quests given in a zone, by level, each with where it is given, in world yards")
+            .Produces<QuestSummary[]>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+
+        app.MapGet(PathingApi.QuestSearch, (string? name, QuestCatalog quests) => quests.Search(name).ToHttp())
+            .WithTags(Tag)
+            .WithSummary("Quests whose name holds the text, at most 50, each with where it is given")
+            .Produces<QuestSummary[]>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+
+        app.MapGet($"{PathingApi.Quests}/{{id:int}}", (int id, QuestCatalog quests) => quests.Get(id).ToHttp())
+            .WithTags(Tag)
+            .WithSummary("One quest: where it is given and handed in, what it asks, and every place for each, in world yards")
+            .WithDescription("An item to collect comes with every creature that drops it, object that holds it and vendor that sells it.")
+            .Produces<QuestDetail>()
+            .Produces(StatusCodes.Status404NotFound);
+
         return app;
     }
 }

@@ -15,6 +15,14 @@ public readonly record struct Creature
     public int SkinLoot { get; init; }
     public int Family { get; init; }
     public CreatureType Type { get; init; }
+
+    /// <summary>
+    /// The sides that may deal with it, as QuestieDB has it: "A" Alliance, "H" Horde, "AH" both, empty
+    /// for neither (Forever's creatures.json). Null where the data does not say - a client whose
+    /// creatures come from its own DBC - and the faction template decides. The templates call a neutral
+    /// town's NPCs (Booty Bay, Gadgetzan) friendly to neither side, as they do hostile creatures.
+    /// </summary>
+    public string? FriendlyTo { get; init; }
 }
 
 /// <summary>

@@ -69,8 +69,10 @@ public enum RoutePlanStatus
 /// <param name="To">Destination, with the same height rule.</param>
 /// <param name="Tuning">Jitter and edge margin for this query only.</param>
 /// <param name="Reach">The band around the straight line, or the whole continent.</param>
+/// <param name="Zones">The cost zones this query is priced by: null for the continent's authored ones (the lane's),
+/// <see cref="CostZones.Empty"/> for none, as a run that ignores them walks.</param>
 public readonly record struct RouteQuery(int UiMapId, RouteSpace Space, Vector3 From, Vector3 To,
-    NavmeshQueryTuning Tuning = default, RouteReach Reach = RouteReach.Band);
+    NavmeshQueryTuning Tuning = default, RouteReach Reach = RouteReach.Band, CostZones? Zones = null);
 
 /// <summary>What <see cref="RoutePlanner.Find"/> answered.</summary>
 /// <param name="Status">How the query ended.</param>

@@ -50,7 +50,8 @@ World/WorldCatalog.cs              zones with bounds, continents, NPC types, NPC
                                    (elites, herbs, veins, skinnable, mailboxes); creatures by name
 World/MapArtTable.cs               where each era's minimap art lies on its continents (ContinentInfo.Art)
 World/ClientContinents.cs          the one continent rule: the client's own, any case, answered in its case
-World/WorldEndpoints.cs            /api/v1/world, /world/npcs, /world/npcs/search, /world/spawns
+World/QuestCatalog.cs              a zone's quests (its quest log's), found by name, one with every place (SharedLib's QuestBook)
+World/WorldEndpoints.cs            /api/v1/world, /world/npcs, /world/npcs/search, /world/spawns, /world/quests
 Catalog/LocationCatalog.cs         curated spots + Json/locations/teleport_locations.txt
 Catalog/TestRoutes.cs              known-trouble routes as RouteRequests
 Catalog/CatalogEndpoints.cs        /api/v1/catalog/locations, /testroutes
@@ -103,6 +104,14 @@ conversion, before it reaches a query, as `/area` and the watch drawings do; a r
 there answers `NotBaked` first, since no tile exists. Route tuning is capped as well
 (`NavmeshQueryTuning.MaxJitterYards` and `MaxEdgeMarginYards`, 10 yards): jitter searches every
 polygon within its radius, and an edge margin pushes points that far.
+
+**A route may be priced without the cost zones.** `RouteRequest.CostZones` is `Apply` (the default,
+what every older caller gets) or `Ignore`, as a Forever run plans unless its route file says
+`"CostZones": "Apply"`; the designer previews a route under the choice it saves. `RouteHandler` turns
+`Ignore` into `RouteQuery.Zones = CostZones.Empty`, and the planner prices that query alone with it
+(set on the lane's pathfinder for each piece of work under its gate, the lane's own zones back
+before the gate goes on), so a reload and every other query see the continent's. A cost model,
+later, is another set handed the same way.
 
 **A route that stops short says so.** The band search (`RouteSearch.Band`, the default and the
 bot's own) loads tiles only within about 270 yards of the straight line, 530 when it widens; a

@@ -51,7 +51,7 @@ internal static partial class LogicTest
             [
                 ($"{{ {head}, \"Steps\": [] }}", "has no steps"),
                 ($"{{ {head}, \"Steps\": [ {{ \"Travel\": {{ \"To\": [52, 44] }}, \"Roam\": {{ \"Area\": [[51, 44], [53, 46]] }} }} ] }}",
-                    "step 1: a step is either a Travel or a Roam"),
+                    "step 1: a step is one of a Travel, a Roam, a Visit or a Quest"),
                 ($"{{ {head}, \"Steps\": [ {{ \"Travel\": {{ \"Via\": [[52, 44]] }} }} ] }}", "step 1: To needs a point"),
                 ($"{{ {head}, \"Steps\": [ {{ \"Travel\": {{ \"To\": [52, 44] }} }}, {{ \"Travel\": {{ \"To\": [152, 44] }} }} ] }}",
                     "step 2: the map point"),
@@ -94,15 +94,18 @@ internal static partial class LogicTest
             return;
         }
         new ForeverMapPoint(ForeverVerifiedSetup.Durotar, 52.5, 43.5).TryToWorld(maps, out Vector2 standing, out _, out _);
+        // An orc warrior: a visit's NPCs serve the Horde.
         VisualBarSample player = new VisualBarSample(1, 1, 1, 0.5, 0, 0, 320) with
         {
             Position = new VisualPositionSample(ForeverVerifiedSetup.Durotar, 0.525, 0.435, 0),
-            WorldPosition = new VisualWorldPositionSample(standing.X, standing.Y, 0, 1)
+            WorldPosition = new VisualWorldPositionSample(standing.X, standing.Y, 0, 1),
+            PlayerIdentity = new VisualPlayerIdentity((int)UnitClass.Warrior, (int)UnitRace.Orc, 5)
         };
+        ForeverWorldData world = new(data, NullLogger<ForeverWorldData>.Instance);
         ForeverNavigator navigator = new(NullLogger<ForeverNavigator>.Instance, null!, new MouseCameraInput(null!), maps, data);
         bool Preflight(IEnumerable<ForeverTask> tasks, out string reason) =>
             new ForeverTaskActivity(NullLogger<ForeverTaskActivity>.Instance, new ForeverAgenda(tasks), null!,
-                navigator, null!, new ClassConfiguration(), maps, new ForeverMobMemory()).TryPreflight(player, out reason);
+                navigator, null!, new ClassConfiguration(), maps, new ForeverMobMemory(), world).TryPreflight(player, out reason);
         bool examplePasses = Preflight(route.Tasks, out string exampleReason);
         bool elsewhereRefused = !Preflight([ForeverTasks.TravelTo(new(ForeverVerifiedSetup.TirisfalGlades, 60, 50))],
             out string elsewhere);
@@ -115,5 +118,15 @@ internal static partial class LogicTest
         bool nextZonePasses = Preflight([ForeverTasks.TravelTo(new(barrens, 51.8, 32.2))], out string nextZone);
         check("route: a point in the next zone over passes the start-up check from Razor Hill",
             nextZonePasses, nextZone);
+
+        // Places named by who is there: the world data finds them from where the player stands.
+        bool innPasses = Preflight([ForeverTasks.Visit(ForeverVisitTarget.Nearest("innkeeper"))], out string inn);
+        bool trainerPasses = Preflight([ForeverTasks.Visit(ForeverVisitTarget.Nearest("classtrainer"))], out string trainer);
+        bool campPasses = Preflight([ForeverTasks.QuestArea(LazyPeons, ForeverUntil.AfterKills(5))], out string camp);
+        check("route: the nearest Horde innkeeper, the warrior trainer and a quest's camp pass the start-up check from Razor Hill",
+            innPasses && trainerPasses && campPasses, $"inn: '{inn}'; trainer: '{trainer}'; camp: '{camp}'");
     }
+
+    // Lazy Peons, in the Valley of Trials.
+    private const int LazyPeons = 5441;
 }

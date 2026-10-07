@@ -161,7 +161,7 @@ Pathing Service on the same PC, or commit the authored files to the repository.
 
 | Endpoint | Body / query | Answer |
 |---|---|---|
-| `POST /api/v1/routes/find` | `RouteRequest(Client, UiMapId, Space: World\|Map, From, To, Tuning, Search: Band\|Continent)` | `RouteResponse(Status, Points, Smoothed, ElapsedMs, Detail)`; a `Partial` route holds the points as far as the search got; `BadRequest` (400) for tuning past 10 yards of jitter or edge margin |
+| `POST /api/v1/routes/find` | `RouteRequest(Client, UiMapId, Space: World\|Map, From, To, Tuning, Search: Band\|Continent, CostZones: Apply\|Ignore)` | `RouteResponse(Status, Points, Smoothed, ElapsedMs, Detail)`; a `Partial` route holds the points as far as the search got; `BadRequest` (400) for tuning past 10 yards of jitter or edge margin; `Ignore` prices the route as if no cost zone were authored, as a Forever run plans unless its route applies them |
 | `GET /api/v1/capabilities` | | `PathingCapabilities(ApiVersion, Client, Era, PathsAreSmoothed, BakedContinents, GameFiles)`: the continents with tiles on disk, and whether bakes can run here |
 | `GET /api/v1/health` | | `PathingHealth(Client, Era, Coverage, Lanes, Bake, Instance)`: baked tiles per continent, resident lanes, the bake, and this run of the service (new at every start) |
 | `GET /api/v1/paths?filter=` | | `RecordedPathInfo[]` |
@@ -180,6 +180,9 @@ Pathing Service on the same PC, or commit the authored files to the repository.
 | `GET /api/v1/world/npcs?uiMapId&flag` | | `NpcInfo[]` of that type in the zone |
 | `GET /api/v1/world/npcs/search?mapId&name` | | `NpcInfo[]` of creatures on the continent whose name holds the text (50 at most) |
 | `GET /api/v1/world/spawns?uiMapId&layer` | | `SpawnPoint[]`: every elite, herb, vein, skinnable spawn or mailbox in the zone (`SpawnLayers`) |
+| `GET /api/v1/world/quests?uiMapId` | | `QuestSummary[]`: the zone's quests (those its quest log lists; a class or profession quest where its giver stands), by level, with where each is given |
+| `GET /api/v1/world/quests/search?name` | | `QuestSummary[]` of quests whose name holds the text (50 at most) |
+| `GET /api/v1/world/quests/{id}` | | `QuestDetail`: its zone, where it is given and handed in, what it asks (kill, use, collect, explore), and every place for each - an item with the creatures that drop it, the objects that hold it and the vendors that sell it; the quests before and after it, named; 404 |
 | `GET /api/v1/catalog/locations` | | `NamedLocation[]` (curated spots and teleports) |
 | `GET /api/v1/catalog/testroutes` | | `TestRoute[]` with ready `RouteRequest`s |
 | `GET /api/v1/navmesh/{continent}/tiles` | | `NavmeshTile[]` (bounds, resident) |
@@ -256,6 +259,7 @@ The heavy lifting lives in reusable classes:
 | `PathingService/Navmesh/BakeAdmin` | PathingAPI's bake endpoints: bakes, area grids and cache clears as jobs, one at a time, each on a `PPatherService` of its own that never answers a route |
 | `PathingService/Watch/WatchBroadcaster` | PathingAPI's broadcaster, now routes only: `RoutePlanner`'s answers to the route watchers |
 | `ServiceClients/Pathing/PathEditor`, `ZoneMath` | the path editing model (recorder and editor) and map-world arithmetic for clients |
+| `ServiceClients/Routes` (`RouteEditor`, `RouteLegs`, `RoutePoints`, `ForeverRouteWriter`, `ForeverRouteReader`) | the route design model: nodes of four kinds, legs replanned or exact, undo; legs planned through a delegate - the Pathing Service's client, or a planner in process -; what a bot follows of a design, written as a Forever route file or a recorded path and read back. Any client designs with it, the Control Center now and BlazorServer or the agent when they need to |
 | agent `BotRuntimeHost` + `IBotRuntimeFactory` | `ForeverRunHost` / `ForeverRunOutput`; builds a Classic or Forever runtime per run (composition only) |
 | `BotAgent/Sync/DataSync`, `PathingService/Sync/SyncLibrary` | the data sync: a run's files from the Pathing Service before it starts, compared by `ServiceClients/Sync/SyncHash` |
 | `HeadlessServer/Hosting/ResidentHost`, `run-agent.ps1` | BlazorServer's restart loop, for the agent, and the loop around its process |
@@ -285,7 +289,8 @@ The heavy lifting lives in reusable classes:
      `ForeverRun` class.
    - The Control Center gets a fleet page, a per-bot console and assignments.
 4. **Retire and simplify.**
-   - Rebuild `LocalPathingApi` on `RoutePlanner`.
+   - Rebuild `LocalPathingApi` on `RoutePlanner`; the bot then also prices a query by its own cost zones
+     when asked (`RouteQuery.Zones`, as the service does for `RouteRequest.CostZones`).
    - Remove `PPatherService`'s two-call search, the RemoteV1 and V3 clients and the bot's
      `PathVisualizer` (their server went with PathingAPI in Phase 2), and SpotAStar if unused.
    - Optional remote planning: `ServicePathingApi` behind a `FailoverPathingApi` decorator.

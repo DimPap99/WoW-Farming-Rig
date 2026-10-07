@@ -78,9 +78,26 @@ ForeverTask back = ForeverTasks.TravelTo(
 | `TravelTo(to, via = null, pulls = None)` | walks along the baked mesh through `via` in order to `to` | it arrives (or its `Until`, normally never) |
 | `RoamArea(area, until, pulls = Any, seed = null)` | walks into the area and patrols it: takes what the camera shows, then heads for a mob seen lately, a tracked dot, or the part seen least, looking round at each | `until` holds |
 | `HuntHere(until)` | looks round where it stands, takes what it sees, wanders within 25 yards, looks again | `until` holds, or (with `NothingInView`) a full look-around finds nothing |
+| `Visit(target, pulls = None)` | finds the place when it begins - `ForeverVisitTarget.Nearest(role, title)`, `.Npc(name)`, `.QuestStart(id)`, `.QuestEnd(id)` - then travels there as `TravelTo` | it arrives |
+| `QuestArea(questId, until, pulls = Any, seed = null)` | finds the camp of what the quest asks to kill or gather, nearest the character, when it begins, then roams it as `RoamArea` | `until` holds |
 
 `HuntHere` is what the bounded trials run (`--auto-run`, `--sweep`). `TravelTo`
 and `RoamArea` are described in detail in [forever-movement.md](forever-movement.md).
+
+### Places found in the world data
+
+`Visit` and `QuestArea` name their place by who or what is there.
+`ForeverDestinations` (SharedLib) finds it in the client's `QuestBook` - every
+creature with its roles and the sides it serves (`Creature.FriendlyTo`,
+QuestieDB's), every spawn, every quest's places (`PlacesOf`, what the Control
+Center draws) - the nearest on the character's continent, and turns it into the
+`ForeverTravelTask` or `ForeverRoamAreaTask` the existing runners carry out. The
+runners `ForeverVisit` and `ForeverQuestArea` (Core) add only what the screen
+says: where the character stands, and its race and class (the side a role's NPC
+must serve, the class a `classtrainer` teaches). `ForeverWorldData` reads the
+book the first time such a task asks. A quest's camp is its nearest spawn and
+those linked to it - within 60 yards, or twice how far its spawns usually stand
+apart - at most 15 of them, with 15 yards around.
 
 ## Places: `ForeverMapPoint` and `ForeverArea`
 
@@ -224,7 +241,8 @@ services.AddSingleton(new ForeverRunOptions
 Before anything moves, the controller's preflight asks the agenda's start-up
 check (`ForeverTaskActivity.TryPreflight`): every travel point on a verified
 map of the player's continent and on the baked mesh, every roam area with
-walkable ground inside. It is asked until it passes once.
+walkable ground inside, and each visit's and quest's place, found from where the
+run begins, checked as a travel or a roam is. It is asked until it passes once.
 
 ## Writing a new kind of task
 
@@ -250,6 +268,7 @@ A runner should move the character only through `ForeverNavigator` and
 `ForeverWalker`, so held keys, mouse steering and the per-state allowances
 stay the same everywhere (see [forever-movement.md](forever-movement.md)).
 
-Quests are expected to arrive this way: new step kinds (talk to an NPC at
-given coordinates, accept, hand in) and new `Until` conditions (a quest's
-objectives done); see "Quests (later)" in [forever-port.md](forever-port.md).
+Quests arrive this way. Going where a quest is given, done and handed in is here
+(`Visit`, `QuestArea`); talking to the NPC (accept, hand in, buy, train) and new
+`Until` conditions (a quest's objectives done) are next; see "Quests" in
+[forever-port.md](forever-port.md).

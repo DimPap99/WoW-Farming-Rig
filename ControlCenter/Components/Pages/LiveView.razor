@@ -1,6 +1,3 @@
-@page "/"
-@page "/live"
-
 @inherits ControlCenterComponent
 
 @inject IPathingClient pathing
@@ -9,13 +6,11 @@
 @inject WatchFeed feed
 @inject ZoneLookup zoneLookup
 
-<PageTitle>Live view · Control Center</PageTitle>
-
 @* Watches every route the Pathing Service plans, for any caller - a bot, a page, a test route
    below - as it answers them (WatchFeed). The route shown is drawn on its continent in its status
    colour, from where it started to where it was going; the others planned there are faint. *@
 
-<WorldView Scene="@scene">
+<WorldModeView Scene="@scene">
     <Panel Title="Live view" Icon="pulse" Position="top-left" Class="pa-panel--tall">
         <Actions>
             <FeedChip Connected="@feed.Live" LiveTitle="Watching the Pathing Service: each route shows as it is planned"
@@ -92,7 +87,7 @@
             </div>
         </ChildContent>
     </Panel>
-</WorldView>
+</WorldModeView>
 
 @if (!status.Online)
 {

@@ -3,7 +3,9 @@
 **Status (2026-10-06):** done: steps 1 to 7, the look included (see the last section). The user found the Leaflet map and the
 Babylon 3D view buggy and hard to use, and asked to move everything to the new map, keep the
 drawing tools (polygons and the rest), then improve the look. Phase 3 step 6 and the Windows
-checklist are parked for another session ([phase3-plan.md](phase3-plan.md)).
+checklist are parked for another session ([phase3-plan.md](phase3-plan.md)). What comes next - the
+pages as modes of one World workspace, route design with node kinds, cost models - is in
+[world-workspace-plan.md](world-workspace-plan.md).
 
 ## Why deck.gl
 

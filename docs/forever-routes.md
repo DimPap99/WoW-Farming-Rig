@@ -1,8 +1,9 @@
 # Forever route files
 
 A route file is the WoW: Forever bot's agenda written as data: steps in
-order, each a `Travel` or a `Roam`, on a zone map in the coordinates a player
-reads. It loads into the same tasks the [`ForeverTasks` API](forever-tasks.md)
+order, each a `Travel` or a `Roam` on a zone map in the coordinates a player
+reads, or a `Visit` or a `Quest`, which name their place by who or what is
+there and find it when the step begins. It loads into the same tasks the [`ForeverTasks` API](forever-tasks.md)
 builds, so a route written by hand and one built in code run the same way.
 Code: `SharedLib/Forever/ForeverRouteFile.cs`, beside the task records it loads
 into, so the bot and the Pathing Service read routes with the same rules.
@@ -40,6 +41,12 @@ is not saved, with the step that is wrong.
 | `UIMapId` | the map the coordinates are on (1411 Durotar, 1413 The Barrens, 1420 Tirisfal Glades; `--where` prints it) |
 | `Steps` | the steps, in order; at least one |
 | `Repeat` | `true` starts over after the last step, a farming loop that runs until the time bound |
+| `CostZones` | `"Apply"` plans every walk with the era's authored roads and danger zones (`Json/road/forever/<continent>`, which the agent's data sync brings before a run); `"Ignore"`, or none, plans without them, as runs always did. By name only, in any case: anything else, a number too, is refused | `"Ignore"` |
+
+The Control Center's route designer previews a route's legs under the same choice, so what it
+draws is what the run plans. A route it designs writes each leg drawn as **Exact** as `Via` points
+10 yards apart along the line, so the run walks the line as drawn; a **Replanned** leg is only its
+ends, and the run finds the navmesh's way between them as it walks.
 
 A point is `[x, y]`, each from 0 to 100. Any zone in the map data will do, and
 a route may cross into the next zone of the same continent: give the steps
@@ -67,11 +74,66 @@ which no step takes yet, so its points are refused at start-up.
 
 How travelling and roaming behave is in [forever-movement.md](forever-movement.md).
 
+### Visit
+
+Goes to a place named by who or what is there, and is done on arrival. The
+place is found when the step begins, the nearest on the character's continent
+from where it stands, in Forever's world data (QuestieDB's, as the Control
+Center's layers show it: `scripts/extract-questiedb.py`), then walked to as a
+`Travel` is. It does not talk to whoever is there yet.
+
+```json
+{ "Visit": { "Role": "innkeeper" } }
+{ "Visit": { "Role": "trainer", "Title": "Leatherworking" } }
+{ "Visit": { "Role": "classtrainer" } }
+{ "Visit": { "Npc": "Innkeeper Grosk" } }
+{ "Visit": { "QuestStart": 5441 } }
+{ "Visit": { "QuestEnd": 5441, "Pulls": "OnTheWay" } }
+```
+
+| Field | Meaning | Default |
+|---|---|---|
+| `Role` | the nearest NPC with this role who serves the character's side (from its race on the screen): `vendor`, `repair`, `innkeeper`, `flightmaster`, `trainer`, `classtrainer`, `professiontrainer`, `banker`, `stablemaster`, ... any `NpcFlags` name. A neutral town's NPCs (Booty Bay, Gadgetzan) serve both sides | one of the four |
+| `Title` | with a `Role`: the NPC's title holds this ("Warrior Trainer", "Leatherworking"). A `classtrainer` without one is the character's own class's | none |
+| `Npc` | the nearest spawn of the NPC with this name | one of the four |
+| `QuestStart` | where quest `n` is given: the nearest NPC or object that gives it | one of the four |
+| `QuestEnd` | where quest `n` is handed in | one of the four |
+| `Pulls` | as `Travel`'s | `"None"` |
+
+Quest ids are the game's (Wowhead's): the Control Center's map finds a quest by
+name and shows its id (`/map?quest=5441`).
+
+### Quest
+
+Roams where a quest sends a character to hunt or gather, until `Until` holds:
+when the step begins, the camp nearest the character of the creatures it asks
+to kill or that drop what it needs (else the objects it asks to use or that
+hold what it needs, else the place it asks to explore) - the nearest spawn and
+those linked to it, at most 15, with 15 yards around - roamed as a `Roam` is.
+
+```json
+{ "Quest": { "Id": 5441, "Until": { "Kills": 8, "Minutes": 20 } } }
+```
+
+| Field | Meaning | Default |
+|---|---|---|
+| `Id` | the quest | required |
+| `Until` | as `Roam`'s: the run knows nothing of the quest log yet, so this ends it | required |
+| `Pulls` | as `Roam`'s: it takes any eligible unit there, not only the quest's | `"Any"` |
+| `Seed` | as `Roam`'s | random |
+
+A levelling loop then reads as the quest does: `{ "Visit": { "QuestStart": 7 } }`,
+`{ "Quest": { "Id": 7, "Until": { "Kills": 10 } } }`, `{ "Visit": { "QuestEnd": 7 } }`.
+Taking and handing in the quest is still the player's.
+
 ## Checks
 
 **When the file loads**, a mistake is refused with the step it is in:
 
-- a step with both kinds or neither;
+- a step with two kinds or none;
+- a `Visit` naming none or two of `Role`, `Npc`, `QuestStart` and `QuestEnd`, a
+  role that is no `NpcFlags` name, a `Title` without a `Role`, a quest id below 1;
+- a `Quest` without an `Id` or an `Until`;
 - a point that is not `[x, y]`, or off the map;
 - a map the map data does not have;
 - a roam without an `Area` of two or more corners, or without an `Until`
@@ -86,7 +148,11 @@ Route refused: Durotar test, step 2: a Roam needs an Until with Kills, Minutes o
 
 **Before anything moves**, the controller's start-up check needs every travel
 point on the player's continent and on the baked mesh, and every roam area
-with walkable ground inside.
+with walkable ground inside. A `Visit`'s and a `Quest`'s place is found from
+where the run begins and checked the same way: a quest whose places are all on
+another continent, or a role no NPC of the character's side has there, is
+refused before the run moves. Each is found again, from where the character
+stands, when its step begins.
 
 ## Running a route
 
@@ -181,6 +247,6 @@ The coordinates above are illustrations; read real ones with `--where`.
 
 ## Later
 
-Quests are expected to add step kinds (talk to an NPC at given coordinates,
-accept, hand in) and `Until` conditions (a quest's objectives done) to this
-same format; see "Quests (later)" in [forever-port.md](forever-port.md).
+Talking to whoever a `Visit` reaches (accept and hand in a quest, sell, repair,
+train) and `Until` conditions of the quest log (a quest's objectives done) are
+to come to this same format; see "Quests" in [forever-port.md](forever-port.md).

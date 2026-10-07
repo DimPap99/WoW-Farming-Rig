@@ -1,7 +1,7 @@
 using Contracts;
 using Contracts.Pathing;
 
-using ControlCenter.Routes;
+using ServiceClients.Routes;
 
 using ServiceClients.Pathing;
 
@@ -27,6 +27,19 @@ public sealed class RecordedPathsTests
         Assert.Equal(file[0].X, saved[0].X, 3);
         Assert.Equal(file[1].Y, saved[1].Y, 3);
         Assert.All(saved, p => Assert.Equal(0, p.Z));
+    }
+
+    [Fact]
+    public void A_recorded_path_holds_a_design_of_shape_nodes_on_replanned_legs_only()
+    {
+        Point3 a = ZoneMath.ToWorld(Elwynn, new Point3(48, 59, 0));
+        Point3 b = ZoneMath.ToWorld(Elwynn, new Point3(50, 60, 0));
+        RouteDesign plain = new([new RouteNode(a), new RouteNode(b, Leg: LegKind.Exact)]);
+
+        Assert.True(RecordedPaths.Holds(plain));
+        Assert.False(RecordedPaths.Holds(plain with { Loop = true }));
+        Assert.False(RecordedPaths.Holds(new RouteDesign([new RouteNode(a, Leg: LegKind.Exact), new RouteNode(b)])));
+        Assert.False(RecordedPaths.Holds(new RouteDesign([new RouteNode(a, NodeKind.Required), new RouteNode(b)])));
     }
 
     [Fact]

@@ -2,7 +2,7 @@ using Contracts;
 using Contracts.Pathing;
 
 using ControlCenter.Components.Shared;
-using ControlCenter.Routes;
+using ServiceClients.Routes;
 
 using System.Collections.Generic;
 

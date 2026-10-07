@@ -28,7 +28,7 @@ public sealed class ForeverRouteFileTests
     {
         { $"{{ {Head}, \"Steps\": [] }}", "has no steps" },
         { $"{{ {Head}, \"Steps\": [ {{ \"Travel\": {{ \"To\": [52, 44] }}, \"Roam\": {{ \"Area\": [[51, 44], [53, 46]] }} }} ] }}",
-            "step 1: a step is either a Travel or a Roam" },
+            "step 1: a step is one of a Travel, a Roam, a Visit or a Quest" },
         { $"{{ {Head}, \"Steps\": [ {{ \"Travel\": {{ \"Via\": [[52, 44]] }} }} ] }}", "step 1: To needs a point" },
         { $"{{ {Head}, \"Steps\": [ {{ \"Travel\": {{ \"To\": [52, 44] }} }}, {{ \"Travel\": {{ \"To\": [152, 44] }} }} ] }}",
             "step 2: the map point" },
@@ -38,6 +38,18 @@ public sealed class ForeverRouteFileTests
             "step 1: Until needs Kills" },
         { "{ \"UIMapId\": 9999, \"Steps\": [ { \"Travel\": { \"To\": [50, 50] } } ] }", "not in the map data" },
         { $"{{ {Head}, \"Steps\": [ {{ \"Travel\": {{ \"Too\": [52, 44] }} }} ] }}", "Too" },
+        { $"{{ {Head}, \"Steps\": [ {{ \"Visit\": {{ \"Role\": \"vendor\", \"Npc\": \"Gornek\" }} }} ] }}",
+            "step 1: a Visit names one of a Role, an Npc, a QuestStart or a QuestEnd" },
+        { $"{{ {Head}, \"Steps\": [ {{ \"Visit\": {{ \"Role\": \"dentist\" }} }} ] }}", "step 1: dentist is not an NPC role" },
+        { $"{{ {Head}, \"Steps\": [ {{ \"Visit\": {{ \"Npc\": \"Gornek\", \"Title\": \"Trainer\" }} }} ] }}",
+            "step 1: a Visit's Title goes with a Role" },
+        { $"{{ {Head}, \"Steps\": [ {{ \"Visit\": {{ \"QuestStart\": 0 }} }} ] }}", "step 1: a quest id is 1 or more" },
+        { $"{{ {Head}, \"Steps\": [ {{ \"Quest\": {{ \"Id\": 5441 }} }} ] }}", "step 1: a Quest needs an Until" },
+        { $"{{ {Head}, \"Steps\": [ {{ \"Quest\": {{ \"Until\": {{ \"Kills\": 5 }} }} }} ] }}", "step 1: a Quest needs its Id" },
+        { $"{{ {Head}, \"Steps\": [ {{ \"Visit\": {{ \"Roll\": \"vendor\" }} }} ] }}", "Roll" },
+        { $"{{ {Head}, \"CostZones\": \"Sometimes\", \"Steps\": [ {{ \"Travel\": {{ \"To\": [52, 44] }} }} ] }}", "not Sometimes" },
+        // A number would mean one thing to the run and another to the Control Center: names only.
+        { $"{{ {Head}, \"CostZones\": 1, \"Steps\": [ {{ \"Travel\": {{ \"To\": [52, 44] }} }} ] }}", "CostZones is \"Apply\" or \"Ignore\"" },
     };
 
     [Fact]
@@ -54,6 +66,39 @@ public sealed class ForeverRouteFileTests
             task => Assert.True(task is ForeverTravelTask { To: { UIMapId: Durotar, X: 52.5, Y: 44.5 }, Pulls: ForeverPulls.None }),
             task => Assert.True(task is ForeverRoamAreaTask { Pulls: ForeverPulls.Any, Until: { Kills: 3, Minutes: 10 }, Area.Corners.Count: 4 }),
             task => Assert.IsType<ForeverTravelTask>(task));
+    }
+
+    // Places named by who or what is there: found when the step begins, so the file names no point.
+    [Fact]
+    public void Visit_and_quest_steps_load_into_the_tasks_that_find_their_place()
+    {
+        const string json = """
+            {
+              "UIMapId": 1411,
+              "Steps": [
+                { "Visit": { "Role": "Innkeeper" } },
+                { "Visit": { "Role": "classtrainer", "Title": "Warrior Trainer", "Pulls": "OnTheWay" } },
+                { "Visit": { "Npc": "Innkeeper Grosk" } },
+                { "Visit": { "QuestStart": 5441 } },
+                { "Quest": { "Id": 5441, "Until": { "Kills": 5, "Minutes": 20 }, "Seed": 3 } },
+                { "Visit": { "QuestEnd": 5441 } }
+              ]
+            }
+            """;
+
+        Assert.True(ForeverRouteFile.TryParse(json, "peons.json", Maps, out ForeverRoute route, out string error), error);
+
+        Assert.Collection(route.Tasks,
+            task => Assert.True(task is ForeverVisitTask { Target: { Kind: ForeverVisitKind.Role, Name: "innkeeper", Title: null }, Pulls: ForeverPulls.None }),
+            task => Assert.True(task is ForeverVisitTask { Target: { Name: "classtrainer", Title: "Warrior Trainer" }, Pulls: ForeverPulls.OnTheWay }),
+            task => Assert.True(task is ForeverVisitTask { Target: { Kind: ForeverVisitKind.Npc, Name: "Innkeeper Grosk" } }),
+            task => Assert.True(task is ForeverVisitTask { Target: { Kind: ForeverVisitKind.QuestStart, QuestId: 5441 } }),
+            task => Assert.True(task is ForeverQuestAreaTask { QuestId: 5441, Pulls: ForeverPulls.Any, Until: { Kills: 5, Minutes: 20 }, Seed: 3 }),
+            task => Assert.True(task is ForeverVisitTask { Target: { Kind: ForeverVisitKind.QuestEnd, QuestId: 5441 } }));
+        Assert.Equal(
+            ["Visit the nearest innkeeper", "Visit the nearest classtrainer titled Warrior Trainer", "Visit Innkeeper Grosk",
+             "Visit where quest 5441 is given", "Roam where quest 5441 sends", "Visit where quest 5441 is handed in"],
+            Names(route.Tasks));
     }
 
     [Theory]
@@ -85,6 +130,20 @@ public sealed class ForeverRouteFileTests
         Assert.Equal(fromFile.Name, fromText.Name);
         Assert.Equal(fromFile.Repeat, fromText.Repeat);
         Assert.Equal(Names(fromFile.Tasks), Names(fromText.Tasks));
+    }
+
+    [Theory]
+    [InlineData("", false)]
+    [InlineData(", \"CostZones\": \"Ignore\"", false)]
+    [InlineData(", \"CostZones\": \"Apply\"", true)]
+    [InlineData(", \"costZones\": \"apply\"", true)]
+    public void A_route_plans_with_the_cost_zones_only_when_it_says_so(string field, bool applied)
+    {
+        string json = $"{{ {Head}{field}, \"Steps\": [ {{ \"Travel\": {{ \"To\": [52, 44] }} }} ] }}";
+
+        Assert.True(ForeverRouteFile.TryParse(json, "zones.json", Maps, out ForeverRoute route, out string error), error);
+
+        Assert.Equal(applied, route.ApplyCostZones);
     }
 
     [Fact]

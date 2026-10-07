@@ -17,6 +17,7 @@ on Windows PowerShell 5.1 and PowerShell 7 alike - on Linux/macOS `pwsh` comes f
 | `extract-creatures-sqldump.py` | `Json/dbc/<client>/creatures.json` straight from a mysqldump `.sql` - no MySQL server needed |
 | `extract-area-sqldump.py` | `Json/area/<client>/<areaId>.json` from the same dump, replacing the Wowhead scrape |
 | `extract-tele-sqldump.py` | merge a dump's `game_tele` (the `.tele` GM command) into `teleport_locations.txt` |
+| `extract-questiedb.py` | WoW: Forever's NPCs, spawns, herbs, veins, mailboxes and quests from a [QuestieDB](https://github.com/Questie/QuestieDB) checkout, into `Json/dbc`, `npcspawnlocations`, `area`, `mailboxlocations` and `quests` |
 | `build-stormlib-unix.sh` | build `libstorm.dylib`/`.so` for macOS/Linux bakes |
 | `migrate-json-era.{ps1,sh}` | move a pre-era `Json/` layout into `<era>/` subdirs |
 | `leaflet-pieces.mjs` | join the map's script pieces into one script, split it back, and `check` that the pieces line up with its table (Node, no packages) |
@@ -138,6 +139,33 @@ spawns inside Un'Goro Crater's rect are Zul'Farrak / Noxious Lair / Sandsorrow c
 Un'Goro, Silithus and Mount Hyjal really are near-empty in SkyFire 5.4.8 (2-5 spawns
 each) - confirmed by resolving through the grid, not the rect. Check that way before
 concluding a zone is missing.
+
+**Forever's world data comes from QuestieDB, not a dump.** Forever has no emulator, so
+`extract-questiedb.py` reads QuestieDB's Forever flavor: Classic Era's data moved onto Forever's
+maps where they changed, plus Forever's new content from Wowhead's Forever pages and from
+positions Questie's players recorded. The script runs QuestieDB's own export
+(`tools/export-forever.lua --include-authored`, with the Lua 5.1 QuestieDB bundles for Linux and
+Windows; `--lua` takes another) to merge those layers, then reads the exported tables as data - no
+Lua runs in Python. Regenerate by pulling QuestieDB and running the script again; it replaces
+Forever's files in every folder it writes, and `Json/quests/forever/source.json` names the
+QuestieDB commit. QuestieDB declares no license.
+
+**QuestieDB keeps Classic's NPC flags and no creature type.** Its `npcFlags` are cmangos-classic's
+(vendor 0x4, flight master 0x8, innkeeper 0x80, repair 0x4000); the script maps them to
+`NpcFlags`' TBC+ layout, as `Utilities/ClassifyVendorFlags` does for Classic's own data. Creature
+type, family, skin loot, and the vendor and trainer kinds come from `Json/dbc/som/creatures.json`
+for the NPCs Forever shares with Classic; skinnable means skin loot or a beast. Forever's new NPCs
+have neither a role nor a type in QuestieDB yet, so a new vendor is not a vendor here until it has.
+Which sides an NPC serves is QuestieDB's `friendlyToFaction`, kept as `FriendlyTo` ("A", "H",
+"AH") in `creatures.json`: the faction templates (`factiontemplates.json`) call a neutral town's
+NPCs friendly to neither side, as they do hostile creatures, and the bot's visits go by it.
+
+**Check a regenerated Forever set against Classic.** The script converts every zone coordinate to
+world yards with Forever's `WorldMapArea` and compares the NPCs that exist once in both with
+Classic's own world positions: the first run put 3,875 of them a median 0.1 yd apart, 96% within
+5 yd. A frame mix-up shows there at once as hundreds of yards. It also lists objects with many
+spawns that are neither herb nor vein: a new node name belongs in `node_kind` (a name another
+client's area files already call a herb or vein is picked up by itself).
 
 **`teleport_locations.txt` lives once, in `Json/locations`.** The map fetches it at
 `/locations/teleport_locations.txt` (both hosts serve that folder) and the Pathing Service's

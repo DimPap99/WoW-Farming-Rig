@@ -213,19 +213,25 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       script extracts into a temporary folder and moves the tiles in. The bytes do not change, but
       run the bake gate (`PPather/CLAUDE.md`) when the bake's writer changes.
 
-40. **The planner does not plan Forever the way the Forever bot does.**
+40. **The planner does not plan Forever the way the Forever bot does.** (The cost-zone half is fixed:
+    see below.)
     - **Where:** `RoutePlanner` with `--exp=forever` (`WithSurfaceHeight`, the lane's
-      `Navmesh:Query` settings, cost zones), against `Core/Forever/ForeverNavmesh.OpenDiskOnly`
-      and `ForeverNavigator`.
+      `Navmesh:Query` settings), against `Core/Forever/ForeverNavmesh.OpenDiskOnly` and
+      `ForeverNavigator`.
     - **Cause:** the planner replaces a height of 0 with the surface nearest height 0
-      (`TryGetHeight`), so the resolver's column logic never runs, and it applies
-      `Json/road/forever`. The bot passes 0 to `TryResolveColumn`, which takes the highest
-      surface under the point (`PreferGroundUnderPoint = true`), and loads no zones.
-    - **Effect:** on a bridge, an upper floor or a hillside over a mine, the Control Center's
-      Forever routes page plans legs from the lower surface while the bot walks from the higher
-      one. Forever zones bend the preview and never the bot, though the data sync ships them.
-    - **Fix (not started):** resolve Forever endpoints the way the bot does, and decide whether
-      Forever has cost zones at all.
+      (`TryGetHeight`), so the resolver's column logic never runs. The bot passes 0 to
+      `TryResolveColumn`, which takes the highest surface under the point
+      (`PreferGroundUnderPoint = true`).
+    - **Effect:** on a bridge, an upper floor or a hillside over a mine, the Control Center plans
+      Forever legs from the lower surface while the bot walks from the higher one.
+    - **Fix (not started):** resolve Forever endpoints the way the bot does.
+    - **Cost zones, fixed 2026-10-07:** a Forever run plans with the era's authored zones when its
+      route file says `"CostZones": "Apply"` (`ForeverRoute.ApplyCostZones`, loaded by
+      `ForeverNavmesh.CostZonesOf` as the planner reads them), and without them otherwise, as
+      before; the Control Center plans a Forever route's legs under the same choice
+      (`RouteRequest.CostZones`), the route designer and the Forever routes page alike. A run reads
+      the zones when it opens its continent's navmesh, so an edit reaches the next run, which the
+      agent's data sync brings it to anyway.
 
 44. **Height lookups read the navmesh without the tile lock.**
     - **Where:** `NavmeshPathfinder.TryGetHeight`, which `RoutePlanner` uses for `/area` and for
@@ -303,7 +309,73 @@ fixed the same day on `fix/phase2-review` (see "Fixed"); what is left:
       copying `PathingLogging`, `WorldDataFiles` re-implementing Frontend's static files, the
       MessagePack 3.1.8 pin nothing references, and the benchmark's copy of the test routes.
 
+59. **Forever's world data is QuestieDB's, with its gaps** (2026-10-07).
+    - **Where:** `scripts/extract-questiedb.py`, into `Json/dbc/forever/creatures.json`,
+      `npcspawnlocations`, `area`, `mailboxlocations` and `quests/forever`; read by the Pathing
+      Service's layers and quests and by a run's `Visit` and `Quest` steps.
+    - **Gaps:** Forever's new NPCs have no role and no creature type in QuestieDB yet, so a new vendor
+      is no vendor and a new beast not skinnable here; about 490 of Forever's ~1,240 new quests have
+      objectives. The data follows a game in beta: regenerate it now and then (`source.json` names
+      the QuestieDB commit). QuestieDB declares no license.
+    - **No hit boxes:** Forever's `WorldMapArea.json` has none, so a zone's NPC and node layers take
+      everything inside its map's rectangle - Elwynn Forest's vendors include Stormwind's. (A zone's
+      quests go by the quest log, not the rectangle.) The area grid, once baked for Forever, could
+      give them.
+    - **The islands:** Zephras Isle (map 2991) and the Darkspear Islands (2997) are zones of the map
+      data but no continent of the world view, so their layers and quests are not drawn.
+    - **Not synced:** an agent's data sync carries routes and cost zones, not this data; the game
+      PC's checkout of the repository has it. It is to move to the Pathing Service's API.
+
+60. **A `Visit` goes there; it does not talk yet** (2026-10-07).
+    - **Where:** `Core/Forever/Tasks/ForeverVisit.cs`, `ForeverQuestArea.cs`.
+    - **Effect:** a `Visit` walks to the NPC's spawn and is done on arrival: accepting or handing in
+      a quest, selling, repairing and training are still the player's. A `Quest` roams the camp of
+      what the quest asks for and takes any eligible unit there, not only the quest's, and ends by
+      kills, minutes or a level, not by the quest log. An NPC that stands where the baked mesh does
+      not reach (behind a counter) fails its visit at the start-up check, with why.
+    - **Needs:** the NPC clicked and its frames answered (`ForeverPointAndClick`); an NPC id per
+      nameplate; quest-log and bag telemetry from the add-on ("Quests" in `docs/forever-port.md`).
+    - **Also:** without Forever's area grid baked, a point's zone is guessed from the maps, which can
+      name the neighbour (the Valley of Trials as The Barrens) in logs and in the Control Center;
+      the place itself is exact.
+
+61. **A line walked exactly is not checked against the navmesh** (2026-10-07).
+    - **Where:** the route designer's exact legs (`ServiceClients/Routes/RoutePoints`), written as
+      `Via` points 10 yards apart, and `ForeverTravel.TryResolve`, the run's start-up check.
+    - **Effect:** the designer draws an exact leg as its line whether or not the ground under it is
+      walkable, and a run refuses a route whose `Via` lies more than about 8 yards from the baked
+      mesh ("outside the baked mesh"), as across a mountain's unwalkable face; the walk between
+      points goes round small obstacles on its own. Where there are tiles, the world view shows the
+      walkable polygons when zoomed in, and Compare draws the replanned way beside the line.
+    - **Fix (not started):** a line check in the planner (heights along the line, the stretches off
+      the mesh), drawn by the designer; and a start-up check that passes a `Via` off the mesh by, as
+      the walk passes by one it cannot get past, instead of refusing the route - a change to how the
+      bot walks, so with a live test.
+
+62. **Each mode of the World workspace keeps its own layers** (2026-10-07).
+    - **Where:** `ControlCenter/Components/Pages/WorldWorkspace` and the `WorldLayers` each mode
+      (Explore, Route, the Forever routes page) holds.
+    - **Effect:** a zone, layers or a quest chosen in Explore are not those of Route's layers panel;
+      each mode keeps its own while the workspace lives. Leaving the workspace (the fleet, the
+      Forever routes page) and coming back starts every mode afresh, an unsaved route included.
+    - **Fix (not started):** the layers' choices in a scoped session every `WorldLayers` reads and
+      tells, and the route being designed in one, so they outlive the page too.
+
 ## Fixed
+
+57. **A continent with nothing baked answered its relief with 500** (2026-10-07, found with the
+    layers' browser check). `GET navmesh/{continent}/overview` built the tile graph of a folder that
+    did not exist: `TileSetStamp.Of` and `NavmeshTileGraph.Build` listed it and threw. The route
+    designer offered such continents ("(no tiles)") already; the layers made it common, as they show
+    on continents without tiles. A missing folder is now no tiles (`TileSetStamp.FilesOf`): an empty
+    relief, a graph kept in memory but not saved, and tiles that appear later count as before
+    (`NavmeshApiTests.A_continent_with_nothing_baked_has_an_empty_relief`).
+
+58. **Forever's sub-areas lay in no zone** (2026-10-07). Forever's `WorldMapArea.json` has no
+    sub-area rows, so `WorldMapAreaDB.TryGetZoneOfArea` knew no town or valley: `/api/v1/area` would
+    have answered uiMap 0 for one, and a quest of Northshire Valley belonged to no zone. It now walks
+    the client's `AreaTable.json` where the map file has no row (`AreaTableFile`;
+    `ZoneMathTests.A_forever_area_lies_in_its_zone_by_the_area_table`).
 
 52. **A lane kept a tile missing that was on disk** (Phase 2 review, 2026-10-07; item 12's fix one
     layer too high). A disk-only `NavmeshTileCache` kept a tile it did not find in `emptyTiles` for

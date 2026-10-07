@@ -23,7 +23,8 @@ public static class RouteEndpoints
             .WithSummary("Route between two points of one zone's continent")
             .WithDescription("Found, Partial, NoPath and NotBaked are answers (200); BadRequest is 400 and Unavailable 503. " +
                 "Every answer carries a RouteResponse, so the status is always in the body. A Partial route holds the " +
-                "points as far as the search got, and its detail says where it stops and how far short.")
+                "points as far as the search got, and its detail says where it stops and how far short. CostZones: Ignore " +
+                "plans as if no road or danger zone were authored, as a Forever run whose route does not apply them walks.")
             .Produces<RouteResponse>(StatusCodes.Status200OK)
             .Produces<RouteResponse>(StatusCodes.Status400BadRequest)
             .Produces<RouteResponse>(StatusCodes.Status503ServiceUnavailable);
