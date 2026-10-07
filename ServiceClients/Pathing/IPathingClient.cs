@@ -74,6 +74,15 @@ public interface IPathingClient
     /// <summary>One of the <see cref="SpawnLayers"/> in a zone.</summary>
     Task<ServiceResult<SpawnPoint[]>> GetSpawnsAsync(int uiMapId, string layer, CancellationToken token = default);
 
+    /// <summary>The quests given in a zone, by level.</summary>
+    Task<ServiceResult<QuestSummary[]>> GetQuestsAsync(int uiMapId, CancellationToken token = default);
+
+    /// <summary>Quests whose name holds <paramref name="name"/>, at most 50.</summary>
+    Task<ServiceResult<QuestSummary[]>> SearchQuestsAsync(string name, CancellationToken token = default);
+
+    /// <summary>One quest with every place it sends a character to; 404 for a quest the service does not know.</summary>
+    Task<ServiceResult<QuestDetail>> GetQuestAsync(int id, CancellationToken token = default);
+
     Task<ServiceResult<NamedLocation[]>> GetLocationsAsync(CancellationToken token = default);
 
     Task<ServiceResult<TestRoute[]>> GetTestRoutesAsync(CancellationToken token = default);

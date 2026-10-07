@@ -61,6 +61,7 @@ public static class PathingServiceRegistration
         services.AddSingleton<SyncLibrary>();
         services.AddSingleton<CoverageCache>();
         services.AddSingleton<WorldCatalog>();
+        services.AddSingleton<QuestCatalog>();
         services.AddSingleton<LocationCatalog>();
         services.AddSingleton<TestRoutes>();
         services.AddSingleton<BakeAdmin>();

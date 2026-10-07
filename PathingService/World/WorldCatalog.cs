@@ -85,7 +85,7 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
                 $"'{type}' is not an NPC type; use one of {string.Join(", ", NpcFlagsExtensions.ToDictionary().Keys.Order())}");
         }
 
-        WorldMapArea hitbox = HitBox(zone);
+        WorldMapArea hitbox = maps.HitBoxOf(zone);
         FrozenDictionary<int, Vector3[]> spawns = Spawns(zone.MapID);
 
         List<NpcInfo> found = [];
@@ -141,7 +141,7 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
             return StoreResult<SpawnPoint[]>.Invalid($"uiMap {uiMapId} is not in the {data.Exp} map data");
         }
 
-        WorldMapArea hitbox = HitBox(zone);
+        WorldMapArea hitbox = maps.HitBoxOf(zone);
         bool Inside(Vector3 at)
         {
             Vector3 map = WorldMapAreaDB.ToMap_FlipXY(at, hitbox);
@@ -219,13 +219,6 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
 
     private static Point3 Point(Vector3 v) => new(v.X, v.Y, v.Z);
 
-    // The area a zone's NPCs and nodes count for: the zone's hit box, so a city's count for the
-    // city. A continent's map has no area (AreaID 0), which every continent shares, so it is its
-    // own: Eastern Kingdoms must not count Azeroth's world map, which leaves Booty Bay out.
-    private WorldMapArea HitBox(in WorldMapArea zone)
-    {
-        return zone.AreaID == 0 ? zone : maps.GetByAreaIdHit(zone.AreaID);
-    }
 
     // The zone's Wowhead file: its herbs, veins and skinnable creatures; null when the client has none.
     private AreaNodes? AreaFile(int areaId)
