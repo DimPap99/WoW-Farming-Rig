@@ -169,7 +169,8 @@ left (`X = -y, Y = x`). Flat is orthographic, so ground at different heights lin
 perspective. The ground is drawn unlit (`material: false`): deck.gl's default lighting turned it
 black once zoomed in. `worldView.describe()` reports each view's continent, ground and layers, for a
 browser check to wait on (with each marker's place on the screen). A click on a marker comes back
-as `OnMarker` (not while `Picking`). How the pages moved here: `docs/world-view-plan.md`.
+as `OnMarker` (not while `Picking`). How the pages moved here: `docs/world-view-plan.md`; where they
+go next - one World workspace with modes, node kinds, cost models: `docs/world-workspace-plan.md`.
 
 **What is where is one component, `WorldLayers`.** The Map page, the route designer and the Forever
 routes page each hold one: a zone's NPCs by type, elites, herbs, veins, skinnable creatures,
