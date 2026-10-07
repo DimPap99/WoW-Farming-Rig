@@ -251,16 +251,6 @@ public sealed class PathingClient(HttpClient http) : IPathingClient
         return SendAsync(HttpMethod.Post, uri, null, token);
     }
 
-    public Task<ServiceResult> DrawPathAsync(WatchPath path, CancellationToken token = default)
-    {
-        return SendAsync(HttpMethod.Post, PathingApi.WatchPaths, path, token);
-    }
-
-    public Task<ServiceResult> ShowMarkerAsync(WatchMarker marker, CancellationToken token = default)
-    {
-        return SendAsync(HttpMethod.Post, PathingApi.WatchMarkers, marker, token);
-    }
-
     public Task<ServiceResult> ClearWatchAsync(CancellationToken token = default)
     {
         return SendAsync(HttpMethod.Post, PathingApi.WatchClear, null, token);

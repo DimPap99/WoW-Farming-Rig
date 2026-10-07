@@ -77,30 +77,6 @@ public sealed class WorldBoundsTests
         Assert.Equal(RouteStatus.Found, route.Status);
     }
 
-    [Fact]
-    public async Task A_drawing_beyond_the_edge_of_the_world_is_refused()
-    {
-        using TempDataRoot data = new(withMapData: true);
-        using PathingServiceFactory factory = new(data.Root);
-        PathingClient client = new(factory.CreateClient());
-        using CancellationTokenSource deadline = WithDeadline();
-
-        ServiceResult world = await client.DrawPathAsync(
-            new WatchPath("far", 1429, CoordinateSpace.World, [new(-8898, -117, 0), new(0, 3e11f, 0)]), deadline.Token);
-        // Far outside the zone's 0 to 100, so far outside the world once converted.
-        ServiceResult map = await client.ShowMarkerAsync(new WatchMarker("far", 1429, CoordinateSpace.Map, new(1e9f, 50, 0)),
-            deadline.Token);
-        ServiceResult inside = await client.ShowMarkerAsync(new WatchMarker("near", 1429, CoordinateSpace.Map, new(48.5f, 59.1f, 0)),
-            deadline.Token);
-
-        Assert.Equal(400, world.Status);
-        Assert.Contains("point 1", world.Error);
-        Assert.Contains("edge of the world", world.Error);
-        Assert.Equal(400, map.Status);
-        Assert.Contains("edge of the world", map.Error);
-        Assert.True(inside.Ok, inside.Error);
-    }
-
     private static CancellationTokenSource WithDeadline()
     {
         CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);

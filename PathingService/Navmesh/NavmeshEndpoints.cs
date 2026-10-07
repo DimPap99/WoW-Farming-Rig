@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 
 using PathingService.Hosting;
-using PathingService.Status;
+using PathingService.World;
 
 using PPather;
 using PPather.Navmesh;
@@ -27,39 +27,39 @@ public static class NavmeshEndpoints
         RouteGroupBuilder navmesh = app.MapGroup(PathingApi.Navmesh).WithTags(Tag);
 
         navmesh.MapGet($"{{continent}}/{PathingApi.Tiles}",
-                (string continent, DataConfig data, IOptions<NavmeshBakeOptions> bake, RoutePlanner planner, CoverageCache coverage) =>
+                (string continent, DataConfig data, IOptions<NavmeshBakeOptions> bake, RoutePlanner planner, ClientContinents continents) =>
                 {
-                    if (!IsContinent(continent, coverage))
+                    if (continents.Resolve(continent) is not string resolved)
                     {
-                        return NotAContinent(continent, data);
+                        return NotAContinent(continent, continents);
                     }
 
-                    PPatherService.NavmeshTileInfo[] tiles = PPatherService.GetNavmeshTiles(data, bake.Value, continent,
-                        planner.ResidentTileSet(continent));
+                    PPatherService.NavmeshTileInfo[] tiles = PPatherService.GetNavmeshTiles(data, bake.Value, resolved,
+                        planner.ResidentTileSet(resolved));
                     return Results.Ok(tiles.Select(t => new NavmeshTile(t.X, t.Z, t.MinX, t.MinY, t.MaxX, t.MaxY, t.Resident)).ToArray());
                 })
             .WithSummary("Every baked tile of a continent with its world bounds; Resident marks those the planner holds")
             .Produces<NavmeshTile[]>()
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
-        navmesh.MapGet($"{{continent}}/{PathingApi.Overview}", (string continent, DataConfig data, RoutePlanner planner, CoverageCache coverage) =>
-                IsContinent(continent, coverage)
-                    ? Results.Ok(NavmeshViews.Overview(planner, continent))
-                    : NotAContinent(continent, data))
+        navmesh.MapGet($"{{continent}}/{PathingApi.Overview}", (string continent, RoutePlanner planner, ClientContinents continents) =>
+                continents.Resolve(continent) is string resolved
+                    ? Results.Ok(NavmeshViews.Overview(planner, resolved))
+                    : NotAContinent(continent, continents))
             .WithSummary("One walkable height per baked tile of a continent: a map's base at any zoom")
             .WithDescription("Read from the continent's tile graph, which the first request after a bake builds (about 10 s for Kalimdor).")
             .Produces<NavmeshOverview>()
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         navmesh.MapGet($"{{continent}}/{PathingApi.Tiles}/{{x:int}}/{{z:int}}",
-                (string continent, int x, int z, DataConfig data, IOptions<NavmeshBakeOptions> bake, CoverageCache coverage) =>
+                (string continent, int x, int z, DataConfig data, IOptions<NavmeshBakeOptions> bake, ClientContinents continents) =>
                 {
-                    if (!IsContinent(continent, coverage))
+                    if (continents.Resolve(continent) is not string resolved)
                     {
-                        return NotAContinent(continent, data);
+                        return NotAContinent(continent, continents);
                     }
 
-                    return NavmeshViews.Tile(NavmeshSettings.CacheDirectory(data, bake.Value, continent), x, z) is NavmeshTileGeometry tile
+                    return NavmeshViews.Tile(NavmeshSettings.CacheDirectory(data, bake.Value, resolved), x, z) is NavmeshTileGeometry tile
                         ? Results.Ok(tile)
                         : Results.NotFound();
                 })
@@ -114,15 +114,10 @@ public static class NavmeshEndpoints
         return app;
     }
 
-    // Continents are folder names: only the client's own are taken.
-    private static bool IsContinent(string continent, CoverageCache coverage)
+    // Continents are folder names: only the client's own are taken (ClientContinents).
+    private static IResult NotAContinent(string continent, ClientContinents continents)
     {
-        return coverage.Read().Any(c => c.Continent == continent);
-    }
-
-    private static IResult NotAContinent(string continent, DataConfig data)
-    {
-        return Results.Problem(detail: $"'{continent}' is not a continent of {data.Exp}",
-            statusCode: StatusCodes.Status400BadRequest, title: "Request refused");
+        return Results.Problem(detail: continents.Refusal(continent),
+            statusCode: StatusCodes.Status400BadRequest, title: StoreResultHttp.RefusedTitle);
     }
 }

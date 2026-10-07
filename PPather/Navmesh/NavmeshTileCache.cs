@@ -53,6 +53,13 @@ public sealed class NavmeshTileCache : IDisposable
     /// <summary>Corridor sampling stride along the from->to line, as a fraction of a tile.</summary>
     public const float CorridorSampleStepFactor = 0.5f;
 
+    /// <summary>
+    /// How long a disk-only cache takes a tile it did not find to be still missing. A request after
+    /// that looks at the disk again (one stat), so a tile that a bake, a download or a copy writes
+    /// while the cache runs is read without a restart (docs/known-issues.md, items 12, 38 and 52).
+    /// </summary>
+    public static readonly TimeSpan MissingTileRecheck = TimeSpan.FromSeconds(1);
+
     private static int ResolveWorkerCount(int? configured)
     {
         if (configured is int workers && workers > 0)
@@ -94,8 +101,11 @@ public sealed class NavmeshTileCache : IDisposable
     // dtTile (x,z) -> last-touch stamp for LRU. Concurrent: touched by query
     // threads, enumerated under the write lock during eviction.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<(int x, int z), long> resident = [];
-    // Guarded by stateLock.
+    // Tiles baked or read with nothing usable on them, for the cache's life. Guarded by stateLock.
     private readonly HashSet<(int x, int z)> emptyTiles = [];
+    // Tiles a disk-only cache did not find on disk, with when it last looked; looked at again after
+    // MissingTileRecheck. Guarded by stateLock.
+    private readonly Dictionary<(int x, int z), long> missingTiles = [];
     // Tiles on disk that a disk-only cache could not read, warned about once each; read again on
     // the next request, since a writer may not have finished them. Guarded by stateLock.
     private readonly HashSet<(int x, int z)> unreadableTiles = [];
@@ -105,17 +115,28 @@ public sealed class NavmeshTileCache : IDisposable
 
     private long touchCounter;
 
+    // Bumped by Reset, under the write lock and stateLock: a tile read before a reset is not added
+    // after it, as the file may be gone or replaced since.
+    private int generation;
+
+    // Why LoadOrBake has no tile to give.
+    private enum NoTile
+    {
+        // Baked or read, with nothing on it: known empty for the cache's life.
+        Empty,
+
+        // Not on disk, and the cache cannot bake: looked at again after MissingTileRecheck.
+        Missing,
+
+        // On disk but not readable: read again on the next request.
+        Unreadable
+    }
+
     // Disk-only misses. Written from every bake worker, so keep it atomic.
     private int missingOnDisk;
 
     private readonly record struct TileRequest(int X, int Z, TaskCompletionSource? Done,
         bool RequirePersistence);
-
-    /// <summary>Raised after a tile lands in the mesh (viz). May fire on a worker thread.</summary>
-    public Action<int, int, DtMeshData>? NotifyTileAdded;
-
-    /// <summary>Raised after LRU eviction removes a tile (viz cleanup).</summary>
-    public Action<int, int>? NotifyTileRemoved;
 
     public DtNavMesh NavMesh => navMesh;
     public ReaderWriterLockSlim Lock => rwLock;
@@ -301,6 +322,42 @@ public sealed class NavmeshTileCache : IDisposable
     }
 
     /// <summary>
+    /// Lets go of every tile in the mesh and of all it learned about the tiles that were not, so each
+    /// is read from disk again when a query asks for it: for tiles deleted or replaced under a running
+    /// cache. The caller keeps queries out meanwhile (the planner holds the lane's gate); a tile a
+    /// worker read before the reset is not added after it.
+    /// </summary>
+    public void Reset()
+    {
+        rwLock.EnterWriteLock();
+        try
+        {
+            foreach ((int x, int z) in resident.Keys)
+            {
+                long tileRef = navMesh.GetTileRefAt(x, z, 0);
+                if (tileRef != 0)
+                {
+                    navMesh.RemoveTile(tileRef);
+                }
+            }
+
+            resident.Clear();
+
+            lock (stateLock)
+            {
+                generation++;
+                emptyTiles.Clear();
+                missingTiles.Clear();
+                unreadableTiles.Clear();
+            }
+        }
+        finally
+        {
+            rwLock.ExitWriteLock();
+        }
+    }
+
+    /// <summary>
     /// Releases the cached ADT triangle geometry. Taken under the extract lock so
     /// it cannot clear a chunk a baker thread is mid-read of; the geometry
     /// reloads on demand for the next tile that needs baking. Call after a bulk
@@ -359,7 +416,7 @@ public sealed class NavmeshTileCache : IDisposable
 
         lock (stateLock)
         {
-            if (emptyTiles.Contains((tx, tz)))
+            if (emptyTiles.Contains((tx, tz)) || StillMissing(tx, tz))
             {
                 return;
             }
@@ -381,6 +438,30 @@ public sealed class NavmeshTileCache : IDisposable
         TileRequest request = new(tx, tz, done, requirePersistence);
         Channel<TileRequest> queue = urgentQueue ? urgent : background;
         queue.Writer.TryWrite(request);
+    }
+
+    // Whether a tile this disk-only cache did not find is still missing: taken on trust for
+    // MissingTileRecheck, then looked at on disk again. The caller holds stateLock.
+    private bool StillMissing(int tx, int tz)
+    {
+        if (!missingTiles.TryGetValue((tx, tz), out long lookedAt))
+        {
+            return false;
+        }
+
+        if (Stopwatch.GetElapsedTime(lookedAt) < MissingTileRecheck)
+        {
+            return true;
+        }
+
+        if (!File.Exists(TilePath(tx, tz)))
+        {
+            missingTiles[(tx, tz)] = Stopwatch.GetTimestamp();
+            return true;
+        }
+
+        missingTiles.Remove((tx, tz));
+        return false;
     }
 
     private async Task WorkerLoop()
@@ -415,27 +496,23 @@ public sealed class NavmeshTileCache : IDisposable
     private void ProcessRequest(in TileRequest request)
     {
         (int tx, int tz) = (request.X, request.Z);
+        int requested = Volatile.Read(ref generation);
 
         try
         {
-            DtMeshData? data = LoadOrBake(tx, tz, request.RequirePersistence, out bool unreadable);
+            DtMeshData? data = LoadOrBake(tx, tz, request.RequirePersistence, out NoTile why);
 
-            if (data == null)
-            {
-                // A tile that could not be read is not known to be empty: the next request reads it again.
-                if (!unreadable)
-                {
-                    lock (stateLock)
-                    {
-                        emptyTiles.Add((tx, tz));
-                    }
-                }
-            }
-            else
+            if (data != null)
             {
                 rwLock.EnterWriteLock();
                 try
                 {
+                    if (generation != requested)
+                    {
+                        // Read before a Reset: the next request reads the file as it is now.
+                        return;
+                    }
+
                     DtStatus status = navMesh.AddTile(data, 0, 0, out _);
                     if (!status.Succeeded())
                     {
@@ -443,6 +520,7 @@ public sealed class NavmeshTileCache : IDisposable
                         if (request.RequirePersistence)
                             throw new InvalidDataException($"Baked tile ({tx},{tz}) could not be added to the navmesh: {status}.");
                         data = null;
+                        why = NoTile.Empty;
                     }
                     else
                     {
@@ -454,19 +532,25 @@ public sealed class NavmeshTileCache : IDisposable
                 {
                     rwLock.ExitWriteLock();
                 }
-
-                if (data == null)
-                {
-                    lock (stateLock)
-                    {
-                        emptyTiles.Add((tx, tz));
-                    }
-                }
             }
 
-            if (data != null)
+            if (data == null)
             {
-                NotifyTileAdded?.Invoke(tx, tz, data);
+                lock (stateLock)
+                {
+                    if (generation == requested)
+                    {
+                        switch (why)
+                        {
+                            case NoTile.Empty:
+                                emptyTiles.Add((tx, tz));
+                                break;
+                            case NoTile.Missing:
+                                missingTiles[(tx, tz)] = Stopwatch.GetTimestamp();
+                                break;
+                        }
+                    }
+                }
             }
         }
         catch (Exception ex)
@@ -486,13 +570,13 @@ public sealed class NavmeshTileCache : IDisposable
         }
     }
 
-    // The tile from disk, else baked when the cache has a world; null for a tile with nothing on
-    // it. A disk-only cache that cannot read the file answers null with unreadable set, and leaves
-    // the file alone: it can never bake it again, and the file may be one a writer (a bake in
+    // The tile from disk, else baked when the cache has a world; null, and why, for a tile with
+    // nothing on it, one a disk-only cache does not find, or one it cannot read. That last file is
+    // left alone: a disk-only cache can never bake it again, and it may be one a writer (a bake in
     // another process, download-navmesh.ps1) has not finished.
-    private DtMeshData? LoadOrBake(int tx, int tz, bool requirePersistence, out bool unreadable)
+    private DtMeshData? LoadOrBake(int tx, int tz, bool requirePersistence, out NoTile why)
     {
-        unreadable = false;
+        why = NoTile.Empty;
         string path = TilePath(tx, tz);
 
         if (File.Exists(path))
@@ -515,7 +599,7 @@ public sealed class NavmeshTileCache : IDisposable
             }
             catch (Exception ex) when (world == null)
             {
-                unreadable = true;
+                why = NoTile.Unreadable;
                 bool first;
                 lock (stateLock)
                 {
@@ -565,6 +649,7 @@ public sealed class NavmeshTileCache : IDisposable
                     path, MissingTilesOnDisk);
             }
 
+            why = NoTile.Missing;
             return null;
         }
 
@@ -636,7 +721,6 @@ public sealed class NavmeshTileCache : IDisposable
             }
 
             resident.TryRemove(oldest, out _);
-            NotifyTileRemoved?.Invoke(oldest.x, oldest.z);
         }
     }
 

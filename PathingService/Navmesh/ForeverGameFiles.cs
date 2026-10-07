@@ -22,13 +22,19 @@ public static class ForeverGameFiles
 
     public const string DefaultProduct = "wow_classic_beta";
 
+    /// <summary>Whether <paramref name="client"/> (<c>--exp</c>) is WoW: Forever.</summary>
+    public static bool IsForever(string client)
+    {
+        return client.Equals(ForeverClient, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// The CASC source for a Forever instance whose <see cref="Section"/> names an install, or
     /// null: another client, or a Forever instance that serves baked tiles only.
     /// </summary>
     public static Func<IGameFileSource>? From(IConfiguration configuration, string client, ILogger logger)
     {
-        if (!client.Equals(ForeverClient, StringComparison.OrdinalIgnoreCase))
+        if (!IsForever(client))
         {
             return null;
         }

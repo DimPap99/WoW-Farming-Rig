@@ -1,5 +1,4 @@
 #nullable enable
-using DotRecast.Detour;
 
 using PPather.Navmesh;
 
@@ -94,6 +93,3 @@ public sealed record RouteOutcome(RoutePlanStatus Status, Vector3[] Points, stri
 /// <param name="Detail">Why nothing, or only part of the way, was found; null when found.</param>
 public sealed record PlannedRoute(string Continent, Vector3 From, Vector3 To, Vector3[] Points, RoutePlanStatus Status,
     double ElapsedMs, string? Detail);
-
-/// <summary>A navmesh tile a planner lane loaded (with its mesh data) or evicted (no data).</summary>
-public readonly record struct LaneTile(string Continent, int X, int Z, DtMeshData? Data);

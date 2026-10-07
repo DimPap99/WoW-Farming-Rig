@@ -1,6 +1,7 @@
 using Contracts;
 using Contracts.Pathing;
 
+using System;
 using System.Text.Json;
 
 using Xunit;
@@ -66,14 +67,15 @@ public sealed class ContractJsonTests
     public void Bake_and_watch_messages_round_trip_with_named_enums()
     {
         BakeStatus status = new(true, "continent", "Azeroth", 40, 3, 48, 30, 18, 12.5, "Azeroth adt 30,49");
-        WatchPath path = new("route", 1429, CoordinateSpace.Map, [new(48.5f, 59.1f, 0)], WatchColor.Teal);
+        WatchRoute route = new("Azeroth", new(1, 2, 3), new(4, 5, 6), [new(1, 2, 3), new(4, 5, 6)], RouteStatus.Partial, 12.5,
+            "stops short", DateTimeOffset.UnixEpoch);
         PathingCapabilities capabilities = new(PathingApi.Version, "som", "precata", true, ["Azeroth"], GameFiles: false);
 
-        string json = JsonSerializer.Serialize(path, ContractJson.Options);
+        string json = JsonSerializer.Serialize(route, ContractJson.Options);
 
-        Assert.Contains("\"color\":\"Teal\"", json);
+        Assert.Contains("\"status\":\"Partial\"", json);
         Assert.Equal(status, RoundTrip(status));
-        Assert.Equal(path.Points, RoundTrip(path).Points);
+        Assert.Equal(route.Points, RoundTrip(route).Points);
         Assert.Equal(new BakeRequest("Azeroth", 30, 49), RoundTrip(new BakeRequest("Azeroth", 30, 49)));
         Assert.False(RoundTrip(capabilities).GameFiles);
     }

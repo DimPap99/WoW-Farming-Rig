@@ -118,22 +118,15 @@ public static class PathingApi
     /// <summary><c>POST ?continent=</c>: extracts the area-id grid from the game files, in the background.</summary>
     public const string AreaGrids = Root + "/areagrids";
 
-    /// <summary>Drawing for the watch hub's viewers without planning anything.</summary>
+    /// <summary>What the watch hub's route watchers are told outside the routes themselves.</summary>
     public const string Watch = Root + "/watch";
 
-    /// <summary><c>POST</c> a <see cref="WatchPath"/>: shows its points as a path in every viewer.</summary>
-    public const string WatchPaths = Watch + "/paths";
-
-    /// <summary><c>POST</c> a <see cref="WatchMarker"/>: marks a point in every viewer.</summary>
-    public const string WatchMarkers = Watch + "/markers";
-
-    /// <summary><c>POST</c>: wipes every viewer's scene.</summary>
+    /// <summary><c>POST</c>: forgets the remembered routes and tells every route watcher to (<see cref="WatchHubMethods.Clear"/>).</summary>
     public const string WatchClear = Watch + "/clear";
 
     /// <summary>
-    /// The SignalR hub (MessagePack) that streams routes and navmesh tiles to the 3D view and the
-    /// map; its methods are <see cref="WatchHubMethods"/>. Outside <see cref="Root"/> because the
-    /// browser connects to it by this path.
+    /// The SignalR hub (MessagePack) that streams the routes the planner answers to route watchers;
+    /// its methods are <see cref="WatchHubMethods"/>. Outside <see cref="Root"/>, as SignalR hubs are.
     /// </summary>
     public const string WatchHub = "/watchHub";
 

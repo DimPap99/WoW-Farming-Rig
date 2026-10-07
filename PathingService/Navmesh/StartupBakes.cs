@@ -6,11 +6,14 @@ using Microsoft.Extensions.Logging;
 
 using PathingService.Hosting;
 
+using System.Threading.Tasks;
+
 namespace PathingService.Navmesh;
 
 /// <summary>
 /// <c>--bake=&lt;continent&gt;</c> starts a navmesh bake as the service comes up, and
 /// <c>--bake-area=&lt;continent&gt;</c> an area-grid extraction; <c>all</c> means every continent.
+/// Asked for both, the area grid starts once the bake has ended: the admin runs one job at a time.
 /// The service answers at once; progress is on <see cref="PathingApi.Bake"/>.
 /// </summary>
 public static class StartupBakes
@@ -41,8 +44,12 @@ public static class StartupBakes
 
         if (!string.IsNullOrWhiteSpace(bakeArea))
         {
-            StoreResult started = admin.StartAreaGrid(Continent(bakeArea));
-            Report(logger, "Startup area-grid extraction", bakeArea, started.Outcome, started.Error);
+            // Once the bake, if one started, has ended.
+            _ = admin.Idle.ContinueWith(_ =>
+            {
+                StoreResult started = admin.StartAreaGrid(Continent(bakeArea));
+                Report(logger, "Startup area-grid extraction", bakeArea, started.Outcome, started.Error);
+            }, TaskScheduler.Default);
         }
 
         return app;

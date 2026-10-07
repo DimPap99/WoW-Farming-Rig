@@ -94,9 +94,6 @@ public interface IPathingClient
     /// <summary>Starts extracting the area-id grid of <paramref name="continent"/>, or of every continent.</summary>
     Task<ServiceResult> BuildAreaGridAsync(string? continent = null, CancellationToken token = default);
 
-    Task<ServiceResult> DrawPathAsync(WatchPath path, CancellationToken token = default);
-
-    Task<ServiceResult> ShowMarkerAsync(WatchMarker marker, CancellationToken token = default);
-
+    /// <summary>Forgets the remembered routes and tells every route watcher to.</summary>
     Task<ServiceResult> ClearWatchAsync(CancellationToken token = default);
 }

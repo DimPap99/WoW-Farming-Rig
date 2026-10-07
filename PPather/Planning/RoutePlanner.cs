@@ -1,5 +1,4 @@
 #nullable enable
-using DotRecast.Detour;
 
 using Microsoft.Extensions.Logging;
 
@@ -38,9 +37,14 @@ namespace PPather.Planning;
 /// <see cref="RoutePlanStatus.NotBaked"/>.
 /// </para>
 /// <para>
-/// It can be watched: <see cref="RoutePlanned"/> reports every answer in world yards, and
-/// <see cref="TileLoaded"/>/<see cref="TileUnloaded"/> the tiles each lane holds. Handlers run on
-/// the querying or tile-loading thread and must only hand the work on.
+/// It can be watched: <see cref="RoutePlanned"/> reports every answer in world yards. Handlers run
+/// on the querying thread and must only hand the work on.
+/// </para>
+/// <para>
+/// A lane sees tiles as they are on disk: one it did not find is looked for again a second later
+/// (<see cref="NavmeshTileCache.MissingTileRecheck"/>), so tiles baked, downloaded or copied while
+/// the planner runs count without a restart. Tiles deleted or replaced are another matter: the
+/// lane holds them in memory, so whatever deletes or replaces them calls <see cref="TilesChanged"/>.
 /// </para>
 /// </summary>
 public sealed class RoutePlanner : IDisposable
@@ -48,8 +52,14 @@ public sealed class RoutePlanner : IDisposable
     /// <summary>How long a query waits for its continent's lane before answering <see cref="RoutePlanStatus.Busy"/>.</summary>
     public static readonly TimeSpan DefaultLaneWait = TimeSpan.FromSeconds(10);
 
-    // A lane closed while a query waited for it is replaced by a fresh one this many times at most.
-    private const int ClosedLaneRetries = 2;
+    /// <summary>How often, at most, a continent's tile graph in memory is compared with its tiles on disk.</summary>
+    public static readonly TimeSpan TileGraphRecheck = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long the tiles must have been left alone before a graph that no longer matches them is
+    /// built again: a download in progress would otherwise rebuild it (10 s for Kalimdor) over and over.
+    /// </summary>
+    public static readonly TimeSpan TileGraphQuiet = TimeSpan.FromSeconds(10);
 
     private readonly ILogger logger;
     private readonly DataConfig dataConfig;
@@ -66,7 +76,7 @@ public sealed class RoutePlanner : IDisposable
     private readonly Dictionary<string, AreaGrid?> areaGrids = [];
 
     private readonly Lock tileGraphLock = new();
-    private readonly Dictionary<string, NavmeshTileGraph> tileGraphs = [];
+    private readonly Dictionary<string, KeptGraph> tileGraphs = [];
 
     private readonly CostZoneWatcher? zoneWatcher;
 
@@ -93,14 +103,11 @@ public sealed class RoutePlanner : IDisposable
     /// <summary>Navmesh routes are smoothed and validated, so callers re-request rather than patch them.</summary>
     public const bool PathsAreSmoothed = true;
 
-    /// <summary>Every answer of a query that reached a continent, in world yards; raised on the querying thread.</summary>
+    /// <summary>
+    /// Every answer of a query that reached a continent, in world yards, busy ones included; raised on
+    /// the querying thread.
+    /// </summary>
     public event Action<PlannedRoute>? RoutePlanned;
-
-    /// <summary>A lane stitched a tile into its mesh; raised on a tile worker thread.</summary>
-    public event Action<LaneTile>? TileLoaded;
-
-    /// <summary>A lane evicted a tile; <see cref="LaneTile.Data"/> is null.</summary>
-    public event Action<LaneTile>? TileUnloaded;
 
     public RouteOutcome Find(in RouteQuery query, CancellationToken token = default)
     {
@@ -122,104 +129,94 @@ public sealed class RoutePlanner : IDisposable
         Vector3 from = query.Space == RouteSpace.Map ? MapToWorld(area, query.From, query.From.Z) : query.From;
         Vector3 to = query.Space == RouteSpace.Map ? MapToWorld(area, query.To, 0) : query.To;
 
-        for (int attempt = 0; ; attempt++)
+        if (GetLane(continent) is not Lane lane)
         {
-            if (GetLane(continent) is not Lane lane)
-            {
-                return Planned(Fail(RoutePlanStatus.NotBaked, continent, start,
-                    $"{continent} has no baked navmesh in {NavmeshSettings.CacheDirectory(dataConfig, bakeOptions, continent)}"),
-                    from, to, []);
-            }
-
-            if (!lane.HasTile(from))
-            {
-                return Planned(Fail(RoutePlanStatus.NotBaked, continent, start,
-                    $"the start ({from.X:F1}, {from.Y:F1}) is on a tile of {continent} with no baked navmesh"), from, to, []);
-            }
-
-            if (!lane.HasTile(to))
-            {
-                return Planned(Fail(RoutePlanStatus.NotBaked, continent, start,
-                    $"the destination ({to.X:F1}, {to.Y:F1}) is on a tile of {continent} with no baked navmesh"), from, to, []);
-            }
-
-            if (query.Reach == RouteReach.Continent)
-            {
-                return FindAcross(lane, continent, area, query, from, to, start, token);
-            }
-
-            if (!lane.Gate.Wait(laneWait, token))
-            {
-                return Fail(RoutePlanStatus.Busy, continent, start,
-                    $"{continent} stayed busy for {laneWait.TotalSeconds:F0} s");
-            }
-
-            Graph.Path? path;
-            Vector3 resolvedFrom;
-            Vector3 resolvedTo;
-            NavmeshPathfinder.NavmeshStats stats;
-            try
-            {
-                // A bake or a cache clear closed this lane while the query waited for it; the
-                // next GetLane opens a fresh one on what is on disk now.
-                if (lane.Closed && attempt < ClosedLaneRetries)
-                {
-                    continue;
-                }
-
-                if (lane.Closed)
-                {
-                    return Fail(RoutePlanStatus.Busy, continent, start, $"{continent} kept being reopened; ask again");
-                }
-
-                // The caller may have gone while it waited (a client's attempt timed out): the lane
-                // goes to the next query, not to a search nobody will read.
-                token.ThrowIfCancellationRequested();
-
-                NavmeshPathfinder nav = lane.Pathfinder;
-                resolvedFrom = WithSurfaceHeight(nav, from);
-                resolvedTo = WithSurfaceHeight(nav, to);
-
-                path = nav.FindPath(resolvedFrom, resolvedTo, null, nav.CreateMemory(), query.Tuning, out stats);
-                lane.Served(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
-            }
-            finally
-            {
-                lane.Gate.Release();
-            }
-
-            if (path == null || path.locations.Count == 0)
-            {
-                return Planned(Fail(RoutePlanStatus.NoPath, continent, start,
-                    $"the {continent} navmesh connects no route between the points"), resolvedFrom, resolvedTo, []);
-            }
-
-            Vector3[] world = path.locations.ToArray();
-            Vector3[] points = world;
-            if (query.Space == RouteSpace.Map)
-            {
-                points = new Vector3[world.Length];
-                for (int i = 0; i < points.Length; i++)
-                {
-                    points[i] = WorldToMap(world[i], area);
-                }
-            }
-
-            double elapsedMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
-
-            // A search that found no way on still returns the part it found: say so, rather
-            // than hand that part over as the route.
-            if (stats.EndGapYd > ArrivalToleranceYd)
-            {
-                float band = stats.CorridorRadius * NavmeshSettings.TileWorldSize;
-                return Planned(new(RoutePlanStatus.Partial, points, continent, elapsedMs,
-                        StoppedShort(stats.EndGapYd, points[^1], query.Space,
-                            string.Create(CultureInfo.InvariantCulture, $"the search found no way on within {band:F0} yd of the straight line"))),
-                    resolvedFrom, resolvedTo, world);
-            }
-
-            return Planned(new(RoutePlanStatus.Found, points, continent, elapsedMs, null), resolvedFrom, resolvedTo, world);
+            return Planned(Fail(RoutePlanStatus.NotBaked, continent, start,
+                $"{continent} has no baked navmesh in {NavmeshSettings.CacheDirectory(dataConfig, bakeOptions, continent)}"),
+                from, to, []);
         }
+
+        if (!lane.HasTile(from))
+        {
+            return Planned(Fail(RoutePlanStatus.NotBaked, continent, start,
+                $"the start ({from.X:F1}, {from.Y:F1}) is on a tile of {continent} with no baked navmesh"), from, to, []);
+        }
+
+        if (!lane.HasTile(to))
+        {
+            return Planned(Fail(RoutePlanStatus.NotBaked, continent, start,
+                $"the destination ({to.X:F1}, {to.Y:F1}) is on a tile of {continent} with no baked navmesh"), from, to, []);
+        }
+
+        if (query.Reach == RouteReach.Continent)
+        {
+            return FindAcross(lane, continent, area, query, from, to, start, token);
+        }
+
+        if (!lane.Gate.Wait(laneWait, token))
+        {
+            return Planned(StayedBusy(continent, start), from, to, []);
+        }
+
+        Graph.Path? path;
+        Vector3 resolvedFrom;
+        Vector3 resolvedTo;
+        NavmeshPathfinder.NavmeshStats stats;
+        try
+        {
+            // The caller may have gone while it waited (a client's attempt timed out): the lane
+            // goes to the next query, not to a search nobody will read.
+            token.ThrowIfCancellationRequested();
+
+            NavmeshPathfinder nav = lane.Pathfinder;
+            resolvedFrom = WithSurfaceHeight(nav, from);
+            resolvedTo = WithSurfaceHeight(nav, to);
+
+            path = nav.FindPath(resolvedFrom, resolvedTo, null, nav.CreateMemory(), query.Tuning, out stats);
+            lane.Served(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+        }
+        finally
+        {
+            lane.Gate.Release();
+        }
+
+        if (path == null || path.locations.Count == 0)
+        {
+            return Planned(Fail(RoutePlanStatus.NoPath, continent, start,
+                $"the {continent} navmesh connects no route between the points"), resolvedFrom, resolvedTo, []);
+        }
+
+        Vector3[] world = path.locations.ToArray();
+        Vector3[] points = world;
+        if (query.Space == RouteSpace.Map)
+        {
+            points = new Vector3[world.Length];
+            for (int i = 0; i < points.Length; i++)
+            {
+                points[i] = WorldToMap(world[i], area);
+            }
+        }
+
+        double elapsedMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+
+        // A search that found no way on still returns the part it found: say so, rather
+        // than hand that part over as the route.
+        if (stats.EndGapYd > ArrivalToleranceYd)
+        {
+            float band = stats.CorridorRadius * NavmeshSettings.TileWorldSize;
+            return Planned(new(RoutePlanStatus.Partial, points, continent, elapsedMs,
+                    StoppedShort(stats.EndGapYd, points[^1], query.Space,
+                        string.Create(CultureInfo.InvariantCulture, $"the search found no way on within {band:F0} yd of the straight line"))),
+                resolvedFrom, resolvedTo, world);
+        }
+
+        return Planned(new(RoutePlanStatus.Found, points, continent, elapsedMs, null), resolvedFrom, resolvedTo, world);
+    }
+
+    // The lane was held by others for the whole of the wait.
+    private RouteOutcome StayedBusy(string continent, long start)
+    {
+        return Fail(RoutePlanStatus.Busy, continent, start, $"{continent} stayed busy for {laneWait.TotalSeconds:F0} s");
     }
 
     /// <summary>
@@ -271,7 +268,7 @@ public sealed class RoutePlanner : IDisposable
                 endNode = NodeOf(graph, nav, resolvedTo);
             }))
         {
-            return Fail(RoutePlanStatus.Busy, continent, start, $"{continent} stayed busy for {laneWait.TotalSeconds:F0} s");
+            return Planned(StayedBusy(continent, start), from, to, []);
         }
 
         if (startNode < 0 || endNode < 0)
@@ -304,7 +301,7 @@ public sealed class RoutePlanner : IDisposable
             NavmeshPathfinder.NavmeshStats stats = default;
             if (!OnLane(lane, token, nav => leg = nav.FindPath(legStart, legEnd, null, memory, tuning, out stats)))
             {
-                return Fail(RoutePlanStatus.Busy, continent, start, $"{continent} stayed busy for {laneWait.TotalSeconds:F0} s");
+                return Planned(StayedBusy(continent, start), resolvedFrom, resolvedTo, []);
             }
 
             if (leg is not null && leg.locations.Count > 0)
@@ -423,7 +420,7 @@ public sealed class RoutePlanner : IDisposable
             : -1;
     }
 
-    // Work on the lane's pathfinder under its gate; false when the lane stayed busy or closed meanwhile.
+    // Work on the lane's pathfinder under its gate; false when the lane stayed busy.
     // Throws when the caller has gone, even once the gate is taken, as Find does.
     private bool OnLane(Lane lane, CancellationToken token, Action<NavmeshPathfinder> work)
     {
@@ -434,11 +431,6 @@ public sealed class RoutePlanner : IDisposable
 
         try
         {
-            if (lane.Closed)
-            {
-                return false;
-            }
-
             token.ThrowIfCancellationRequested();
             work(lane.Pathfinder);
             return true;
@@ -452,21 +444,26 @@ public sealed class RoutePlanner : IDisposable
     /// <summary>
     /// The continent's tile graph: kept in memory once read, read from beside the tiles when they
     /// have not changed since it was built, else built from them (about 10 s for Kalimdor) and kept
-    /// there. One build at a time; a caller that needs it meanwhile waits for it.
+    /// there. One build at a time; a caller that needs it meanwhile waits for it. A graph in memory is
+    /// compared with the tiles at most every <see cref="TileGraphRecheck"/>, and built again once
+    /// tiles that changed have been left alone for <see cref="TileGraphQuiet"/>, so tiles that any
+    /// writer adds reach continent routes too.
     /// </summary>
     public NavmeshTileGraph TileGraph(string continent)
     {
         lock (tileGraphLock)
         {
-            if (tileGraphs.TryGetValue(continent, out NavmeshTileGraph? graph))
+            string dir = NavmeshSettings.CacheDirectory(dataConfig, bakeOptions, continent);
+            if (tileGraphs.TryGetValue(continent, out KeptGraph? kept) && !kept.Stale(dir))
             {
-                return graph;
+                return kept.Graph;
             }
 
-            string dir = NavmeshSettings.CacheDirectory(dataConfig, bakeOptions, continent);
+            TileSetStamp stamp = TileSetStamp.Of(dir);
+            NavmeshTileGraph? graph = null;
             try
             {
-                graph = NavmeshTileGraph.TryLoad(dir);
+                graph = NavmeshTileGraph.TryLoad(dir, stamp);
             }
             catch (Exception ex) when (ex is IOException or EndOfStreamException or UnauthorizedAccessException)
             {
@@ -475,7 +472,6 @@ public sealed class RoutePlanner : IDisposable
 
             if (graph is null)
             {
-                TileSetStamp stamp = TileSetStamp.Of(dir);
                 graph = NavmeshTileGraph.Build(dir, logger);
                 try
                 {
@@ -488,8 +484,31 @@ public sealed class RoutePlanner : IDisposable
                 }
             }
 
-            tileGraphs[continent] = graph;
+            tileGraphs[continent] = new KeptGraph(graph, stamp);
             return graph;
+        }
+    }
+
+    // A tile graph in memory with the tiles it was built from, and when they were last compared.
+    private sealed class KeptGraph(NavmeshTileGraph graph, TileSetStamp stamp)
+    {
+        private long comparedAt = Stopwatch.GetTimestamp();
+
+        public NavmeshTileGraph Graph { get; } = graph;
+
+        // Whether the tiles have changed since the graph was built and been left alone since. The
+        // caller holds the planner's tile graph lock.
+        public bool Stale(string dir)
+        {
+            if (Stopwatch.GetElapsedTime(comparedAt) < TileGraphRecheck)
+            {
+                return false;
+            }
+
+            comparedAt = Stopwatch.GetTimestamp();
+            TileSetStamp now = Directory.Exists(dir) ? TileSetStamp.Of(dir) : default;
+            return now != stamp &&
+                   DateTime.UtcNow - new DateTime(now.NewestTicks, DateTimeKind.Utc) >= TileGraphQuiet;
         }
     }
 
@@ -514,7 +533,7 @@ public sealed class RoutePlanner : IDisposable
         {
             try
             {
-                if (!lane.Closed && lane.Pathfinder.TryGetHeight(worldX, worldY, out float found))
+                if (lane.Pathfinder.TryGetHeight(worldX, worldY, out float found))
                 {
                     z = found;
                 }
@@ -572,10 +591,7 @@ public sealed class RoutePlanner : IDisposable
                 lane.Gate.Wait();
                 try
                 {
-                    if (!lane.Closed)
-                    {
-                        lane.Pathfinder.Zones = zones;
-                    }
+                    lane.Pathfinder.Zones = zones;
                 }
                 finally
                 {
@@ -588,34 +604,14 @@ public sealed class RoutePlanner : IDisposable
     }
 
     /// <summary>
-    /// Closes the lane of <paramref name="continent"/>, or every lane, so the next query opens a
-    /// fresh one on what is on disk then. A lane remembers a tile that was missing when it looked
-    /// as empty for its whole life, so this is what makes tiles baked, downloaded or deleted while
-    /// the planner runs count. A query in flight finishes first; one waiting for the closed lane
-    /// moves to the new one.
+    /// Tiles of <paramref name="continent"/>, or of every continent, were deleted or replaced on disk:
+    /// each lane there lets go of the tiles it holds, between queries, and reads them again as
+    /// routes need them, and the tile graph is read again. Tiles only added need no call: a lane
+    /// looks again for a tile it did not find (<see cref="NavmeshTileCache.MissingTileRecheck"/>).
+    /// Waits for a query in flight on the lane to finish.
     /// </summary>
-    public void CloseLanes(string? continent = null)
+    public void TilesChanged(string? continent = null)
     {
-        List<Lane> closing = [];
-        lock (lanesLock)
-        {
-            foreach (Lane lane in lanes.Values)
-            {
-                if (continent is null || lane.Continent.Equals(continent, StringComparison.OrdinalIgnoreCase))
-                {
-                    closing.Add(lane);
-                }
-            }
-
-            foreach (Lane lane in closing)
-            {
-                lanes.Remove(lane.Continent);
-                reportedUnbaked.Remove(lane.Continent);
-            }
-        }
-
-        // The tiles may have changed: the next continent route reads the graph again, and its
-        // stamp tells whether it must be rebuilt.
         lock (tileGraphLock)
         {
             if (continent is null)
@@ -628,12 +624,17 @@ public sealed class RoutePlanner : IDisposable
             }
         }
 
-        foreach (Lane lane in closing)
+        foreach (Lane lane in OpenLanes())
         {
+            if (continent is not null && !lane.Continent.Equals(continent, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             lane.Gate.Wait();
             try
             {
-                lane.Close();
+                lane.Pathfinder.Tiles.Reset();
             }
             finally
             {
@@ -642,7 +643,7 @@ public sealed class RoutePlanner : IDisposable
 
             if (logger.IsEnabled(LogLevel.Information))
             {
-                logger.LogInformation("Route planner lane closed for {Continent}; the next query reopens it", lane.Continent);
+                logger.LogInformation("Route planner lane for {Continent} let go of its tiles; it reads them again from disk", lane.Continent);
             }
         }
     }
@@ -666,64 +667,21 @@ public sealed class RoutePlanner : IDisposable
         }
     }
 
-    /// <summary>
-    /// The tiles the lane of <paramref name="continent"/> holds right now, with their mesh data, for
-    /// a viewer that opens late. Empty when the continent has no open lane or it stays busy.
-    /// </summary>
-    public IReadOnlyList<LaneTile> ResidentTiles(string continent)
-    {
-        Lane? lane;
-        lock (lanesLock)
-        {
-            lanes.TryGetValue(continent, out lane);
-        }
-
-        if (lane is null || !lane.Gate.Wait(laneWait))
-        {
-            return [];
-        }
-
-        List<LaneTile> result = [];
-        try
-        {
-            if (lane.Closed)
-            {
-                return result;
-            }
-
-            // The gate keeps queries and closing out; the cache's read lock keeps its
-            // background workers from adding or evicting a tile mid-walk.
-            NavmeshTileCache tiles = lane.Pathfinder.Tiles;
-            tiles.Lock.EnterReadLock();
-            try
-            {
-                foreach ((int x, int z) in tiles.ResidentTiles)
-                {
-                    if (tiles.NavMesh.GetTileByRef(tiles.NavMesh.GetTileRefAt(x, z, 0))?.data is DtMeshData data)
-                    {
-                        result.Add(new LaneTile(lane.Continent, x, z, data));
-                    }
-                }
-            }
-            finally
-            {
-                tiles.Lock.ExitReadLock();
-            }
-        }
-        finally
-        {
-            lane.Gate.Release();
-        }
-
-        return result;
-    }
-
     /// <summary>The pathfinder of the open lane of <paramref name="continent"/>; null without one.</summary>
     internal NavmeshPathfinder? LanePathfinder(string continent)
     {
         lock (lanesLock)
         {
-            return lanes.TryGetValue(continent, out Lane? lane) && !lane.Closed ? lane.Pathfinder : null;
+            return lanes.TryGetValue(continent, out Lane? lane) ? lane.Pathfinder : null;
+        }
+    }
+
+    /// <summary>The gate of the open lane of <paramref name="continent"/>, for a test that keeps the lane busy; null without one.</summary>
+    internal SemaphoreSlim? LaneGate(string continent)
+    {
+        lock (lanesLock)
+        {
+            return lanes.TryGetValue(continent, out Lane? lane) ? lane.Gate : null;
         }
     }
 
@@ -732,7 +690,7 @@ public sealed class RoutePlanner : IDisposable
     {
         lock (lanesLock)
         {
-            return lanes.TryGetValue(continent, out Lane? lane) && !lane.Closed
+            return lanes.TryGetValue(continent, out Lane? lane)
                 ? new HashSet<(int X, int Z)>(lane.Pathfinder.Tiles.ResidentTiles)
                 : new HashSet<(int X, int Z)>();
         }
@@ -800,8 +758,6 @@ public sealed class RoutePlanner : IDisposable
                 bakeOptions.ResolveMinWorldZ(continent));
             nav.Zones = CostZoneLoader.Load(logger, dataConfig.Road, continent,
                 roadCoreHalfWidth: queryOptions.RoadCore);
-            nav.Tiles.NotifyTileAdded = (x, z, data) => Raise(TileLoaded, new LaneTile(continent, x, z, data));
-            nav.Tiles.NotifyTileRemoved = (x, z) => Raise(TileUnloaded, new LaneTile(continent, x, z, null));
 
             lane = new Lane(continent, nav);
             lanes[continent] = lane;
@@ -898,7 +854,7 @@ public sealed class RoutePlanner : IDisposable
         return outcome;
     }
 
-    // A watcher must never break a query or a tile load.
+    // A watcher must never break a query.
     private void Raise<T>(Action<T>? handler, T value)
     {
         if (handler is null)
@@ -920,7 +876,6 @@ public sealed class RoutePlanner : IDisposable
     {
         private long queries;
         private long lastMsBits;
-        private volatile bool closed;
 
         public string Continent { get; } = continent;
         public NavmeshPathfinder Pathfinder { get; } = pathfinder;
@@ -929,20 +884,8 @@ public sealed class RoutePlanner : IDisposable
         /// <summary>Held by a cost-zone reload from its read to its swap.</summary>
         public Lock ReloadLock { get; } = new();
 
-        /// <summary>Taken out of service; a query that still holds it moves to a fresh lane.</summary>
-        public bool Closed => closed;
-
         public long Queries => Interlocked.Read(ref queries);
         public double LastMs => BitConverter.Int64BitsToDouble(Interlocked.Read(ref lastMsBits));
-
-        /// <summary>Releases the mesh. The caller holds the gate; the gate itself stays usable for waiters.</summary>
-        public void Close()
-        {
-            closed = true;
-            Pathfinder.Tiles.NotifyTileAdded = null;
-            Pathfinder.Tiles.NotifyTileRemoved = null;
-            Pathfinder.Dispose();
-        }
 
         public bool HasTile(Vector3 wow)
         {
