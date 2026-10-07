@@ -22,5 +22,7 @@ public sealed record PlannerLane(string Continent, int ResidentTiles, long Queri
 
 /// <summary>The service's state, for a status page.</summary>
 /// <param name="Bake">The running, or last, navmesh bake.</param>
+/// <param name="Instance">This run of the service, new at every start: a client that sees it change knows the
+/// service restarted, however quickly, and reads again what it keeps.</param>
 public sealed record PathingHealth(string Client, string Era, ContinentCoverage[] Coverage, PlannerLane[] Lanes,
-    BakeStatus Bake);
+    BakeStatus Bake, string Instance);

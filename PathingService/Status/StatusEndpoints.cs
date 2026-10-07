@@ -9,6 +9,7 @@ using PathingService.Navmesh;
 using PPather;
 using PPather.Planning;
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -20,6 +21,9 @@ public static class StatusEndpoints
 
     public static IEndpointRouteBuilder MapStatusEndpoints(this IEndpointRouteBuilder app)
     {
+        // New at every start (PathingHealth.Instance).
+        string instance = Guid.NewGuid().ToString("N");
+
         app.MapGet(PathingApi.Capabilities, (RoutePlanner planner, CoverageCache coverage, BakeAdmin admin) =>
                 new PathingCapabilities(PathingApi.Version, planner.Client, planner.Era, RoutePlanner.PathsAreSmoothed,
                     [.. coverage.Read().Where(c => c.Tiles > 0).Select(c => c.Continent)], admin.HasGameFiles))
@@ -34,7 +38,7 @@ public static class StatusEndpoints
                 return new PathingHealth(planner.Client, planner.Era,
                     [.. counted.Select(c => new ContinentCoverage(c.Continent, c.Tiles))],
                     [.. lanes.Select(l => new PlannerLane(l.Continent, l.ResidentTiles, l.Queries, l.LastMs))],
-                    admin.Status);
+                    admin.Status, instance);
             })
             .WithTags(Tag)
             .WithSummary("Baked tiles per continent, the continents the planner has open, and the bake");
