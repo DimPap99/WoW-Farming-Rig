@@ -44,6 +44,43 @@ public static class ServiceKeyPolicy
     }
 
     /// <summary>
+    /// Why a browser's write is refused as sent by a page on another site, or null. Any page a person
+    /// opens can make their browser send a body-less POST, or a form, to a local address without asking
+    /// first (no CORS preflight), and a service that serves this machine without a key would carry it out:
+    /// cancel a bake, start an area grid, start or stop a bot. A browser says where a request comes from
+    /// (<c>Sec-Fetch-Site</c>, else <c>Origin</c>); a client that is not a browser says neither and is not
+    /// refused here. Reads are left alone: they change nothing, and such a page cannot read the answer.
+    /// </summary>
+    /// <param name="method">The request's method.</param>
+    /// <param name="fetchSite">The <c>Sec-Fetch-Site</c> header: same-origin, same-site, cross-site or none.</param>
+    /// <param name="origin">The <c>Origin</c> header, for a browser that sends no <c>Sec-Fetch-Site</c>.</param>
+    /// <param name="host">The request's own host and port, as the <c>Host</c> header names them.</param>
+    public static string? CrossSiteRefusal(string method, string? fetchSite, string? origin, string? host)
+    {
+        if (ForwardPolicy.IsRead(method) || method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrEmpty(fetchSite))
+        {
+            // "none": typed, bookmarked or opened by the person themselves.
+            return fetchSite is "same-origin" or "none"
+                ? null
+                : $"a {method} that a page on another site made the browser send ({fetchSite}) is refused";
+        }
+
+        if (string.IsNullOrEmpty(origin))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(origin, UriKind.Absolute, out Uri? from) && from.Authority.Equals(host, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : $"a {method} that a page from {origin} made the browser send is refused";
+    }
+
+    /// <summary>
     /// Why a service listening on <paramref name="addresses"/> must not start, or null: an address
     /// another machine can reach, with no key configured.
     /// </summary>

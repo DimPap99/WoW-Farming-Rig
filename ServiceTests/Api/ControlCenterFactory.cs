@@ -1,5 +1,7 @@
 using ControlCenter.Hosting;
 
+using Contracts;
+
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.Web.HtmlRendering;
@@ -12,6 +14,7 @@ using Microsoft.Extensions.Logging;
 using ServiceClients.Bots;
 using ServiceClients.Pathing;
 
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -19,9 +22,12 @@ namespace ServiceTests.Api;
 
 /// <summary>
 /// The Control Center in memory with both its services down (closed ports), unless a test hands it
-/// a <paramref name="manager"/> client to use instead.
+/// a <paramref name="manager"/> or <paramref name="pathing"/> client to use instead, or the address
+/// of a Pathing Service to forward to (<paramref name="pathingUrl"/>, with <paramref name="pathingKey"/>).
+/// A request carrying <see cref="RemoteAddress.Header"/> comes from that address.
 /// </summary>
-internal sealed class ControlCenterFactory(IBotManagerClient? manager = null) : WebApplicationFactory<ControlCenter.Program>
+internal sealed class ControlCenterFactory(IBotManagerClient? manager = null, IPathingClient? pathing = null,
+    Uri? pathingUrl = null, string? pathingKey = null) : WebApplicationFactory<ControlCenter.Program>
 {
     /// <summary>
     /// Renders <typeparamref name="TComponent"/> as a circuit would once its first loads are done.
@@ -42,11 +48,22 @@ internal sealed class ControlCenterFactory(IBotManagerClient? manager = null) : 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting(ControlCenterLogging.FileKey, string.Empty);
-        builder.UseSetting(PathingServiceOptions.UrlKey, ClosedPort.NewUrl().ToString());
+        builder.UseSetting(PathingServiceOptions.UrlKey, (pathingUrl ?? ClosedPort.NewUrl()).ToString());
         builder.UseSetting(BotManagerOptions.UrlKey, ClosedPort.NewUrl().ToString());
+        if (pathingKey is not null)
+        {
+            builder.UseSetting($"{PathingServiceOptions.Position}:{ServiceKey.ConfigKey}", pathingKey);
+        }
+
+        builder.ConfigureServices(services => services.AddSingleton<IStartupFilter, RemoteAddress>());
         if (manager is not null)
         {
             builder.ConfigureTestServices(services => services.AddSingleton(manager));
+        }
+
+        if (pathing is not null)
+        {
+            builder.ConfigureTestServices(services => services.AddSingleton(pathing));
         }
     }
 }

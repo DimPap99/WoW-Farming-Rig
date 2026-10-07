@@ -105,6 +105,39 @@ public sealed class ServiceKeyTests
         Assert.Equal(HttpStatusCode.OK, await StatusAsync(keyed, PathingApi.Capabilities, RemoteAddress.OtherMachine, Key));
     }
 
+    // A page on any site can make a browser send a body-less POST to a local address, no questions
+    // asked; the services serve this machine without a key, so they refuse such a write themselves.
+    [Fact]
+    public async Task Both_services_refuse_a_write_a_page_on_another_site_made_a_browser_send()
+    {
+        using TempDataRoot data = new(withMapData: true);
+        using PathingServiceFactory pathing = new(data.Root);
+        using BotManagerFactory manager = new(data.Root);
+        string start = $"{BotManagerApi.Bots}/{System.Guid.NewGuid():N}/{BotManagerApi.Start}";
+
+        Assert.Equal(HttpStatusCode.Forbidden, await PostAsync(pathing, PathingApi.BakeCancel, "Sec-Fetch-Site", "cross-site"));
+        Assert.Equal(HttpStatusCode.Forbidden, await PostAsync(pathing, PathingApi.BakeCancel, "Origin", "http://evil.example"));
+        // Not a browser, or the service's own page: served, and there is no bake to cancel.
+        Assert.Equal(HttpStatusCode.Conflict, await PostAsync(pathing, PathingApi.BakeCancel, null, null));
+        Assert.Equal(HttpStatusCode.Conflict, await PostAsync(pathing, PathingApi.BakeCancel, "Sec-Fetch-Site", "same-origin"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, await PostAsync(manager, start, "Sec-Fetch-Site", "cross-site"));
+        Assert.NotEqual(HttpStatusCode.Forbidden, await PostAsync(manager, start, null, null));
+    }
+
+    private static async Task<HttpStatusCode> PostAsync<TEntry>(WebApplicationFactory<TEntry> factory, string path, string? header, string? value)
+        where TEntry : class
+    {
+        using HttpRequestMessage request = new(HttpMethod.Post, path);
+        if (header is not null)
+        {
+            request.Headers.TryAddWithoutValidation(header, value);
+        }
+
+        using HttpResponseMessage response = await factory.CreateClient().SendAsync(request, TestContext.Current.CancellationToken);
+        return response.StatusCode;
+    }
+
     private static async Task<HttpStatusCode> StatusAsync<TEntry>(WebApplicationFactory<TEntry> factory, string path, string? remote, string? key)
         where TEntry : class
     {
