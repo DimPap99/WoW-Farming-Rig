@@ -16,12 +16,15 @@ namespace BotManager.Hosting;
 
 /// <summary>
 /// The service's key (<see cref="ServiceKey"/>): this machine is served, another machine only with
-/// the key, and without a key the service stops right after binding beyond localhost. The rules are
-/// <see cref="ServiceKeyPolicy"/>'s, shared with the Pathing Service and the clients.
+/// the key, and without a key the service stops right after binding beyond localhost. A write that a
+/// page on another site made a browser send is refused too (<see cref="ServiceKeyPolicy.CrossSiteRefusal"/>).
+/// The rules are <see cref="ServiceKeyPolicy"/>'s, shared with the Pathing Service, the forwarders and the clients.
 /// </summary>
 public static class ServiceKeyGuard
 {
     public const string RefusedTitle = "Key required";
+
+    public const string CrossSiteTitle = "Refused: sent from another site";
 
     public static WebApplication UseServiceKey(this WebApplication app)
     {
@@ -29,16 +32,23 @@ public static class ServiceKeyGuard
 
         app.Use(async (context, next) =>
         {
-            string? refusal = ServiceKeyPolicy.Refusal(key, context.Request.Headers[ServiceKey.Header],
-                context.Connection.RemoteIpAddress);
-            if (refusal is null)
+            HttpRequest request = context.Request;
+            if (ServiceKeyPolicy.Refusal(key, request.Headers[ServiceKey.Header], context.Connection.RemoteIpAddress) is string refusal)
             {
-                await next(context);
+                await Results.Problem(detail: refusal, statusCode: StatusCodes.Status401Unauthorized, title: RefusedTitle)
+                    .ExecuteAsync(context);
                 return;
             }
 
-            await Results.Problem(detail: refusal, statusCode: StatusCodes.Status401Unauthorized, title: RefusedTitle)
-                .ExecuteAsync(context);
+            if (ServiceKeyPolicy.CrossSiteRefusal(request.Method, request.Headers["Sec-Fetch-Site"], request.Headers.Origin,
+                    request.Host.Value) is string crossSite)
+            {
+                await Results.Problem(detail: crossSite, statusCode: StatusCodes.Status403Forbidden, title: CrossSiteTitle)
+                    .ExecuteAsync(context);
+                return;
+            }
+
+            await next(context);
         });
 
         app.Lifetime.ApplicationStarted.Register(() =>

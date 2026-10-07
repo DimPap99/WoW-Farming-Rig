@@ -7,6 +7,7 @@ using Frontend;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +19,7 @@ using Microsoft.Extensions.Options;
 using Serilog;
 
 using ServiceClients.Pathing;
+using ServiceClients.Security;
 
 using SharedLib.Logging;
 using Serilog.Templates;
@@ -202,18 +204,74 @@ public static class Program
 
         app.UseAntiforgery();
 
-        // No service running answers 502, which the map reports as "offline". The service's key,
-        // when it has one, goes on every forwarded request, so the browser never holds it.
-        PathingServiceOptions pathing = app.Services.GetRequiredService<PathingServiceOptions>();
+        MapPathingForward(app);
+
+        return app;
+    }
+
+    // The map's calls to the Pathing Service (/api/v1), forwarded. No service running answers 502,
+    // which the map reports as "offline". The service's key, when it has one, goes on every forwarded
+    // request, so the browser never holds it - which makes this host a door to the service: the
+    // service serves this machine and its key whoever stands behind it, and this host listens on the
+    // LAN. So the door applies the rules to its own caller first (ForwardPolicy): this machine gets
+    // anything; another machine reads, and authors what the map authors (paths, roads, danger zones),
+    // but deletes no tiles and starts no bake without the key; no page on another site writes at all.
+    private static void MapPathingForward(WebApplication app)
+    {
+        PathingServiceOptions pathing;
+        try
+        {
+            pathing = app.Services.GetRequiredService<PathingServiceOptions>();
+        }
+        catch (InvalidOperationException ex)
+        {
+            // A bad PathingService:Url must not keep the bot from starting: the map says why it is offline.
+            app.Logger.LogError("The map's Pathing Service is not forwarded: {Reason}", ex.Message);
+            app.Map($"{PathingApi.Root}/{{**catch-all}}", () => Results.Problem(detail: ex.Message,
+                statusCode: StatusCodes.Status502BadGateway, title: "Pathing Service not configured"));
+            return;
+        }
+
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments(PathingApi.Root) && ForwardRefusal(context, pathing.ApiKey) is (int status, string refusal))
+            {
+                await Results.Problem(detail: refusal, statusCode: status, title: "Not forwarded").ExecuteAsync(context);
+                return;
+            }
+
+            await next(context);
+        });
+
         app.MapForwarder($"{PathingApi.Root}/{{**catch-all}}", pathing.Url.GetLeftPart(UriPartial.Authority), transforms =>
         {
+            transforms.AddRequestHeader(ForwardPolicy.HopHeader, "1", append: false);
+            foreach (string header in ForwardPolicy.BrowserOriginHeaders)
+            {
+                transforms.AddRequestHeaderRemove(header);
+            }
+
             if (!string.IsNullOrEmpty(pathing.ApiKey))
             {
                 transforms.AddRequestHeader(ServiceKey.Header, pathing.ApiKey, append: false);
             }
         });
+    }
 
-        return app;
+    private static (int Status, string Refusal)? ForwardRefusal(HttpContext context, string? key)
+    {
+        HttpRequest request = context.Request;
+        if (ServiceKeyPolicy.CrossSiteRefusal(request.Method, request.Headers["Sec-Fetch-Site"], request.Headers.Origin,
+                request.Host.Value) is string crossSite)
+        {
+            return (StatusCodes.Status403Forbidden, crossSite);
+        }
+
+        bool forwarded = request.Headers.ContainsKey(ForwardPolicy.HopHeader);
+        return ForwardPolicy.Refusal(request.Method, request.Path.Value ?? string.Empty, context.Connection.RemoteIpAddress, key,
+                request.Headers[ServiceKey.Header], ForwardPolicy.LeafletMapAuthors, forwarded) is string refusal
+            ? (forwarded ? StatusCodes.Status508LoopDetected : StatusCodes.Status403Forbidden, refusal)
+            : null;
     }
 
 }
