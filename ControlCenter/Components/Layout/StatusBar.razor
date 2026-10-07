@@ -4,7 +4,8 @@
 @inject BotManagerStatus manager
 
 <header class="pa-statusbar">
-    @if (status.Capabilities is PathingCapabilities caps)
+    @* Nothing the service said before it went offline is shown as if it were still so. *@
+    @if (status.Online && status.Capabilities is PathingCapabilities caps)
     {
         <span class="pa-chip" title="The client data the Pathing Service serves (--exp) and its navmesh era">
             <span class="oi oi-globe" aria-hidden="true"></span>
@@ -42,9 +43,9 @@
         }
     }
 
-    @if (status.Capabilities is { GameFiles: false })
+    @if (status.Online && status.Capabilities is { GameFiles: false })
     {
-        <span class="pa-chip" title="The client is not installed where the Pathing Service runs: routes work from the baked tiles, but baking, area grids and terrain need the game files">
+        <span class="pa-chip" title="The client is not installed where the Pathing Service runs: routes work from the baked tiles, but baking and area grids need the game files">
             <span class="pa-faint">tiles only</span>
         </span>
     }

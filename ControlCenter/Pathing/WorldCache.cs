@@ -17,17 +17,21 @@ namespace ControlCenter.Pathing;
 
 /// <summary>
 /// What the pages pick from - continents, zones, NPC types, places and test routes - read from
-/// the service once and again whenever it comes back, not on every render.
+/// the service once, not on every render, and again whenever <see cref="PathingStatus"/> says what
+/// it serves may have changed (<see cref="Hosting.ServiceStatus.Reconnected"/>: it came back, restarted, or
+/// the continents with tiles changed). A read that did not get everything is not kept.
 /// </summary>
 public sealed class WorldCache
 {
     private readonly IServiceProvider services;
+    private readonly PathingStatus status;
     private readonly Lock gate = new();
     private Task<WorldSnapshot?>? loading;
 
     public WorldCache(IServiceProvider services, PathingStatus status)
     {
         this.services = services;
+        this.status = status;
         status.Reconnected += Forget;
     }
 
@@ -56,13 +60,21 @@ public sealed class WorldCache
         ServiceResult<WorldInfo> world = await client.GetWorldAsync();
         if (!world.Ok)
         {
-            // Not kept: the next page asks again.
+            // Not kept, and the pages that got nothing ask again at the next poll that reaches the service.
             Forget();
+            status.ReadAgain();
             return null;
         }
 
         ServiceResult<NamedLocation[]> locations = await client.GetLocationsAsync();
         ServiceResult<TestRoute[]> routes = await client.GetTestRoutesAsync();
+        if (!locations.Ok || !routes.Ok)
+        {
+            // Shown as it is, but read again rather than kept without places for good.
+            Forget();
+            status.ReadAgain();
+        }
+
         return new WorldSnapshot(world.Value, locations.Value ?? [], routes.Value ?? []);
     }
 }

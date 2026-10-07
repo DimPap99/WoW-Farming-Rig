@@ -18,13 +18,14 @@ public sealed record ServiceDescription(string Name, Uri Url, string UrlKey, str
 /// <summary>
 /// One service's state for every page and the status bar, read every <see cref="Interval"/> by this
 /// one poller rather than by each open page. A page shows "offline" from <see cref="Online"/>
-/// instead of waiting on a call that cannot succeed, and reloads on <see cref="Reconnected"/>.
+/// instead of waiting on a call that cannot succeed, and reads again on <see cref="Reconnected"/>.
 /// </summary>
 public abstract class ServiceStatus(ServiceDescription service, ILogger logger) : BackgroundService
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(2);
 
     private readonly SemaphoreSlim polling = new(1, 1);
+    private int readAgain;
 
     public ServiceDescription Service => service;
 
@@ -37,7 +38,11 @@ public abstract class ServiceStatus(ServiceDescription service, ILogger logger) 
     /// <summary>Raised after every poll, on the poller's thread.</summary>
     public event Action? Changed;
 
-    /// <summary>Raised when the service is reached after being down (or for the first time).</summary>
+    /// <summary>
+    /// Raised when the service is reached after being down (or for the first time), and at the next poll
+    /// that reaches it after <see cref="ReadAgain"/>: what pages read from it may have changed while it
+    /// stayed up, or a page's read of it failed. Pages read again.
+    /// </summary>
     public event Action? Reconnected;
 
     /// <summary>Polls now, for a page that just changed something (a bake, a cache clear).</summary>
@@ -57,6 +62,16 @@ public abstract class ServiceStatus(ServiceDescription service, ILogger logger) 
     /// <summary>Reads the service once: null when it answered, else why not.</summary>
     /// <param name="wasOnline">Whether the poll before this one reached it.</param>
     protected abstract Task<string?> ReadAsync(bool wasOnline, CancellationToken token);
+
+    /// <summary>
+    /// Has pages read the service again (<see cref="Reconnected"/>) at the next poll that reaches it:
+    /// what they read may have changed (a restart quicker than a poll, new data), or a read of theirs
+    /// failed while the service stayed up and was not kept.
+    /// </summary>
+    public void ReadAgain()
+    {
+        Volatile.Write(ref readAgain, 1);
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -89,7 +104,8 @@ public abstract class ServiceStatus(ServiceDescription service, ILogger logger) 
         }
 
         Subscribers.Raise(Changed, handler => handler(), logger);
-        if (Online && !wasOnline)
+        bool again = Online && Interlocked.Exchange(ref readAgain, 0) == 1;
+        if (Online && (!wasOnline || again))
         {
             Subscribers.Raise(Reconnected, handler => handler(), logger);
         }
