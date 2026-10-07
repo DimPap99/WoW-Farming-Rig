@@ -303,6 +303,36 @@ fixed the same day on `fix/phase2-review` (see "Fixed"); what is left:
       copying `PathingLogging`, `WorldDataFiles` re-implementing Frontend's static files, the
       MessagePack 3.1.8 pin nothing references, and the benchmark's copy of the test routes.
 
+59. **Forever's world data is QuestieDB's, with its gaps** (2026-10-07).
+    - **Where:** `scripts/extract-questiedb.py`, into `Json/dbc/forever/creatures.json`,
+      `npcspawnlocations`, `area`, `mailboxlocations` and `quests/forever`; read by the Pathing
+      Service's layers and quests and by a run's `Visit` and `Quest` steps.
+    - **Gaps:** Forever's new NPCs have no role and no creature type in QuestieDB yet, so a new vendor
+      is no vendor and a new beast not skinnable here; about 490 of Forever's ~1,240 new quests have
+      objectives. The data follows a game in beta: regenerate it now and then (`source.json` names
+      the QuestieDB commit). QuestieDB declares no license.
+    - **No hit boxes:** Forever's `WorldMapArea.json` has none, so a zone's NPC and node layers take
+      everything inside its map's rectangle - Elwynn Forest's vendors include Stormwind's. (A zone's
+      quests go by the quest log, not the rectangle.) The area grid, once baked for Forever, could
+      give them.
+    - **The islands:** Zephras Isle (map 2991) and the Darkspear Islands (2997) are zones of the map
+      data but no continent of the world view, so their layers and quests are not drawn.
+    - **Not synced:** an agent's data sync carries routes and cost zones, not this data; the game
+      PC's checkout of the repository has it. It is to move to the Pathing Service's API.
+
+60. **A `Visit` goes there; it does not talk yet** (2026-10-07).
+    - **Where:** `Core/Forever/Tasks/ForeverVisit.cs`, `ForeverQuestArea.cs`.
+    - **Effect:** a `Visit` walks to the NPC's spawn and is done on arrival: accepting or handing in
+      a quest, selling, repairing and training are still the player's. A `Quest` roams the camp of
+      what the quest asks for and takes any eligible unit there, not only the quest's, and ends by
+      kills, minutes or a level, not by the quest log. An NPC that stands where the baked mesh does
+      not reach (behind a counter) fails its visit at the start-up check, with why.
+    - **Needs:** the NPC clicked and its frames answered (`ForeverPointAndClick`); an NPC id per
+      nameplate; quest-log and bag telemetry from the add-on ("Quests" in `docs/forever-port.md`).
+    - **Also:** without Forever's area grid baked, a point's zone is guessed from the maps, which can
+      name the neighbour (the Valley of Trials as The Barrens) in logs and in the Control Center;
+      the place itself is exact.
+
 ## Fixed
 
 57. **A continent with nothing baked answered its relief with 500** (2026-10-07, found with the

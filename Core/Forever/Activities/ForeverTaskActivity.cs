@@ -45,13 +45,14 @@ public sealed class ForeverTaskActivity : IForeverActivity
     private readonly ClassConfiguration config;
     private readonly WorldMapAreaDB maps;
     private readonly ForeverMobMemory memory;
+    private readonly ForeverWorldData world;
     private ForeverTask? runnerTask;
     private IForeverTaskRunner? runner;
     private bool preflightPassed;
 
     public ForeverTaskActivity(ILogger<ForeverTaskActivity> logger, ForeverAgenda agenda,
         ForeverEngageActivity engage, ForeverNavigator navigator, IForeverCombatRoutine combat,
-        ClassConfiguration config, WorldMapAreaDB maps, ForeverMobMemory memory)
+        ClassConfiguration config, WorldMapAreaDB maps, ForeverMobMemory memory, ForeverWorldData world)
     {
         this.logger = logger;
         this.agenda = agenda;
@@ -61,6 +62,7 @@ public sealed class ForeverTaskActivity : IForeverActivity
         this.config = config;
         this.maps = maps;
         this.memory = memory;
+        this.world = world;
     }
 
     public string Name => "Task";
@@ -73,8 +75,10 @@ public sealed class ForeverTaskActivity : IForeverActivity
     /// <summary>
     /// Every task the agenda names can begin from this frame: travel points on
     /// verified maps of the player's continent and on the baked mesh, roam
-    /// areas with walkable ground inside. Checked until it passes once; the
-    /// agenda's tasks do not change.
+    /// areas with walkable ground inside, and a visit's or a quest's place
+    /// found from here, then checked as a travel or a roam is (each is found
+    /// again from where the character stands when it begins). Checked until it
+    /// passes once; the agenda's tasks do not change.
     /// </summary>
     public bool TryPreflight(VisualBarSample bars, out string reason)
     {
@@ -87,6 +91,11 @@ public sealed class ForeverTaskActivity : IForeverActivity
             {
                 ForeverTravelTask travel => ForeverTravel.TryResolve(travel, bars, navigator, maps, out _, out reason),
                 ForeverRoamAreaTask roam => ForeverRoamArea.TryCheck(roam, bars, navigator, maps, out reason),
+                ForeverVisitTask visit => ForeverVisit.TryResolve(visit, bars, world, maps, out ForeverTravelTask to, out _, out reason) &&
+                                          ForeverTravel.TryResolve(to, bars, navigator, maps, out _, out reason),
+                ForeverQuestAreaTask quest => ForeverQuestArea.TryResolve(quest, bars, world, maps, out ForeverRoamAreaTask camp, out _,
+                                                  out reason) &&
+                                              ForeverRoamArea.TryCheck(camp, bars, navigator, maps, out reason),
                 _ => true,
             };
             if (!ready)
@@ -165,6 +174,10 @@ public sealed class ForeverTaskActivity : IForeverActivity
             ForeverHuntHereTask hunt => new ForeverHuntHere(logger, hunt, engage, navigator, combat, config),
             ForeverTravelTask travel => new ForeverTravel(logger, travel, engage, navigator, combat, config, maps),
             ForeverRoamAreaTask roam => new ForeverRoamArea(logger, roam, engage, navigator, combat, config, maps, memory),
+            ForeverVisitTask visit => new ForeverVisit(logger, visit, world, maps,
+                to => new ForeverTravel(logger, to, engage, navigator, combat, config, maps)),
+            ForeverQuestAreaTask quest => new ForeverQuestArea(logger, quest, world, maps,
+                camp => new ForeverRoamArea(logger, camp, engage, navigator, combat, config, maps, memory)),
             _ => throw new NotSupportedException($"Forever has no runner for the task '{runnerTask.Name}'"),
         };
         if (runner is null)
