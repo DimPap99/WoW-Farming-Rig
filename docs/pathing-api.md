@@ -93,13 +93,13 @@ A page whose service is down says so, and comes back by itself.
 | page | what it is for |
 |---|---|
 | **Live view** (`/`) | Every route the Pathing Service plans, from any caller, as it plans it; and the known-trouble **test routes**, each run as a real route request. |
-| **Map** (`/map`) | What is where in a zone: NPCs by type, elites, herbs, veins, skinnable creatures, mailboxes and places; creatures found by name. Points, lines and shapes can be drawn and measured, with their zone map coordinates. |
+| **Map** (`/map`) | What is where in a zone: NPCs by type, elites, herbs, veins, skinnable creatures, mailboxes, places and quest givers; creatures found by name. A quest - from the zone's, found by name, or `/map?quest=7` - shows where it is given and handed in and every place of what it asks (the creatures to kill, those that drop what it needs, the objects, the vendors), in zone map coordinates. Points, lines and shapes can be drawn and measured, with their zone map coordinates. |
 | **Fleet** (`/fleet`) | Every bot the Bot Manager knows: its state, client, vitals, activity, place and assignment, with Start and Stop. A bot's **console** adds the assignment form, the run history and the bot's log. |
-| **Routes** (`/routes`) | The route designer: waypoints clicked on the map or taken from named places, each leg planned. Recorded paths open, change and save here, and a route saves as a Forever route. |
+| **Routes** (`/routes`) | The route designer: waypoints clicked on the map or taken from named places or a quest's places, each leg planned, with the Map's layers. Recorded paths open, change and save here, and a route saves as a Forever route. |
 | **NPC routes** | Route to an NPC of a type in a zone, from a random start. |
 | **Cost zones** | Roads routes are drawn towards, and danger zones they avoid or never cross: draw, edit, save. |
 | **Navmesh** | Where the navmesh is baked and which tiles the planner holds. Bake an ADT or a continent, or rebuild the area grid. |
-| **Forever routes** | WoW: Forever route files as text, checked as a run loads them and drawn beside the text. |
+| **Forever routes** | WoW: Forever route files as text, checked as a run loads them and drawn beside the text, with the Map's layers: a place's coordinates, or a quest's steps, go into the text. |
 | **API** | The Pathing Service's Swagger: every endpoint with examples. |
 
 ## Baking
