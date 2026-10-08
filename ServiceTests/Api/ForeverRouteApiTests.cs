@@ -62,6 +62,26 @@ public sealed class ForeverRouteApiTests
     }
 
     [Fact]
+    public async Task A_file_with_an_empty_step_is_listed_as_refused_and_can_be_opened()
+    {
+        using TempDataRoot data = ForeverData();
+        // A step deleted by hand that left its comma: Newtonsoft reads a null step.
+        File.WriteAllText(Path.Combine(RouteFolder(data), "comma.json"),
+            """{ "Name": "Comma", "UIMapId": 1413, "Steps": [ { "Travel": { "To": [51.9, 29.9] } },, ] }""");
+        using PathingServiceFactory factory = new(data.Root);
+        PathingClient client = new(factory.CreateClient());
+
+        ServiceResult<ForeverRouteInfo[]> listed = await client.ListForeverRoutesAsync(TestContext.Current.CancellationToken);
+        ServiceResult<ForeverRouteDocument> opened = await client.GetForeverRouteAsync("comma.json", TestContext.Current.CancellationToken);
+
+        Assert.True(listed.Ok, listed.Error);
+        Assert.Equal(["comma.json", Trip, Example], [.. listed.Value.Select(route => route.Name)]);
+        Assert.Contains("step 2 is empty", listed.Value[0].Problem);
+        Assert.True(opened.Ok, opened.Error);
+        Assert.Contains("step 2 is empty", opened.Value.Info.Problem);
+    }
+
+    [Fact]
     public async Task A_saved_route_keeps_its_comments_byte_for_byte()
     {
         using TempDataRoot data = ForeverData();

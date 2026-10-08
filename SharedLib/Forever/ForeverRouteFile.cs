@@ -88,6 +88,13 @@ public static class ForeverRouteFile
         List<ForeverTask> tasks = new(steps.Count);
         for (int i = 0; i < steps.Count; i++)
         {
+            // Newtonsoft reads [null], [a,,b] and [,a] as null steps, not as a mistake (known issue 70).
+            if (steps[i] is null)
+            {
+                error = $"{name}, step {i + 1} is empty: a stray comma, or null";
+                return false;
+            }
+
             if (!TryStep(steps[i], parsed.UIMapId, maps, out ForeverTask task, out string why))
             {
                 error = $"{name}, step {i + 1}: {why}";

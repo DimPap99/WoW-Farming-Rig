@@ -396,20 +396,14 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       does not load; `LoadPathProfile` answers whether it loaded, and `CreateSession` replaces the
       session only once the new one is built; one name rule for every name (the plan's step 3).
 
-70. **One malformed route file takes the route library offline.**
-    - **Where:** `SharedLib/Forever/ForeverRouteFile.TryParse`, `PathingService/Forever/ForeverRouteLibrary`,
-      `PathingService/Sync/SyncLibrary`.
-    - **Cause:** Newtonsoft reads `"Steps":[null]`, `[a,,b]` and `[,a]` as null steps without a
-      `JsonException`, and `TryStep` dereferences the step: a `NullReferenceException`, which `TryParse`
-      does not catch. The library describes every file in one loop.
-    - **Effect:** a step deleted by hand that leaves its comma makes `GET /api/v1/forever/routes` answer
-      500: the Forever routes page, the assignment form and the designer show no route at all, and the
-      file cannot be opened from the page to fix it. An agent assigned the route reports Failed, with
-      the exception's text, instead of Refused.
-    - **Also:** a name ending in `.JSON` is accepted, but the library and the sync list `*.json`,
-      case-sensitively on Linux: such a route answers "saved" and is never listed or synced.
-    - **Fix:** an empty step is refused with its number; the library shows a file it cannot read as
-      refused instead of failing the list; a name ends in `.json`, exactly.
+70. **A route named `.JSON` is saved but never listed.** (The malformed file that took the library
+    offline is fixed: see "Fixed".)
+    - **Where:** `PathingService/Forever/ForeverRouteLibrary` and `PathingService/Sync/SyncLibrary`, which
+      list `*.json`; the names' rule accepts `.json` in any case (`PathName`, `TryResolve`,
+      `AssignmentRules`).
+    - **Effect:** on Linux a route saved as `Durotar.JSON` answers "saved" but is never listed or synced:
+      it cannot be opened, deleted or assigned from the pages.
+    - **Fix (the plan's step 3, with the one name rule):** a name ends in `.json`, exactly.
 
 71. **Names that differ only in case are one file on a Windows bot.**
     - **Where:** `BotAgent/Sync/DataSync` (its manifest is case-insensitive on Windows); the Pathing
@@ -526,6 +520,17 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+70. **One malformed route file took the route library offline** (Phase 3 review, 2026-10-08; the
+    `.JSON` names are item 70 above). Newtonsoft reads `"Steps":[null]`, `[a,,b]` and `[,a]` as null
+    steps without an error, and `TryParse` dereferenced the step: a step deleted by hand that left its
+    comma made `GET /api/v1/forever/routes` answer 500, so the pages showed no route at all and the
+    file could not be opened to fix it, and an agent reported the run Failed instead of Refused. An
+    empty step is now refused with its number ("step 2 is empty: a stray comma, or null"), and the
+    library reads a file through a parse that turns anything the reader throws into a refusal, so one
+    file never fails the list, a get or a save. Tests: `ForeverRouteFileTests`,
+    `ForeverRouteApiTests.A_file_with_an_empty_step_is_listed_as_refused_and_can_be_opened` (all fail
+    on the old code).
 
 69. **A repeating route with nothing left to do spun for ever** (Phase 3 review, 2026-10-08). The task
     activity passed the tasks already done with `while (current is met) Finish(current)`, and with

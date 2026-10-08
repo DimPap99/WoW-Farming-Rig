@@ -36,6 +36,10 @@ public sealed class ForeverRouteFileTests
         { $"{{ {Head}, \"Steps\": [ {{ \"Roam\": {{ \"Area\": [[51, 44]], \"Until\": {{ \"Kills\": 3 }} }} }} ] }}", "step 1: a Roam needs an Area" },
         { $"{{ {Head}, \"Steps\": [ {{ \"Roam\": {{ \"Area\": [[51, 44], [53, 46]], \"Until\": {{ \"Kills\": 0 }} }} }} ] }}",
             "step 1: Until needs Kills" },
+        // Newtonsoft reads a stray comma as a null step, not as a mistake (known issue 70).
+        { $"{{ {Head}, \"Steps\": [ null ] }}", "step 1 is empty" },
+        { $"{{ {Head}, \"Steps\": [ {{ \"Travel\": {{ \"To\": [52, 44] }} }},, {{ \"Travel\": {{ \"To\": [52, 44] }} }} ] }}", "step 2 is empty" },
+        { $"{{ {Head}, \"Steps\": [ , {{ \"Travel\": {{ \"To\": [52, 44] }} }} ] }}", "step 1 is empty" },
         // Newtonsoft reads these as numbers, and none of them ends a step (known issue 69).
         { $"{{ {Head}, \"Steps\": [ {{ \"Roam\": {{ \"Area\": [[51, 44], [53, 46]], \"Until\": {{ \"Minutes\": NaN }} }} }} ] }}",
             "step 1: Until needs" },

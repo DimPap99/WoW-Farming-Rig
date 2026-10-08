@@ -110,7 +110,7 @@ public sealed class ForeverRouteLibrary(DataConfig dataConfig)
             return StoreResult.Unreadable(problem!);
         }
 
-        if (!ForeverRouteFile.TryParse(text, name, db, out _, out string refused))
+        if (!TryParse(text, name, db, out _, out string refused))
         {
             return StoreResult.Invalid(refused);
         }
@@ -205,9 +205,25 @@ public sealed class ForeverRouteLibrary(DataConfig dataConfig)
             return new ForeverRouteInfo(name, untitled, [], false, mapProblem, bytes, modified);
         }
 
-        return ForeverRouteFile.TryParse(text, name, db, out ForeverRoute route, out string error)
+        return TryParse(text, name, db, out ForeverRoute route, out string error)
             ? new ForeverRouteInfo(name, route.Name, [.. route.Tasks.Select(task => task.Name)], route.Repeat, null, bytes, modified)
             : new ForeverRouteInfo(name, untitled, [], false, error, bytes, modified);
+    }
+
+    // What a run makes of the text, and a text the reader cannot even read is refused with why: one
+    // file must never fail the whole library, and with it every page that lists it (known issue 70).
+    private static bool TryParse(string text, string name, WorldMapAreaDB db, out ForeverRoute route, out string error)
+    {
+        try
+        {
+            return ForeverRouteFile.TryParse(text, name, db, out route, out error);
+        }
+        catch (Exception ex)
+        {
+            route = null!;
+            error = $"{name} cannot be read: {ex.Message}";
+            return false;
+        }
     }
 
     private static bool TryRead(string file, out string text)
