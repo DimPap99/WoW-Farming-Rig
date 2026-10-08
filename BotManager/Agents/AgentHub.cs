@@ -20,7 +20,8 @@ public sealed class AgentHub(BotFleet fleet) : Hub
     [HubMethodName(AgentHubMethods.Register)]
     public Task<AgentWelcome> Register(AgentHello hello)
     {
-        return fleet.RegisterAsync(Context.ConnectionId, hello);
+        // Closing this connection is how a newer one from the same PC takes over from it.
+        return fleet.RegisterAsync(Context.ConnectionId, hello, Context.Abort);
     }
 
     [HubMethodName(AgentHubMethods.Snapshot)]

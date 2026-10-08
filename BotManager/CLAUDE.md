@@ -48,10 +48,14 @@ every Control Center froze every agent's connection while one of them did not re
 `BotFleet` posts every change to `HubSendQueue`, under its lock, so listeners get the changes in the
 order they happened; never `await fleet.Clients...` in an agent's call.
 
-**An agent registers on every connection, and the newest connection wins.** A reconnect can arrive
-before the old connection's end; the old connection's disconnect is then ignored. Anything an agent
-sends before it registers is ignored, and the connection, not the message, says which bot sent a
-snapshot.
+**An agent registers on every connection; from its own machine, the newest connection wins.** A
+reconnect can arrive before the old connection's end: the old connection is then closed and its
+disconnect ignored. An id online from another machine is refused, naming that machine: two PCs with
+one `agent_identity.json` (a copied folder) took the bot from each other, the displaced one playing on
+unseen (known issue 74). A connection is one agent. Anything an agent sends before it registers is
+ignored, and a report on a connection that is not the bot's fails, so the agent keeps it; the
+connection, not the message, says which bot sent a snapshot. A hello without a client keeps the
+client last seen.
 
 **Live state is memory; the registry is files.** Online, the latest snapshot and the last 500 log
 lines per bot vanish with the process; agents register again when it comes back, a running bot

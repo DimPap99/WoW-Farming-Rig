@@ -33,7 +33,15 @@ internal sealed class FakeAgent : IAsyncDisposable
             return Answer(command);
         });
         connection.On<BotAssignment?>(AgentHubMethods.Assign, assignment => Assignments.Enqueue(assignment));
+        connection.Closed += _ =>
+        {
+            Closed.TrySetResult();
+            return Task.CompletedTask;
+        };
     }
+
+    /// <summary>Done once the connection closed, as the manager closes a connection a newer one took over from.</summary>
+    public TaskCompletionSource Closed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public HubConnection Connection { get; }
 
@@ -70,10 +78,13 @@ internal sealed class FakeAgent : IAsyncDisposable
         return agent;
     }
 
-    public static AgentHello Hello(string agentId, string name = "Test PC", BotRunInfo? run = null, int protocol = BotManagerApi.AgentProtocol)
+    public static readonly AgentGame Forever = new("forever", "forever", 4242, "1.60.1.70009");
+
+    public static AgentHello Hello(string agentId, string name = "Test PC", BotRunInfo? run = null, int protocol = BotManagerApi.AgentProtocol,
+        string machine = "TESTBOX", bool withGame = true)
     {
-        return new AgentHello(agentId, name, "TESTBOX", protocol, Version,
-            new AgentGame("forever", "forever", 4242, "1.60.1.70009"), run, ["Hunter_10.json", "Forever/Paladin_Forever_Auto.json"]);
+        return new AgentHello(agentId, name, machine, protocol, Version, withGame ? Forever : null, run,
+            ["Hunter_10.json", "Forever/Paladin_Forever_Auto.json"]);
     }
 
     public Task<AgentWelcome> RegisterAsync(AgentHello? hello = null)

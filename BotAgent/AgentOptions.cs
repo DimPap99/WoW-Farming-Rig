@@ -1,3 +1,5 @@
+using Contracts.Bots;
+
 using Microsoft.Extensions.Configuration;
 
 using ServiceClients.Bots;
@@ -23,7 +25,7 @@ public sealed record AgentOptions(string IdentityFile, string? Name, BotManagerO
     public const string NameKey = Position + ":Name";
     public const string StopGraceMsKey = Position + ":StopGraceMs";
 
-    public const string DefaultIdentityFile = "agent_identity.json";
+    public const string DefaultIdentityFile = BotManagerApi.AgentIdentityFile;
 
     /// <summary>A stopped run's time to release what it holds and end: the trial runner's host gave it the same.</summary>
     public const int StopGraceMs = 10000;

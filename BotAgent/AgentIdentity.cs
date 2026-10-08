@@ -5,6 +5,7 @@ using ServiceClients.Bots;
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Threading;
 
 namespace BotAgent;
 
@@ -57,5 +58,40 @@ public sealed record AgentIdentity(string AgentId, string Name, string Machine)
         return new AgentIdentity(id!, name, machine);
     }
 
+    /// <summary>
+    /// Holds this id on this PC until disposed, or null when another process holds it: two agents
+    /// with one id, as a second start from one folder makes, take the bot's place in the manager from
+    /// each other (known issue 74). A process that ends lets go of it, however it ended. Machine-wide
+    /// (<c>Global\</c>): a second agent in another session, or started detached on Linux, counts too.
+    /// </summary>
+    public IDisposable? Claim()
+    {
+        Mutex mutex = new(initiallyOwned: true, $@"Global\WoWFarmingRig.Agent.{AgentId}", out bool created);
+        if (created)
+        {
+            return new Held(mutex);
+        }
+
+        mutex.Dispose();
+        return null;
+    }
+
     private sealed record Stored(string? AgentId, DateTimeOffset? Created);
+
+    private sealed class Held(Mutex mutex) : IDisposable
+    {
+        public void Dispose()
+        {
+            try
+            {
+                mutex.ReleaseMutex();
+            }
+            catch (ApplicationException)
+            {
+                // Released from another thread than the one that took it: closing it lets it go too.
+            }
+
+            mutex.Dispose();
+        }
+    }
 }

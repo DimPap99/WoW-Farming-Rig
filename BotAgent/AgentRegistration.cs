@@ -19,15 +19,17 @@ public static class AgentRegistration
     /// The agent: its identity, the run host, the link to the manager (idle without one) and
     /// telemetry. The host adds what plays: <see cref="IBotRuntimeFactory"/>, <see cref="IGameProbe"/>,
     /// <see cref="IClassProfileCatalog"/> and <see cref="IAgentProcess"/>, and any <see cref="IRunPreparation"/>.
-    /// <paramref name="sink"/> is the instance its logger writes to.
+    /// <paramref name="sink"/> is the instance its logger writes to; <paramref name="identity"/> the one the
+    /// process holds, else the one kept in <see cref="AgentOptions.IdentityFile"/>.
     /// </summary>
-    public static IServiceCollection AddBotAgent(this IServiceCollection services, AgentOptions options, AgentLogSink sink)
+    public static IServiceCollection AddBotAgent(this IServiceCollection services, AgentOptions options, AgentLogSink sink,
+        AgentIdentity? identity = null)
     {
         services.AddSingleton(options);
         services.AddSingleton(sink);
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton(AgentLinkOptions.Default);
-        services.AddSingleton(sp => AgentIdentity.LoadOrCreate(options.IdentityFile, options.Name,
+        services.AddSingleton(sp => identity ?? AgentIdentity.LoadOrCreate(options.IdentityFile, options.Name,
             sp.GetRequiredService<ILoggerFactory>().CreateLogger<AgentIdentity>()));
         services.AddSingleton<BotRuntimeHost>();
         services.AddSingleton<AgentLink>();

@@ -43,7 +43,7 @@ public sealed class StalledListenerTests
             sends, new BotFleetOptions(TimeSpan.FromSeconds(1)), TimeProvider.System, NullLogger<BotFleet>.Instance);
         BotRunInfo run = new("run1", BotRuntimeKind.Forever, "route trip.json", DateTimeOffset.UtcNow);
 
-        Assert.True(await Returns(() => fleet.RegisterAsync(Connection, FakeAgent.Hello(AgentId))), "Register waited on the listener");
+        Assert.True(await Returns(() => fleet.RegisterAsync(Connection, FakeAgent.Hello(AgentId), () => { })), "Register waited on the listener");
         Assert.True(await Returns(() => fleet.SnapshotAsync(Connection, Snapshot(run))), "Snapshot waited on the listener");
         Assert.True(await Returns(() => fleet.LogAsync(Connection, [new BotLogLine(DateTimeOffset.UtcNow, "Information", "Test", "a line")])),
             "Log waited on the listener");

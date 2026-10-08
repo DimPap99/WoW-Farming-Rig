@@ -57,6 +57,9 @@ public static class BotManagerApi
 
     /// <summary>The longest time bound a Forever assignment may ask for.</summary>
     public const int MaxMinutes = 600;
+
+    /// <summary>The file beside an agent that keeps its id; named in the manager's refusal of an id online from two machines.</summary>
+    public const string AgentIdentityFile = "agent_identity.json";
 }
 
 /// <summary>

@@ -133,7 +133,10 @@ with the trial runner's gates: the verified profile, the preflight, a click into
 Classic run, and on a Forever client it is refused, as standalone Forever always was.
 
 **The agent's id lives in `agent_identity.json`** beside it (`Agent:IdentityFile`). Delete it and
-the manager sees a new bot.
+the manager sees a new bot. One process holds an id on a PC (`AgentIdentity.Claim`, a machine-wide
+mutex): a second `--agent` with it ends with an error, and a profile run beside an agent runs
+without the manager (known issue 74). A folder copied to another PC brings the id with it, and the
+manager refuses the second PC while the first is online: delete the file there.
 
 **This is the working directory benchmarks assume.** `NavmeshCorpus.SetWorkingDirectory()`
 chdirs here so `DataConfig`'s relative `..\json` resolves. Moving or renaming this

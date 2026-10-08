@@ -405,21 +405,6 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       it cannot be opened, deleted or assigned from the pages.
     - **Fix (the plan's step 3, with the one name rule):** a name ends in `.json`, exactly.
 
-74. **Two agents with one id hide one of them.**
-    - **Where:** `BotManager/Bots/BotFleet.RegisterAsync`; `BotAgent/AgentIdentity` and HeadlessServer's
-      start.
-    - **Cause:** "the newest wins": a second connection registering an id that is online takes it over
-      silently; the old connection is neither closed nor told, and its snapshots and reports are
-      acknowledged and dropped. Nothing keeps two agents with one id from running: a HeadlessServer
-      folder copied to another PC (`agent_identity.json` comes with it), or two processes from one
-      folder. One connection may also register a second id, leaving the first online for good, and a
-      registration without a client overwrites the client last seen.
-    - **Effect:** the displaced bot plays on unseen and cannot be stopped, and its run history is lost.
-    - **Fix (decided 2026-10-08):** an id online from another machine is refused, naming that machine; a
-      reconnect from the same machine replaces its old connection, which is closed; calls on a connection
-      that is no longer the bot's fail, so the agent keeps its reports; one connection is one agent; one
-      agent per id runs on a PC; a hello without a client keeps the last one seen.
-
 75. **The key rules trust loopback too far.**
     - **Where:** `ServiceClients/Security/ServiceKeyPolicy` and `ForwardPolicy`, both services' guards,
       both forwarders; `AllowedHosts: "*"` in the four hosts' settings.
@@ -475,6 +460,20 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+74. **Two agents with one id hid one of them** (Phase 3 review, 2026-10-08; decided 2026-10-08: refuse
+    the second machine). "The newest wins" took a bot over silently: the old connection was neither
+    closed nor told, its reports were taken and dropped, and the displaced agent played on unseen and
+    could not be stopped. Nothing kept two agents with one id apart: a HeadlessServer folder copied to
+    another PC, or two processes from one folder.
+    - The manager refuses an id online from another machine, naming it and `agent_identity.json`; from
+      the same machine the newer connection takes over and the older is closed.
+    - A report on a connection that is not the bot's fails (`HubException`), so the agent keeps it.
+    - A connection registers one agent; a hello without a client keeps the client last seen.
+    - HeadlessServer holds its id machine-wide while it runs (`AgentIdentity.Claim`): a second `--agent`
+      ends with an error naming the id, and a profile run beside an agent runs without the manager.
+    - Tests: `OneAgentPerIdTests` (each fails with its check taken out). Live: a second agent from the
+      same folder, the first started detached, ended with 1 and said why.
 
 73. **One stalled Control Center froze every agent** (Phase 3 review, 2026-10-08). Every agent hub
     call awaited `fleet.Clients.All.SendAsync`, the send to every fleet listener, and SignalR reads an

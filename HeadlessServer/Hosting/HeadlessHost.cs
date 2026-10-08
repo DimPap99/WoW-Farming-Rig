@@ -26,7 +26,10 @@ public static class HeadlessHost
     /// <summary>Long enough for a stopped run's grace period, its forced release and its last report.</summary>
     public static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(30);
 
-    public static IHost Build(IConfiguration configuration, string? environment, RunOptions options, AgentLogSink sink)
+    /// <param name="identity">The agent's identity, as the process holds it; read from its file when null.</param>
+    /// <param name="linked">Whether it dials out to the Bot Manager: not while another process holds the same id.</param>
+    public static IHost Build(IConfiguration configuration, string? environment, RunOptions options, AgentLogSink sink,
+        AgentIdentity? identity = null, bool linked = true)
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
@@ -47,7 +50,8 @@ public static class HeadlessHost
 
         builder.Services.AddSingleton(options);
         builder.Services.AddHostedService<StopOnSignals>();
-        builder.Services.AddBotAgent(AgentOptions.From(builder.Configuration), sink);
+        AgentOptions agent = AgentOptions.From(builder.Configuration);
+        builder.Services.AddBotAgent(linked ? agent : agent with { Manager = null }, sink, identity);
         // Before a run, the files it needs from the Pathing Service; without one, this PC's copies.
         builder.Services.AddDataSync(DataConfig.Load(), PathingServiceOptions.FromIfConfigured(builder.Configuration));
         builder.Services.AddSingleton<IBotRuntimeFactory, HeadlessRuntimeFactory>();

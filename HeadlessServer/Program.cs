@@ -1,3 +1,4 @@
+using BotAgent;
 using BotAgent.Telemetry;
 
 using CommandLine;
@@ -89,8 +90,24 @@ public static class Program
             return ClassicRuntime.LoadOnly(options.ClassConfig!, options, configuration, loggerFactory) ? ExitOk : ExitError;
         }
 
+        // One process per id on this PC: two would take the bot's place in the manager from each other.
+        AgentOptions agent = AgentOptions.From(configuration);
+        AgentIdentity identity = AgentIdentity.LoadOrCreate(agent.IdentityFile, agent.Name, loggerFactory.CreateLogger<AgentIdentity>());
+        using IDisposable? claim = identity.Claim();
+        if (claim is null)
+        {
+            if (options.Agent)
+            {
+                log.LogError("Another agent with this id ({AgentId}, {File}) runs on this PC: this one ends", identity.AgentId, agent.IdentityFile);
+                return ExitError;
+            }
+
+            log.LogWarning("Another agent with this id ({AgentId}) runs on this PC: this run reports to no Bot Manager", identity.AgentId);
+        }
+
         // An agent's host is built again when it fails; a profile's run ends with its host.
-        return ResidentHost.Run(() => HeadlessHost.Build(configuration, environment, options, sink), log, resident: options.Agent);
+        return ResidentHost.Run(() => HeadlessHost.Build(configuration, environment, options, sink, identity, linked: claim is not null), log,
+            resident: options.Agent);
     }
 
     // --help and --version come back as NotParsed too, but they are a satisfied request.

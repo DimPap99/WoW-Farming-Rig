@@ -62,7 +62,14 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
 
     // --- from agents -----------------------------------------------------------------------
 
-    public Task<AgentWelcome> RegisterAsync(string connectionId, AgentHello hello)
+    /// <summary>
+    /// An agent's hello on <paramref name="connectionId"/>: refused with why, or the bot online over it.
+    /// An id online from another machine is refused, naming it: two PCs with one id (a copied folder)
+    /// would take the bot's place from each other, the one displaced playing on unseen (known issue 74).
+    /// From the same machine the newer connection takes over, and the older one is closed
+    /// (<paramref name="close"/>).
+    /// </summary>
+    public Task<AgentWelcome> RegisterAsync(string connectionId, AgentHello hello, Action close)
     {
         if (hello.Protocol != BotManagerApi.AgentProtocol)
         {
@@ -78,25 +85,47 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
         }
 
         DateTimeOffset now = clock.GetUtcNow();
+        string machine = Clean(hello.Machine, string.Empty);
         BotRecord record;
+        LiveBot? displaced = null;
         lock (sync)
         {
+            if (agentByConnection.TryGetValue(connectionId, out string? already) && already != hello.AgentId)
+            {
+                LogRefused(logger, hello.AgentId, $"its connection is agent {already} already");
+                return Task.FromResult(new AgentWelcome(false, $"this connection is agent {already} already: one connection, one agent", null));
+            }
+
+            if (online.TryGetValue(hello.AgentId, out LiveBot? other) && other.ConnectionId != connectionId &&
+                !string.Equals(other.Machine, machine, StringComparison.OrdinalIgnoreCase))
+            {
+                LogRefused(logger, hello.AgentId, $"its id is online from {other.Machine}");
+                return Task.FromResult(new AgentWelcome(false,
+                    $"this agent's id is online from {other.Machine}: two PCs share one {BotManagerApi.AgentIdentityFile} (a copied folder). " +
+                    $"Delete the file on one of them, which then takes a new id", null));
+            }
+
             BotRecord? known = registry.Get(hello.AgentId);
-            record = new BotRecord(hello.AgentId, Clean(hello.Name, hello.Machine, hello.AgentId), Clean(hello.Machine, string.Empty),
-                known?.FirstSeen ?? now, now, hello.Protocol, Clean(hello.AgentVersion, string.Empty), hello.Game,
+            // A hello without a client says only that none runs now: the last one seen is kept.
+            record = new BotRecord(hello.AgentId, Clean(hello.Name, hello.Machine, hello.AgentId), machine, known?.FirstSeen ?? now, now,
+                hello.Protocol, Clean(hello.AgentVersion, string.Empty), hello.Game ?? known?.Game,
                 [.. (hello.ClassProfiles ?? []).Where(AssignmentRules.IsRelativeName).Take(MaxClassProfiles)], known?.Assignment);
             // An agent that registers is online whether or not its record could be written.
             Record(record);
 
-            // A reconnect may reach the manager before the old connection's end does: the newest wins.
-            if (online.Remove(hello.AgentId, out LiveBot? stale))
+            // A reconnect may reach the manager before the old connection's end does: the newest wins, and the old one is closed.
+            if (online.Remove(hello.AgentId, out LiveBot? stale) && stale.ConnectionId != connectionId)
             {
                 agentByConnection.Remove(stale.ConnectionId);
+                displaced = stale;
             }
-            online[hello.AgentId] = new LiveBot(connectionId) { Run = hello.Run, Game = hello.Game };
+
+            online[hello.AgentId] = new LiveBot(connectionId, machine, close) { Run = hello.Run, Game = hello.Game };
             agentByConnection[connectionId] = hello.AgentId;
             Broadcast(FleetHubMethods.BotChanged, InfoOf(record));
         }
+
+        displaced?.Close();
 
         LogRegistered(logger, record.Name, record.AgentId, Printable(hello.Run?.Summary ?? "idle"));
         return Task.FromResult(new AgentWelcome(true, null, record.Assignment));
@@ -161,7 +190,8 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
         {
             if (!TryLive(connectionId, out agentId, out LiveBot? live))
             {
-                return Task.CompletedTask;
+                // Not taken: the agent keeps the report and sends it once it is registered again.
+                throw new HubException("this connection is not a registered agent's: the report was not kept");
             }
 
             // A write that fails throws to the agent, which keeps the report and sends it again.
@@ -438,9 +468,11 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
         return text.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
     }
 
-    private sealed class LiveBot(string connectionId)
+    private sealed class LiveBot(string connectionId, string machine, Action close)
     {
         public string ConnectionId { get; } = connectionId;
+        public string Machine { get; } = machine;
+        public Action Close { get; } = close;
         public BotRunInfo? Run { get; set; }
         public AgentGame? Game { get; set; }
         public BotSnapshot? Latest { get; set; }
