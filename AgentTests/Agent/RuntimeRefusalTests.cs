@@ -109,7 +109,7 @@ public sealed class RuntimeRefusalTests : IDisposable
     [Fact]
     public void The_probe_finds_no_client_where_none_runs()
     {
-        Assert.Null(new WowGameProbe(new RunOptions { Pid = int.MaxValue }).Probe());
+        Assert.Null(new WowGameProbe(new RunOptions { Pid = int.MaxValue }, NullLogger<WowGameProbe>.Instance).Probe());
     }
 
     public void Dispose()

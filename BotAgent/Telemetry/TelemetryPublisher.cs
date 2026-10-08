@@ -4,6 +4,7 @@ using BotAgent.Runtime;
 using Contracts.Bots;
 
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 using System;
 using System.Threading;
@@ -15,10 +16,11 @@ namespace BotAgent.Telemetry;
 /// Once a second, the bot's state as a <see cref="BotSnapshot"/>, read through the run's read-only
 /// taps (or the client probe while idle), and the log lines since the last batch, to the manager.
 /// While the manager is away nothing is sent and the log waits in its sink; the file log is
-/// always written.
+/// always written. A tick that fails is logged and the next one runs: on .NET 10 a background
+/// service that faults stops the host, and with it the run (known issue 67).
 /// </summary>
-public sealed class TelemetryPublisher(AgentIdentity identity, BotRuntimeHost host, AgentLink link, IGameProbe probe,
-    AgentLogSink sink, TimeProvider clock) : BackgroundService
+public sealed partial class TelemetryPublisher(AgentIdentity identity, BotRuntimeHost host, AgentLink link, IGameProbe probe,
+    AgentLogSink sink, TimeProvider clock, ILogger<TelemetryPublisher> logger) : BackgroundService
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(1);
 
@@ -29,7 +31,10 @@ public sealed class TelemetryPublisher(AgentIdentity identity, BotRuntimeHost ho
     public const int BatchLines = 500;
 
     private AgentGame? game;
-    private DateTimeOffset probedAt = DateTimeOffset.MinValue;
+    private long probedAt;
+    private bool probed;
+    private string? probeFailure;
+    private string? tickFailure;
     private long sentLine;
 
     /// <summary>The last snapshot taken, sent or not.</summary>
@@ -38,15 +43,16 @@ public sealed class TelemetryPublisher(AgentIdentity identity, BotRuntimeHost ho
     /// <summary>Takes a snapshot now; what <see cref="ExecuteAsync"/> sends each second.</summary>
     public BotSnapshot Take()
     {
-        DateTimeOffset now = clock.GetUtcNow();
-        if (now - probedAt >= ProbeInterval)
+        // Timed on the monotonic clock: a wall clock set back would hold the next probe that long.
+        if (!probed || clock.GetElapsedTime(probedAt) >= ProbeInterval)
         {
-            game = probe.Probe();
-            probedAt = now;
+            game = Probe();
+            probedAt = clock.GetTimestamp();
+            probed = true;
         }
 
         BotTelemetry telemetry = host.Read();
-        BotSnapshot snapshot = new(identity.AgentId, now, telemetry.State, host.CurrentRun, game, telemetry.Character,
+        BotSnapshot snapshot = new(identity.AgentId, clock.GetUtcNow(), telemetry.State, host.CurrentRun, game, telemetry.Character,
             telemetry.Vitals, telemetry.Position, telemetry.Activity, telemetry.Agenda, telemetry.Progress, telemetry.Message);
         Latest = snapshot;
         return snapshot;
@@ -59,17 +65,17 @@ public sealed class TelemetryPublisher(AgentIdentity identity, BotRuntimeHost ho
         {
             do
             {
-                BotSnapshot snapshot = Take();
-                if (!link.Connected)
+                try
                 {
-                    continue;
+                    await PublishAsync(stopping);
+                    tickFailure = null;
                 }
-
-                await link.SendSnapshotAsync(snapshot, stopping);
-                BotLogLine[] lines = sink.ReadAfter(sentLine, BatchLines, out long last);
-                if (lines.Length > 0 && await link.SendLogAsync(lines, stopping))
+                catch (Exception ex) when (ex is not OperationCanceledException || !stopping.IsCancellationRequested)
                 {
-                    sentLine = last;
+                    if (Changed(ref tickFailure, ex))
+                    {
+                        LogTickFailed(logger, ex);
+                    }
                 }
             }
             while (await timer.WaitForNextTickAsync(stopping));
@@ -79,4 +85,58 @@ public sealed class TelemetryPublisher(AgentIdentity identity, BotRuntimeHost ho
             // Shutdown.
         }
     }
+
+    private async Task PublishAsync(CancellationToken stopping)
+    {
+        BotSnapshot snapshot = Take();
+        if (!link.Connected)
+        {
+            return;
+        }
+
+        await link.SendSnapshotAsync(snapshot, stopping);
+        BotLogLine[] lines = sink.ReadAfter(sentLine, BatchLines, out long last);
+        if (lines.Length > 0 && await link.SendLogAsync(lines, stopping))
+        {
+            sentLine = last;
+        }
+    }
+
+    // The client, or none when the probe cannot tell: a probe that throws is no client, never a stop.
+    private AgentGame? Probe()
+    {
+        try
+        {
+            AgentGame? found = probe.Probe();
+            probeFailure = null;
+            return found;
+        }
+        catch (Exception ex)
+        {
+            if (Changed(ref probeFailure, ex))
+            {
+                LogProbeFailed(logger, ex);
+            }
+
+            return null;
+        }
+    }
+
+    // Whether this failure differs from the last one: a failure that lasts is logged once.
+    private static bool Changed(ref string? last, Exception exception)
+    {
+        if (exception.Message == last)
+        {
+            return false;
+        }
+
+        last = exception.Message;
+        return true;
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The bot's state could not be read or sent; the agent goes on and tries again")]
+    static partial void LogTickFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The WoW client could not be looked for; the agent sees none until it can")]
+    static partial void LogProbeFailed(ILogger logger, Exception exception);
 }

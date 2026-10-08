@@ -130,8 +130,13 @@ public sealed class WowProcess : IDisposable
     /// </summary>
     public static (string Path, Version Version) ReadInfo(Process process)
     {
-        string path = WinAPI.ExecutablePath.Get(process)
-            ?? throw new NullReferenceException("Unable to identify World of Warcraft process path!");
+        // Empty when Windows does not say: the process ended meanwhile, or runs as administrator while this does not.
+        string path = WinAPI.ExecutablePath.Get(process);
+        if (path.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"The path of {process.ProcessName} (pid {process.Id}) could not be read: it may have ended, or run as administrator while this does not");
+        }
 
         var exePath = System.IO.Path.Join(path, process.ProcessName + ".exe");
         FileVersionInfo info = FileVersionInfo.GetVersionInfo(exePath);

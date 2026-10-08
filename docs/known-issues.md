@@ -379,21 +379,6 @@ Items 63 to 77 come from the review of Phase 3 (its eleven commits in 4e65fd27..
 `~/RiderProjects/WoW-Farming-Rig-review/phase3/phase3-review.md` on the machine it ran on; the
 plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fixes-plan.md).
 
-67. **A client probe that throws stops the run under way.**
-    - **Where:** `HeadlessServer/Runtimes/WowGameProbe`, `BotAgent/Telemetry/TelemetryPublisher`,
-      `WinAPI/ExecutablePath`, `Game/WowProcess.ReadInfo`.
-    - **Cause:** the probe catches a fixed list of exceptions, and the publisher, a `BackgroundService`,
-      catches none. `ExecutablePath` answers "" when WMI has no path (the process ended meanwhile, or
-      runs as administrator while the agent does not), and `ReadInfo` then reads `Wow.exe` in the
-      working directory: `FileNotFoundException`. WMI failures throw `ManagementException` or
-      `COMException`.
-    - **Effect:** on .NET 10 a faulted background service stops the host, which stops the run (reported
-      Stopped, though nobody asked), and `ResidentHost` builds a new host 3 s later. With WoW running
-      as administrator the probe fails every time, so the agent goes offline every few seconds for
-      good. The probe's 5 s are measured on the wall clock, so a clock set back stops it that long.
-    - **Fix:** the probe answers "no client" for any failure and keeps why; the publisher never faults
-      on a tick; `ReadInfo` says what it could not read; the interval is measured on a monotonic clock.
-
 68. **A path override that does not load leaves the bot idle under "Running".**
     - **Where:** `HeadlessServer/Runtimes/ClassicRuntime` (`TryCreate`, `Run`), `Core/BotController`
       (`LoadPathProfile`, `CreateSession`), `ServiceClients/Bots/AssignmentRules`.
@@ -557,6 +542,17 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+67. **A client probe that threw stopped the run under way** (Phase 3 review, 2026-10-08). The probe
+    caught a fixed list of exceptions, and `TelemetryPublisher`, a `BackgroundService`, caught none:
+    WMI failing, or WoW ending during the probe or running as administrator (`ExecutablePath` answered
+    "" and `ReadInfo` then read `Wow.exe` in the working directory) faulted it, and on .NET 10 that
+    stopped the host and the run, again every few seconds while the cause lasted. Now `WowGameProbe`
+    answers no client for any failure and logs why once; the publisher logs a tick that fails, once
+    until one succeeds, and goes on, and measures its probe interval on the monotonic clock (a wall
+    clock set back held the probe); `WowProcess.ReadInfo` says it could not read the path, and why it
+    may not have. Tests: `TelemetryPublisherTests` (both fail on the old publisher). Windows
+    checklist: as administrator.
 
 66. **An unattended Classic start could delete the addon's frame configuration** (Phase 3 review,
     2026-10-08). `AddWoWProcess`'s probe deleted `frame_config.json` on any mismatch with the client

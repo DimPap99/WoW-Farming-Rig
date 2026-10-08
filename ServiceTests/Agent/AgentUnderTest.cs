@@ -87,10 +87,16 @@ internal sealed class AgentUnderTest : IAsyncDisposable
     public AgentIdentity Identity => provider.GetRequiredService<AgentIdentity>();
 
     public static async Task<AgentUnderTest> StartAsync(string folder, ManagerSlot? manager, FakeRuntimeFactory factory,
-        FakeProcess? process = null, int graceMs = 2000, IRunPreparation? preparation = null)
+        FakeProcess? process = null, int graceMs = 2000, IRunPreparation? preparation = null, IGameProbe? probe = null,
+        TimeProvider? clock = null)
     {
         ServiceCollection services = new();
         services.AddLogging();
+        if (clock is not null)
+        {
+            services.AddSingleton(clock);
+        }
+
         services.AddSingleton(new AgentLinkOptions([TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(200)], TimeSpan.FromSeconds(1))
         {
             HttpMessageHandlerFactory = manager is null ? null : manager.Handler,
@@ -100,7 +106,7 @@ internal sealed class AgentUnderTest : IAsyncDisposable
             manager is null ? null : new BotManagerOptions(ManagerSlot.Address), TimeSpan.FromMilliseconds(graceMs), "test 1.0");
         services.AddBotAgent(options, new AgentLogSink());
         services.AddSingleton<IBotRuntimeFactory>(factory);
-        services.AddSingleton<IGameProbe, FakeProbe>();
+        services.AddSingleton(probe ?? new FakeProbe());
         services.AddSingleton<IClassProfileCatalog, FakeProfiles>();
         services.AddSingleton<IAgentProcess>(process ?? new FakeProcess());
         if (preparation is not null)

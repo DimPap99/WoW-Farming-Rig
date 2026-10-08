@@ -44,6 +44,10 @@ logs it and tries again only after `RefusedRetry` (5 min).
 **Telemetry reads, never writes.** `IBotRuntime.Read` is called from the publisher's thread once a
 second; a runtime answers from read-only taps and must tolerate being read while it ends.
 
+**A background service must never fault.** On .NET 10 a faulted `BackgroundService` stops the host,
+and with it the run under way. The publisher logs a tick that fails and goes on, and a probe that
+throws is no client (known issue 67); keep any new loop that way.
+
 **Log lines are numbered.** The publisher sends a batch only when the link is up and advances its
 cursor only once the batch went, so a console catches up after the manager was down (2000 lines
 kept). Lines below Information stay in the file log.
