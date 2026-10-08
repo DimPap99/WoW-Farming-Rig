@@ -105,6 +105,11 @@ public sealed class ForeverRouteLibrary(DataConfig dataConfig)
             return StoreResult.Invalid($"a route file is at most {MaxBytes / 1024} KB");
         }
 
+        if (PathName.StoredSpelling(Folder, name) is string stored)
+        {
+            return StoreResult.Conflict(PathName.CaseTwinRefusal(name, stored));
+        }
+
         if (Maps(out string? problem) is not { } db)
         {
             return StoreResult.Unreadable(problem!);

@@ -81,6 +81,31 @@ public sealed class DataSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task On_a_file_system_that_ignores_case_two_names_of_one_file_are_not_pulled()
+    {
+        // Made on a Linux service before such names were refused (known issue 71).
+        Write(central, RouteFile, Trip);
+        Write(central, "path/_forever/Trip.json", Trip.Replace("\"Trip\"", "\"The other trip\""));
+        Write(central, "road/forever/Kalimdor/1413.json", Roads);
+        Write(central, "road/forever/kalimdor/1413.json", Roads);
+        Write(here, RouteFile, Trip);
+        using PathingServiceFactory service = new(central.Root);
+
+        RunPreparation windows = await Sync(service, fileNames: StringComparer.OrdinalIgnoreCase)
+            .PrepareAsync(BotAssignment.ForForever(Route, 5), Token);
+
+        Assert.False(windows.Proceed);
+        Assert.StartsWith($"The route {Route} is two files on the Pathing Service (Trip.json and trip.json) and one on this PC", windows.Message);
+        Assert.Contains("Not synced, two files on the Pathing Service that are one on this PC: Kalimdor/1413.json and kalimdor/1413.json", windows.Message);
+        Assert.Equal(Encoding.UTF8.GetBytes(Trip), Bytes(here, RouteFile));
+        Assert.False(Directory.Exists(Path.Combine(here.Root, "road/forever/Kalimdor")));
+
+        // Where names keep their case, each is a file of its own and pulled.
+        RunPreparation linux = await Sync(service).PrepareAsync(BotAssignment.ForForever(Route, 5), Token);
+        Assert.True(linux.Proceed, linux.Message);
+    }
+
+    [Fact]
     public async Task A_copy_that_matches_is_left_alone_whatever_its_line_endings()
     {
         Write(central, RouteFile, Trip.ReplaceLineEndings("\n"));
@@ -272,10 +297,10 @@ public sealed class DataSyncTests : IDisposable
         Assert.Empty(runtimes.Built);
     }
 
-    private DataSync Sync(PathingServiceFactory service, AgentGame? game = null)
+    private DataSync Sync(PathingServiceFactory service, AgentGame? game = null, StringComparer? fileNames = null)
     {
         return new DataSync(new PathingClient(service.CreateClient()), here.Config(), new FakeProbe { Game = game ?? Forever },
-            TimeProvider.System, NullLogger<DataSync>.Instance);
+            TimeProvider.System, NullLogger<DataSync>.Instance, fileNames);
     }
 
     private string[] Synced()

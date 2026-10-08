@@ -201,6 +201,25 @@ public sealed class RecordedPathStoreTests
     }
 
     [Fact]
+    public void A_name_that_is_another_ones_but_for_case_is_refused_naming_the_stored_one()
+    {
+        using TempDataRoot data = new();
+        RecordedPathStore store = new(data.Config());
+        store.Save("_herb/Elwynn.json", Points);
+
+        StoreResult file = store.Save("_herb/elwynn.json", Points);
+        StoreResult folder = store.Save("_Herb/Westfall.json", Points);
+
+        // On Windows each is the stored one: a bot that synced both would walk the one it was not given (known issue 71).
+        Assert.Equal(StoreOutcome.Conflict, file.Outcome);
+        Assert.Contains("save it as '_herb/Elwynn.json'", file.Error);
+        Assert.Equal(StoreOutcome.Conflict, folder.Outcome);
+        Assert.Contains("save it as '_herb/Westfall.json'", folder.Error);
+        Assert.Equal(StoreOutcome.Done, store.Save("_herb/Elwynn.json", Points).Outcome);
+        Assert.Equal(StoreOutcome.Done, store.Save("_herb/Westfall.json", Points).Outcome);
+    }
+
+    [Fact]
     public void Points_must_be_finite_and_present()
     {
         using TempDataRoot data = new();

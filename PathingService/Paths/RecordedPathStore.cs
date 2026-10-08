@@ -124,6 +124,11 @@ public sealed class RecordedPathStore(DataConfig dataConfig)
             return StoreResult.Invalid(LeftAlone(canonical, why));
         }
 
+        if (PathName.StoredSpelling(Root, canonical) is string stored)
+        {
+            return StoreResult.Conflict(PathName.CaseTwinRefusal(canonical, stored));
+        }
+
         if (points is null || points.Length == 0)
         {
             return StoreResult.Invalid("a recorded path needs at least one point");

@@ -197,7 +197,10 @@
             }
 
             await ListAsync();
-            bool exists = routes.Any(r => r.Name.Equals(file, StringComparison.OrdinalIgnoreCase));
+            // A route that differs only in case is the same file on a Windows bot: replace it under its own name.
+            string? stored = routes.FirstOrDefault(r => r.Name.Equals(file, StringComparison.OrdinalIgnoreCase))?.Name;
+            bool exists = stored is not null;
+            file = stored ?? file;
             string question = file.Equals(opened, StringComparison.OrdinalIgnoreCase) && left.Count > 0
                 ? $"Save over {file}? These are not in the design and go: {string.Join("; ", left)}."
                 : $"Replace the Forever route {file}?";

@@ -122,6 +122,62 @@ public static class PathName
                segment.AsSpan().IndexOfAny(ForbiddenChars) < 0 && !HasControlChar(segment);
     }
 
+    /// <summary>
+    /// <paramref name="name"/> as the files and folders already under <paramref name="root"/> spell it,
+    /// when it differs from them only in case, or null: on Windows such names are one file, so a bot that
+    /// synced both would run the one it did not name (known issue 71). Checked on every OS, as a service
+    /// on Linux can hold both.
+    /// </summary>
+    public static string? StoredSpelling(string root, string name)
+    {
+        string[] segments = name.Split('/');
+        string folder = Path.GetFullPath(root);
+        for (int i = 0; i < segments.Length; i++)
+        {
+            bool last = i == segments.Length - 1;
+            string? exact = null;
+            string? other = null;
+            if (Directory.Exists(folder))
+            {
+                foreach (string entry in last ? Directory.EnumerateFiles(folder) : Directory.EnumerateDirectories(folder))
+                {
+                    string stored = Path.GetFileName(entry);
+                    if (stored.Equals(segments[i], StringComparison.Ordinal))
+                    {
+                        exact = stored;
+                        break;
+                    }
+
+                    if (stored.Equals(segments[i], StringComparison.OrdinalIgnoreCase))
+                    {
+                        other ??= stored;
+                    }
+                }
+            }
+
+            if (exact is null)
+            {
+                if (other is null)
+                {
+                    return null;
+                }
+
+                segments[i] = other;
+                return string.Join('/', segments);
+            }
+
+            folder = Path.Join(folder, exact);
+        }
+
+        return null;
+    }
+
+    /// <summary>The refusal of a name that is another one's but for case (<see cref="StoredSpelling"/>).</summary>
+    public static string CaseTwinRefusal(string name, string stored)
+    {
+        return $"'{name}' is '{stored}' on Windows, where names that differ only in case are one file: save it as '{stored}'";
+    }
+
     /// <summary>True when <paramref name="fullPath"/> lies inside <paramref name="root"/> (both full paths).</summary>
     public static bool IsUnder(string root, string fullPath)
     {

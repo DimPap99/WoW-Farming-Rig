@@ -35,9 +35,10 @@ public static class PathEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         paths.MapPut("{**name}", (string name, Point3[] points, RecordedPathStore store) => store.Save(name, points).ToHttp())
-            .WithSummary("Create or replace a recorded path, in the format the bot reads")
+            .WithSummary("Create or replace a recorded path, in the format the bot reads; 409 for a name another path has in another case")
             .Produces(StatusCodes.Status204NoContent)
-            .ProducesProblem(StatusCodes.Status400BadRequest);
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         paths.MapDelete("{**name}", (string name, RecordedPathStore store) => store.Delete(name).ToHttp())
             .WithSummary("Delete a recorded path; its screenshot is kept")

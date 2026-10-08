@@ -34,9 +34,10 @@ public static class ForeverRouteEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         routes.MapPut("{name}", (string name, ForeverRouteText body, ForeverRouteLibrary library) => library.Save(name, body.Text).ToHttp())
-            .WithSummary("Create or replace a route file; it is written as given once a run would load it")
+            .WithSummary("Create or replace a route file; it is written as given once a run would load it; 409 for a name another route has in another case")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
         routes.MapDelete("{name}", (string name, ForeverRouteLibrary library) => library.Delete(name).ToHttp())

@@ -183,6 +183,9 @@ route there; the `_forever/` guard runs again on the resolved path. `%` is refus
 sent as `%2F` would make one flat file. The old controller joined any name onto the folder.
 Continent names in the cost-zone, navmesh and bake routes are the client's own world continents
 only, for the same reason, by one rule (`ClientContinents`): any case, then the client's own case.
+A save is refused (409) when its name differs only in case from a file or folder already there
+(`PathName.StoredSpelling`): on Linux both can exist, and a Windows bot that synced both would run
+the one it was not given (known issue 71).
 
 **The path folder holds more than recorded paths.** The class profiles' path groups
 (`PathsFilenames`, `1-8_*.json`: `PathSettings` with requirements, commented) live beside the

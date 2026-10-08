@@ -30,8 +30,10 @@ namespace BotAgent.Sync;
 /// first (<c>.sync/backup</c>). Nothing is ever deleted. With the service down, or none configured,
 /// the run uses this PC's copies; only a file the assignment itself names that is not here refuses it.
 /// </summary>
+/// <param name="fileNames">How this PC's file system compares names; by default case-insensitive on
+/// Windows. A test of the Windows behaviour gives it.</param>
 public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, IGameProbe probe, TimeProvider clock,
-    ILogger<DataSync> logger) : IRunPreparation
+    ILogger<DataSync> logger, StringComparer? fileNames = null) : IRunPreparation
 {
     /// <summary>The folder of <see cref="DataConfig.Sync"/> that local changes are kept in, one folder per sync.</summary>
     public const string BackupFolder = "backup";
@@ -39,13 +41,12 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
     /// <summary>How many names a message lists before it says how many more.</summary>
     public const int NamesShown = 3;
 
-    // Two names are one file as the file system compares them.
-    private static readonly StringComparer FileNames = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-
     private static readonly StringComparison FileNameComparison =
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     // Fields, not the constructor's parameters: a sync's session reaches them through its DataSync.
+    // Two names are one file as the file system compares them.
+    private readonly StringComparer fileNames = fileNames ?? (OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private readonly IPathingClient? pathing = pathing;
     private readonly DataConfig data = data;
     private readonly TimeProvider clock = clock;
@@ -53,7 +54,7 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
 
     public async Task<RunPreparation> PrepareAsync(BotAssignment assignment, CancellationToken token)
     {
-        Session session = new(this, SyncState.Load(data.Sync), token);
+        Session session = new(this, SyncState.Load(data.Sync, fileNames), token);
         try
         {
             switch (assignment)
@@ -153,8 +154,11 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
     /// <summary>One sync: what it found, what it did, and what a person should know.</summary>
     private sealed class Session(DataSync sync, SyncState state, CancellationToken token)
     {
-        private readonly Dictionary<(string Set, string? Era), Dictionary<string, SyncFile>?> manifests = [];
-        private readonly HashSet<string> seen = new(FileNames);
+        // A name that is two files on the service and one here maps to null (known issue 71).
+        private readonly Dictionary<(string Set, string? Era), Dictionary<string, SyncFile?>?> manifests = [];
+        private readonly Dictionary<string, string> twins = new(sync.fileNames);
+        private readonly List<string> ambiguous = [];
+        private readonly HashSet<string> seen = new(sync.fileNames);
         private readonly List<string> backups = [];
         private readonly List<string> notOnService = [];
         private readonly List<string> missing = [];
@@ -175,7 +179,7 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
         /// </summary>
         public async Task PullAsync(string set, string? era, IEnumerable<string> names, bool named)
         {
-            Dictionary<string, SyncFile>? manifest = await ManifestAsync(set, era);
+            Dictionary<string, SyncFile?>? manifest = await ManifestAsync(set, era);
             foreach (string name in names)
             {
                 token.ThrowIfCancellationRequested();
@@ -192,6 +196,22 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
                 }
 
                 SyncFile? file = manifest?.GetValueOrDefault(name);
+                if (file is null && manifest is not null && manifest.ContainsKey(name))
+                {
+                    // Which of the two the assignment means cannot be told here: neither is pulled.
+                    if (named)
+                    {
+                        refusal ??= $"The {(set == SyncSets.ForeverRoutes ? "route" : "path")} {name} is two files on the Pathing Service " +
+                                    $"({twins[key]}) and one on this PC: rename one of them there.";
+                    }
+                    else
+                    {
+                        ambiguous.Add(twins[key]);
+                    }
+
+                    continue;
+                }
+
                 string? why = file is not null ? await MirrorAsync(set, era, file)
                     : manifest is null ? Unavailable(set, era)
                     : "the Pathing Service does not have it either";
@@ -227,10 +247,15 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
                 return;
             }
 
-            foreach (SyncFile file in manifest.Values.OrderBy(file => file.Name, StringComparer.Ordinal))
+            foreach ((string name, SyncFile? file) in manifest.OrderBy(entry => entry.Key, StringComparer.Ordinal))
             {
                 token.ThrowIfCancellationRequested();
-                if (seen.Add(SyncState.Key(set, era, file.Name)))
+                string key = SyncState.Key(set, era, name);
+                if (file is null)
+                {
+                    ambiguous.Add(twins[key]);
+                }
+                else if (seen.Add(key))
                 {
                     await MirrorAsync(set, era, file);
                 }
@@ -293,6 +318,11 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
                 parts.Add($"Not synced, not a library name: {List([.. skipped.Distinct()])}.");
             }
 
+            if (ambiguous.Count > 0)
+            {
+                parts.Add($"Not synced, two files on the Pathing Service that are one on this PC: {List([.. ambiguous.Distinct()])}.");
+            }
+
             parts.AddRange(notes);
             return new RunPreparation(refusal is null, string.Join(" ", parts));
         }
@@ -331,26 +361,35 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
                 : "the Pathing Service did not list it";
         }
 
-        private async Task<Dictionary<string, SyncFile>?> ManifestAsync(string set, string? era)
+        private async Task<Dictionary<string, SyncFile?>?> ManifestAsync(string set, string? era)
         {
             if (sync.pathing is null || unreachable is not null)
             {
                 return null;
             }
 
-            if (manifests.TryGetValue((set, era), out Dictionary<string, SyncFile>? known))
+            if (manifests.TryGetValue((set, era), out Dictionary<string, SyncFile?>? known))
             {
                 return known;
             }
 
             ServiceResult<SyncManifest> got = await sync.pathing.GetSyncManifestAsync(set, era, token);
-            Dictionary<string, SyncFile>? manifest = null;
+            Dictionary<string, SyncFile?>? manifest = null;
             if (got.Ok)
             {
-                manifest = new Dictionary<string, SyncFile>(FileNames);
+                manifest = new Dictionary<string, SyncFile?>(sync.fileNames);
                 foreach (SyncFile file in got.Value.Files)
                 {
-                    manifest.TryAdd(file.Name, file);
+                    if (!manifest.TryGetValue(file.Name, out SyncFile? first))
+                    {
+                        manifest[file.Name] = file;
+                        continue;
+                    }
+
+                    // Route.json and route.json on a Linux service are one file on Windows: neither is pulled.
+                    string key = SyncState.Key(set, era, file.Name);
+                    twins[key] = first is null ? $"{twins[key]}, {file.Name}" : $"{first.Name} and {file.Name}";
+                    manifest[file.Name] = null;
                 }
             }
             else if (got.Status == 0)

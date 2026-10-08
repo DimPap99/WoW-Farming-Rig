@@ -59,6 +59,10 @@ runtime refuses next anyway). It compares each file's `SyncHash` with the servic
 fetches only what differs; line endings do not count, so a Windows checkout is never rewritten for
 its CRLFs. Its one line goes to the log and the console.
 
+**Two names of one file are never pulled.** A Linux Pathing Service can hold `Route.json` and
+`route.json`, one file on Windows: the sync takes neither, refuses a run that names one, and says so
+(known issue 71). The service refuses such names now; old ones may remain.
+
 **The sync never deletes, and keeps what it would overwrite.** A local copy that differs from what
 `.sync/state.json` says was last synced (or that was never synced) is copied to
 `<data root>/.sync/backup/<time>/<set>/...` before it is replaced. A file the service does not have

@@ -405,21 +405,6 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       it cannot be opened, deleted or assigned from the pages.
     - **Fix (the plan's step 3, with the one name rule):** a name ends in `.json`, exactly.
 
-71. **Names that differ only in case are one file on a Windows bot.**
-    - **Where:** `BotAgent/Sync/DataSync` (its manifest is case-insensitive on Windows); the Pathing
-      Service's `ForeverRouteLibrary.Save` and `RecordedPathStore.Save`; the route designer
-      (`ForeverLibrary.razor`).
-    - **Cause:** a Linux Pathing Service can hold `Route.json` and `route.json`; on Windows they are one
-      file, and the manifest keeps the first in ordinal order. Nothing refuses a name that differs from
-      another only in case, and the designer, which finds an existing route ignoring case, saves the
-      name as typed.
-    - **Effect:** a Windows bot assigned `route.json` pulls `Route.json`'s bytes into
-      `_forever\route.json` (a correct local copy is kept aside, then overwritten) and runs the other
-      route, while the assignment, the console and the history say `route.json`.
-    - **Fix:** the service refuses a name that another file of its folder has in another case; the sync
-      refuses a run whose named file has such a twin on the service and leaves other twins alone; the
-      designer replaces a route under its stored name.
-
 72. **The Bot Manager's registry can lose its bots.**
     - **Where:** `BotManager/Registry/JsonBotRegistry`, `BotManager/Bots/BotFleet`,
       `ServiceClients/Bots/AssignmentRules.IsAgentId`.
@@ -520,6 +505,20 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+71. **Names that differed only in case were one file on a Windows bot** (Phase 3 review, 2026-10-08).
+    A Linux Pathing Service could hold `Route.json` and `route.json`, and the route designer, which
+    found an existing route ignoring case, saved the name as typed, making such pairs; the sync's
+    manifest on Windows kept the first, so a bot assigned `route.json` ran `Route.json`'s steps (a
+    correct local copy was kept aside, then overwritten) while every screen named `route.json`.
+    - The service refuses a save whose name differs only in case from a file or folder already there
+      (409, naming the stored spelling: `PathName.StoredSpelling`), for recorded paths and routes.
+    - The designer replaces a route under its stored name.
+    - The sync pulls neither of two names that are one file on the PC: a run that names one is refused
+      with both, and the others are listed as not synced; its record of what was synced compares
+      names as the file system does.
+    - Tests: `RecordedPathStoreTests`, `ForeverRouteApiTests`, `DataSyncTests` (told the file system
+      ignores case); each fails on the old code.
 
 70. **One malformed route file took the route library offline** (Phase 3 review, 2026-10-08; the
     `.JSON` names are item 70 above). Newtonsoft reads `"Steps":[null]`, `[a,,b]` and `[,a]` as null

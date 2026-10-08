@@ -82,6 +82,23 @@ public sealed class ForeverRouteApiTests
     }
 
     [Fact]
+    public async Task A_name_that_is_another_routes_but_for_case_is_refused()
+    {
+        using TempDataRoot data = ForeverData();
+        using PathingServiceFactory factory = new(data.Root);
+        PathingClient client = new(factory.CreateClient());
+
+        ServiceResult twin = await client.SaveForeverRouteAsync("Crossroads_Trip.json", Commented, TestContext.Current.CancellationToken);
+        ServiceResult same = await client.SaveForeverRouteAsync(Trip, Commented, TestContext.Current.CancellationToken);
+
+        // On Windows the two names are one file: a bot that synced both would run the one it was not given.
+        Assert.Equal(409, twin.Status);
+        Assert.Contains($"save it as '{Trip}'", twin.Error);
+        Assert.False(File.Exists(Path.Combine(RouteFolder(data), "Crossroads_Trip.json")));
+        Assert.True(same.Ok, same.Error);
+    }
+
+    [Fact]
     public async Task A_saved_route_keeps_its_comments_byte_for_byte()
     {
         using TempDataRoot data = ForeverData();

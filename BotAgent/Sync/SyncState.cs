@@ -31,10 +31,11 @@ public sealed class SyncState
     }
 
     /// <summary>The state kept in <paramref name="folder"/>, or none: a state that cannot be read leaves every local change to be kept aside.</summary>
-    public static SyncState Load(string folder)
+    /// <param name="keys">How the file system compares names, so a key names a file as the PC opens it; ordinal by default.</param>
+    public static SyncState Load(string folder, StringComparer? keys = null)
     {
         string file = Path.Combine(folder, FileName);
-        Dictionary<string, string> files = new(StringComparer.Ordinal);
+        Dictionary<string, string> files = new(keys ?? StringComparer.Ordinal);
         try
         {
             if (File.Exists(file) && JsonSerializer.Deserialize<Stored>(File.ReadAllText(file))?.Files is { } stored)
