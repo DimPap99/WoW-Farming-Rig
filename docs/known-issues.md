@@ -379,21 +379,6 @@ Items 63 to 77 come from the review of Phase 3 (its eleven commits in 4e65fd27..
 `~/RiderProjects/WoW-Farming-Rig-review/phase3/phase3-review.md` on the machine it ran on; the
 plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fixes-plan.md).
 
-66. **An unattended Classic start can delete the addon's frame configuration.**
-    - **Where:** `Core/DependencyInjection.ProbeWoWProcess`, through `AddWoWProcess`, which every
-      Classic run's composition calls (`ClassicRuntime.Compose`), and `--loadonly`.
-    - **Cause:** the probe deletes `frame_config.json` when the window's client size, the addon version
-      or the frame count does not match, and the addon's config and folder when the addon's version
-      cannot be read. BlazorServer relies on that to open its configuration page; the old
-      HeadlessServer ran the probe once, with a person at the PC.
-    - **Effect:** a Classic start while WoW is minimized (its client area is 0 by 0), resized or under
-      RDP at another resolution deletes the file, and every later Classic run on that PC is refused
-      until someone configures the addon again in BlazorServer and copies the files back. `--loadonly`
-      (`loadall.bat`) with `addon_config.json` missing deletes the addon from the game's folder.
-    - **Fix:** HeadlessServer probes without deleting and refuses with what does not match ("the WoW
-      window is minimized"); BlazorServer keeps its behaviour. `--loadonly` refuses without both files,
-      as it did before Phase 3.
-
 67. **A client probe that throws stops the run under way.**
     - **Where:** `HeadlessServer/Runtimes/WowGameProbe`, `BotAgent/Telemetry/TelemetryPublisher`,
       `WinAPI/ExecutablePath`, `Game/WowProcess.ReadInfo`.
@@ -572,6 +557,19 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+66. **An unattended Classic start could delete the addon's frame configuration** (Phase 3 review,
+    2026-10-08). `AddWoWProcess`'s probe deleted `frame_config.json` on any mismatch with the client
+    (a minimized window's client area is 0 by 0, a resized one, another addon version), and the
+    addon's config and folder when the addon could not be read. BlazorServer needs that to open its
+    configuration page; the agent ran it on every remote start, so one start while WoW was minimized
+    refused every later Classic run on that PC until someone configured the addon again.
+    `AddWoWProcess(log, keepConfiguration, out isForever, out problem)` now answers what does not match
+    in words a person can act on (`FrameConfig.Mismatch`: "the WoW window is minimized: restore it",
+    the two sizes, the two addon versions), and deletes only without `keepConfiguration`, which
+    HeadlessServer always passes; a Classic run is refused with the reason. `--loadonly` refuses
+    without both files before it looks for a client (`ClassicRuntime.MissingConfiguration`), as it
+    did before Phase 3. Tests: `FrameMismatchTests`. Windows checklist: minimized.
 
 65. **Only Ctrl+C stopped the agent cleanly** (Phase 3 review, 2026-10-08). The Generic Host's
     console lifetime handles Ctrl+C, Ctrl+Break and SIGTERM. Closing the window (CTRL_CLOSE, .NET's

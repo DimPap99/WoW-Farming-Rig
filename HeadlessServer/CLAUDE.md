@@ -89,6 +89,12 @@ from `BlazorServer` into the wrong filename here silently changes nothing.
 CommandLineParser refused such a key (`UnknownOptionError`), so `--Pathing:Engine=Navmesh` never
 worked although this file said it did.
 
+**HeadlessServer never deletes the addon's configuration.** `AddWoWProcess`'s probe deletes
+`frame_config.json` (and the addon's config) when it does not match the client, which BlazorServer
+needs to open its configuration page; HeadlessServer passes `keepConfiguration: true` and refuses the
+run with what does not match, since nobody is at the PC and a minimized window is gone the next time
+(known issue 66).
+
 **Core is composed per run, never at startup.** `WowProcess` throws without a client, and
 `BotController`'s constructor waits until the addon reads the player's class. So the host starts
 with no game at all (it runs on Linux, refusing every run: "no WoW client is running"), and each

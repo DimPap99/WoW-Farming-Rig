@@ -21,21 +21,54 @@ public static class FrameConfig
         return File.Exists(FrameConfigMeta.DefaultFilename);
     }
 
-    public static bool IsValid(Rectangle rect, Version addonVersion)
+    /// <summary>
+    /// Why the saved frames cannot be read from a client whose window's client area is
+    /// <paramref name="clientRect"/> and whose addon is <paramref name="addonVersion"/>, in words a
+    /// person can act on; null when they can. A file that cannot be read is a mismatch too.
+    /// </summary>
+    public static string? Mismatch(Rectangle clientRect, Version addonVersion)
     {
+        DataFrameConfig config;
         try
         {
-            var config = Load();
-
-            bool sameVersion = config.Version == FrameConfigMeta.Version;
-            bool sameAddonVersion = config.AddonVersion == addonVersion;
-            bool sameRect = config.Rect.Width == rect.Width && config.Rect.Height == rect.Height;
-            return sameAddonVersion && sameVersion && sameRect && config.Frames.Length > 1;
+            config = Load();
         }
-        catch
+        catch (Exception ex)
         {
-            return false;
+            return $"{FrameConfigMeta.DefaultFilename} cannot be read ({ex.Message}): configure the frames again in BlazorServer";
         }
+
+        return Mismatch(config, clientRect, addonVersion);
+    }
+
+    /// <summary>Why the frames of <paramref name="config"/> cannot be read from that client; null when they can.</summary>
+    public static string? Mismatch(DataFrameConfig config, Rectangle clientRect, Version addonVersion)
+    {
+        if (config.Version != FrameConfigMeta.Version)
+        {
+            return $"{FrameConfigMeta.DefaultFilename} is of another format: configure the frames again in BlazorServer";
+        }
+
+        if (config.AddonVersion != addonVersion)
+        {
+            return $"the addon is {addonVersion}, and {FrameConfigMeta.DefaultFilename} was made with {config.AddonVersion}: " +
+                   "configure the frames again in BlazorServer";
+        }
+
+        if (clientRect.Width <= 0 || clientRect.Height <= 0)
+        {
+            return "the WoW window is minimized: restore it";
+        }
+
+        if (config.Rect.Width != clientRect.Width || config.Rect.Height != clientRect.Height)
+        {
+            return $"the WoW window is {clientRect.Width}x{clientRect.Height}, and {FrameConfigMeta.DefaultFilename} was made at " +
+                   $"{config.Rect.Width}x{config.Rect.Height}: size the window back, or configure the frames again in BlazorServer";
+        }
+
+        return config.Frames is { Length: > 1 }
+            ? null
+            : $"{FrameConfigMeta.DefaultFilename} holds no frames: configure them again in BlazorServer";
     }
 
     public static DataFrameConfig Load()

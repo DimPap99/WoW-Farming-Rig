@@ -418,7 +418,21 @@ public static class DependencyInjection
         AddWoWProcess(services, log, out _);
 
     public static bool AddWoWProcess(
-        this IServiceCollection services, ILogger log, out bool isForever)
+        this IServiceCollection services, ILogger log, out bool isForever) =>
+        AddWoWProcess(services, log, keepConfiguration: false, out isForever, out _);
+
+    /// <summary>
+    /// Registers the client the bot attaches to, and checks the addon's and the frames' configuration
+    /// against it: true when a Classic bot can read it, or the client is WoW: Forever.
+    /// </summary>
+    /// <param name="keepConfiguration">
+    /// Leave the configuration as it is when it does not match, as HeadlessServer does: a person fixes it
+    /// at the PC, and a mismatch such as a minimized window is gone the next time. Otherwise a mismatch
+    /// deletes it, so BlazorServer opens its configuration page.
+    /// </param>
+    /// <param name="problem">What does not match, in words a person can act on; empty when it matches.</param>
+    public static bool AddWoWProcess(
+        this IServiceCollection services, ILogger log, bool keepConfiguration, out bool isForever, out string problem)
     {
         services.AddSingleton<CancellationTokenSource>();
         services.AddSingleton<WowProcess>();
@@ -427,10 +441,13 @@ public static class DependencyInjection
         // Disposed at once: its WowProcess polls on a thread of its own until it is.
         using ServiceProvider sp = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true });
-        return ProbeWoWProcess(services, log, sp, out isForever);
+        problem = ProbeWoWProcess(services, log, sp, keepConfiguration, out isForever) ?? string.Empty;
+        return problem.Length == 0;
     }
 
-    private static bool ProbeWoWProcess(IServiceCollection services, ILogger log, ServiceProvider sp, out bool isForever)
+    // What keeps a Classic bot from reading the client, or null.
+    private static string? ProbeWoWProcess(IServiceCollection services, ILogger log, ServiceProvider sp, bool keepConfiguration,
+        out bool isForever)
     {
         WowProcess process = sp.GetRequiredService<WowProcess>();
         isForever = process.FileVersion is { Major: 1, Minor: >= 60 };
@@ -445,7 +462,7 @@ public static class DependencyInjection
         if (isForever)
         {
             log.LogInformation("Forever beta detected; skipping Classic addon/frame validation and cleanup");
-            return true;
+            return null;
         }
 
         AddonConfigurator configurator = sp.GetRequiredService<AddonConfigurator>();
@@ -455,37 +472,40 @@ public static class DependencyInjection
 
         if (configurator.IsDefault() || installVersion == null)
         {
-            // At this point the webpage never loads so fallback to configuration page
-            configurator.Delete();
-            FrameConfig.Delete();
+            if (!keepConfiguration)
+            {
+                // At this point the webpage never loads so fallback to configuration page
+                configurator.Delete();
+                FrameConfig.Delete();
+            }
 
-            log.LogError("AddonConfig doesn't exists or addon not installed yet!");
-            return false;
+            return Refused(log, "the addon is not configured, or not installed in the game's folder: configure it in BlazorServer");
+        }
+
+        if (!FrameConfig.Exists())
+        {
+            return Refused(log, $"{FrameConfigMeta.DefaultFilename} is missing: configure the frames in BlazorServer");
         }
 
         NativeMethods.GetWindowRect(process.MainWindowHandle, out Rectangle rect);
-        if (!FrameConfig.Exists())
+        if (FrameConfig.Mismatch(rect, installVersion) is string mismatch)
         {
-            log.LogError("FrameConfig doesn't exists!");
+            if (!keepConfiguration)
+            {
+                // At this point the webpage never loads so fallback to configuration page
+                FrameConfig.Delete();
+            }
 
-            return false;
+            return Refused(log, mismatch);
         }
 
-        if (!FrameConfig.IsValid(rect, installVersion))
-        {
-            // At this point the webpage never loads so fallback to configuration page
-            FrameConfig.Delete();
+        return null;
+    }
 
-            log.LogError("FrameConfig window rect is different then config!");
-            log.LogError("FrameConfig {Rect}", rect);
-            log.LogError("FrameConfig {InstallVersion}", installVersion);
-            log.LogError("FrameConfig {Config}", FrameConfig.Load());
-
-            return false;
-        }
-
-
-        return true;
+    private static string Refused(ILogger log, string problem)
+    {
+        log.LogError("The addon's configuration does not match the client: {Problem}", problem);
+        return problem;
     }
 
 

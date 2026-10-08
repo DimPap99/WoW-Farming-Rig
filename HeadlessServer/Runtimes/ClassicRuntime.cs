@@ -61,10 +61,9 @@ public sealed partial class ClassicRuntime : IBotRuntime
         IConfiguration configuration, ILoggerFactory loggerFactory, out IBotRuntime runtime, out string refusal)
     {
         runtime = null!;
-        if (!FrameConfig.Exists() || !AddonConfig.Exists())
+        if (MissingConfiguration() is string missing)
         {
-            refusal = $"{AddonConfigMeta.DefaultFileName} and {FrameConfigMeta.DefaultFilename} are not beside HeadlessServer: " +
-                      "configure the addon in BlazorServer, then copy them here (install.bat)";
+            refusal = missing;
             return false;
         }
 
@@ -92,7 +91,8 @@ public sealed partial class ClassicRuntime : IBotRuntime
     public static bool LoadOnly(string profile, RunOptions options, IConfiguration configuration, ILoggerFactory loggerFactory)
     {
         ClassicRuntime runtime = new(new ClassicAssignment(profile, null), options.Pid, options, configuration, loggerFactory);
-        using ServiceProvider? composed = runtime.Compose(out string refusal);
+        string refusal = MissingConfiguration() ?? string.Empty;
+        using ServiceProvider? composed = refusal.Length == 0 ? runtime.Compose(out refusal) : null;
         if (composed is null)
         {
             LogRefused(runtime.logger, refusal);
@@ -100,6 +100,15 @@ public sealed partial class ClassicRuntime : IBotRuntime
         }
 
         return composed.GetRequiredService<IBotController>().LoadClassProfile(profile);
+    }
+
+    /// <summary>Why the addon's configuration is not here for a Classic run, or null: both files beside HeadlessServer.</summary>
+    public static string? MissingConfiguration()
+    {
+        return FrameConfig.Exists() && AddonConfig.Exists()
+            ? null
+            : $"{AddonConfigMeta.DefaultFileName} and {FrameConfigMeta.DefaultFilename} are not beside HeadlessServer: " +
+              "configure the addon in BlazorServer, then copy them here (install.bat)";
     }
 
     public BotRunResult Run(CancellationToken stop)
@@ -216,9 +225,11 @@ public sealed partial class ClassicRuntime : IBotRuntime
         services.Configure<NavmeshQueryOptions>(configuration.GetSection(NavmeshQueryOptions.Position));
         services.Configure<SplineFollowerOptions>(configuration.GetSection(SplineFollowerOptions.Position));
 
-        if (!services.AddWoWProcess(log, out bool isForever))
+        // Never deletes what does not match: nobody is at the PC to configure the addon again, and a
+        // mismatch such as a minimized window is gone the next time.
+        if (!services.AddWoWProcess(log, keepConfiguration: true, out bool isForever, out string problem))
         {
-            refusal = "the addon or frame configuration does not match the running client: see the log";
+            refusal = problem;
             return null;
         }
 
