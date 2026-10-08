@@ -34,7 +34,8 @@ public interface IBotRuntime : IDisposable
 
 /// <summary>How a run ended, as its runtime saw it.</summary>
 /// <param name="ExitCode">The Forever run's exit code (<c>ForeverRunProtocol</c>), when it has one.</param>
-public sealed record BotRunResult(BotRunOutcome Outcome, string Message, int? ExitCode = null);
+/// <param name="Progress">What the run did, as it ended: the report's. Without it, the report has what a read last showed.</param>
+public sealed record BotRunResult(BotRunOutcome Outcome, string Message, int? ExitCode = null, BotProgress? Progress = null);
 
 /// <summary>What a runtime's taps read; everything but the state is optional.</summary>
 public sealed record BotTelemetry(BotRunState State, BotCharacter? Character = null, BotVitals? Vitals = null,

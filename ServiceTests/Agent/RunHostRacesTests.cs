@@ -45,6 +45,24 @@ public sealed class RunHostRacesTests
         Assert.Equal(new BotProgress(3, 0, 3), agent.Host.LastReport!.Progress);
     }
 
+    // A run whose result does not say what it did (a runtime that threw) has what a read of it last showed:
+    // not the reads while it is torn down, which show nothing done.
+    [Fact]
+    public async Task A_report_without_the_runs_own_progress_has_what_a_read_last_showed()
+    {
+        using TempDataRoot data = new();
+        FakeRuntimeFactory runtimes = new() { ReportsProgress = false, DisposeTakes = TimeSpan.FromSeconds(1.5) };
+        await using AgentUnderTest agent = await AgentUnderTest.StartAsync(data.Root, null, runtimes);
+
+        agent.Host.Start(Trip);
+        await Eventually.True(() => !runtimes.Built.IsEmpty && runtimes.Last.Calls.Contains(FakeRuntime.Ran));
+        agent.Host.Read();
+        agent.Host.Stop();
+        await Eventually.True(() => agent.Host.LastReport is not null);
+
+        Assert.Equal(new BotProgress(3, 0, 3), agent.Host.LastReport!.Progress);
+    }
+
     [Fact]
     public async Task The_report_of_a_run_the_stop_of_the_host_ended_reaches_the_manager()
     {

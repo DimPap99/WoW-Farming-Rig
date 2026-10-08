@@ -182,7 +182,11 @@ public sealed partial class BotRuntimeHost(CreateRuntime createRuntime, IEnumera
             telemetry = telemetry with { State = BotRunState.Stopping };
         }
 
-        run.LastTelemetry = telemetry;
+        if (telemetry.Progress is { } progress)
+        {
+            run.LastProgress = progress;
+        }
+
         return telemetry;
     }
 
@@ -262,9 +266,7 @@ public sealed partial class BotRuntimeHost(CreateRuntime createRuntime, IEnumera
         {
             if (runtime is not null)
             {
-                // Its last state, read before it is torn down, then out of telemetry's reach: a runtime being
-                // disposed reads as one attaching, and the report took that, losing its kills (known issue 76).
-                run.Final = TryRead(runtime);
+                // Out of telemetry's reach before it is torn down: a runtime being disposed reads as one attaching.
                 run.State = BotRunState.Stopping;
                 run.Runtime = null;
                 try
@@ -279,19 +281,6 @@ public sealed partial class BotRuntimeHost(CreateRuntime createRuntime, IEnumera
         }
 
         Finish(run, result);
-    }
-
-    private BotTelemetry? TryRead(IBotRuntime runtime)
-    {
-        try
-        {
-            return runtime.Read();
-        }
-        catch (Exception ex)
-        {
-            LogRunError(logger, ex, "reading the run's last state");
-            return null;
-        }
     }
 
     // Null to go on; a result ends the run before anything attached.
@@ -332,7 +321,7 @@ public sealed partial class BotRuntimeHost(CreateRuntime createRuntime, IEnumera
             ? BotRunOutcome.Stopped
             : result.Outcome;
         RunReport report = new(run.Info, outcome, clock.GetUtcNow(), result.Message, result.ExitCode,
-            (run.Final ?? run.LastTelemetry)?.Progress);
+            result.Progress ?? run.LastProgress);
         bool abandoned;
         lock (sync)
         {
@@ -389,7 +378,7 @@ public sealed partial class BotRuntimeHost(CreateRuntime createRuntime, IEnumera
 
         RunReport report = new(run.Info, BotRunOutcome.Abandoned, clock.GetUtcNow(),
             $"it did not end within {options.StopGrace.TotalSeconds:0} s of the stop; its keys were released and the agent restarts",
-            null, run.LastTelemetry?.Progress);
+            null, run.LastProgress);
         lock (sync)
         {
             // Ended in the meantime: its own report went out, and nothing needs a restart.
@@ -426,10 +415,9 @@ public sealed partial class BotRuntimeHost(CreateRuntime createRuntime, IEnumera
         private volatile bool stopRequested;
         private volatile bool abandoned;
         private volatile bool finished;
-        private volatile BotTelemetry? final;
         private volatile IBotRuntime? runtime;
         private volatile string? message;
-        private volatile BotTelemetry? lastTelemetry;
+        private volatile BotProgress? lastProgress;
 
         public BotRunInfo Info { get; } = info;
         public CancellationTokenSource Stop { get; } = new();
@@ -439,11 +427,10 @@ public sealed partial class BotRuntimeHost(CreateRuntime createRuntime, IEnumera
         public bool StopRequested { get => stopRequested; set => stopRequested = value; }
         public bool Abandoned { get => abandoned; set => abandoned = value; }
         public bool Finished { get => finished; set => finished = value; }
-        /// <summary>What the runtime showed as it returned, before it was disposed.</summary>
-        public BotTelemetry? Final { get => final; set => final = value; }
         public IBotRuntime? Runtime { get => runtime; set => runtime = value; }
         public string? Message { get => message; set => message = value; }
-        public BotTelemetry? LastTelemetry { get => lastTelemetry; set => lastTelemetry = value; }
+        /// <summary>What a read of the runtime last showed it had done: the report's, when its result says nothing.</summary>
+        public BotProgress? LastProgress { get => lastProgress; set => lastProgress = value; }
     }
 
     #region Logging

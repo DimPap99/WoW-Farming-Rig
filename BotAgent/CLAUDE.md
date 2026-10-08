@@ -55,9 +55,10 @@ The sink keeps that mark, as it outlives the hosts a process builds: a publisher
 up to 2000 lines at every host built again (known issue 76). Lines below Information stay in the
 file log.
 
-**A run's report is raised before its end is signalled, and keeps its last state.** A host that stops
-waits for the run's end and then lets the link go, so a report raised after it was lost; and the run's
-progress is read once more before the runtime is disposed, as one being disposed reads as attaching. A
+**A run's report is raised before its end is signalled, and says what the run did.** A host that stops
+waits for the run's end and then lets the link go, so a report raised after it was lost. A runtime
+puts what it did in its result (`BotRunResult.Progress`); without it (the run threw) the report has
+what a read of it last showed, never a read while it is torn down, which shows nothing done. A
 start is refused once the host stops, and the shutdown waits as long as the grace needs
 (`AgentOptions.ShutdownTimeout`, the grace at most 60 s) (known issue 76).
 

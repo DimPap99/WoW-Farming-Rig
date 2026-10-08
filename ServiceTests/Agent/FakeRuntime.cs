@@ -14,7 +14,8 @@ namespace ServiceTests.Agent;
 /// before it returns, as a real runtime must. One that ignores its stop stands for a run stuck in
 /// the game, until the test lets it go.
 /// </summary>
-internal sealed class FakeRuntime(BotAssignment assignment, bool ignoreStop, TimeSpan disposeTakes = default) : IBotRuntime
+internal sealed class FakeRuntime(BotAssignment assignment, bool ignoreStop, TimeSpan disposeTakes = default, bool reportsProgress = true)
+    : IBotRuntime
 {
     public const string Ran = "run";
     public const string Released = "released";
@@ -44,7 +45,7 @@ internal sealed class FakeRuntime(BotAssignment assignment, bool ignoreStop, Tim
         stop.WaitHandle.WaitOne();
         Calls.Enqueue(Released);
         // A runtime that saw its stop may report a failure; the host still reports a stop.
-        return new BotRunResult(BotRunOutcome.Failed, "stopped by its token", 3);
+        return new BotRunResult(BotRunOutcome.Failed, "stopped by its token", 3, reportsProgress ? Progress : null);
     }
 
     public void ForceRelease()
@@ -61,8 +62,10 @@ internal sealed class FakeRuntime(BotAssignment assignment, bool ignoreStop, Tim
         }
 
         return new BotTelemetry(BotRunState.Running, new BotCharacter("Hunter", 12, "Orc"), new BotVitals(90, 50, null, false),
-            new BotPosition(1413, 51.9f, 29.9f), "Task/Travel", "task 1 of 1", new BotProgress(Kills, 0, Kills));
+            new BotPosition(1413, 51.9f, 29.9f), "Task/Travel", "task 1 of 1", Progress);
     }
+
+    private BotProgress Progress => new(Kills, 0, Kills);
 
     /// <summary>Lets a run that ignored its stop end.</summary>
     public void LetGo()
@@ -91,6 +94,9 @@ internal sealed class FakeRuntimeFactory
     /// <summary>How long a runtime's dispose takes, as a Classic run's container does.</summary>
     public TimeSpan DisposeTakes { get; set; }
 
+    /// <summary>Whether a run's result says what it did; without it, the report has what a read last showed.</summary>
+    public bool ReportsProgress { get; set; } = true;
+
     public string? Refusal { get; set; }
 
     public FakeRuntime Last => Built.Last();
@@ -102,7 +108,7 @@ internal sealed class FakeRuntimeFactory
             return (null, why);
         }
 
-        FakeRuntime created = new(assignment, IgnoreStop, DisposeTakes);
+        FakeRuntime created = new(assignment, IgnoreStop, DisposeTakes, ReportsProgress);
         Built.Enqueue(created);
         return (created, null);
     }

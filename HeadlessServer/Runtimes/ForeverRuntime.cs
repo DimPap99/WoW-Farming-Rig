@@ -116,18 +116,17 @@ public sealed partial class ForeverRuntime : IBotRuntime
         using CancellationTokenRegistration stopping = stop.Register(cts.Cancel);
         ForeverRun forever = new(request, loggerFactory, output);
         run = forever;
-        int code = forever.Run(wow, cts);
-        output.Line($"exit={code}");
+        ForeverRunResult ended = forever.Run(wow, cts);
+        output.Line($"exit={ended.ExitCode}");
 
-        string message = output.LastProblem ?? output.LastSummary ?? $"exit code {code}";
-        BotRunOutcome outcome = code switch
+        BotRunOutcome outcome = ended.ExitCode switch
         {
             ForeverRunProtocol.ExitComplete => BotRunOutcome.Complete,
             ForeverRunProtocol.ExitRefused or ForeverRunProtocol.ExitUsage => BotRunOutcome.Refused,
             _ => BotRunOutcome.Failed,
         };
         return new BotRunResult(stop.IsCancellationRequested && outcome != BotRunOutcome.Complete ? BotRunOutcome.Stopped : outcome,
-            message, code);
+            ended.Message, ended.ExitCode, forever.Autonomous is { } goal ? Progress(goal) : null);
     }
 
     public void ForceRelease()
@@ -177,9 +176,13 @@ public sealed partial class ForeverRuntime : IBotRuntime
             return new BotTelemetry(state, character, vitals, position, Message: message);
         }
 
-        return new BotTelemetry(state, character, vitals, position, goal.Status, goal.AgendaStatus,
-            new BotProgress(goal.CompletedKills, goal.ObservedDeaths, goal.CompletedLoots),
+        return new BotTelemetry(state, character, vitals, position, goal.Status, goal.AgendaStatus, Progress(goal),
             message ?? (goal.LastFailure is { Length: > 0 } failure ? failure : null));
+    }
+
+    private static BotProgress Progress(ForeverAutonomousGoal goal)
+    {
+        return new BotProgress(goal.CompletedKills, goal.ObservedDeaths, goal.CompletedLoots);
     }
 
     public void Dispose()
@@ -212,24 +215,14 @@ public sealed partial class ForeverRuntime : IBotRuntime
     {
         private readonly Lock sync = new();
 
-        public string? LastProblem { get; private set; }
-
-        public string? LastSummary { get; private set; }
-
         public void Line(string text)
         {
-            if (text.StartsWith(ForeverRunProtocol.SummaryPrefix, StringComparison.Ordinal))
-            {
-                LastSummary = text;
-            }
-
             LogLine(logger, text);
             Write(text);
         }
 
         public void Problem(string text)
         {
-            LastProblem = text;
             LogProblem(logger, text);
             Write(text);
         }

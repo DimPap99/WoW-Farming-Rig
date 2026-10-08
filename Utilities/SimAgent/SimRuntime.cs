@@ -94,7 +94,7 @@ public sealed partial class SimRuntime(BotAssignment assignment, SimOptions opti
             }
         }
 
-        return new BotRunResult(BotRunOutcome.Complete, "the time bound was reached", 0);
+        return new BotRunResult(BotRunOutcome.Complete, "the time bound was reached", 0, telemetry.Progress);
     }
 
     public void ForceRelease()
@@ -114,8 +114,9 @@ public sealed partial class SimRuntime(BotAssignment assignment, SimOptions opti
     private BotRunResult Released(string why)
     {
         LogReleased(logger);
+        BotProgress? done = telemetry.Progress;
         telemetry = new BotTelemetry(BotRunState.Stopping);
-        return new BotRunResult(BotRunOutcome.Stopped, why, 3);
+        return new BotRunResult(BotRunOutcome.Stopped, why, 3, done);
     }
 
     #region Logging

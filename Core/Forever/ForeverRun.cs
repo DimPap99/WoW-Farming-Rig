@@ -30,6 +30,11 @@ public interface IForeverRunOutput
     void Snapshot(string text);
 }
 
+/// <summary>How a <see cref="ForeverRun"/> ended.</summary>
+/// <param name="ExitCode">One of <see cref="ForeverRunProtocol"/>'s exit codes.</param>
+/// <param name="Message">What a person reads of it, as it was printed: why it was refused or failed, else how it closed.</param>
+public sealed record ForeverRunResult(int ExitCode, string Message);
+
 /// <summary>How far a <see cref="ForeverRun"/> got.</summary>
 public enum ForeverRunStage
 {
@@ -120,9 +125,9 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
     /// <summary>
     /// Runs on <paramref name="wow"/> until it completes, fails, runs out of time or
     /// <paramref name="cts"/> is cancelled, which is also the cancellation the controller's own
-    /// threads watch. Returns a <see cref="ForeverRunProtocol"/> exit code.
+    /// threads watch. Returns its <see cref="ForeverRunProtocol"/> exit code and its last word.
     /// </summary>
-    public int Run(Process wow, CancellationTokenSource cts)
+    public ForeverRunResult Run(Process wow, CancellationTokenSource cts)
     {
         if (request.Problem is string problem)
         {
@@ -131,9 +136,9 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
 
         try
         {
-            int code = RunOn(wow, cts);
-            exitCode = code;
-            return code;
+            ForeverRunResult result = RunOn(wow, cts);
+            exitCode = result.ExitCode;
+            return result;
         }
         finally
         {
@@ -145,7 +150,7 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
         }
     }
 
-    private int RunOn(Process wow, CancellationTokenSource cts)
+    private ForeverRunResult RunOn(Process wow, CancellationTokenSource cts)
     {
         bool auto = request.IsAutonomous;
         bool run = request.Moves;
@@ -159,8 +164,7 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
             using WowProcess process = new(cts, Options.Create(new StartupConfigPid { Id = wow.Id }));
             if (process.FileVersion is not { Major: 1, Minor: >= 60 })
             {
-                output.Problem("The selected client is not Forever.");
-                return ForeverRunProtocol.ExitRefused;
+                return Problem(ForeverRunProtocol.ExitRefused, "The selected client is not Forever.");
             }
 
             IServiceCollection services = new ServiceCollection();
@@ -230,8 +234,7 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
                 string missing = bars.TryGetLatest(out VisualBarSample last)
                     ? $"{ForeverFrame.MissingTrialInput(last)} did not read"
                     : bars.Problem;
-                output.Problem($"No complete fresh Forever trial frame ({missing}); no input sent.");
-                return ForeverRunProtocol.ExitRefused;
+                return Problem(ForeverRunProtocol.ExitRefused, $"No complete fresh Forever trial frame ({missing}); no input sent.");
             }
             if (request.TravelTo is (double travelX, double travelY))
             {
@@ -259,8 +262,7 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
                 : ForeverVerifiedSetup.PaladinTrialProfile;
             if (profile is null)
             {
-                output.Problem($"No verified Forever profile for class {(UnitClass)classId}; no input sent.");
-                return ForeverRunProtocol.ExitRefused;
+                return Problem(ForeverRunProtocol.ExitRefused, $"No verified Forever profile for class {(UnitClass)classId}; no input sent.");
             }
             stage = (int)ForeverRunStage.LoadingProfile;
             output.Line($"Loading {profile}.");
@@ -268,8 +270,7 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
             using BotController controller = ActivatorUtilities.CreateInstance<BotController>(provider);
             if (!controller.LoadClassProfile(profile))
             {
-                output.Problem("Normal controller did not load the Forever profile.");
-                return ForeverRunProtocol.ExitRefused;
+                return Problem(ForeverRunProtocol.ExitRefused, "Normal controller did not load the Forever profile.");
             }
             // The session built it; nothing can be held before this.
             input = provider.GetRequiredService<WowProcessInput>();
@@ -278,8 +279,7 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
             {
                 if (controller.GoapAgent?.AvailableGoals is not [ForeverAutonomousGoal automatic])
                 {
-                    output.Problem("Normal controller did not load the autonomous goal.");
-                    return ForeverRunProtocol.ExitRefused;
+                    return Problem(ForeverRunProtocol.ExitRefused, "Normal controller did not load the autonomous goal.");
                 }
                 autonomous = automatic;
                 stage = (int)ForeverRunStage.Preflight;
@@ -307,17 +307,15 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
                 }
                 if (!autoReady)
                 {
-                    output.Problem($"Autonomous preflight refused: {autoReason}. No input sent.");
-                    return ForeverRunProtocol.ExitRefused;
+                    return Problem(ForeverRunProtocol.ExitRefused, $"Autonomous preflight refused: {autoReason}. No input sent.");
                 }
                 output.Line("Autonomous current-position preflight passed.");
                 if (!run)
                 {
                     IReadOnlyList<ForeverPullOption> pulls = automatic.PullOptions();
-                    output.Line(pulls.Count == 0
+                    return Closing(ForeverRunProtocol.ExitComplete, pulls.Count == 0
                         ? "Pull options now: none in view."
                         : "Pull options now, the best first: " + string.Join("; ", pulls) + ".");
-                    return ForeverRunProtocol.ExitComplete;
                 }
 
                 // The run steers and clicks with the mouse, which the game follows only
@@ -325,8 +323,7 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
                 // background process right after someone typed elsewhere.
                 if (!WaitForGameWindow(process, cts.Token))
                 {
-                    output.Problem("The game window did not become active; no input sent.");
-                    return ForeverRunProtocol.ExitRefused;
+                    return Problem(ForeverRunProtocol.ExitRefused, "The game window did not become active; no input sent.");
                 }
                 controller.ToggleBotStatus();
                 started = true;
@@ -369,25 +366,24 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
                 bool timedOut = DateTime.UtcNow >= autoDeadline;
                 if (controller.IsBotActive)
                     controller.ToggleBotStatus();
-                output.Line($"{ForeverRunProtocol.SummaryPrefix} {automatic.CompletedKills}; deaths observed: {automatic.ObservedDeaths}; " +
+                string summary = $"{ForeverRunProtocol.SummaryPrefix} {automatic.CompletedKills}; deaths observed: {automatic.ObservedDeaths}; " +
                     $"corpses looted: {automatic.CompletedLoots}; " +
-                    $"status: {automatic.Status}; {automatic.LastFailure}");
+                    $"status: {automatic.Status}; {automatic.LastFailure}";
+                output.Line(summary);
                 // A repeating route has no end of its own: the time bound, reached
                 // without a failure, is how it ends.
                 if (timedOut && request.Route is { Repeat: true } && ended != ForeverAutonomousGoal.RunState.Failed)
                 {
                     output.Line($"Time limit reached; the repeating route ran until then ({automatic.AgendaStatus}).");
-                    return ForeverRunProtocol.ExitComplete;
+                    return new ForeverRunResult(ForeverRunProtocol.ExitComplete, summary);
                 }
-                if (timedOut)
-                    output.Problem("Trial time limit reached before the run completed.");
-                return ended == ForeverAutonomousGoal.RunState.Complete ? ForeverRunProtocol.ExitComplete : ForeverRunProtocol.ExitFailed;
+                int code = ended == ForeverAutonomousGoal.RunState.Complete ? ForeverRunProtocol.ExitComplete : ForeverRunProtocol.ExitFailed;
+                return timedOut ? Problem(code, "Trial time limit reached before the run completed.") : new ForeverRunResult(code, summary);
             }
 
             if (controller.GoapAgent?.AvailableGoals is not [ForeverTrialGoal goal])
             {
-                output.Problem("Normal controller did not load the isolated trial goal.");
-                return ForeverRunProtocol.ExitRefused;
+                return Problem(ForeverRunProtocol.ExitRefused, "Normal controller did not load the isolated trial goal.");
             }
             trial = goal;
             stage = (int)ForeverRunStage.Preflight;
@@ -396,14 +392,12 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
             bool routeReady = goal.TryReadOnlyRoutePreflight(out string routeReason);
             if (!routeReady)
             {
-                output.Problem($"Route preflight refused: {routeReason}. No game input sent.");
-                return ForeverRunProtocol.ExitRefused;
+                return Problem(ForeverRunProtocol.ExitRefused, $"Route preflight refused: {routeReason}. No game input sent.");
             }
             output.Line("Route preflight passed.");
             if (!run)
             {
-                output.Line("Read-only check passed; no game input sent.");
-                return ForeverRunProtocol.ExitComplete;
+                return Closing(ForeverRunProtocol.ExitComplete, "Read-only check passed; no game input sent.");
             }
 
             controller.ToggleBotStatus();
@@ -425,23 +419,35 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
             if (controller.IsBotActive)
                 controller.ToggleBotStatus();
 
-            output.Line($"Controller trial status: {goal.TrialStatus}. {goal.LastFailure}");
-            return goal.State == ForeverTrialGoal.Phase.Passed ? ForeverRunProtocol.ExitComplete : ForeverRunProtocol.ExitFailed;
+            return Closing(goal.State == ForeverTrialGoal.Phase.Passed ? ForeverRunProtocol.ExitComplete : ForeverRunProtocol.ExitFailed,
+                $"Controller trial status: {goal.TrialStatus}. {goal.LastFailure}");
         }
         catch (Exception ex)
         {
             if (!started)
             {
-                output.Problem($"Controller trial refused: {ex.Message}");
-                return ForeverRunProtocol.ExitRefused;
+                return Problem(ForeverRunProtocol.ExitRefused, $"Controller trial refused: {ex.Message}");
             }
-            output.Problem($"Controller trial stopped by an error: {ex.Message}");
-            return ForeverRunProtocol.ExitFailed;
+            return Problem(ForeverRunProtocol.ExitFailed, $"Controller trial stopped by an error: {ex.Message}");
         }
         finally
         {
             cts.Cancel();
         }
+    }
+
+    // The run's last word, printed as a problem: why it was refused or failed.
+    private ForeverRunResult Problem(int exitCode, string text)
+    {
+        output.Problem(text);
+        return new ForeverRunResult(exitCode, text);
+    }
+
+    // The run's last word, printed as its own text: how it closed.
+    private ForeverRunResult Closing(int exitCode, string text)
+    {
+        output.Line(text);
+        return new ForeverRunResult(exitCode, text);
     }
 
     private bool WaitForGameWindow(WowProcess process, CancellationToken token)

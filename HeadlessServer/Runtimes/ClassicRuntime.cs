@@ -136,8 +136,9 @@ public sealed partial class ClassicRuntime : IBotRuntime
                 controller = composed.GetRequiredService<IBotController>();
             }
 
-            readers = new Readers(controller, composed.GetRequiredService<PlayerReader>(), composed.GetRequiredService<AddonBits>(),
+            Readers read = new(controller, composed.GetRequiredService<PlayerReader>(), composed.GetRequiredService<AddonBits>(),
                 composed.GetRequiredService<SessionStat>());
+            readers = read;
             if (stop.IsCancellationRequested)
             {
                 return new BotRunResult(BotRunOutcome.Stopped, "stopped before it started");
@@ -172,8 +173,8 @@ public sealed partial class ClassicRuntime : IBotRuntime
             }
 
             return stopped
-                ? new BotRunResult(BotRunOutcome.Stopped, "stopped")
-                : new BotRunResult(BotRunOutcome.Complete, "the bot stopped itself");
+                ? new BotRunResult(BotRunOutcome.Stopped, "stopped", Progress: Progress(read))
+                : new BotRunResult(BotRunOutcome.Complete, "the bot stopped itself", Progress: Progress(read));
         }
         catch (OperationCanceledException) when (!started && stop.IsCancellationRequested)
         {
@@ -211,8 +212,12 @@ public sealed partial class ClassicRuntime : IBotRuntime
             r.Bits.Combat());
         BotPosition position = new(player.UIMapId.Value, player.MapX, player.MapY);
         BotRunState state = !started ? BotRunState.Starting : r.Controller.IsBotActive ? BotRunState.Running : BotRunState.Stopping;
-        return new BotTelemetry(state, character, vitals, position, r.Controller.GoapAgent?.CurrentGoal?.Name, null,
-            new BotProgress(r.Session.Kills, r.Session.Deaths, 0));
+        return new BotTelemetry(state, character, vitals, position, r.Controller.GoapAgent?.CurrentGoal?.Name, null, Progress(r));
+    }
+
+    private static BotProgress Progress(Readers readers)
+    {
+        return new BotProgress(readers.Session.Kills, readers.Session.Deaths, 0);
     }
 
     public void Dispose()
