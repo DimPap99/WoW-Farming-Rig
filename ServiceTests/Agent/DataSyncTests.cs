@@ -59,6 +59,23 @@ public sealed class DataSyncTests : IDisposable
         here.Dispose();
     }
 
+    // The agent's state files took three JSON conventions; the sync state is written in the contract's now,
+    // and one written before still reads.
+    [Fact]
+    public void A_sync_state_written_before_still_reads()
+    {
+        string folder = Path.Combine(here.Root, DataConfig.SyncFolder);
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, SyncState.FileName), """{ "Version": 1, "Files": { "paths/a.json": "abc" } }""");
+
+        SyncState state = SyncState.Load(folder);
+        state.Record("paths/b.json", "def");
+        state.Save();
+
+        Assert.Equal("abc", SyncState.Load(folder).Synced("paths/a.json"));
+        Assert.Equal(["paths/a.json", "paths/b.json"], Synced());
+    }
+
     [Fact]
     public async Task A_Forever_run_pulls_its_route_and_its_eras_cost_zones_byte_for_byte()
     {
@@ -354,7 +371,7 @@ public sealed class DataSyncTests : IDisposable
     private string[] Synced()
     {
         using JsonDocument state = JsonDocument.Parse(File.ReadAllText(Path.Combine(here.Root, DataConfig.SyncFolder, SyncState.FileName)));
-        return [.. state.RootElement.GetProperty("Files").EnumerateObject().Select(file => file.Name)];
+        return [.. state.RootElement.GetProperty("files").EnumerateObject().Select(file => file.Name)];
     }
 
     private static string[] Files(TempDataRoot root, string folder)

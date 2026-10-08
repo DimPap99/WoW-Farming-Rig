@@ -17,9 +17,12 @@ namespace BotAgent.Telemetry;
 /// console, keeping the last <see cref="Kept"/> lines at <see cref="Minimum"/> or above, numbered, so
 /// the publisher sends each once and catches up after the manager was away.
 /// </summary>
-public sealed class AgentLogSink(LogEventLevel minimum = LogEventLevel.Information) : ILogEventSink
+public sealed class AgentLogSink : ILogEventSink
 {
     public const int Kept = 2000;
+
+    /// <summary>The lowest level a console shows; the lines below it stay in the file log.</summary>
+    public const LogEventLevel Minimum = LogEventLevel.Information;
 
     private const string SourceContext = "SourceContext";
 
@@ -30,14 +33,12 @@ public sealed class AgentLogSink(LogEventLevel minimum = LogEventLevel.Informati
     // built again resent up to Kept lines when its publisher counted from 0 (known issue 76).
     private long sent;
 
-    public LogEventLevel Minimum => minimum;
-
     /// <summary>This process's log, by when it began (Unix milliseconds): its lines are numbered from 1 in it.</summary>
     public long Epoch { get; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
     public void Emit(LogEvent logEvent)
     {
-        if (logEvent.Level < minimum)
+        if (logEvent.Level < Minimum)
         {
             return;
         }

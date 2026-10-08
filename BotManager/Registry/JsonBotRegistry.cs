@@ -31,8 +31,6 @@ public sealed class JsonBotRegistry
     public const string RunsFolder = "runs";
     public const int MaxRuns = BotManagerApi.KeptRuns;
 
-    private static readonly JsonSerializerOptions FileJson = new(ContractJson.Options) { WriteIndented = true };
-
     private readonly Lock sync = new();
     private readonly string folder;
     private readonly ILogger logger;
@@ -165,7 +163,7 @@ public sealed class JsonBotRegistry
         string text = File.ReadAllText(file);
         try
         {
-            return JsonSerializer.Deserialize<T>(text, FileJson);
+            return JsonSerializer.Deserialize<T>(text, ContractJson.Files);
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
@@ -186,6 +184,6 @@ public sealed class JsonBotRegistry
 
     private static void Write<T>(string file, T value)
     {
-        AtomicFile.WriteAllText(file, JsonSerializer.Serialize(value, FileJson));
+        AtomicFile.WriteAllText(file, JsonSerializer.Serialize(value, ContractJson.Files));
     }
 }

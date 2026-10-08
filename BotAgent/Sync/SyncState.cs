@@ -1,3 +1,5 @@
+using Contracts;
+
 using ServiceClients;
 
 using System;
@@ -19,8 +21,6 @@ public sealed class SyncState
 
     public const int CurrentVersion = 1;
 
-    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
-
     private readonly string file;
     private readonly Dictionary<string, string> files;
 
@@ -38,7 +38,7 @@ public sealed class SyncState
         Dictionary<string, string> files = new(keys ?? StringComparer.Ordinal);
         try
         {
-            if (File.Exists(file) && JsonSerializer.Deserialize<Stored>(File.ReadAllText(file))?.Files is { } stored)
+            if (File.Exists(file) && JsonSerializer.Deserialize<Stored>(File.ReadAllText(file), ContractJson.Files)?.Files is { } stored)
             {
                 foreach ((string key, string hash) in stored)
                 {
@@ -73,7 +73,8 @@ public sealed class SyncState
     public void Save()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-        AtomicFile.WriteAllText(file, JsonSerializer.Serialize(new Stored(CurrentVersion, new SortedDictionary<string, string>(files, StringComparer.Ordinal)), Json));
+        AtomicFile.WriteAllText(file, JsonSerializer.Serialize(new Stored(CurrentVersion, new SortedDictionary<string, string>(files, StringComparer.Ordinal)),
+            ContractJson.Files));
     }
 
     private sealed record Stored(int Version, IDictionary<string, string>? Files);

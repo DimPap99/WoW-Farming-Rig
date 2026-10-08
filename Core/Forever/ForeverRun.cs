@@ -86,12 +86,9 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
 
     private volatile int stage;
     private volatile ForeverAutonomousGoal? autonomous;
-    private volatile ForeverTrialGoal? trial;
     private volatile ForeverVisualBarTracker? tracker;
     private volatile WowProcessInput? input;
     private volatile int exitCode = -1;
-
-    public ForeverRunRequest Request => request;
 
     public ForeverRunStage Stage => (ForeverRunStage)stage;
 
@@ -100,9 +97,6 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
 
     /// <summary>The autonomous controller's goal once the profile loaded; read it, never drive it.</summary>
     public ForeverAutonomousGoal? Autonomous => autonomous;
-
-    /// <summary>The route trial's goal once the profile loaded; read it, never drive it.</summary>
-    public ForeverTrialGoal? Trial => trial;
 
     /// <summary>The visual channel's frames once attached.</summary>
     public ForeverVisualBarTracker? Tracker => tracker;
@@ -389,7 +383,6 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
             {
                 return Problem(ForeverRunProtocol.ExitRefused, "Normal controller did not load the isolated trial goal.");
             }
-            trial = goal;
             stage = (int)ForeverRunStage.Preflight;
 
             output.Line("Normal Forever controller loaded with one bounded trial goal.");

@@ -14,8 +14,6 @@ namespace HeadlessServer.Hosting;
 public sealed partial class StartFromCommandLine(RunOptions options, BotRuntimeHost host, IHostApplicationLifetime lifetime,
     ILogger<StartFromCommandLine> logger) : IHostedService
 {
-    public const int ExitRefused = 1;
-
     private readonly Lock sync = new();
     private string? runId;
     // A run can end before Start hands its id back: its report waits here (known issue 76).
@@ -36,7 +34,7 @@ public sealed partial class StartFromCommandLine(RunOptions options, BotRuntimeH
             LogRefused(logger, assignment.ToString(), started.Reason ?? string.Empty);
             if (!options.Agent)
             {
-                Environment.ExitCode = ExitRefused;
+                Environment.ExitCode = Program.ExitError;
                 lifetime.StopApplication();
             }
             return Task.CompletedTask;
@@ -87,7 +85,7 @@ public sealed partial class StartFromCommandLine(RunOptions options, BotRuntimeH
     {
         if (report.Outcome is not (BotRunOutcome.Complete or BotRunOutcome.Stopped))
         {
-            Environment.ExitCode = ExitRefused;
+            Environment.ExitCode = Program.ExitError;
         }
 
         lifetime.StopApplication();

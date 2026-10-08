@@ -13,6 +13,12 @@ public static class ContractJson
 {
     public static JsonSerializerOptions Options { get; } = Create();
 
+    /// <summary>
+    /// The contract's conventions, indented: for the state files the services and the agent keep (the manager's
+    /// registry, the agent's identity and its sync state), which used three. Names are read in any case.
+    /// </summary>
+    public static JsonSerializerOptions Files { get; } = CreateFiles();
+
     /// <summary>Adds the contract's conventions to options a host already owns.</summary>
     public static JsonSerializerOptions Apply(JsonSerializerOptions options)
     {
@@ -23,6 +29,13 @@ public static class ContractJson
     private static JsonSerializerOptions Create()
     {
         JsonSerializerOptions options = Apply(new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        options.MakeReadOnly(populateMissingResolver: true);
+        return options;
+    }
+
+    private static JsonSerializerOptions CreateFiles()
+    {
+        JsonSerializerOptions options = new(Options) { WriteIndented = true };
         options.MakeReadOnly(populateMissingResolver: true);
         return options;
     }

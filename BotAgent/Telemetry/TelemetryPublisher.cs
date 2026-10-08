@@ -36,9 +36,6 @@ public sealed partial class TelemetryPublisher(AgentIdentity identity, BotRuntim
     private string? probeFailure;
     private string? tickFailure;
 
-    /// <summary>The last snapshot taken, sent or not.</summary>
-    public BotSnapshot? Latest { get; private set; }
-
     /// <summary>Takes a snapshot now; what <see cref="ExecuteAsync"/> sends each second.</summary>
     public BotSnapshot Take()
     {
@@ -55,7 +52,6 @@ public sealed partial class TelemetryPublisher(AgentIdentity identity, BotRuntim
         BotTelemetry telemetry = host.Read();
         BotSnapshot snapshot = new(identity.AgentId, clock.GetUtcNow(), telemetry.State, host.CurrentRun, game, telemetry.Character,
             telemetry.Vitals, telemetry.Position, telemetry.Activity, telemetry.Agenda, telemetry.Progress, telemetry.Message);
-        Latest = snapshot;
         return snapshot;
     }
 
