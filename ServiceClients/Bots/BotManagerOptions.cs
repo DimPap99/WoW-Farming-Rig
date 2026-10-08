@@ -22,30 +22,19 @@ public sealed record BotManagerOptions(Uri Url, string? ApiKey = null)
     /// <summary>The options from <paramref name="configuration"/>, with the default URL when none is set.</summary>
     public static BotManagerOptions From(IConfiguration configuration)
     {
-        string? configured = configuration[UrlKey];
-        string url = string.IsNullOrWhiteSpace(configured) ? BotManagerApi.DefaultUrl : configured;
-        return new BotManagerOptions(Parse(url), ServiceKeyConfig.For(configuration, Position));
+        return new BotManagerOptions(ServiceClientRegistration.Url(configuration, Position, BotManagerApi.DefaultUrl),
+            ServiceKeyConfig.For(configuration, Position));
     }
 
     /// <summary>The options when <c>BotManager:Url</c> is set, else null: an agent with no manager configured runs on its own.</summary>
     public static BotManagerOptions? FromIfConfigured(IConfiguration configuration)
     {
-        return string.IsNullOrWhiteSpace(configuration[UrlKey]) ? null : From(configuration);
+        return ServiceClientRegistration.IsConfigured(configuration, Position) ? From(configuration) : null;
     }
 
     /// <summary>The address only: the key never reaches a log.</summary>
     public override string ToString()
     {
         return Url.ToString();
-    }
-
-    private static Uri Parse(string url)
-    {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) || uri.Scheme is not ("http" or "https"))
-        {
-            throw new InvalidOperationException($"{UrlKey} must be an http or https URL, not '{url}'.");
-        }
-
-        return uri;
     }
 }

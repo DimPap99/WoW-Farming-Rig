@@ -22,15 +22,8 @@ public sealed record PathingServiceOptions(Uri Url, string? ApiKey = null)
 
     public static PathingServiceOptions From(IConfiguration configuration)
     {
-        string? configured = configuration[UrlKey];
-        string url = string.IsNullOrWhiteSpace(configured) ? PathingApi.DefaultUrl : configured;
-
-        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) || uri.Scheme is not ("http" or "https"))
-        {
-            throw new InvalidOperationException($"{UrlKey} must be an http or https URL, not '{url}'.");
-        }
-
-        return new PathingServiceOptions(uri, ServiceKeyConfig.For(configuration, Position));
+        return new PathingServiceOptions(ServiceClientRegistration.Url(configuration, Position, PathingApi.DefaultUrl),
+            ServiceKeyConfig.For(configuration, Position));
     }
 
     /// <summary>
@@ -39,7 +32,7 @@ public sealed record PathingServiceOptions(Uri Url, string? ApiKey = null)
     /// </summary>
     public static PathingServiceOptions? FromIfConfigured(IConfiguration configuration)
     {
-        return string.IsNullOrWhiteSpace(configuration[UrlKey]) ? null : From(configuration);
+        return ServiceClientRegistration.IsConfigured(configuration, Position) ? From(configuration) : null;
     }
 
     /// <summary>The address only: the key never reaches a log.</summary>

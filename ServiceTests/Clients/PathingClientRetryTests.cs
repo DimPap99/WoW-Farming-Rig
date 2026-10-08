@@ -31,8 +31,8 @@ public sealed class PathingClientRetryTests
     [InlineData(HttpStatusCode.BadRequest, 1, RouteStatus.BadRequest)]
     [InlineData(HttpStatusCode.InternalServerError, 1, RouteStatus.Unavailable)]
     [InlineData(HttpStatusCode.ServiceUnavailable, 1, RouteStatus.Unavailable)]
-    [InlineData(HttpStatusCode.BadGateway, 1 + PathingClientRegistration.Retries, RouteStatus.Unavailable)]
-    [InlineData(HttpStatusCode.GatewayTimeout, 1 + PathingClientRegistration.Retries, RouteStatus.Unavailable)]
+    [InlineData(HttpStatusCode.BadGateway, 1 + ServiceClients.ServiceClientRegistration.Retries, RouteStatus.Unavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout, 1 + ServiceClients.ServiceClientRegistration.Retries, RouteStatus.Unavailable)]
     public async Task A_route_is_asked_again_only_when_a_retry_can_help(HttpStatusCode status, int attempts, RouteStatus answered)
     {
         StubService service = new(_ => Answer(status));
@@ -52,7 +52,7 @@ public sealed class PathingClientRetryTests
 
         RouteResponse route = await provider.GetRequiredService<IPathingClient>().FindRouteAsync(Route, TestContext.Current.CancellationToken);
 
-        Assert.Equal(1 + PathingClientRegistration.Retries, service.Attempts);
+        Assert.Equal(1 + ServiceClients.ServiceClientRegistration.Retries, service.Attempts);
         Assert.Equal(RouteStatus.Unavailable, route.Status);
         Assert.Contains("Connection refused", route.Detail);
     }

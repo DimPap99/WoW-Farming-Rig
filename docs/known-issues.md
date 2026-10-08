@@ -262,10 +262,11 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       unreadable file fails the whole GET.
     - (Fixed 2026-10-08: the Bot Manager answered 500 to a request it could not read in Development;
       both services answer 400 now, through `ServiceHosting.AddServiceProblems`.)
-    - The Phase 3 review found two halves left: `AssignmentRules` still accepts the names `PathName`
-      now refuses (item 68), and the Bot Manager's client still repeats a GET the manager answered 500
-      or timed out, and counts the manager's own 504 as a failure (item 37 changed the pathing client's
-      copy only). Both go with the plan's step 3.
+    - (Fixed 2026-10-08, from the Phase 3 review: `AssignmentRules` accepted the names `PathName`
+      refused, now one rule, `LibraryName` (item 68); and the Bot Manager's client repeated a GET the
+      manager answered 500 and counted the manager's own 504 as the manager down, now one client stack
+      for both services, `ServiceClients/ServiceClientRegistration`, whose breaker counts only what says
+      a service is out of reach; `BotManagerClientRetryTests`.)
 
 Items 47 to 56 come from the review of Phase 2 (7ef44187..4e65fd27, 2026-10-07), checked against
 0ec0be56. The report is outside the repository, at
