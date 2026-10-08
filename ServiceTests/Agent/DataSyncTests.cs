@@ -105,6 +105,39 @@ public sealed class DataSyncTests : IDisposable
         Assert.True(linux.Proceed, linux.Message);
     }
 
+    // Taken as they came, with no check: a file changed since the manifest, cut short, or not the file
+    // at all was written over this PC's copy (known issue 77).
+    [Fact]
+    public async Task Bytes_other_than_the_manifest_listed_are_not_written()
+    {
+        Write(central, RouteFile, Trip);
+        Write(here, RouteFile, Trip.Replace("\"Trip\"", "\"Trip, this PC's\""));
+        using PathingServiceFactory service = new(central.Root);
+        Tamper cut = new((path, text) => path.Contains("/files/", StringComparison.Ordinal) ? text[..(text.Length / 2)] : text);
+
+        RunPreparation prepared = await Sync(service, between: cut).PrepareAsync(BotAssignment.ForForever(Route, 5), Token);
+
+        Assert.True(prepared.Proceed, prepared.Message);
+        Assert.Contains("Not updated, this PC's copy used: forever-routes/trip.json (it came back other than listed)", prepared.Message);
+        Assert.Equal(Encoding.UTF8.GetBytes(Trip.Replace("\"Trip\"", "\"Trip, this PC's\"")), Bytes(here, RouteFile));
+    }
+
+    [Fact]
+    public async Task A_manifest_with_an_empty_entry_is_a_refused_set_and_the_run_uses_this_PCs_copies()
+    {
+        Write(central, RouteFile, Trip);
+        Write(here, RouteFile, Trip);
+        using PathingServiceFactory service = new(central.Root);
+        Tamper empty = new((path, text) => path.EndsWith("/forever-routes", StringComparison.Ordinal)
+            ? text.Replace("\"files\":[", "\"files\":[null,", StringComparison.Ordinal)
+            : text);
+
+        RunPreparation prepared = await Sync(service, between: empty).PrepareAsync(BotAssignment.ForForever(Route, 5), Token);
+
+        Assert.True(prepared.Proceed, prepared.Message);
+        Assert.Contains("The forever-routes set was refused (it answered a manifest this agent cannot read)", prepared.Message);
+    }
+
     [Fact]
     public async Task A_copy_that_matches_is_left_alone_whatever_its_line_endings()
     {
@@ -297,10 +330,25 @@ public sealed class DataSyncTests : IDisposable
         Assert.Empty(runtimes.Built);
     }
 
-    private DataSync Sync(PathingServiceFactory service, AgentGame? game = null, StringComparer? fileNames = null)
+    private DataSync Sync(PathingServiceFactory service, AgentGame? game = null, StringComparer? fileNames = null,
+        DelegatingHandler? between = null)
     {
-        return new DataSync(new PathingClient(service.CreateClient()), here.Config(), new FakeProbe { Game = game ?? Forever },
+        HttpClient http = between is null ? service.CreateClient() : service.CreateDefaultClient(between);
+        return new DataSync(new PathingClient(http), here.Config(), new FakeProbe { Game = game ?? Forever },
             TimeProvider.System, NullLogger<DataSync>.Instance, fileNames);
+    }
+
+    // Changes what the service answers on the way: a file's bytes, or a manifest's text.
+    private sealed class Tamper(Func<string, string, string> change) : DelegatingHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            HttpResponseMessage response = await base.SendAsync(request, cancellationToken);
+            string text = await response.Content.ReadAsStringAsync(cancellationToken);
+            response.Content = new StringContent(change(request.RequestUri!.AbsolutePath, text), Encoding.UTF8,
+                response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream");
+            return response;
+        }
     }
 
     private string[] Synced()

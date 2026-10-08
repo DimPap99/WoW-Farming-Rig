@@ -17,6 +17,9 @@ namespace ServiceClients;
 /// <param name="service">The service's name in a message, such as "pathing service".</param>
 public sealed class ServiceHttp(HttpClient http, string service)
 {
+    /// <summary>The largest body <see cref="GetBytesAsync"/> takes: far above any authored file (a route is a few kilobytes).</summary>
+    public const long MaxFileBytes = 64L * 1024 * 1024;
+
     public async Task<ServiceResult<T>> GetAsync<T>(string uri, CancellationToken token)
     {
         try
@@ -34,15 +37,28 @@ public sealed class ServiceHttp(HttpClient http, string service)
         }
     }
 
-    /// <summary>A body as it is, not JSON: a file's bytes exactly as the service stores them.</summary>
+    /// <summary>
+    /// A body as it is, not JSON: a file's bytes exactly as the service stores them, at most
+    /// <see cref="MaxFileBytes"/>; a larger one is refused before it is read (known issue 77).
+    /// </summary>
     public async Task<ServiceResult<byte[]>> GetBytesAsync(string uri, CancellationToken token)
     {
         try
         {
-            using HttpResponseMessage response = await http.GetAsync(uri, token).ConfigureAwait(false);
-            return response.IsSuccessStatusCode
-                ? new(await response.Content.ReadAsByteArrayAsync(token).ConfigureAwait(false), (int)response.StatusCode, null)
-                : new(default, (int)response.StatusCode, await ErrorAsync(response, token).ConfigureAwait(false));
+            using HttpResponseMessage response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new(default, (int)response.StatusCode, await ErrorAsync(response, token).ConfigureAwait(false));
+            }
+
+            if (response.Content.Headers.ContentLength > MaxFileBytes)
+            {
+                return new(default, (int)response.StatusCode,
+                    $"the {service} answered {response.Content.Headers.ContentLength} bytes, more than a file may be ({MaxFileBytes})");
+            }
+
+            await response.Content.LoadIntoBufferAsync(MaxFileBytes, token).ConfigureAwait(false);
+            return new(await response.Content.ReadAsByteArrayAsync(token).ConfigureAwait(false), (int)response.StatusCode, null);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {

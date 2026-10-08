@@ -402,26 +402,31 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       address, the machine's own name); a WebSocket upgrade from another site is refused as a write is;
       `ServiceKey:TrustLoopback=false` serves no caller without the key, for a service behind a proxy.
 
-77. **Smaller findings of the Phase 3 review.**
-    - **Agent and HeadlessServer:** `--Section:Key value` dropped a value starting with `-` (item 22);
-      a standalone run started by a double-click closed its window, and the reason with it; a Forever
-      runtime whose map data could not be read was Failed instead of Refused; the logon task ran the
-      agent below normal priority, and its threads below WoW's; `run-agent.ps1` ended its loop when its
-      log could not be written, and timed runs in local time (a DST change misjudged one backoff);
-      `RunOptions`' profile is no longer `Required`, so a missing one prints one line instead of the
-      usage; `headless_appsettings.Development.json` overrides a logger name nothing uses.
-    - **Bot Manager and Control Center:** `BotManagerStatus` took any JSON at `/health` for the
-      manager's (item 50's twin); Stop was disabled while a Start was in flight; a console's first read of
-      the log or the runs that failed was never retried; a run's end left the card and the console
-      showing it for up to a second; the assignment form built its draft after its first awaits, so a
-      choice made then was replaced; text typed on the Forever routes page during a save was marked
-      saved; the "no bots yet" hint printed the Control Center's own address of the manager; the run
-      history kept every run ever shown; a bot's zone was named from the Pathing Service's client,
-      whatever client the bot played.
-    - **Sync:** answers were taken with no size limit, and bytes were never checked against the
-      manifest's size and hash; a manifest with a null entry threw.
+77. **Left of the Phase 3 review's smaller findings.** (The rest is fixed: see "Fixed".)
+    - `BotManagerStatus` takes any JSON at the manager's `/health` (item 50's twin): a `BotManager:Url`
+      pointing at the Pathing Service shows a green "Bots 0 of 0". It goes with the plan's step 3, where
+      the Control Center stops polling the manager and takes its state from the fleet feed.
 
 ## Fixed
+
+77. **Smaller findings of the Phase 3 review** (2026-10-08; what is left is item 77 above).
+    - HeadlessServer: a negative number after `--Section:Key` is its value; a standalone run that failed
+      keeps the window Windows made for it open (and no longer waits twice under `run.bat`); a missing
+      class profile prints the usage again; a Forever runtime whose map data cannot be read is refused,
+      not failed; the Development settings' logger override names the logger used. The logon task's
+      priority, `run-agent.ps1`'s log and its timing went with item 65.
+    - Control Center: Stop stays on while a Start is in flight; a console's failed read of the log or
+      the runs is tried again at the bot's next change; a run's end takes the run off its bot at once;
+      the assignment form makes its draft before its first await; the Forever routes page marks saved
+      only the text it sent; the "no bots yet" hint names the manager as a game PC reaches it; the run
+      history keeps what the manager keeps (`BotManagerApi.KeptRuns`); a bot's zone is named only when
+      it plays the Pathing Service's era.
+    - Sync: a fetched file whose size or hash is not the manifest's is not written; an answer over
+      `ServiceHttp.MaxFileBytes` (64 MB) is refused before it is read; a manifest without its list, or
+      with an empty entry, is the set refused, and the run uses this PC's copies.
+    - Tests: `HeadlessCommandLineTests`, `RuntimeRefusalTests`, `FleetFeedTests`, `BotFormatTests`,
+      `DataSyncTests`, `ServiceHttpBytesTests`, each failing on the old code. The window, the draft, the
+      saved text, Stop and the retries are page behaviour, checked by reading, not by a test.
 
 68. **A path override that did not load left the bot idle under "Running"** (Phase 3 review,
     2026-10-08; the names half is item 68 above). `LoadPathProfile` returned nothing, and a path that did

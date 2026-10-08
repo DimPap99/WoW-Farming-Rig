@@ -375,6 +375,12 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
 
             ServiceResult<SyncManifest> got = await sync.pathing.GetSyncManifestAsync(set, era, token);
             Dictionary<string, SyncFile?>? manifest = null;
+            // A manifest with no list, or an entry without its name or hash, is not one: the set is refused.
+            if (got.Ok && (got.Value.Files is null || Array.Exists(got.Value.Files, file => file?.Name is null || file.Sha256 is null)))
+            {
+                got = new ServiceResult<SyncManifest>(default, got.Status, "it answered a manifest this agent cannot read");
+            }
+
             if (got.Ok)
             {
                 manifest = new Dictionary<string, SyncFile?>(sync.fileNames);
@@ -441,6 +447,14 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
 
                     failed.Add($"{key} ({got.Error})");
                     return $"it could not be fetched ({got.Error})";
+                }
+
+                // Bytes that are not what the manifest listed (changed since, cut short, or not the file)
+                // are not written: this PC's copy stays, and the next sync tries again (known issue 77).
+                if (got.Value.Length != file.Bytes || SyncHash.Of(got.Value) != file.Sha256)
+                {
+                    failed.Add($"{key} (it came back other than listed)");
+                    return "it came back other than the Pathing Service listed it";
                 }
 
                 // A copy changed on this PC since it was synced, or never synced, is kept before it goes.
