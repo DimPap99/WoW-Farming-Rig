@@ -24,7 +24,7 @@ public sealed partial class TelemetryPublisher(AgentIdentity identity, BotRuntim
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(1);
 
-    /// <summary>How often the client is looked for: listing processes is not free.</summary>
+    /// <summary>How often the client is looked for while no run plays it: listing processes is not free.</summary>
     public static readonly TimeSpan ProbeInterval = TimeSpan.FromSeconds(5);
 
     /// <summary>The most log lines one batch carries.</summary>
@@ -42,8 +42,10 @@ public sealed partial class TelemetryPublisher(AgentIdentity identity, BotRuntim
     /// <summary>Takes a snapshot now; what <see cref="ExecuteAsync"/> sends each second.</summary>
     public BotSnapshot Take()
     {
-        // Timed on the monotonic clock: a wall clock set back would hold the next probe that long.
-        if (!probed || clock.GetElapsedTime(probedAt) >= ProbeInterval)
+        // Timed on the monotonic clock: a wall clock set back would hold the next probe that long. A run under
+        // way plays the client it found, and ends if that client goes.
+        bool due = !probed || clock.GetElapsedTime(probedAt) >= ProbeInterval;
+        if (due && (game is null || host.CurrentRun is null))
         {
             game = Probe();
             probedAt = clock.GetTimestamp();

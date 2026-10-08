@@ -51,6 +51,30 @@ public sealed class TelemetryPublisherTests : IDisposable
         Assert.Equal(2, probe.Calls);
     }
 
+    // The review's E1: a full WMI listing every 5 s, also while a run played the client it had found.
+    [Fact]
+    public async Task A_run_under_way_is_not_probed_again()
+    {
+        SteppedClock clock = new();
+        CountingProbe probe = new(AgentUnderTest.Game);
+        await using AgentUnderTest agent = await AgentUnderTest.StartAsync(folder, null, new FakeRuntimeFactory(), probe: probe.Probe,
+            clock: clock);
+        await Eventually.True(() => probe.Calls >= 1);
+
+        Assert.True(agent.Host.Start(BotAssignment.ForForever("crossroads_trip.json", 5)).Accepted);
+        int before = probe.Calls;
+        clock.Advance(TimeSpan.FromSeconds(6), TimeSpan.FromSeconds(6));
+        BotSnapshot during = agent.Telemetry.Take();
+
+        Assert.Equal(before, probe.Calls);
+        Assert.Equal(AgentUnderTest.Game, during.Game);
+
+        // Once the run ended, the client is looked for again.
+        agent.Host.Stop();
+        await Eventually.True(() => agent.Host.CurrentRun is null);
+        await Eventually.True(() => agent.Telemetry.Take() is not null && probe.Calls > before);
+    }
+
     public void Dispose()
     {
         Directory.Delete(folder, recursive: true);
@@ -69,7 +93,7 @@ public sealed class TelemetryPublisherTests : IDisposable
         }
     }
 
-    private sealed class CountingProbe
+    private sealed class CountingProbe(AgentGame? game = null)
     {
         private int calls;
 
@@ -78,7 +102,7 @@ public sealed class TelemetryPublisherTests : IDisposable
         public AgentGame? Probe()
         {
             Interlocked.Increment(ref calls);
-            return null;
+            return game;
         }
     }
 

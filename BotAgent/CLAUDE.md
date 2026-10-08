@@ -43,7 +43,8 @@ keeps the reports of runs that ended while the manager was away until one is tak
 logs it and tries again only after `RefusedRetry` (5 min).
 
 **Telemetry reads, never writes.** `IBotRuntime.Read` is called from the publisher's thread once a
-second; a runtime answers from read-only taps and must tolerate being read while it ends.
+second; a runtime answers from read-only taps and must tolerate being read while it ends. The client
+is probed every 5 s only while no run plays it: a run plays the client it found, and ends if it goes.
 
 **A background service must never fault.** On .NET 10 a faulted `BackgroundService` stops the host,
 and with it the run under way. The publisher logs a tick that fails and goes on, and a probe that

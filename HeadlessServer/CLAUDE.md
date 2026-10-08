@@ -20,7 +20,7 @@ Hosting/StartFromCommandLine  a profile given on the command line runs at once
 Runtimes/HeadlessRuntimeFactory   which runtime an assignment needs, refused before attaching (CreateRuntime)
 Runtimes/ClassicRuntime.cs    the Classic bot, composed per run (InitState, profile, on; off, dispose)
 Runtimes/ForeverRuntime.cs    Core's ForeverRun for a route, with the trial runner's gates
-Runtimes/WowGameProbe.cs      which client runs, without attaching
+Runtimes/WowGameProbe.cs      which client runs, without attaching; its file read once per process
 Runtimes/ClassProfileFolder   Json/class, for the manager's Classic assignments
 headless_appsettings.json     options (note the prefix - NOT appsettings.json)
 data_config.json, addon_config.json, frame_config.json, agent_identity.json   beside it, gitignored
