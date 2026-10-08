@@ -379,23 +379,6 @@ Items 63 to 77 come from the review of Phase 3 (its eleven commits in 4e65fd27..
 `~/RiderProjects/WoW-Farming-Rig-review/phase3/phase3-review.md` on the machine it ran on; the
 plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fixes-plan.md).
 
-63. **A Classic run that fails to start crashes the agent, and nothing logs why.**
-    - **Where:** `Game/WoWProcess/WowProcess` (its poll thread), composed per run by
-      `HeadlessServer/Runtimes/ClassicRuntime`; `HeadlessServer/Program`.
-    - **Cause:** `WowProcess` polls on a foreground thread that waits on the token of the
-      `CancellationTokenSource` it was given, and nothing ties the thread to the object. Only
-      `BotController.Dispose` cancels the source. When building the controller fails after
-      `WowProcess` started (DXGI's `DuplicateOutput` throws on the lock screen, at a UAC prompt or in a
-      disconnected RDP session), the run's container disposes the source without cancelling it, and
-      the thread's next `token.WaitHandle` throws `ObjectDisposedException`. The old `Program`'s
-      `UnhandledException` logger went with Phase 3.
-    - **Effect:** the run is reported Refused, then within 5 s the agent's process dies (0xE0434352),
-      with no line in `headless_out.log` or the Control Center's console. `run-agent.ps1` starts it
-      again; `run.bat --agent` stays down.
-    - **Fix:** `WowProcess` owns its thread: a background thread on a token source of its own, linked
-      to the one it is given, which `Dispose` cancels and joins, so the container ends it; a poll that
-      throws is a client gone, not a crash. `Program` logs an unhandled exception again.
-
 64. **A click into the agent's window freezes the bot with a key held.**
     - **Where:** `HeadlessServer/Hosting/HeadlessLogging` (the console sink).
     - **Cause:** Serilog's console sink writes synchronously under one lock. In the Windows 10 console
@@ -617,6 +600,17 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+63. **A Classic run that failed to start crashed the agent, and nothing logged why** (Phase 3 review,
+    2026-10-08). `WowProcess` polled on a foreground thread waiting on the handle of the token source
+    it was given, which only `BotController.Dispose` cancelled: a Classic run whose controller failed
+    to build (DXGI on the lock screen, at a UAC prompt, in a disconnected RDP session) disposed the
+    source uncancelled, and the thread's next wait threw and ended the process, with no log line since
+    the old `Program`'s crash logger went in Phase 3. `WowProcess` now polls on a `PollThread` (a
+    background thread on a linked token source of its own, which `Dispose` cancels and joins), and a
+    poll that throws marks the client not running; the container that built it disposes it, as do
+    `AddWoWProcess`'s probe and `ForeverRun`. HeadlessServer logs an unhandled exception as Fatal
+    again (`PollThreadTests`; with the old wait the test host dies). Windows checklist: a locked PC.
 
 57. **A continent with nothing baked answered its relief with 500** (2026-10-07, found with the
     layers' browser check). `GET navmesh/{continent}/overview` built the tile graph of a folder that

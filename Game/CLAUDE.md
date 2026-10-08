@@ -6,6 +6,7 @@ player's character, so it gets more care than its size suggests.
 
 ```
 WoWProcess/WowProcess.cs      finds the process, reads its path + FileVersion
+WoWProcess/PollThread.cs      the thread it polls on: background, ended by Dispose
 Input/IInput.cs               keyboard contract
 Input/IMouseInput.cs          mouse contract
 Input/InputWindowsNative.cs   the Win32 implementation (PostMessage based)
@@ -48,6 +49,11 @@ the requested duration. Do not "fix" a flaky timing test by removing that.
 **`WowProcess` matches a list of known executable names** and throws at construction when
 none is running, so it is a hard dependency for anything in the bot path — that is why
 the services and the utilities do not reference this project.
+
+**`WowProcess` polls on a thread of its own until it is disposed.** A `PollThread`: a background
+thread on a token source linked to the one `WowProcess` is given, so that source may be disposed
+first (waiting on a disposed source's handle threw on the thread and ended the agent: known issue
+63). Dispose a `WowProcess` with whatever built it - a container does that for one it created.
 
 **Screen capture is an interface here, implemented elsewhere.** `IWowScreen` /
 `IGpuTextureProvider` stay abstract so `SharedLib` and the pathing chain remain

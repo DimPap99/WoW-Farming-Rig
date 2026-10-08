@@ -41,6 +41,13 @@ public static class Program
 
         AgentLogSink sink = new();
         Log.Logger = HeadlessLogging.Create(configuration, sink);
+        // A thread that throws ends the process: the log says why first.
+        AppDomain.CurrentDomain.UnhandledException += (_, crash) =>
+        {
+            Log.Fatal(crash.ExceptionObject as Exception, "HeadlessServer crashed");
+            Log.CloseAndFlush();
+        };
+
         int exitCode;
         try
         {

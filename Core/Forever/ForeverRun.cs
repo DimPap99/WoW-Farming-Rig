@@ -155,7 +155,8 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
         bool started = false;
         try
         {
-            WowProcess process = new(cts, Options.Create(new StartupConfigPid { Id = wow.Id }));
+            // Registered as an instance below, which the container does not dispose: this does.
+            using WowProcess process = new(cts, Options.Create(new StartupConfigPid { Id = wow.Id }));
             if (process.FileVersion is not { Major: 1, Minor: >= 60 })
             {
                 output.Problem("The selected client is not Forever.");

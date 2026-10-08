@@ -424,18 +424,10 @@ public static class DependencyInjection
         services.AddSingleton<WowProcess>();
         services.AddSingleton<AddonConfigurator>();
 
-        var sp = services.BuildServiceProvider(
+        // Disposed at once: its WowProcess polls on a thread of its own until it is.
+        using ServiceProvider sp = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true });
-        try
-        {
-            return ProbeWoWProcess(services, log, sp, out isForever);
-        }
-        finally
-        {
-            // This probe's WowProcess polls on its own foreground thread until its token is
-            // cancelled; left running it kept the process alive after the bot stopped.
-            sp.GetRequiredService<CancellationTokenSource>().Cancel();
-        }
+        return ProbeWoWProcess(services, log, sp, out isForever);
     }
 
     private static bool ProbeWoWProcess(IServiceCollection services, ILogger log, ServiceProvider sp, out bool isForever)

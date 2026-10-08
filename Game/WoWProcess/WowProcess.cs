@@ -10,8 +10,16 @@ using System.Threading;
 
 namespace Game;
 
-public sealed class WowProcess
+/// <summary>
+/// The WoW client the bot attaches to: found by process id or by a known executable name, polled
+/// every <see cref="PollInterval"/> on a thread of its own for the client ending (and another one of
+/// the known names starting). Dispose it with whatever built it: that ends the thread.
+/// </summary>
+public sealed class WowProcess : IDisposable
 {
+    /// <summary>How often the client is looked at again.</summary>
+    public static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+
     private static readonly string[] defaultProcessNames = [
         "Wow",
         "WowClassic",
@@ -24,8 +32,7 @@ public sealed class WowProcess
         "WowClassic-arm64"
     ];
 
-    private readonly Thread thread;
-    private readonly CancellationToken token;
+    private readonly PollThread poll;
 
     public Version FileVersion { get; private set; }
 
@@ -52,8 +59,6 @@ public sealed class WowProcess
 
     private WowProcess(CancellationTokenSource cts, int pid = -1)
     {
-        token = cts.Token;
-
         Process? p = Get(pid)
             ?? throw new NullReferenceException(
                 $"Unable to find {(pid == -1 ? "any" : $"pid={pid}")} " +
@@ -64,32 +69,33 @@ public sealed class WowProcess
         IsRunning = true;
         (Path, FileVersion) = GetProcessInfo();
 
-        thread = new(PollProcessExited);
-        thread.Start();
+        // A poll that throws (the client gone between two calls, WMI failing) is a client not running.
+        poll = new PollThread(nameof(WowProcess), PollInterval, PollProcessExited, _ => IsRunning = false, cts.Token);
     }
 
     public WowProcess(CancellationTokenSource cts, IOptions<StartupConfigPid> options) : this(cts, options.Value.Id) { }
 
+    public void Dispose()
+    {
+        poll.Dispose();
+    }
+
     private void PollProcessExited()
     {
-        while (!token.IsCancellationRequested)
+        process.Refresh();
+        if (!process.HasExited)
         {
-            process.Refresh();
-            if (process.HasExited)
-            {
-                IsRunning = false;
+            return;
+        }
 
-                Process? p = Get();
-                if (p != null)
-                {
-                    process = p;
-                    id = process.Id;
-                    IsRunning = true;
-                    (Path, FileVersion) = GetProcessInfo();
-                }
-            }
-
-            token.WaitHandle.WaitOne(5000);
+        IsRunning = false;
+        Process? p = Get();
+        if (p != null)
+        {
+            process = p;
+            id = process.Id;
+            IsRunning = true;
+            (Path, FileVersion) = GetProcessInfo();
         }
     }
 
