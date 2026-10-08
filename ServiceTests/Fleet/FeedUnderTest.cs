@@ -1,11 +1,8 @@
 using ControlCenter.Bots;
 
-using Contracts.Bots;
-
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
-using ServiceClients;
 using ServiceClients.Bots;
 
 using ServiceTests.Agent;
@@ -51,8 +48,7 @@ internal sealed class FeedUnderTest : IAsyncDisposable
         services.AddSingleton<IBotManagerClient>(new BotManagerClient(new HttpClient(handler) { BaseAddress = ManagerSlot.Address }));
         ServiceProvider provider = services.BuildServiceProvider();
 
-        FleetFeed feed = new(provider, () => ServiceHubs.Build(ManagerSlot.Address, BotManagerApi.FleetHub, null, InMemoryHub.Over(slot.Handler)),
-            NullLogger<FleetFeed>.Instance);
+        FleetFeed feed = new(provider, new BotManagerOptions(ManagerSlot.Address), NullLogger<FleetFeed>.Instance, InMemoryHub.Over(slot.Handler));
         await feed.StartAsync(TestContext.Current.CancellationToken);
         return new FeedUnderTest(provider, feed);
     }

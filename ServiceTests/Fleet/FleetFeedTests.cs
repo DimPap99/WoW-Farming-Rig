@@ -118,9 +118,11 @@ public sealed class FleetFeedTests
 
         // The manager goes, and the feed knows it.
         await BotAsync(feed, bot => !bot.Online);
+        Assert.Null(feed.Feed.Error);
         slot.Clear();
         first.Dispose();
         await Eventually.True(() => !feed.Feed.Connected);
+        Assert.NotNull(feed.Feed.Error);
 
         // Another comes up on the same data: the bot is read from it, then its agent dials in again.
         using BotManagerFactory second = slot.Bring(new BotManagerFactory(data.Root));
@@ -133,7 +135,22 @@ public sealed class FleetFeedTests
         Assert.NotNull(known);
         Assert.False(known.Online);
         Assert.Equal("Test PC", online.Name);
+        Assert.Null(feed.Feed.Error);
         Assert.True(Volatile.Read(ref resyncs) >= 2, $"read {resyncs} times");
+    }
+
+    // The pages and the status bar take the manager's state from the feed: nothing polls its health.
+    [Fact]
+    public async Task A_feed_without_its_manager_names_it_and_says_why()
+    {
+        ManagerSlot slot = new();
+        await using FeedUnderTest feed = await FeedUnderTest.StartAsync(slot);
+
+        await Eventually.True(() => feed.Feed.Error?.Contains("Connection refused (test)", StringComparison.Ordinal) == true);
+
+        Assert.False(feed.Feed.Connected);
+        Assert.Equal("Bot Manager", feed.Feed.Service.Name);
+        Assert.Equal(ManagerSlot.Address, feed.Feed.Service.Url);
     }
 
     [Fact]

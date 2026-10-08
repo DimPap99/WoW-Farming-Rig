@@ -17,18 +17,11 @@ namespace ServiceTests.Fleet;
 /// </summary>
 internal sealed class FakeBotManager(BotInfo[] bots, BotLogLine[]? log = null, RunRecord[]? runs = null) : IBotManagerClient
 {
-    public const string Unreachable = "the bot manager could not be reached: the test took it away";
-
     public ConcurrentQueue<string> Calls { get; } = new();
-
-    /// <summary>The manager stops answering its health, as one that went down would.</summary>
-    public bool Down { get; set; }
 
     public Task<ServiceResult<ManagerHealth>> GetHealthAsync(CancellationToken token = default)
     {
-        return Down
-            ? Task.FromResult(new ServiceResult<ManagerHealth>(null, 0, Unreachable))
-            : Answer(new ManagerHealth(BotManagerApi.Version, BotManagerApi.AgentProtocol, bots.Length, bots.Count(bot => bot.Online)));
+        return Answer(new ManagerHealth(BotManagerApi.Version, BotManagerApi.AgentProtocol, bots.Length, bots.Count(bot => bot.Online)));
     }
 
     public Task<ServiceResult<BotInfo[]>> ListBotsAsync(CancellationToken token = default)

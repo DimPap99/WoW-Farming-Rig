@@ -1,3 +1,4 @@
+using ControlCenter.Bots;
 using ControlCenter.Hosting;
 
 using Contracts;
@@ -15,8 +16,11 @@ using Microsoft.Extensions.Logging;
 using ServiceClients.Bots;
 using ServiceClients.Pathing;
 
+using ServiceTests.Agent;
+
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
 using System.Threading.Tasks;
 
 namespace ServiceTests.Api;
@@ -25,10 +29,13 @@ namespace ServiceTests.Api;
 /// The Control Center in memory with both its services down (closed ports), unless a test hands it
 /// a <paramref name="manager"/> or <paramref name="pathing"/> client to use instead, or the address
 /// of a Pathing Service to forward to (<paramref name="pathingUrl"/>, with <paramref name="pathingKey"/>).
-/// A request carrying <see cref="RemoteAddress.Header"/> comes from that address.
+/// With <paramref name="fleetHub"/>, its fleet feed dials the in-memory server that handler reaches:
+/// the feed connected is the manager online. A request carrying <see cref="RemoteAddress.Header"/>
+/// comes from that address.
 /// </summary>
 internal sealed class ControlCenterFactory(IBotManagerClient? manager = null, IPathingClient? pathing = null,
-    Uri? pathingUrl = null, string? pathingKey = null) : WebApplicationFactory<ControlCenter.Program>
+    Uri? pathingUrl = null, string? pathingKey = null, Func<HttpMessageHandler>? fleetHub = null)
+    : WebApplicationFactory<ControlCenter.Program>
 {
     private const string BaseUri = "http://localhost/";
 
@@ -58,7 +65,7 @@ internal sealed class ControlCenterFactory(IBotManagerClient? manager = null, IP
     {
         builder.UseSetting(ServiceHosting.ServiceLogging.FileKey, string.Empty);
         builder.UseSetting(PathingServiceOptions.UrlKey, (pathingUrl ?? ClosedPort.NewUrl()).ToString());
-        builder.UseSetting(BotManagerOptions.UrlKey, ClosedPort.NewUrl().ToString());
+        builder.UseSetting(BotManagerOptions.UrlKey, (fleetHub is null ? ClosedPort.NewUrl() : ManagerSlot.Address).ToString());
         if (pathingKey is not null)
         {
             builder.UseSetting($"{PathingServiceOptions.Position}:{ServiceKey.ConfigKey}", pathingKey);
@@ -73,6 +80,12 @@ internal sealed class ControlCenterFactory(IBotManagerClient? manager = null, IP
         if (pathing is not null)
         {
             builder.ConfigureTestServices(services => services.AddSingleton(pathing));
+        }
+
+        if (fleetHub is not null)
+        {
+            builder.ConfigureTestServices(services => services.AddSingleton(sp => new FleetFeed(sp, sp.GetRequiredService<BotManagerOptions>(),
+                sp.GetRequiredService<ILogger<FleetFeed>>(), InMemoryHub.Over(fleetHub))));
         }
     }
 }

@@ -144,14 +144,15 @@ commit that fixed it.
     - **Fix (not started):** carry a water share per tile in the overview (the tile graph builds
       it) and colour water by that, height only for land.
 
-30. **The Control Center's log fills while the Bot Manager is down.**
-    - **Where:** `ServiceClients/Bots/BotManagerClientRegistration` (`AddStandardResilienceHandler`),
-      polled every 2 s by `BotManagerStatus`; the Pathing Service's client is built the same way.
+30. **The Control Center's log fills while the Pathing Service is down.** (The Bot Manager's half is
+    fixed: see the last bullet.)
+    - **Where:** the Pathing Service's client (`ServiceClients/ServiceClientRegistration`,
+      `AddStandardResilienceHandler`), polled every 2 s by `PathingStatus`.
     - **Seen:** 11 minutes with the manager down (2026-10-06): 12,497 lines, 1.6 MB; 829 retry
       events from Polly, each with the connection's stack trace, the last try of each poll at Error.
       `appsettings.json` keeps Polly at Warning, which these are.
     - **Effect:** the daily log file grows by megabytes an hour, and real errors drown. The status
-      bar and the pages already say the manager is offline.
+      bar and the pages already say the service is offline.
     - **Fix (not started):** a poll that fails is the poller's news, not an error: quieten the
       resilience pipeline's logging for the pollers (or give them a client without retries), and
       log the state change once, as `ServiceStatus` does.
@@ -160,8 +161,9 @@ commit that fixed it.
       Polly logs the last failed attempt at Error); the Control Center's pollers are not.
     - The pathing client no longer repeats a 500 or a 503 (item 37), which takes those out of the
       noise; a service that is down is still retried and logged on every poll.
-    - The manager's half comes from `BotManagerStatus`'s 2 s poll on the retrying client, which the
-      fleet feed's own connection makes redundant (Phase 3 review; the plan's step 3).
+    - The manager's half is fixed (2026-10-08, the Phase 3 plan's step 3.11): nothing polls the manager.
+      The Control Center takes its state from the fleet feed's connection, which logs an outage once
+      (`ServiceHubs`).
 
 31. **A file deleted centrally stays on the bot PCs.**
     - **Where:** `BotAgent/Sync/DataSync`. The sync never deletes (Phase 3, decision 5): it brings a
@@ -362,11 +364,6 @@ Items 63 to 77 come from the review of Phase 3 (its eleven commits in 4e65fd27..
 `~/RiderProjects/WoW-Farming-Rig-review/phase3/phase3-review.md` on the machine it ran on; the
 plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fixes-plan.md).
 
-77. **Left of the Phase 3 review's smaller findings.** (The rest is fixed: see "Fixed".)
-    - `BotManagerStatus` takes any JSON at the manager's `/health` (item 50's twin): a `BotManager:Url`
-      pointing at the Pathing Service shows a green "Bots 0 of 0". It goes with the plan's step 3, where
-      the Control Center stops polling the manager and takes its state from the fleet feed.
-
 ## Fixed
 
 68. **The agent took path names the Pathing Service refused** (Phase 3 review, 2026-10-08; the rest of
@@ -402,7 +399,7 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       the 400 for a request that cannot be read and `HubSendQueue`.
     - Tests: `LoopbackTrustTests` (each fails with its rule taken out).
 
-77. **Smaller findings of the Phase 3 review** (2026-10-08; what is left is item 77 above).
+77. **Smaller findings of the Phase 3 review** (2026-10-08).
     - HeadlessServer: a negative number after `--Section:Key` is its value; a standalone run that failed
       keeps the window Windows made for it open (and no longer waits twice under `run.bat`); a missing
       class profile prints the usage again; a Forever runtime whose map data cannot be read is refused,
@@ -417,6 +414,10 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
     - Sync: a fetched file whose size or hash is not the manifest's is not written; an answer over
       `ServiceHttp.MaxFileBytes` (64 MB) is refused before it is read; a manifest without its list, or
       with an empty entry, is the set refused, and the run uses this PC's copies.
+    - The manager's state (item 50's twin): `BotManagerStatus` took any JSON at the manager's `/health`,
+      so a `BotManager:Url` naming the Pathing Service showed a green "Bots 0 of 0". The poller is gone
+      (the plan's step 3.11): the Control Center's manager is online while the fleet feed is connected
+      to its hub, which another service does not have (`FleetPagesTests`).
     - Tests: `HeadlessCommandLineTests`, `RuntimeRefusalTests`, `FleetFeedTests`, `BotFormatTests`,
       `DataSyncTests`, `ServiceHttpBytesTests`, each failing on the old code. The window, the draft, the
       saved text, Stop and the retries are page behaviour, checked by reading, not by a test.

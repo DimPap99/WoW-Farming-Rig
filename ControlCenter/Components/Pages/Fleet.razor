@@ -3,22 +3,21 @@
 @inherits ControlCenterComponent
 
 @inject FleetFeed feed
-@inject BotManagerStatus manager
 
 <PageTitle>Fleet · Control Center</PageTitle>
 
 @* Every bot the Bot Manager knows - one per game PC, its resident agent - online or when it was last
    seen: what it does, where, its vitals and progress, its assignment, and Start and Stop. The page
-   reads the fleet feed, which follows the manager's fleet hub; nothing here polls. While the
-   manager is down the last fleet known stays, dimmed, under the notice. *@
+   reads the fleet feed, which follows the manager's fleet hub; nothing here polls. While the feed
+   is not connected the manager is offline, and the last fleet known stays, dimmed, under the notice. *@
 
 @{
     IReadOnlyList<BotInfo> bots = feed.Bots;
 }
 
-@if (manager.Online || bots.Count > 0)
+@if (feed.Connected || bots.Count > 0)
 {
-    <div class="pa-workspace @(manager.Online ? null : "is-stale")">
+    <div class="pa-workspace @(feed.Connected ? null : "is-stale")">
         <header class="pa-workspace-header">
             <h1 class="pa-workspace-title">Fleet</h1>
             <span class="pa-faint">@bots.Count(bot => bot.Online) of @bots.Count @(bots.Count == 1 ? "bot" : "bots") online</span>
@@ -47,15 +46,14 @@
     </div>
 }
 
-@if (!manager.Online)
+@if (!feed.Connected)
 {
-    <OfflineNotice Service="@manager.Service" Reason="@manager.Error" />
+    <OfflineNotice Service="@feed.Service" Reason="@feed.Error" />
 }
 
 @code {
     protected override void OnInitialized()
     {
-        Subscribe(() => manager.Changed += Redraw, () => manager.Changed -= Redraw);
         Subscribe(() => feed.Changed += OnFleetChanged, () => feed.Changed -= OnFleetChanged);
     }
 

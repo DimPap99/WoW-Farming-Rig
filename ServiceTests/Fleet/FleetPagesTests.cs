@@ -1,4 +1,5 @@
 using ControlCenter.Bots;
+using ControlCenter.Components.Layout;
 using ControlCenter.Components.Pages;
 
 using Contracts.Bots;
@@ -7,7 +8,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 using ServiceClients.Bots;
 
+using ServiceTests.Agent;
 using ServiceTests.Api;
+using ServiceTests.Bots;
 
 using System;
 using System.Collections.Generic;
@@ -21,8 +24,9 @@ using FleetPage = ControlCenter.Components.Pages.Fleet;
 namespace ServiceTests.Fleet;
 
 /// <summary>
-/// The fleet page and a bot's console, rendered as a circuit renders them (prerendering is off):
-/// with the manager down, and with a manager that knows a bot.
+/// The fleet page, a bot's console and the status bar, rendered as a circuit renders them (prerendering
+/// is off): with the manager down, and with a manager that knows a bot. The manager is online while the
+/// fleet feed is connected: its hub is an in-memory manager's, its bots the fake's.
 /// </summary>
 public sealed class FleetPagesTests
 {
@@ -37,20 +41,22 @@ public sealed class FleetPagesTests
     public async Task With_the_manager_down_both_pages_say_so_and_how_to_start_it()
     {
         using ControlCenterFactory host = new();
-        BotManagerStatus status = host.Services.GetRequiredService<BotManagerStatus>();
-        await status.RefreshAsync(TestContext.Current.CancellationToken);
+        FleetFeed feed = host.Services.GetRequiredService<FleetFeed>();
 
         string fleet = await host.RenderAsync<FleetPage>();
         string console = await host.RenderAsync<BotConsole>(Bot(AgentId));
+        string bar = await host.RenderAsync<StatusBar>();
 
-        Assert.False(status.Online);
+        Assert.False(feed.Connected);
         foreach (string page in new[] { fleet, console })
         {
             Assert.Contains("The Bot Manager is offline", page);
-            Assert.Contains(status.Service.Url.ToString(), page);
+            Assert.Contains(feed.Service.Url.ToString(), page);
             Assert.Contains("BotManager/run.sh", page);
             Assert.Contains(BotManagerOptions.UrlKey, page);
         }
+
+        Assert.Contains("Bot Manager offline", bar);
     }
 
     [Fact]
@@ -59,10 +65,13 @@ public sealed class FleetPagesTests
         BotInfo bot = Playing();
         BotLogLine line = new(DateTimeOffset.UtcNow, "Warning", "ForeverRun", "No loot in reach");
         FakeBotManager manager = new([bot], [line]);
-        using ControlCenterFactory host = new(manager);
-        await host.Services.GetRequiredService<BotManagerStatus>().RefreshAsync(TestContext.Current.CancellationToken);
-        Assert.True(await host.Services.GetRequiredService<FleetFeed>().ResyncAsync(TestContext.Current.CancellationToken));
+        using TempDataRoot data = new();
+        using BotManagerFactory hub = new(data.Root);
+        using ControlCenterFactory host = new(manager, fleetHub: hub.Server.CreateHandler);
+        FleetFeed feed = host.Services.GetRequiredService<FleetFeed>();
+        await Eventually.True(() => feed.Connected);
 
+        string bar = WebUtility.HtmlDecode(await host.RenderAsync<StatusBar>());
         string fleet = WebUtility.HtmlDecode(await host.RenderAsync<FleetPage>());
         string console = WebUtility.HtmlDecode(await host.RenderAsync<BotConsole>(Bot(AgentId)));
 
@@ -77,6 +86,8 @@ public sealed class FleetPagesTests
         Assert.Contains("Hunter 12 Orc", console);
         Assert.Contains(line.Message, console);
         Assert.Contains($"Not valid: {AssignmentRules.Problem(TooLong)}", console);
+        Assert.Contains("Bots <strong>1</strong> <span class=\"pa-faint\">of 1 online", bar);
+        Assert.DoesNotContain("The Bot Manager is offline", fleet);
         Assert.Empty(manager.Calls);
     }
 
@@ -85,23 +96,46 @@ public sealed class FleetPagesTests
     {
         BotInfo bot = Playing();
         FakeBotManager manager = new([bot]);
-        using ControlCenterFactory host = new(manager);
-        BotManagerStatus status = host.Services.GetRequiredService<BotManagerStatus>();
-        Assert.True(await host.Services.GetRequiredService<FleetFeed>().ResyncAsync(TestContext.Current.CancellationToken));
+        using TempDataRoot data = new();
+        ManagerSlot slot = new();
+        BotManagerFactory hub = slot.Bring(new BotManagerFactory(data.Root));
+        using ControlCenterFactory host = new(manager, fleetHub: slot.Handler);
+        FleetFeed feed = host.Services.GetRequiredService<FleetFeed>();
+        await Eventually.True(() => feed.Connected);
 
-        manager.Down = true;
-        await status.RefreshAsync(TestContext.Current.CancellationToken);
+        // The manager goes; the feed tries again, and says why it cannot connect.
+        slot.Clear();
+        hub.Dispose();
+        await Eventually.True(() => feed.Error?.Contains("Connection refused (test)", StringComparison.Ordinal) == true);
         string fleet = WebUtility.HtmlDecode(await host.RenderAsync<FleetPage>());
         string console = WebUtility.HtmlDecode(await host.RenderAsync<BotConsole>(Bot(AgentId)));
 
-        Assert.False(status.Online);
+        Assert.False(feed.Connected);
         foreach (string page in new[] { fleet, console })
         {
             Assert.Contains("The Bot Manager is offline", page);
-            Assert.Contains(FakeBotManager.Unreachable, page);
+            Assert.Contains("Connection refused (test)", page);
             Assert.Contains("pa-workspace is-stale", page);
             Assert.Contains(bot.Name, page);
         }
+    }
+
+    // Known issue 77: with BotManager:Url naming the Pathing Service, whose /health answered the manager's
+    // poll as JSON with none of its members, the status bar showed a green "Bots 0 of 0 online".
+    [Fact]
+    public async Task A_manager_address_that_names_another_service_is_the_manager_offline()
+    {
+        using TempDataRoot data = new(withMapData: true);
+        using PathingServiceFactory pathing = new(data.Root);
+        using ControlCenterFactory host = new(new BotManagerClient(pathing.CreateClient()), fleetHub: pathing.Server.CreateHandler);
+        FleetFeed feed = host.Services.GetRequiredService<FleetFeed>();
+
+        await Eventually.True(() => feed.Error is { } why && why != FleetFeed.NotConnected);
+        string bar = WebUtility.HtmlDecode(await host.RenderAsync<StatusBar>());
+
+        Assert.False(feed.Connected);
+        Assert.Contains("Bot Manager offline", bar);
+        Assert.DoesNotContain("of 0 online", bar);
     }
 
     private static Dictionary<string, object?> Bot(string agentId)

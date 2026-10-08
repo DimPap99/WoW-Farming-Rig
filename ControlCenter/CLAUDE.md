@@ -32,7 +32,7 @@ Program.cs                         host (a class, so tests can host it beside th
 Hosting/ControlCenterRegistration  AddControlCenter / UseControlCenter - the composition root
 Hosting/ServiceProxy.cs            YARP: /api/v1, /swagger, /tiles and /path to the service, ServiceHosting's
                                    ForwardGuard first
-Hosting/ServiceStatus.cs           the base of both pollers (2 s): Online, Error, Changed,
+Hosting/ServiceStatus.cs           the Pathing Service's poller's base (2 s): Online, Error, Changed,
                                    Reconnected; ServiceDescription names a service for the pages
 (ServiceHosting)                   logging (AddServiceLogging), the forward's guard, the host check
 Pathing/PathingStatus.cs           the Pathing Service's poller: + capabilities, health; only that service's health counts
@@ -40,9 +40,9 @@ Pathing/WorldCache.cs              zones, continents, places, test routes; read 
 Pathing/WatchFeed.cs               the routes the service plans, as a route watcher of /watchHub,
                                    connected while a page watches
 Pathing/ZoneLookup.cs              a point's zone from the service's area grid, kept per cell
-Bots/BotManagerStatus.cs           the Bot Manager's poller: + ManagerHealth (bots, online)
 Bots/FleetFeed.cs                  the one client of the manager's /fleetHub: every BotInfo, kept
-                                   current; Changed, Resynced, Log, RunEnded for the pages
+                                   current; Changed, Resynced, Log, RunEnded for the pages; and the
+                                   manager's state: online is Connected, Error says why not
 Bots/BotLogBuffer.cs               a console's log: the backlog joined to the stream, each line once
 Bots/AssignmentDraft.cs            the assignment form's fields, Missing and Refusal (AssignmentRules)
 World/WorldScene.cs                what a page shows on the world view: routes, markers, labels, shapes;
@@ -104,10 +104,12 @@ services, and here it belongs to the Pathing Service (`ServiceProxy`). Pages cal
 through `IBotManagerClient` (`BotManager:Url`, its key from `BotManager:ApiKey`, else `ApiKey`),
 so the browser never reaches it; don't add it to `ServiceProxy`.
 
-**A down service is a state, not an error.** Pages read their service's status (`PathingStatus`,
-`BotManagerStatus`, both a `ServiceStatus`) and show `OfflineNotice` with its `Service` and
-`Error` instead of calling; they come back by themselves when the poller sees the service again
-(`Reconnected`). The client reads a member a body lacks as null, so `PathingStatus` takes only the
+**A down service is a state, not an error.** Pages read their service's status (`PathingStatus`, a
+`ServiceStatus` poller; for the Bot Manager, `FleetFeed`, whose connection is the manager's state) and
+show `OfflineNotice` with its `Service` and `Error` instead of calling; they come back by themselves when
+the poller sees the service again (`Reconnected`), or the feed connects. Nothing polls the manager: its
+2 s poll on the retrying client filled the log while it was down (known issue 30), and took any JSON at
+`/health` for the manager's (known issue 77). The client reads a member a body lacks as null, so `PathingStatus` takes only the
 Pathing Service's own health: a body without its members (the Bot Manager answers the same route, an
 older build) or of another `PathingApi.Version` is the service offline with why (known issue 50).
 `Reconnected` also comes when the service restarted, however quickly (`PathingHealth.Instance`), when

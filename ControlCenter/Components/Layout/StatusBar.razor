@@ -1,7 +1,7 @@
 @inherits ControlCenterComponent
 
 @inject PathingStatus status
-@inject BotManagerStatus manager
+@inject FleetFeed fleet
 
 <header class="pa-statusbar">
     @* Nothing the service said before it went offline is shown as if it were still so. *@
@@ -64,16 +64,16 @@
         }
     }
 
-    @if (manager.Online && manager.Health is ManagerHealth fleet)
+    @if (Read() is { Connected: true } bots)
     {
-        <a class="pa-chip pa-chip--ok pa-chip--link" href="fleet" title="@($"Bot Manager at {manager.Service.Url}: {fleet.Online} of {fleet.Bots} bots online")">
+        <a class="pa-chip pa-chip--ok pa-chip--link" href="fleet" title="@($"Bot Manager at {fleet.Service.Url}: {bots.Online} of {bots.Bots} bots online")">
             <span class="pa-dot" aria-hidden="true"></span>
-            Bots <strong>@fleet.Online.ToString(CultureInfo.InvariantCulture)</strong> <span class="pa-faint">of @fleet.Bots.ToString(CultureInfo.InvariantCulture) online</span>
+            Bots <strong>@bots.Online.ToString(CultureInfo.InvariantCulture)</strong> <span class="pa-faint">of @bots.Bots.ToString(CultureInfo.InvariantCulture) online</span>
         </a>
     }
     else
     {
-        <span class="pa-chip pa-chip--warn" title="@($"{manager.Service.Url}: {manager.Error}")">
+        <span class="pa-chip pa-chip--warn" title="@($"{fleet.Service.Url}: {fleet.Error}")">
             <span class="pa-dot" aria-hidden="true"></span>
             Bot Manager offline
         </span>
@@ -96,11 +96,33 @@
 </header>
 
 @code {
+    // What the chip last showed: the feed changes with every snapshot, the chip only when this does.
+    private FleetChip? shown;
+
     protected override void OnInitialized()
     {
+        shown = Read();
         Subscribe(() => status.Changed += Redraw, () => status.Changed -= Redraw);
-        Subscribe(() => manager.Changed += Redraw, () => manager.Changed -= Redraw);
+        Subscribe(() => fleet.Changed += OnFleetChanged, () => fleet.Changed -= OnFleetChanged);
     }
+
+    // On SignalR's threads.
+    private void OnFleetChanged(string? agentId)
+    {
+        FleetChip now = Read();
+        if (System.Threading.Interlocked.Exchange(ref shown, now) != now)
+        {
+            Redraw();
+        }
+    }
+
+    private FleetChip Read()
+    {
+        IReadOnlyList<BotInfo> bots = fleet.Bots;
+        return new FleetChip(fleet.Connected, bots.Count, bots.Count(bot => bot.Online), fleet.Error);
+    }
+
+    private sealed record FleetChip(bool Connected, int Bots, int Online, string? Error);
 
     private static string CoverageTitle(PathingHealth health)
     {

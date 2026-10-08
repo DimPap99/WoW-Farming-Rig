@@ -2,10 +2,12 @@ using ControlCenter.Hosting;
 
 using Contracts.Pathing;
 
+using Microsoft.AspNetCore.Http.Connections.Client;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
 
 using ServiceClients;
+using ServiceClients.Pathing;
 
 using System;
 using System.Collections.Generic;
@@ -23,9 +25,10 @@ namespace ControlCenter.Pathing;
 /// feed keeps the newest <see cref="Kept"/> across connections, each once. Its events come on
 /// SignalR's threads.
 /// </summary>
-/// <param name="connect">A connection to the watch hub: the service's at <c>PathingService:Url</c>
-/// (<see cref="ServiceHubs.Build"/>), or a test's in-memory one.</param>
-public sealed partial class WatchFeed(Func<HubConnection> connect, ILogger<WatchFeed> logger) : IAsyncDisposable
+/// <param name="pathing">The service at <c>PathingService:Url</c>, its hub dialled with its key (<see cref="ServiceHubs.Build"/>).</param>
+/// <param name="connection">For a test: how the hub connection reaches its in-memory server.</param>
+public sealed partial class WatchFeed(PathingServiceOptions pathing, ILogger<WatchFeed> logger, Action<HttpConnectionOptions>? connection = null)
+    : IAsyncDisposable
 {
     /// <summary>Routes kept, the newest first.</summary>
     public const int Kept = 30;
@@ -127,7 +130,7 @@ public sealed partial class WatchFeed(Func<HubConnection> connect, ILogger<Watch
 
     private async Task RunAsync(CancellationToken token)
     {
-        await using HubConnection hub = connect();
+        await using HubConnection hub = ServiceHubs.Build(pathing.Url, PathingApi.WatchHub, pathing.ApiKey, connection);
         hub.On<WatchRoute>(WatchHubMethods.RoutePlanned, Add);
         hub.On(WatchHubMethods.Clear, Forget);
         await ServiceHubs.StayConnectedAsync(hub, Backoff, WatchAsync, ex => LogUnreachable(logger, ex.Message), token);

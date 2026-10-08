@@ -3,7 +3,6 @@
 @inherits ControlCenterComponent
 
 @inject FleetFeed feed
-@inject BotManagerStatus manager
 @inject IBotManagerClient bots
 @inject NavigationManager navigation
 @inject IJSRuntime js
@@ -21,26 +20,18 @@
 
 @if (bot is null)
 {
-    @if (manager.Online)
+    @if (feed.Connected)
     {
         <div class="pa-page">
-            @if (feed.Connected)
-            {
-                <h1 class="pa-error-title">No bot @AgentId</h1>
-                <p>The Bot Manager knows no bot by this id: it may have been forgotten. A forgotten bot comes back when its agent dials in again.</p>
-            }
-            else
-            {
-                <h1 class="pa-error-title">Waiting for the fleet</h1>
-                <p>The fleet feed is not connected to the Bot Manager yet; this page fills in by itself when it is.</p>
-            }
+            <h1 class="pa-error-title">No bot @AgentId</h1>
+            <p>The Bot Manager knows no bot by this id: it may have been forgotten. A forgotten bot comes back when its agent dials in again.</p>
             <p><a href="fleet">Back to the fleet</a></p>
         </div>
     }
 }
 else
 {
-    <div class="pa-workspace @(manager.Online ? null : "is-stale")" @key="bot.AgentId">
+    <div class="pa-workspace @(feed.Connected ? null : "is-stale")" @key="bot.AgentId">
         <header class="pa-workspace-header">
             <a class="pa-btn pa-btn--ghost pa-btn--icon" href="fleet" title="Back to the fleet">
                 <span class="oi oi-arrow-left" aria-hidden="true"></span>
@@ -80,9 +71,9 @@ else
     </div>
 }
 
-@if (!manager.Online)
+@if (!feed.Connected)
 {
-    <OfflineNotice Service="@manager.Service" Reason="@manager.Error" />
+    <OfflineNotice Service="@feed.Service" Reason="@feed.Error" />
 }
 
 @code {
@@ -101,7 +92,6 @@ else
 
     protected override void OnInitialized()
     {
-        Subscribe(() => manager.Changed += Redraw, () => manager.Changed -= Redraw);
         Subscribe(() => feed.Changed += OnFleetChanged, () => feed.Changed -= OnFleetChanged);
     }
 

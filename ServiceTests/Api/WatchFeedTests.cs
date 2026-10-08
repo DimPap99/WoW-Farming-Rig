@@ -43,7 +43,8 @@ public sealed class WatchFeedTests
         Assert.SkipUnless(TestData.HasPrecataTiles, TestData.NoTiles);
         using PathingServiceFactory factory = new(TestData.RepoJson);
         PathingClient client = new(factory.CreateClient());
-        await using WatchFeed feed = new(() => InMemoryHub.Connect(factory.Server, PathingApi.WatchHub), NullLogger<WatchFeed>.Instance);
+        await using WatchFeed feed = new(new PathingServiceOptions(factory.Server.BaseAddress), NullLogger<WatchFeed>.Instance,
+            InMemoryHub.Over(factory.Server.CreateHandler));
 
         Assert.False(feed.Live);
         IDisposable lease = feed.Watch();

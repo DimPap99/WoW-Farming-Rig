@@ -2,6 +2,7 @@ using ControlCenter.Hosting;
 
 using Contracts.Bots;
 
+using Microsoft.AspNetCore.Http.Connections.Client;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -24,13 +25,20 @@ namespace ControlCenter.Bots;
 /// replays nothing, so after every connect the bots are read again over REST, and what the hub
 /// streams meanwhile is held and applied after the list. It keeps each bot's latest
 /// <see cref="BotInfo"/>, so pages read it here instead of each polling, and passes log lines and
-/// ended runs on to the consoles. Its events come on SignalR's threads.
+/// ended runs on to the consoles. It is also the Control Center's one view of the manager: online is
+/// <see cref="Connected"/>, and <see cref="Error"/> says why not. Its events come on SignalR's threads.
 /// </summary>
-/// <param name="connect">A connection to the fleet hub: the manager's at <c>BotManager:Url</c>
-/// (<see cref="ServiceHubs.Build"/>), or a test's in-memory one.</param>
-public sealed partial class FleetFeed(IServiceProvider services, Func<HubConnection> connect, ILogger<FleetFeed> logger)
-    : BackgroundService
+/// <param name="manager">The manager at <c>BotManager:Url</c>, its hub dialled with its key (<see cref="ServiceHubs.Build"/>).</param>
+/// <param name="connection">For a test: how the hub connection reaches its in-memory server.</param>
+public sealed partial class FleetFeed(IServiceProvider services, BotManagerOptions manager, ILogger<FleetFeed> logger,
+    Action<HttpConnectionOptions>? connection = null) : BackgroundService
 {
+    /// <summary>What <see cref="Error"/> says before the first attempt to connect has an answer.</summary>
+    public const string NotConnected = "not connected yet";
+
+    /// <summary>What <see cref="Error"/> says once a connection closed, until the next attempt has an answer.</summary>
+    public const string Lost = "its fleet hub closed the connection";
+
     /// <summary>
     /// The waits between attempts to connect (<see cref="ServiceHubs.Wait"/>), the last one repeated: the
     /// feed never gives up.
@@ -43,9 +51,16 @@ public sealed partial class FleetFeed(IServiceProvider services, Func<HubConnect
     // While the bots are being read: what the hub streamed meanwhile, applied after the list.
     private List<Action>? held;
     private volatile bool connected;
+    private volatile string? error = NotConnected;
 
-    /// <summary>Connected to the hub and read since: what <see cref="Bots"/> holds is current.</summary>
+    /// <summary>The Bot Manager, as the pages name it: where the Control Center expects it, and how to start it.</summary>
+    public ServiceDescription Service { get; } = new("Bot Manager", manager.Url, BotManagerOptions.UrlKey, "BotManager/run.sh");
+
+    /// <summary>Connected to the hub and read since: the manager is online, and what <see cref="Bots"/> holds is current.</summary>
     public bool Connected => connected;
+
+    /// <summary>Why the feed is not connected; null while it is.</summary>
+    public string? Error => error;
 
     /// <summary>Every bot the manager knows, by name.</summary>
     public IReadOnlyList<BotInfo> Bots
@@ -100,6 +115,7 @@ public sealed partial class FleetFeed(IServiceProvider services, Func<HubConnect
             if (!listed.Ok)
             {
                 LogUnread(logger, listed.Error ?? "no answer");
+                SetError($"the bots could not be read: {listed.Error ?? "no answer"}");
                 return false;
             }
 
@@ -114,9 +130,9 @@ public sealed partial class FleetFeed(IServiceProvider services, Func<HubConnect
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await using HubConnection hub = connect();
+        await using HubConnection hub = ServiceHubs.Build(manager.Url, BotManagerApi.FleetHub, manager.ApiKey, connection);
         Listen(hub);
-        await ServiceHubs.StayConnectedAsync(hub, Backoff, FollowAsync, ex => LogUnreachable(logger, ex.Message), stoppingToken);
+        await ServiceHubs.StayConnectedAsync(hub, Backoff, FollowAsync, Unreachable, stoppingToken);
     }
 
     public override void Dispose()
@@ -134,6 +150,7 @@ public sealed partial class FleetFeed(IServiceProvider services, Func<HubConnect
             return false;
         }
 
+        error = null;
         SetConnected(true);
         try
         {
@@ -144,8 +161,23 @@ public sealed partial class FleetFeed(IServiceProvider services, Func<HubConnect
         }
         finally
         {
+            error ??= Lost;
             SetConnected(false);
         }
+    }
+
+    // The first failure of a row, so an outage is logged once.
+    private void Unreachable(Exception exception)
+    {
+        LogUnreachable(logger, exception.Message);
+        SetError(exception.Message);
+    }
+
+    // The pages showing the manager offline show why.
+    private void SetError(string why)
+    {
+        error = why;
+        Subscribers.Raise(Changed, handler => handler(null), logger);
     }
 
     private void Listen(HubConnection hub)
