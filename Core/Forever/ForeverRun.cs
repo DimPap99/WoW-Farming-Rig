@@ -58,8 +58,8 @@ public enum ForeverRunStage
 /// run it (<c>Utilities/ForeverControllerTrial</c> is now a command line over this): a verified
 /// profile for the logged-in class, a read-only preflight, a click into the game before anything
 /// moves, a time bound per mode, and the exit codes of <see cref="ForeverRunProtocol"/>. Stopping
-/// is cancelling the run's <see cref="CancellationTokenSource"/>: the loop turns the controller
-/// off, which releases what it holds, before anything is torn down.
+/// is cancelling the token given to <see cref="Run"/>: the loop turns the controller off, which
+/// releases what it holds, before anything is torn down.
 /// </summary>
 public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerFactory, IForeverRunOutput output)
 {
@@ -123,11 +123,11 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
     }
 
     /// <summary>
-    /// Runs on <paramref name="wow"/> until it completes, fails, runs out of time or
-    /// <paramref name="cts"/> is cancelled, which is also the cancellation the controller's own
-    /// threads watch. Returns its <see cref="ForeverRunProtocol"/> exit code and its last word.
+    /// Runs on the client <paramref name="processId"/> until it completes, fails, runs out of time
+    /// or <paramref name="stop"/> is cancelled, which the controller's own threads then see too.
+    /// Returns its <see cref="ForeverRunProtocol"/> exit code and its last word.
     /// </summary>
-    public ForeverRunResult Run(Process wow, CancellationTokenSource cts)
+    public ForeverRunResult Run(int processId, CancellationToken stop)
     {
         if (request.Problem is string problem)
         {
@@ -136,7 +136,7 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
 
         try
         {
-            ForeverRunResult result = RunOn(wow, cts);
+            ForeverRunResult result = RunOn(processId, stop);
             exitCode = result.ExitCode;
             return result;
         }
@@ -150,8 +150,10 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
         }
     }
 
-    private ForeverRunResult RunOn(Process wow, CancellationTokenSource cts)
+    private ForeverRunResult RunOn(int processId, CancellationToken stop)
     {
+        // The run's own: the controller's threads watch it, and the run cancels it as it ends.
+        using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(stop);
         bool auto = request.IsAutonomous;
         bool run = request.Moves;
         stage = (int)ForeverRunStage.Attaching;
@@ -161,7 +163,7 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
         try
         {
             // Registered as an instance below, which the container does not dispose: this does.
-            using WowProcess process = new(cts, Options.Create(new StartupConfigPid { Id = wow.Id }));
+            using WowProcess process = new(cts, Options.Create(new StartupConfigPid { Id = processId }));
             if (process.FileVersion is not { Major: 1, Minor: >= 60 })
             {
                 return Problem(ForeverRunProtocol.ExitRefused, "The selected client is not Forever.");

@@ -182,7 +182,7 @@ ForeverRunRequest request = new(mode)
     UnreadableFrameFolder = Directory.Exists(Path.Combine("local", "logs")) ? Path.GetFullPath(Path.Combine("local", "logs")) : null,
 };
 ILoggerFactory loggerFactory = LoggerFactory.Create(b => b.AddProvider(new TrialLoggerProvider()));
-return new ForeverRun(request, loggerFactory, new ConsoleRunOutput()).Run(wow, cts).ExitCode;
+return new ForeverRun(request, loggerFactory, new ConsoleRunOutput()).Run(wow.Id, cts.Token).ExitCode;
 
 // The run's lines, printed as the runner always printed them; the web UI's run host reads them.
 sealed class ConsoleRunOutput : IForeverRunOutput

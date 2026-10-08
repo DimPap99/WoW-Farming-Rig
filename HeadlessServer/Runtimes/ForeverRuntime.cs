@@ -111,12 +111,9 @@ public sealed partial class ForeverRuntime : IBotRuntime
             output.Line($"  {i + 1}. {route.Tasks[i].Name}");
         }
 
-        // The run's token is also the one the controller's own threads watch, as in the trial runner.
-        using CancellationTokenSource cts = new();
-        using CancellationTokenRegistration stopping = stop.Register(cts.Cancel);
         ForeverRun forever = new(request, loggerFactory, output);
         run = forever;
-        ForeverRunResult ended = forever.Run(wow, cts);
+        ForeverRunResult ended = forever.Run(wow.Id, stop);
         output.Line($"exit={ended.ExitCode}");
 
         BotRunOutcome outcome = ended.ExitCode switch

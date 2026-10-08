@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SharedLib.Forever;
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 
 using Xunit;
@@ -78,13 +77,11 @@ public sealed class ForeverRunRequestTests
     [Fact]
     public void A_request_with_a_problem_is_refused_before_anything_attaches()
     {
-        using CancellationTokenSource cts = new();
         ForeverRun run = new(new ForeverRunRequest(ForeverRunMode.Route) { DataRoot = Root }, NullLoggerFactory.Instance, new Lines());
 
-        Assert.Throws<ArgumentException>(() => run.Run(Process.GetCurrentProcess(), cts));
+        Assert.Throws<ArgumentException>(() => run.Run(Environment.ProcessId, CancellationToken.None));
         Assert.Equal(ForeverRunStage.NotStarted, run.Stage);
         Assert.Null(run.ExitCode);
-        Assert.False(cts.IsCancellationRequested);
     }
 
     [Fact]
