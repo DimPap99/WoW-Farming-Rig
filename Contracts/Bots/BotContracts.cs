@@ -125,9 +125,21 @@ public sealed record BotSnapshot(string AgentId, DateTimeOffset At, BotRunState 
     BotProgress? Progress, string? Message);
 
 /// <summary>A line the agent logged.</summary>
+/// <param name="Epoch">The agent process that logged it, by when its log began (Unix milliseconds).</param>
+/// <param name="Number">Its place in that process's log, from 1: a line sent again has the number it had.</param>
 /// <param name="Level">Serilog's level name: Debug, Information, Warning, Error, Fatal.</param>
 /// <param name="Source">The class that logged it.</param>
-public sealed record BotLogLine(DateTimeOffset At, string Level, string Source, string Message);
+public sealed record BotLogLine(long Epoch, long Number, DateTimeOffset At, string Level, string Source, string Message)
+{
+    /// <summary>
+    /// Whether this line comes after <paramref name="previous"/>: a later one of the same process, or one of
+    /// another (the agent started again). One that does not was sent again, and is taken once.
+    /// </summary>
+    public bool Follows(BotLogLine previous)
+    {
+        return Epoch != previous.Epoch || Number > previous.Number;
+    }
+}
 
 /// <summary>How a run ended.</summary>
 public enum BotRunOutcome

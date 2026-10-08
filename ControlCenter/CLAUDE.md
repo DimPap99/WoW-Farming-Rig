@@ -131,9 +131,9 @@ filters by agent id.
 
 **A console's log must not lose or repeat a line where the backlog meets the stream.** `BotLog`
 starts holding streamed lines (`BotLogBuffer.BeginBacklog`) before it subscribes and reads the
-backlog (the manager's last 500), then joins them. A `BotLogLine` has no number, so a line already
-shown is known by its time and text (record equality), and a backlog read again after a reconnect
-fills in what was missed, in time order. A read of the log or the runs that failed is tried again at
+backlog (the manager's last 500), then joins them. A line is known by its agent process and number
+(`Epoch`, `Number`): one already shown or sent again is dropped (`BotLogLine.Follows`), and a backlog
+read again after a reconnect fills in what was missed, in order. A read of the log or the runs that failed is tried again at
 the bot's next change, as `Resynced` comes only after a reconnect; a run's end takes the run off its
 bot at once (`FleetFeed`), and a bot's zone is named only when it plays the Pathing Service's era
 (`BotFormat.Place`).

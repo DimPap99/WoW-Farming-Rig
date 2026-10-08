@@ -49,7 +49,9 @@ second; a runtime answers from read-only taps and must tolerate being read while
 and with it the run under way. The publisher logs a tick that fails and goes on, and a probe that
 throws is no client (known issue 67); keep any new loop that way.
 
-**Log lines are numbered.** The publisher sends a batch only when the link is up and marks it sent in
+**Log lines are numbered.** A `BotLogLine` carries its process (`Epoch`, when the sink began) and its
+number in it, so the manager and the console take each line once, in order (`BotLogLine.Follows`;
+agent protocol 2). The publisher sends a batch only when the link is up and marks it sent in
 the sink only once it went, so a console catches up after the manager was down (2000 lines kept).
 The sink keeps that mark, as it outlives the hosts a process builds: a publisher of its own resent
 up to 2000 lines at every host built again (known issue 76). Lines below Information stay in the

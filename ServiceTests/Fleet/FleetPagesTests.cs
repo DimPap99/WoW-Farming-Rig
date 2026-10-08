@@ -63,7 +63,7 @@ public sealed class FleetPagesTests
     public async Task The_fleet_lists_a_bot_and_its_console_shows_it_and_refuses_a_bad_assignment_with_the_rules_reason()
     {
         BotInfo bot = Playing();
-        BotLogLine line = new(DateTimeOffset.UtcNow, "Warning", "ForeverRun", "No loot in reach");
+        BotLogLine line = new(1, 1, DateTimeOffset.UtcNow, "Warning", "ForeverRun", "No loot in reach");
         FakeBotManager manager = new([bot], [line]);
         using TempDataRoot data = new();
         using BotManagerFactory hub = new(data.Root);

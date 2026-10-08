@@ -4,6 +4,7 @@ using Serilog.Core;
 using Serilog.Events;
 using Serilog.Parsing;
 
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -23,13 +24,16 @@ public sealed class AgentLogSink(LogEventLevel minimum = LogEventLevel.Informati
     private const string SourceContext = "SourceContext";
 
     private readonly Lock sync = new();
-    private readonly Queue<(long Number, BotLogLine Line)> lines = new();
+    private readonly Queue<BotLogLine> lines = new();
     private long next = 1;
     // What reached the manager. The sink outlives the hosts a process builds, and so does this: a host
     // built again resent up to Kept lines when its publisher counted from 0 (known issue 76).
     private long sent;
 
     public LogEventLevel Minimum => minimum;
+
+    /// <summary>This process's log, by when it began (Unix milliseconds): its lines are numbered from 1 in it.</summary>
+    public long Epoch { get; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
     public void Emit(LogEvent logEvent)
     {
@@ -44,10 +48,10 @@ public sealed class AgentLogSink(LogEventLevel minimum = LogEventLevel.Informati
             message = $"{message} ({exception.GetType().Name}: {exception.Message})";
         }
 
-        BotLogLine line = new(logEvent.Timestamp, logEvent.Level.ToString(), Source(logEvent), message);
+        string source = Source(logEvent);
         lock (sync)
         {
-            lines.Enqueue((next++, line));
+            lines.Enqueue(new BotLogLine(Epoch, next++, logEvent.Timestamp, logEvent.Level.ToString(), source, message));
             while (lines.Count > Kept)
             {
                 lines.Dequeue();
@@ -79,15 +83,15 @@ public sealed class AgentLogSink(LogEventLevel minimum = LogEventLevel.Informati
         last = after;
         lock (sync)
         {
-            foreach ((long number, BotLogLine line) in lines)
+            foreach (BotLogLine line in lines)
             {
-                if (number <= after)
+                if (line.Number <= after)
                 {
                     continue;
                 }
 
                 read.Add(line);
-                last = number;
+                last = line.Number;
                 if (read.Count == max)
                 {
                     break;

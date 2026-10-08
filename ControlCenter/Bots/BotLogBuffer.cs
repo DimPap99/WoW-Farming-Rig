@@ -9,17 +9,16 @@ namespace ControlCenter.Bots;
 /// <summary>
 /// One bot's log as its console shows it: the manager's backlog joined to the fleet hub's stream,
 /// with no line lost or repeated where they meet. Lines streamed while a backlog is read are held
-/// until it is in. A line has no number, so one already shown is known by its time and text
-/// (record equality) and dropped; a backlog read again after a reconnect fills in what was missed,
-/// in time order. Lines come from SignalR's threads and the page's.
+/// until it is in. A line is known by its process and number (<see cref="BotLogLine.Follows"/>): one
+/// already shown, or sent again, is dropped, and a backlog read again after a reconnect fills in what
+/// was missed, in order. Lines come from SignalR's threads and the page's.
 /// </summary>
 public sealed class BotLogBuffer(int capacity = BotLogBuffer.DefaultCapacity)
 {
-    /// <summary>Twice what the manager keeps (500), so a backlog read again always overlaps what is shown.</summary>
+    /// <summary>The lines a console keeps: twice what the manager keeps.</summary>
     public const int DefaultCapacity = 1000;
 
     private readonly Lock sync = new();
-    private readonly HashSet<BotLogLine> shown = [];
     private List<BotLogLine> lines = [];
     private List<BotLogLine>? held;
 
@@ -44,25 +43,25 @@ public sealed class BotLogBuffer(int capacity = BotLogBuffer.DefaultCapacity)
         }
     }
 
-    /// <summary>Adds the backlog, then what streamed while it was read, each line once, in time order.</summary>
+    /// <summary>Adds the backlog, then what streamed while it was read, each line once, in the order they were logged.</summary>
     public void Join(IEnumerable<BotLogLine> backlog)
     {
         lock (sync)
         {
-            List<BotLogLine> added = [.. backlog.Concat(held ?? []).Where(shown.Add)];
+            HashSet<(long, long)> shown = [.. lines.Select(Key)];
+            List<BotLogLine> added = [.. backlog.Concat(held ?? []).Where(line => shown.Add(Key(line)))];
             held = null;
             if (added.Count == 0)
             {
                 return;
             }
 
-            // Stable: lines logged in the same instant keep the order they came in.
-            lines = [.. lines.Concat(added).OrderBy(line => line.At)];
+            lines = [.. lines.Concat(added).OrderBy(line => line.Epoch).ThenBy(line => line.Number)];
             Trim();
         }
     }
 
-    /// <summary>Lines from the stream: held while a backlog is read, else added; each line once.</summary>
+    /// <summary>Lines from the stream: held while a backlog is read, else added after the last; one that does not follow it is dropped.</summary>
     public void Add(IEnumerable<BotLogLine> streamed)
     {
         lock (sync)
@@ -73,25 +72,30 @@ public sealed class BotLogBuffer(int capacity = BotLogBuffer.DefaultCapacity)
                 return;
             }
 
-            lines.AddRange(streamed.Where(shown.Add));
+            foreach (BotLogLine line in streamed)
+            {
+                if (lines.Count == 0 || line.Follows(lines[^1]))
+                {
+                    lines.Add(line);
+                }
+            }
+
             Trim();
         }
+    }
+
+    private static (long, long) Key(BotLogLine line)
+    {
+        return (line.Epoch, line.Number);
     }
 
     // Under the lock: the oldest lines go once there are more than the capacity.
     private void Trim()
     {
         int excess = lines.Count - capacity;
-        if (excess <= 0)
+        if (excess > 0)
         {
-            return;
+            lines.RemoveRange(0, excess);
         }
-
-        foreach (BotLogLine line in lines.Take(excess))
-        {
-            shown.Remove(line);
-        }
-
-        lines.RemoveRange(0, excess);
     }
 }

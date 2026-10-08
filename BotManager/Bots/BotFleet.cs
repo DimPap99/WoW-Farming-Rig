@@ -48,7 +48,7 @@ public sealed partial class BotFleet(JsonBotRegistry registry, IHubContext<Agent
     private readonly Lock sync = new();
     private readonly Dictionary<string, LiveBot> online = [];
     private readonly Dictionary<string, string> agentByConnection = [];
-    private readonly Dictionary<string, Queue<BotLogLine>> logs = [];
+    private readonly Dictionary<string, List<BotLogLine>> logs = [];
 
     public int OnlineCount
     {
@@ -163,23 +163,35 @@ public sealed partial class BotFleet(JsonBotRegistry registry, IHubContext<Agent
                 return Task.CompletedTask;
             }
 
-            BotLogLine[] kept = [.. (lines.Length > KeptLogLines ? lines[^KeptLogLines..] : lines).Select(line => line with { Message = Cap(line.Message) })];
-            if (!logs.TryGetValue(agentId, out Queue<BotLogLine>? log))
+            if (!logs.TryGetValue(agentId, out List<BotLogLine>? log))
             {
-                logs[agentId] = log = new Queue<BotLogLine>();
+                logs[agentId] = log = [];
             }
 
-            foreach (BotLogLine line in kept)
+            // A batch sent again (its acknowledgement lost, a host built again) is kept and passed on once.
+            List<BotLogLine> fresh = [];
+            BotLogLine? last = log.Count > 0 ? log[^1] : null;
+            foreach (BotLogLine line in lines.TakeLast(KeptLogLines))
             {
-                log.Enqueue(line);
+                if (line is not null && (last is null || line.Follows(last)))
+                {
+                    fresh.Add(line with { Message = Cap(line.Message ?? string.Empty) });
+                    last = line;
+                }
             }
 
-            while (log.Count > KeptLogLines)
+            if (fresh.Count == 0)
             {
-                log.Dequeue();
+                return Task.CompletedTask;
             }
 
-            Broadcast(FleetHubMethods.Log, agentId, kept);
+            log.AddRange(fresh);
+            if (log.Count > KeptLogLines)
+            {
+                log.RemoveRange(0, log.Count - KeptLogLines);
+            }
+
+            Broadcast(FleetHubMethods.Log, agentId, fresh.ToArray());
         }
 
         return Task.CompletedTask;
@@ -342,7 +354,7 @@ public sealed partial class BotFleet(JsonBotRegistry registry, IHubContext<Agent
                 return null;
             }
 
-            return logs.TryGetValue(agentId, out Queue<BotLogLine>? log) ? [.. log] : [];
+            return logs.TryGetValue(agentId, out List<BotLogLine>? log) ? [.. log] : [];
         }
     }
 

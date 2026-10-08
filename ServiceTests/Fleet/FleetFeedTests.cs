@@ -66,7 +66,7 @@ public sealed class FleetFeedTests
 
         await using FakeAgent agent = await FakeAgent.ConnectAsync(manager, AgentId);
         await agent.RegisterAsync();
-        BotLogLine line = new(DateTimeOffset.UtcNow, "Information", "ForeverRun", "Autonomous phase: Engage");
+        BotLogLine line = new(1, 1, DateTimeOffset.UtcNow, "Information", "ForeverRun", "Autonomous phase: Engage");
         await agent.SendLogAsync(line);
         await agent.SendRunEndedAsync(new RunReport(Run, BotRunOutcome.Complete, DateTimeOffset.UtcNow, "status: Complete", 0,
             new BotProgress(5, 0, 4)));
@@ -170,7 +170,7 @@ public sealed class FleetFeedTests
         await using FakeAgent agent = await FakeAgent.ConnectAsync(manager, AgentId);
         await agent.RegisterAsync();
         // The hub delivers in order: once this line is through, the registration before it was taken.
-        await agent.SendLogAsync(new BotLogLine(DateTimeOffset.UtcNow, "Information", "Test", "after the hello"));
+        await agent.SendLogAsync(new BotLogLine(1, 1, DateTimeOffset.UtcNow, "Information", "Test", "after the hello"));
         await FleetListener.NextAsync(logs, _ => true);
         Assert.False(feed.Feed.Connected);
         gate.Open.SetResult();

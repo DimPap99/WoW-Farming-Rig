@@ -221,8 +221,9 @@ stored in the client's own (`ClientContinents`).
 | `/agentHub` (SignalR, MessagePack) | from agents: `Register(AgentHello)` → `AgentWelcome`, `Snapshot`, `Log`, `RunEnded` | to agents: `Assign(BotAssignment?)`, `Command(BotCommand)` → `CommandAck` |
 | `/fleetHub` (SignalR, MessagePack) | | to listeners: `BotChanged`, `BotRemoved`, `Snapshot`, `Log`, `RunEnded` |
 
-An agent registers on every connection with `AgentProtocol` (1); the manager refuses another
-protocol with why. A bot is the PC's agent: its id is a GUID the agent creates on its first start and
+An agent registers on every connection with `AgentProtocol` (2: log lines carry their process and
+number); the manager refuses another protocol with why. A log batch sent again is kept and passed on
+once. A bot is the PC's agent: its id is a GUID the agent creates on its first start and
 keeps on its PC, and the account, character and client are what it reports.
 
 Planning happens in **continent lanes**. Each lane is a disk-only `NavmeshPathfinder` with its

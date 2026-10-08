@@ -212,6 +212,33 @@ public sealed class BotManagerTests
         Assert.Equal(404, unknown.Status);
     }
 
+    // An agent sends a batch again when it cannot tell whether the first reached the manager.
+    [Fact]
+    public async Task A_log_batch_sent_again_is_kept_and_passed_on_once()
+    {
+        using TempDataRoot data = new();
+        using BotManagerFactory factory = new(data.Root);
+        BotManagerClient client = new(factory.CreateClient());
+        await using FleetListener listener = await FleetListener.ConnectAsync(factory);
+        await using FakeAgent agent = await FakeAgent.ConnectAsync(factory, AgentId);
+        await agent.RegisterAsync();
+
+        await agent.SendLogAsync(Logged(1, 1), Logged(1, 2));
+        await agent.SendLogAsync(Logged(1, 1), Logged(1, 2));
+        await agent.SendLogAsync(Logged(1, 2), Logged(1, 3));
+        // The agent started again: its numbers start again.
+        await agent.SendLogAsync(Logged(2, 1));
+        ServiceResult<BotLogLine[]> log = await client.GetLogAsync(AgentId, TestContext.Current.CancellationToken);
+        (_, BotLogLine[] first) = await FleetListener.NextAsync(listener.Logs, _ => true);
+        (_, BotLogLine[] second) = await FleetListener.NextAsync(listener.Logs, _ => true);
+        (_, BotLogLine[] third) = await FleetListener.NextAsync(listener.Logs, _ => true);
+
+        Assert.Equal([(1L, 1L), (1L, 2L), (1L, 3L), (2L, 1L)], log.Value!.Select(line => (line.Epoch, line.Number)));
+        Assert.Equal([1L, 2L], first.Select(line => line.Number));
+        Assert.Equal([3L], second.Select(line => line.Number));
+        Assert.Equal((2L, 1L), (Assert.Single(third).Epoch, third[0].Number));
+    }
+
     [Fact]
     public async Task Snapshots_logs_and_ended_runs_reach_the_fleet_and_are_kept()
     {
@@ -227,7 +254,7 @@ public sealed class BotManagerTests
         await agent.SendSnapshotAsync(new BotSnapshot("someone-else", DateTimeOffset.UtcNow, BotRunState.Running, run, null,
             new BotCharacter("Hunter", 12, "Orc"), new BotVitals(80, 45, 30, true), new BotPosition(1413, 51.9f, 29.9f),
             "Engage/Fight", "task 1 of 1", new BotProgress(3, 0, 2), null));
-        await agent.SendLogAsync(new BotLogLine(DateTimeOffset.UtcNow, "Information", "ForeverRun", "Autonomous phase: Engage"));
+        await agent.SendLogAsync(new BotLogLine(1, 1, DateTimeOffset.UtcNow, "Information", "ForeverRun", "Autonomous phase: Engage"));
         BotSnapshot streamed = await FleetListener.NextAsync(listener.Snapshots, _ => true);
         (string logAgent, BotLogLine[] lines) = await FleetListener.NextAsync(listener.Logs, _ => true);
         ServiceResult<BotInfo> live = await client.GetBotAsync(AgentId, TestContext.Current.CancellationToken);
@@ -326,5 +353,10 @@ public sealed class BotManagerTests
             Assert.True(DateTime.UtcNow < deadline, "the condition did not hold in time");
             await Task.Delay(50, TestContext.Current.CancellationToken);
         }
+    }
+
+    private static BotLogLine Logged(long epoch, long number)
+    {
+        return new BotLogLine(epoch, number, DateTimeOffset.UtcNow, "Information", "Test", $"line {epoch}.{number}");
     }
 }

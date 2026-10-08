@@ -13,7 +13,7 @@ public static class BotManagerApi
     /// The agent protocol: what an agent sends in <see cref="AgentHello.Protocol"/>. The manager
     /// refuses an agent that speaks another, and says why.
     /// </summary>
-    public const int AgentProtocol = 1;
+    public const int AgentProtocol = 2;
 
     /// <summary>Where the manager listens unless told otherwise: the next ten after the Control Center.</summary>
     public const int DefaultPort = 5030;
