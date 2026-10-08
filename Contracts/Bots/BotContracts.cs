@@ -67,8 +67,8 @@ public sealed record BotRunInfo(string RunId, BotRuntimeKind Kind, string Summar
 public sealed record AgentHello(string AgentId, string Name, string Machine, int Protocol, string AgentVersion,
     AgentGame? Game, BotRunInfo? Run, string[] ClassProfiles);
 
-/// <summary>The manager's answer to <see cref="AgentHello"/>: refused with why, or the bot's current assignment.</summary>
-public sealed record AgentWelcome(bool Accepted, string? Reason, BotAssignment? Assignment);
+/// <summary>The manager's answer to <see cref="AgentHello"/>: accepted, or refused with why. A start carries its assignment.</summary>
+public sealed record AgentWelcome(bool Accepted, string? Reason);
 
 public enum BotCommandKind
 {

@@ -37,7 +37,6 @@ public sealed class BotManagerTests
         ServiceResult<ManagerHealth> health = await client.GetHealthAsync(TestContext.Current.CancellationToken);
 
         Assert.True(welcome.Accepted, welcome.Reason);
-        Assert.Null(welcome.Assignment);
         Assert.True(changed.Online);
         BotInfo bot = Assert.Single(listed.Value!);
         Assert.Equal("Test PC", bot.Name);
@@ -106,8 +105,9 @@ public sealed class BotManagerTests
         Assert.Empty(listed.Value!);
     }
 
+    // The agent is never told: a start carries the assignment.
     [Fact]
-    public async Task An_assignment_is_kept_sent_to_the_online_agent_and_given_back_at_register()
+    public async Task An_assignment_is_kept_across_the_agents_connections()
     {
         using TempDataRoot data = new();
         using BotManagerFactory factory = new(data.Root);
@@ -119,16 +119,13 @@ public sealed class BotManagerTests
             ServiceResult assigned = await client.SetAssignmentAsync(AgentId, Trip, TestContext.Current.CancellationToken);
 
             Assert.True(assigned.Ok, assigned.Error);
-            await WaitUntil(() => !first.Assignments.IsEmpty);
-            Assert.True(first.Assignments.TryPeek(out BotAssignment? pushed));
-            Assert.Equal(Trip, pushed);
         }
 
         await using FakeAgent again = await FakeAgent.ConnectAsync(factory, AgentId);
         AgentWelcome welcome = await again.RegisterAsync();
         ServiceResult<BotInfo> bot = await client.GetBotAsync(AgentId, TestContext.Current.CancellationToken);
 
-        Assert.Equal(Trip, welcome.Assignment);
+        Assert.True(welcome.Accepted);
         Assert.Equal(Trip, bot.Value!.Assignment);
     }
 
@@ -338,11 +335,6 @@ public sealed class BotManagerTests
         Assert.Equal(AgentId, removed);
         Assert.Equal(404, again.Status);
         Assert.Empty((await client.ListBotsAsync(TestContext.Current.CancellationToken)).Value!);
-    }
-
-    private static Task WaitUntil(Func<bool> condition)
-    {
-        return WaitUntil(() => Task.FromResult(condition()));
     }
 
     private static async Task WaitUntil(Func<Task<bool>> condition)

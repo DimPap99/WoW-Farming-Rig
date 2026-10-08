@@ -100,7 +100,6 @@ public sealed partial class AgentLink(AgentIdentity identity, AgentOptions optio
 
         HubConnection hub = ServiceHubs.Build(manager.Url, BotManagerApi.AgentHub, manager.ApiKey, linkOptions.Connection);
         hub.On<BotCommand, CommandAck>(AgentHubMethods.Command, Obey);
-        hub.On<BotAssignment?>(AgentHubMethods.Assign, assignment => host.Assignment = assignment);
         connection = hub;
         host.RunEnded += OnRunEnded;
         try
@@ -128,7 +127,6 @@ public sealed partial class AgentLink(AgentIdentity identity, AgentOptions optio
             return false;
         }
 
-        host.Assignment = welcome.Assignment;
         registered = true;
         try
         {

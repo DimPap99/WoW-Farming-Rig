@@ -34,30 +34,11 @@ public sealed partial class BotRuntimeHost(CreateRuntime createRuntime, IEnumera
     private readonly Lock sync = new();
     private ActiveRun? active;
     private RunReport? last;
-    private BotAssignment? assignment;
     private bool stopping;
 
     /// <summary>A run ended, or was abandoned; raised once per run, on the thread that saw it end.</summary>
     public event Action<RunReport>? RunEnded;
 
-    /// <summary>The bot's assignment as the manager last said: shown, and never run without a start command.</summary>
-    public BotAssignment? Assignment
-    {
-        get
-        {
-            lock (sync)
-            {
-                return assignment;
-            }
-        }
-        set
-        {
-            lock (sync)
-            {
-                assignment = value;
-            }
-        }
-    }
 
     /// <summary>The run under way, or null.</summary>
     public BotRunInfo? CurrentRun

@@ -31,7 +31,6 @@ internal sealed class FakeAgent : IAsyncDisposable
             Commands.Enqueue(command);
             return Answer(command);
         });
-        connection.On<BotAssignment?>(AgentHubMethods.Assign, assignment => Assignments.Enqueue(assignment));
         connection.Closed += _ =>
         {
             Closed.TrySetResult();
@@ -50,8 +49,6 @@ internal sealed class FakeAgent : IAsyncDisposable
     public Func<BotCommand, CommandAck> Answer { get; set; } = command => new CommandAck(true, null, "run-1");
 
     public ConcurrentQueue<BotCommand> Commands { get; } = new();
-
-    public ConcurrentQueue<BotAssignment?> Assignments { get; } = new();
 
     public static async Task<FakeAgent> ConnectAsync<TEntry>(WebApplicationFactory<TEntry> factory, string agentId,
         string? key = null, string? remote = null) where TEntry : class

@@ -12,7 +12,7 @@ namespace BotManager.Agents;
 /// <summary>
 /// The hub agents dial out to (<see cref="BotManagerApi.AgentHub"/>). An agent registers on every
 /// connection, then streams snapshots, log lines and run reports; the manager reaches it only over
-/// this connection (<see cref="AgentHubMethods.Assign"/>, <see cref="AgentHubMethods.Command"/>).
+/// this connection (<see cref="AgentHubMethods.Command"/>).
 /// Anything an agent sends before it registers is ignored.
 /// </summary>
 public sealed class AgentHub(BotFleet fleet) : Hub

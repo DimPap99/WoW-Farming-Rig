@@ -40,15 +40,15 @@ public static class BotEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
-        bots.MapPut($"{{agentId}}/{BotManagerApi.Assignment}", async (string agentId, BotAssignment assignment, BotFleet fleet) =>
-                (await fleet.AssignAsync(agentId, assignment)).ToHttp())
+        bots.MapPut($"{{agentId}}/{BotManagerApi.Assignment}", (string agentId, BotAssignment assignment, BotFleet fleet) =>
+                fleet.Assign(agentId, assignment).ToHttp())
             .WithSummary("Set what the bot runs when it is told to start")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
 
-        bots.MapDelete($"{{agentId}}/{BotManagerApi.Assignment}", async (string agentId, BotFleet fleet) =>
-                (await fleet.AssignAsync(agentId, null)).ToHttp())
+        bots.MapDelete($"{{agentId}}/{BotManagerApi.Assignment}", (string agentId, BotFleet fleet) =>
+                fleet.Assign(agentId, null).ToHttp())
             .WithSummary("Clear the bot's assignment")
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status404NotFound);

@@ -84,9 +84,6 @@ public static class AgentHubMethods
     /// <summary>From an agent: <c>(RunReport)</c>, when a run ends; kept while the manager is down and sent after it returns.</summary>
     public const string RunEnded = "RunEnded";
 
-    /// <summary>To an agent: <c>(BotAssignment?)</c>, its assignment changed.</summary>
-    public const string Assign = "Assign";
-
     /// <summary>To an agent: <c>(BotCommand)</c>, answered with a <see cref="CommandAck"/> (a client result).</summary>
     public const string Command = "Command";
 }

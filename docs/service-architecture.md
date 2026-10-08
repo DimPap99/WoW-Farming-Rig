@@ -218,7 +218,7 @@ stored in the client's own (`ClientContinents`).
 | `POST /api/v1/bots/{agentId}/start`, `/stop` | | the agent's `CommandAck`; 409 offline, no assignment or refused; 504 no answer |
 | `GET /api/v1/bots/{agentId}/log` | | the latest 500 `BotLogLine`s, oldest first |
 | `GET /api/v1/bots/{agentId}/runs` | | `RunRecord[]`, newest first (200 kept) |
-| `/agentHub` (SignalR, MessagePack) | from agents: `Register(AgentHello)` → `AgentWelcome`, `Snapshot`, `Log`, `RunEnded` | to agents: `Assign(BotAssignment?)`, `Command(BotCommand)` → `CommandAck` |
+| `/agentHub` (SignalR, MessagePack) | from agents: `Register(AgentHello)` → `AgentWelcome`, `Snapshot`, `Log`, `RunEnded` | to agents: `Command(BotCommand)` → `CommandAck` (a start carries the assignment) |
 | `/fleetHub` (SignalR, MessagePack) | | to listeners: `BotChanged`, `BotRemoved`, `Snapshot`, `Log`, `RunEnded` |
 
 An agent registers on every connection with `AgentProtocol` (2: log lines carry their process and

@@ -78,13 +78,13 @@ public sealed partial class BotFleet(JsonBotRegistry registry, IHubContext<Agent
         {
             LogRefused(logger, Printable(Cap(hello.AgentId ?? string.Empty)), $"protocol {hello.Protocol}");
             return Task.FromResult(new AgentWelcome(false,
-                $"this manager speaks agent protocol {BotManagerApi.AgentProtocol} and the agent {hello.Protocol}: update the older one", null));
+                $"this manager speaks agent protocol {BotManagerApi.AgentProtocol} and the agent {hello.Protocol}: update the older one"));
         }
 
         if (!AssignmentRules.IsAgentId(hello.AgentId))
         {
             LogRefused(logger, Printable(Cap(hello.AgentId ?? string.Empty)), "its id");
-            return Task.FromResult(new AgentWelcome(false, $"'{hello.AgentId}' is not an agent id: letters, digits, - and _", null));
+            return Task.FromResult(new AgentWelcome(false, $"'{hello.AgentId}' is not an agent id: letters, digits, - and _"));
         }
 
         DateTimeOffset now = clock.GetUtcNow();
@@ -96,7 +96,7 @@ public sealed partial class BotFleet(JsonBotRegistry registry, IHubContext<Agent
             if (agentByConnection.TryGetValue(connectionId, out string? already) && already != hello.AgentId)
             {
                 LogRefused(logger, hello.AgentId, $"its connection is agent {already} already");
-                return Task.FromResult(new AgentWelcome(false, $"this connection is agent {already} already: one connection, one agent", null));
+                return Task.FromResult(new AgentWelcome(false, $"this connection is agent {already} already: one connection, one agent"));
             }
 
             if (online.TryGetValue(hello.AgentId, out LiveBot? other) && other.ConnectionId != connectionId &&
@@ -105,7 +105,7 @@ public sealed partial class BotFleet(JsonBotRegistry registry, IHubContext<Agent
                 LogRefused(logger, hello.AgentId, $"its id is online from {other.Machine}");
                 return Task.FromResult(new AgentWelcome(false,
                     $"this agent's id is online from {other.Machine}: two PCs share one {BotManagerApi.AgentIdentityFile} (a copied folder). " +
-                    $"Delete the file on one of them, which then takes a new id", null));
+                    $"Delete the file on one of them, which then takes a new id"));
             }
 
             BotRecord? known = registry.Get(hello.AgentId);
@@ -131,7 +131,7 @@ public sealed partial class BotFleet(JsonBotRegistry registry, IHubContext<Agent
         displaced?.Close();
 
         LogRegistered(logger, record.Name, record.AgentId, Printable(hello.Run?.Summary ?? "idle"));
-        return Task.FromResult(new AgentWelcome(true, null, record.Assignment));
+        return Task.FromResult(new AgentWelcome(true, null));
     }
 
     public Task SnapshotAsync(string connectionId, BotSnapshot snapshot)
@@ -264,19 +264,17 @@ public sealed partial class BotFleet(JsonBotRegistry registry, IHubContext<Agent
         return registry.Get(agentId) is { } record ? Info(record) : null;
     }
 
-    public async Task<ApiResult> AssignAsync(string agentId, BotAssignment? assignment)
+    /// <summary>Sets what the bot runs when it is told to start: kept here, and carried by the start command.</summary>
+    public ApiResult Assign(string agentId, BotAssignment? assignment)
     {
         if (assignment is not null && AssignmentRules.Problem(assignment) is string problem)
         {
             return ApiResult.Invalid(problem);
         }
 
-        BotRecord? record;
-        string? connection;
         lock (sync)
         {
-            record = registry.Get(agentId);
-            if (record is null)
+            if (registry.Get(agentId) is not { } record)
             {
                 return ApiResult.NotFound;
             }
@@ -293,13 +291,7 @@ public sealed partial class BotFleet(JsonBotRegistry registry, IHubContext<Agent
                 return ApiResult.Unreadable($"the assignment was not saved: {ex.Message}");
             }
 
-            connection = online.GetValueOrDefault(agentId)?.ConnectionId;
             Broadcast(FleetHubMethods.BotChanged, InfoOf(record));
-        }
-
-        if (connection is not null)
-        {
-            await agents.Clients.Client(connection).SendAsync(AgentHubMethods.Assign, assignment);
         }
 
         return ApiResult.Done;
