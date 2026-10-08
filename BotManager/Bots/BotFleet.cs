@@ -37,6 +37,9 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
     /// <summary>More class profiles than any PC holds; a guard against runaway hellos.</summary>
     public const int MaxClassProfiles = 2000;
 
+    /// <summary>The longest text a report or a log line from an agent keeps: a guard against runaway messages.</summary>
+    public const int MaxMessageLength = 4000;
+
     private readonly Lock sync = new();
     private readonly Dictionary<string, LiveBot> online = [];
     private readonly Dictionary<string, string> agentByConnection = [];
@@ -61,14 +64,14 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
     {
         if (hello.Protocol != BotManagerApi.AgentProtocol)
         {
-            LogRefused(logger, hello.AgentId, $"protocol {hello.Protocol}");
+            LogRefused(logger, Printable(Cap(hello.AgentId ?? string.Empty)), $"protocol {hello.Protocol}");
             return new AgentWelcome(false,
                 $"this manager speaks agent protocol {BotManagerApi.AgentProtocol} and the agent {hello.Protocol}: update the older one", null);
         }
 
         if (!AssignmentRules.IsAgentId(hello.AgentId))
         {
-            LogRefused(logger, hello.AgentId, "its id");
+            LogRefused(logger, Printable(Cap(hello.AgentId ?? string.Empty)), "its id");
             return new AgentWelcome(false, $"'{hello.AgentId}' is not an agent id: letters, digits, - and _", null);
         }
 
@@ -80,7 +83,8 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             record = new BotRecord(hello.AgentId, Clean(hello.Name, hello.Machine, hello.AgentId), Clean(hello.Machine, string.Empty),
                 known?.FirstSeen ?? now, now, hello.Protocol, Clean(hello.AgentVersion, string.Empty), hello.Game,
                 [.. (hello.ClassProfiles ?? []).Where(AssignmentRules.IsRelativeName).Take(MaxClassProfiles)], known?.Assignment);
-            registry.Save(record);
+            // An agent that registers is online whether or not its record could be written.
+            Record(record);
 
             // A reconnect may reach the manager before the old connection's end does: the newest wins.
             if (online.Remove(hello.AgentId, out LiveBot? stale))
@@ -91,7 +95,7 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             agentByConnection[connectionId] = hello.AgentId;
         }
 
-        LogRegistered(logger, record.Name, record.AgentId, hello.Run?.Summary ?? "idle");
+        LogRegistered(logger, record.Name, record.AgentId, Printable(hello.Run?.Summary ?? "idle"));
         await fleet.Clients.All.SendAsync(FleetHubMethods.BotChanged, Info(record));
         return new AgentWelcome(true, null, record.Assignment);
     }
@@ -127,7 +131,7 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
                 return;
             }
 
-            kept = lines.Length > KeptLogLines ? lines[^KeptLogLines..] : lines;
+            kept = [.. (lines.Length > KeptLogLines ? lines[^KeptLogLines..] : lines).Select(line => line with { Message = Cap(line.Message) })];
             if (!logs.TryGetValue(agentId, out Queue<BotLogLine>? log))
             {
                 logs[agentId] = log = new Queue<BotLogLine>();
@@ -149,6 +153,7 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
 
     public async Task RunEndedAsync(string connectionId, RunReport report)
     {
+        report = report with { Message = Cap(report.Message), Run = report.Run with { Summary = Cap(report.Run.Summary) } };
         string agentId;
         lock (sync)
         {
@@ -163,8 +168,9 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             }
         }
 
+        // A write that fails throws to the agent, which keeps the report and sends it again.
         registry.AddRun(agentId, report);
-        LogRunEnded(logger, agentId, report.Run.Summary, report.Outcome, report.Message);
+        LogRunEnded(logger, agentId, Printable(report.Run.Summary), report.Outcome, Printable(report.Message));
         await fleet.Clients.All.SendAsync(FleetHubMethods.RunEnded, new RunRecord(agentId, report));
     }
 
@@ -184,7 +190,7 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             if (record is not null)
             {
                 record = record with { LastSeen = clock.GetUtcNow(), Game = live.Game ?? record.Game };
-                registry.Save(record);
+                Record(record);
             }
         }
 
@@ -225,7 +231,17 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             }
 
             record = record with { Assignment = assignment };
-            registry.Save(record);
+            try
+            {
+                registry.Save(record);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Nothing changed: the bot keeps the assignment it had.
+                LogNotRecorded(logger, record.Name, ex.Message);
+                return FleetResult.Failed($"the assignment was not saved: {ex.Message}");
+            }
+
             connection = online.GetValueOrDefault(agentId)?.ConnectionId;
         }
 
@@ -257,9 +273,17 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
                 return FleetResult.Conflict("the bot is online; stop its agent first");
             }
 
-            if (!registry.Remove(agentId))
+            try
             {
-                return FleetResult.NotFound;
+                if (!registry.Remove(agentId))
+                {
+                    return FleetResult.NotFound;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                LogNotRecorded(logger, agentId, ex.Message);
+                return FleetResult.Failed($"the bot was not forgotten: {ex.Message}");
             }
 
             logs.Remove(agentId);
@@ -331,7 +355,7 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
                 : FleetResult<CommandAck>.Conflict($"{record.Name}'s agent could not take the command: {ex.Message}");
         }
 
-        LogCommand(logger, kind, record.Name, ack.Accepted, ack.Reason ?? ack.RunId ?? string.Empty);
+        LogCommand(logger, kind, record.Name, ack.Accepted, Printable(ack.Reason ?? ack.RunId ?? string.Empty));
         return ack.Accepted
             ? FleetResult<CommandAck>.Done(ack)
             : FleetResult<CommandAck>.Conflict(ack.Reason ?? $"{record.Name} refused to {kind.ToString().ToLowerInvariant()}");
@@ -367,7 +391,33 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
         string chosen = !string.IsNullOrWhiteSpace(value) ? value.Trim()
             : !string.IsNullOrWhiteSpace(fallback) ? fallback.Trim()
             : second ?? string.Empty;
+        chosen = string.Concat(chosen.Select(c => char.IsControl(c) ? ' ' : c));
         return chosen.Length > MaxNameLength ? chosen[..MaxNameLength] : chosen;
+    }
+
+    // Under the lock: written when it can be, kept in memory either way, as live state is.
+    private void Record(BotRecord record)
+    {
+        try
+        {
+            registry.Save(record);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            registry.Keep(record);
+            LogNotRecorded(logger, record.Name, ex.Message);
+        }
+    }
+
+    private static string Cap(string text)
+    {
+        return text.Length > MaxMessageLength ? text[..MaxMessageLength] : text;
+    }
+
+    // An agent's text in the manager's own log: a line break would forge a line of its own.
+    private static string Printable(string text)
+    {
+        return text.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
     }
 
     private sealed class LiveBot(string connectionId)
@@ -385,6 +435,9 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Agent {AgentId} refused: {What}")]
     static partial void LogRefused(ILogger logger, string agentId, string what);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "The registry could not be written for {Name}: {Reason}")]
+    static partial void LogNotRecorded(ILogger logger, string name, string reason);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "{Name} ({AgentId}) went offline")]
     static partial void LogOffline(ILogger logger, string name, string agentId);

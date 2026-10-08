@@ -17,8 +17,10 @@ namespace BotManager.Registry;
 /// <summary>
 /// <see cref="IBotRegistry"/> in JSON files under one folder: <c>bots.json</c> holds every bot, and
 /// <c>runs/&lt;agentId&gt;.json</c> each bot's last <see cref="MaxRuns"/> runs. Files are written
-/// to a temporary name and renamed, so a crash never leaves half a file; a file that cannot be read
-/// is kept aside and the store starts without it rather than refusing to start.
+/// to a temporary name and renamed, so a crash never leaves half a file, and before memory changes, so
+/// a write that fails changes nothing. A file that does not parse is kept aside and the store starts
+/// without it; one that cannot be read (a lock, its rights) stops the start instead: starting empty
+/// would write over every other bot at the first registration (known issue 72).
 /// </summary>
 public sealed class JsonBotRegistry : IBotRegistry
 {
@@ -70,8 +72,21 @@ public sealed class JsonBotRegistry : IBotRegistry
 
         lock (sync)
         {
+            WriteBots(bots.Values.Where(other => other.AgentId != bot.AgentId).Append(bot));
             bots[bot.AgentId] = bot;
-            WriteBots();
+        }
+    }
+
+    public void Keep(BotRecord bot)
+    {
+        if (!AssignmentRules.IsAgentId(bot.AgentId))
+        {
+            throw new ArgumentException($"'{bot.AgentId}' is not an agent id", nameof(bot));
+        }
+
+        lock (sync)
+        {
+            bots[bot.AgentId] = bot;
         }
     }
 
@@ -79,12 +94,13 @@ public sealed class JsonBotRegistry : IBotRegistry
     {
         lock (sync)
         {
-            if (!bots.Remove(agentId))
+            if (!bots.ContainsKey(agentId))
             {
                 return false;
             }
 
-            WriteBots();
+            WriteBots(bots.Values.Where(bot => bot.AgentId != agentId));
+            bots.Remove(agentId);
             File.Delete(RunsFile(agentId));
             return true;
         }
@@ -112,7 +128,9 @@ public sealed class JsonBotRegistry : IBotRegistry
 
         lock (sync)
         {
-            RunReport[] runs = [run, .. (Read<RunReport[]>(RunsFile(agentId)) ?? []).Take(MaxRuns - 1)];
+            // Reports are sent at least once: a report whose acknowledgement was lost comes again.
+            RunReport[] runs = [run, .. (Read<RunReport[]>(RunsFile(agentId)) ?? [])
+                .Where(kept => kept.Run.RunId != run.Run.RunId).Take(MaxRuns - 1)];
             Write(RunsFile(agentId), runs);
         }
     }
@@ -122,11 +140,12 @@ public sealed class JsonBotRegistry : IBotRegistry
         return Path.Combine(folder, RunsFolder, agentId + ".json");
     }
 
-    private void WriteBots()
+    private void WriteBots(IEnumerable<BotRecord> all)
     {
-        Write(Path.Combine(folder, BotsFile), bots.Values.OrderBy(bot => bot.AgentId, StringComparer.Ordinal).ToArray());
+        Write(Path.Combine(folder, BotsFile), all.OrderBy(bot => bot.AgentId, StringComparer.Ordinal).ToArray());
     }
 
+    // An I/O error (a lock, the file's rights) throws: only a file that does not parse is damaged.
     private T? Read<T>(string file) where T : class
     {
         if (!File.Exists(file))
@@ -134,21 +153,24 @@ public sealed class JsonBotRegistry : IBotRegistry
             return null;
         }
 
+        string text = File.ReadAllText(file);
         try
         {
-            return JsonSerializer.Deserialize<T>(File.ReadAllText(file), FileJson);
+            return JsonSerializer.Deserialize<T>(text, FileJson);
         }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
             string aside = $"{file}.unreadable-{DateTime.UtcNow:yyyyMMddHHmmss}";
-            logger.LogError(ex, "{File} could not be read; it is kept as {Aside} and the manager goes on without it", file, aside);
+            logger.LogError(ex, "{File} is damaged; it is kept as {Aside} and the manager goes on without it", file, aside);
             try
             {
                 File.Move(file, aside, overwrite: true);
             }
-            catch (IOException)
+            catch (Exception move) when (move is IOException or UnauthorizedAccessException)
             {
+                logger.LogError(move, "{File} could not be kept aside: the next write replaces it", file);
             }
+
             return null;
         }
     }

@@ -18,6 +18,9 @@ public enum FleetOutcome
 
     /// <summary>The agent did not answer in time.</summary>
     Timeout,
+
+    /// <summary>The manager could not do it: its data could not be written. <c>Error</c> says why; nothing changed.</summary>
+    Failed,
 }
 
 /// <summary>The outcome of a fleet operation that returns nothing.</summary>
@@ -35,6 +38,11 @@ public readonly record struct FleetResult(FleetOutcome Outcome, string? Error = 
     public static FleetResult Conflict(string error)
     {
         return new(FleetOutcome.Conflict, error);
+    }
+
+    public static FleetResult Failed(string error)
+    {
+        return new(FleetOutcome.Failed, error);
     }
 }
 
@@ -88,6 +96,7 @@ public static class FleetResultHttp
         {
             FleetOutcome.Invalid => Results.Problem(detail: error, statusCode: StatusCodes.Status400BadRequest, title: "Request refused"),
             FleetOutcome.Timeout => Results.Problem(detail: error, statusCode: StatusCodes.Status504GatewayTimeout, title: "No answer"),
+            FleetOutcome.Failed => Results.Problem(detail: error, statusCode: StatusCodes.Status500InternalServerError, title: "Not done"),
             _ => Results.Problem(detail: error, statusCode: StatusCodes.Status409Conflict, title: "Not now"),
         };
     }

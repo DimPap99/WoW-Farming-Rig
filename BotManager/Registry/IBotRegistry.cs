@@ -21,14 +21,21 @@ public interface IBotRegistry
 
     BotRecord? Get(string agentId);
 
-    /// <summary>Creates or replaces the bot's record.</summary>
+    /// <summary>Creates or replaces the bot's record, on disk first: a write that fails throws and changes nothing.</summary>
     void Save(BotRecord bot);
 
-    /// <summary>Forgets the bot and its run history; false when there was none.</summary>
+    /// <summary>
+    /// Creates or replaces the bot's record in memory only, for a write that failed while the record must
+    /// count anyway (an agent that registered); the next save that succeeds writes it too.
+    /// </summary>
+    void Keep(BotRecord bot);
+
+    /// <summary>Forgets the bot and its run history, on disk first; false when there was none.</summary>
     bool Remove(string agentId);
 
     /// <summary>The bot's ended runs, newest first.</summary>
     IReadOnlyList<RunReport> Runs(string agentId);
 
+    /// <summary>Adds an ended run, newest first; a run reported again replaces its first report.</summary>
     void AddRun(string agentId, RunReport run);
 }

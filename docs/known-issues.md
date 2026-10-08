@@ -405,25 +405,6 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       it cannot be opened, deleted or assigned from the pages.
     - **Fix (the plan's step 3, with the one name rule):** a name ends in `.json`, exactly.
 
-72. **The Bot Manager's registry can lose its bots.**
-    - **Where:** `BotManager/Registry/JsonBotRegistry`, `BotManager/Bots/BotFleet`,
-      `ServiceClients/Bots/AssignmentRules.IsAgentId`.
-    - **Cause:** `Read` takes any I/O error for a damaged file: a sharing lock at startup (on Windows:
-      OneDrive, a backup tool, an editor) empties the registry, the move aside fails the same way and is
-      swallowed, and the first registration rewrites `bots.json` with one bot. `Save` and `Remove`
-      change memory before they write, and a failed write is caught nowhere, inside the fleet's lock.
-      Run reports are delivered at least once, and `AddRun` keeps a repeat. Agent text is stored and
-      logged as sent.
-    - **Effect:** a start that met a lock loses every other bot and assignment. A write that fails (disk
-      full, a read-only folder) answers "not saved" for an assignment the manager then runs, keeps every
-      agent from registering, and leaves a disconnected bot shown online. A report whose acknowledgement
-      was lost is in the history twice. An agent id such as `CON` is a device on a Windows manager, and
-      a run message with a line break forges a line in the manager's log.
-    - **Fix:** only unreadable JSON is kept aside, and an I/O error stops the start. The write comes
-      first, memory after: a registration or a disconnect whose write fails is logged and goes on, and an
-      assignment answers that it was not saved and keeps the old one. One report per run. Device names
-      are not agent ids; agent text is capped, and its line breaks escaped in the manager's log.
-
 73. **One stalled Control Center freezes every agent.**
     - **Where:** `BotManager/Bots/BotFleet` (every `fleet.Clients.All.SendAsync`).
     - **Cause:** each agent hub method awaits the send to every fleet listener, and SignalR reads an
@@ -505,6 +486,22 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+72. **The Bot Manager's registry could lose its bots** (Phase 3 review, 2026-10-08).
+    - `JsonBotRegistry.Read` took any I/O error for a damaged file: a lock at startup (OneDrive, a backup
+      tool) started the registry empty, and the first registration wrote over every other bot. Only a
+      file that does not parse is kept aside now; one that cannot be read stops the start.
+    - `Save` and `Remove` changed memory before writing, and nothing caught a failed write: an assignment
+      answered "not saved" and ran anyway, and no agent could register. The write comes first; an
+      assignment or a forget whose write fails answers 500 and changes nothing, and a registration or a
+      disconnect is logged and kept in memory (`Keep`), written with the next save that succeeds.
+    - A report sent again (its acknowledgement lost) was kept twice: one report per run id now.
+    - `CON`, `NUL`, `COM1` and the other Windows device names are not agent ids (on a Windows manager
+      `runs/CON.json` is the console); agent text is capped (`BotFleet.MaxMessageLength`) and its line
+      breaks escaped in the manager's log, where they forged lines.
+    - Tests: `JsonBotRegistryTests`, `AssignmentRulesTests`, and
+      `BotManagerTests.While_the_registry_cannot_be_written_agents_still_register_and_an_assignment_says_it_was_not_saved`;
+      each fails on the old code.
 
 71. **Names that differed only in case were one file on a Windows bot** (Phase 3 review, 2026-10-08).
     A Linux Pathing Service could hold `Route.json` and `route.json`, and the route designer, which

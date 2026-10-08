@@ -49,8 +49,13 @@ snapshot.
 **Live state is memory; the registry is files.** Online, the latest snapshot and the last 500 log
 lines per bot vanish with the process; agents register again when it comes back, a running bot
 reporting its run. The registry is written on registration, disconnect, assignment and run end,
-never per snapshot. A file that cannot be read is renamed aside (`.unreadable-<time>`) and the manager
-starts without it rather than refusing to start.
+never per snapshot, and before memory changes: a write that fails changes nothing. An assignment or a
+forget whose write fails answers 500 and keeps what was; a registration or a disconnect whose write
+fails is logged and counts anyway (`Keep`), written with the next save that succeeds. A run report is
+kept once per run id: agents send them at least once. A file that does not parse is renamed aside
+(`.unreadable-<time>`) and the manager starts without it; one that cannot be read at all (a lock, its
+rights) stops the start, since starting empty would write over every other bot (known issue 72).
+Agent text is capped (`MaxMessageLength`), and the manager's log escapes its line breaks.
 
 **The key is the Pathing Service's rules.** This machine (loopback, or no remote address at all, as
 an in-memory test server has) is always served. Another machine needs `ApiKey` in the `X-Api-Key`

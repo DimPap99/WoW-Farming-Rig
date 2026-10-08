@@ -93,10 +93,14 @@ public static class AssignmentRules
         return true;
     }
 
-    /// <summary>An agent id: letters, digits, <c>-</c> and <c>_</c>, as a file name of the manager's run history.</summary>
+    /// <summary>
+    /// An agent id: letters, digits, <c>-</c> and <c>_</c>, as a file name of the manager's run history,
+    /// and not a name Windows keeps for a device (<c>CON</c>, <c>NUL</c>, <c>COM1</c>...), which on a manager
+    /// hosted on Windows would be the device, not a file (known issue 72).
+    /// </summary>
     public static bool IsAgentId(string? agentId)
     {
-        if (string.IsNullOrEmpty(agentId) || agentId.Length > MaxAgentIdLength)
+        if (string.IsNullOrEmpty(agentId) || agentId.Length > MaxAgentIdLength || IsDeviceName(agentId))
         {
             return false;
         }
@@ -110,6 +114,13 @@ public static class AssignmentRules
         }
 
         return true;
+    }
+
+    private static bool IsDeviceName(string name)
+    {
+        return name.ToUpperInvariant() is "CON" or "PRN" or "AUX" or "NUL" ||
+               name.Length == 4 && (name.StartsWith("COM", StringComparison.OrdinalIgnoreCase) || name.StartsWith("LPT", StringComparison.OrdinalIgnoreCase)) &&
+               char.IsAsciiDigit(name[3]);
     }
 
     private static bool HasControlChar(string segment)

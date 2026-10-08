@@ -55,6 +55,13 @@ public sealed class AssignmentRulesTests
     [InlineData("", false)]
     [InlineData("../x", false)]
     [InlineData("a b", false)]
+    // Windows' device names: runs/CON.json would be the console, not a file (known issue 72).
+    [InlineData("CON", false)]
+    [InlineData("nul", false)]
+    [InlineData("COM1", false)]
+    [InlineData("lpt9", false)]
+    [InlineData("COM10", true)]
+    [InlineData("CONSOLE", true)]
     public void Agent_ids_are_safe_file_names(string id, bool valid)
     {
         Assert.Equal(valid, AssignmentRules.IsAgentId(id));

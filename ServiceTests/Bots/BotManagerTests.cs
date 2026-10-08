@@ -50,6 +50,45 @@ public sealed class BotManagerTests
     }
 
     [Fact]
+    public async Task While_the_registry_cannot_be_written_agents_still_register_and_an_assignment_says_it_was_not_saved()
+    {
+        if (OperatingSystem.IsWindows() || Environment.UserName == "root")
+        {
+            Assert.Skip("needs Unix file rights that bind the user running the tests");
+        }
+
+        const string other = "0a1b2c3d4e5f60718293a4b5c6d7e8f9";
+        using TempDataRoot data = new();
+        using BotManagerFactory factory = new(data.Root);
+        BotManagerClient client = new(factory.CreateClient());
+        await using FakeAgent agent = await FakeAgent.ConnectAsync(factory, AgentId);
+        await agent.RegisterAsync();
+        await using FakeAgent second = await FakeAgent.ConnectAsync(factory, other);
+        System.IO.File.SetUnixFileMode(data.Root, System.IO.UnixFileMode.UserRead | System.IO.UnixFileMode.UserExecute);
+        ServiceResult assigned;
+        AgentWelcome welcome;
+        try
+        {
+            assigned = await client.SetAssignmentAsync(AgentId, Trip, TestContext.Current.CancellationToken);
+            welcome = await second.RegisterAsync();
+        }
+        finally
+        {
+            System.IO.File.SetUnixFileMode(data.Root,
+                System.IO.UnixFileMode.UserRead | System.IO.UnixFileMode.UserWrite | System.IO.UnixFileMode.UserExecute);
+        }
+
+        ServiceResult<BotInfo[]> listed = await client.ListBotsAsync(TestContext.Current.CancellationToken);
+
+        // Known issue 72: the assignment answered "not saved" yet ran, and no agent could register.
+        Assert.Equal(500, assigned.Status);
+        Assert.Contains("not saved", assigned.Error);
+        Assert.Null(listed.Value!.Single(bot => bot.AgentId == AgentId).Assignment);
+        Assert.True(welcome.Accepted, welcome.Reason);
+        Assert.True(listed.Value!.Single(bot => bot.AgentId == other).Online);
+    }
+
+    [Fact]
     public async Task An_agent_speaking_another_protocol_or_with_a_bad_id_is_refused_with_why()
     {
         using TempDataRoot data = new();
