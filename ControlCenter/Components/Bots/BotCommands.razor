@@ -11,7 +11,7 @@
                 Title="@(StartBlocked ?? $"Start {Bot.Assignment}")" OnClick="StartAsync">
         Start
     </BusyButton>
-    <BusyButton Icon="media-stop" Busy="@(sending == BotCommandKind.Stop)" Disabled="@(!Bot.Online || sending is not null)"
+    <BusyButton Icon="media-stop" Busy="@(sending == BotCommandKind.Stop)" Disabled="@(!Bot.Online || sending == BotCommandKind.Stop)"
                 Title="@(Bot.Online ? "Stop the run: it releases the keys and the mouse first, then ends" : "The bot is offline")" OnClick="StopAsync">
         Stop
     </BusyButton>

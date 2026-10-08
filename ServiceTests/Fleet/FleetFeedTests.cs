@@ -80,6 +80,25 @@ public sealed class FleetFeedTests
         Assert.Equal(BotRunOutcome.Complete, ended.Report.Outcome);
     }
 
+    // The card and the console showed the run, and kept Start off, until the next snapshot (known issue 77).
+    [Fact]
+    public async Task A_runs_end_takes_the_run_off_its_bot_at_once()
+    {
+        using TempDataRoot data = new();
+        ManagerSlot slot = new();
+        using BotManagerFactory manager = slot.Bring(new BotManagerFactory(data.Root));
+        await using FeedUnderTest feed = await FeedUnderTest.StartAsync(slot);
+        await Eventually.True(() => feed.Feed.Connected);
+        await using FakeAgent agent = await FakeAgent.ConnectAsync(manager, AgentId);
+        await agent.RegisterAsync(FakeAgent.Hello(AgentId, run: Run));
+        await BotAsync(feed, bot => bot.Run is not null);
+
+        await agent.SendRunEndedAsync(new RunReport(Run, BotRunOutcome.Complete, DateTimeOffset.UtcNow, "status: Complete", 0, null));
+        BotInfo ended = await BotAsync(feed, bot => bot.Run is null);
+
+        Assert.True(ended.Online);
+    }
+
     [Fact]
     public async Task A_restarted_manager_is_read_again_and_followed()
     {

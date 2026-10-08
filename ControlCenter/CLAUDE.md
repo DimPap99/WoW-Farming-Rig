@@ -126,7 +126,10 @@ does. The hub sends every bot's snapshots and logs to everyone: a console filter
 starts holding streamed lines (`BotLogBuffer.BeginBacklog`) before it subscribes and reads the
 backlog (the manager's last 500), then joins them. A `BotLogLine` has no number, so a line already
 shown is known by its time and text (record equality), and a backlog read again after a reconnect
-fills in what was missed, in time order.
+fills in what was missed, in time order. A read of the log or the runs that failed is tried again at
+the bot's next change, as `Resynced` comes only after a reconnect; a run's end takes the run off its
+bot at once (`FleetFeed`), and a bot's zone is named only when it plays the Pathing Service's era
+(`BotFormat.Place`).
 
 **Commands are sent once.** Start and Stop are never queued or retried (the client does not
 retry POSTs): 409 (offline, no assignment, refused) and 504 (no answer in 10 s) are shown with the

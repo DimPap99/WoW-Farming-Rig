@@ -70,7 +70,7 @@
     @if (snapshot?.Position is BotPosition position)
     {
         <dt>Where</dt>
-        <dd>@BotFormat.Place(position, world)</dd>
+        <dd>@BotFormat.Place(position, world, Bot.Game)</dd>
     }
     @if (snapshot?.Progress is BotProgress progress)
     {

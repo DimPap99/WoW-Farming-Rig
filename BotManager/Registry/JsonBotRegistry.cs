@@ -26,7 +26,7 @@ public sealed class JsonBotRegistry : IBotRegistry
 {
     public const string BotsFile = "bots.json";
     public const string RunsFolder = "runs";
-    public const int MaxRuns = 200;
+    public const int MaxRuns = BotManagerApi.KeptRuns;
 
     private const string TemporaryExtension = ".tmp";
 

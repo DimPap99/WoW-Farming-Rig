@@ -605,14 +605,16 @@ else
         busy = true;
         try
         {
-            ServiceResult stored = await pathing.SaveForeverRouteAsync(selected, text, Token);
+            // What was sent is what is saved: text typed while the save was under way is not (known issue 77).
+            string sent = text;
+            ServiceResult stored = await pathing.SaveForeverRouteAsync(selected, sent, Token);
             if (!stored.Ok)
             {
                 Show(stored.Status == 400 ? $"Not saved: {stored.Error}" : stored.Error, ResultKind.Error);
                 return;
             }
 
-            saved = text;
+            saved = sent;
             isNew = false;
             await ListAsync();
             check = routes.FirstOrDefault(route => route.Name == selected) ?? check;

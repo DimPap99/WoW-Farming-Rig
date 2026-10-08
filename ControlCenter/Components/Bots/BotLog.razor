@@ -46,6 +46,7 @@
     private readonly BotLogBuffer buffer = new();
     private BotLogLine[] lines = [];
     private string? error;
+    private bool reading;
 
     protected override async Task OnInitializedAsync()
     {
@@ -53,7 +54,18 @@
         buffer.BeginBacklog();
         Subscribe(() => feed.Log += OnLog, () => feed.Log -= OnLog);
         Subscribe(() => feed.Resynced += OnResynced, () => feed.Resynced -= OnResynced);
+        Subscribe(() => feed.Changed += OnFleetChanged, () => feed.Changed -= OnFleetChanged);
         await ReadBacklogAsync();
+    }
+
+    // A read that failed while the hub stayed up is tried again at the bot's next change: Resynced
+    // comes only after a reconnect (known issue 77).
+    private void OnFleetChanged(string? agentId)
+    {
+        if (error is not null && (agentId is null || agentId == AgentId))
+        {
+            _ = InvokeAsync(ReadBacklogAsync);
+        }
     }
 
     // On the feed's thread: the buffer takes the lines under its own lock.
@@ -73,6 +85,12 @@
 
     private async Task ReadBacklogAsync()
     {
+        if (reading)
+        {
+            return;
+        }
+
+        reading = true;
         buffer.BeginBacklog();
         BotLogLine[] backlog = [];
         try
@@ -87,6 +105,7 @@
         finally
         {
             buffer.Join(backlog);
+            reading = false;
         }
 
         Show();

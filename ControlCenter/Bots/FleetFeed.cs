@@ -189,7 +189,12 @@ public sealed partial class FleetFeed(IServiceProvider services, IFleetConnectio
         hub.On<string>(FleetHubMethods.BotRemoved, agentId => Apply(agentId, () => bots.Remove(agentId)));
         hub.On<BotSnapshot>(FleetHubMethods.Snapshot, snapshot => Apply(snapshot.AgentId, () => Update(snapshot)));
         hub.On<string, BotLogLine[]>(FleetHubMethods.Log, (agentId, lines) => Subscribers.Raise(Log, handler => handler(agentId, lines), logger));
-        hub.On<RunRecord>(FleetHubMethods.RunEnded, record => Subscribers.Raise(RunEnded, handler => handler(record), logger));
+        hub.On<RunRecord>(FleetHubMethods.RunEnded, record =>
+        {
+            // The manager has let the run go: no "run under way" until the next snapshot (known issue 77).
+            Apply(record.AgentId, () => Ended(record));
+            Subscribers.Raise(RunEnded, handler => handler(record), logger);
+        });
     }
 
     // A change from the hub: applied now, or held while the bots are being read.
@@ -207,6 +212,15 @@ public sealed partial class FleetFeed(IServiceProvider services, IFleetConnectio
         }
 
         Subscribers.Raise(Changed, handler => handler(agentId), logger);
+    }
+
+    // Under the lock: the bot's run, if it is the one that ended.
+    private void Ended(RunRecord record)
+    {
+        if (bots.TryGetValue(record.AgentId, out BotInfo? bot) && bot.Run?.RunId == record.Report.Run.RunId)
+        {
+            bots[record.AgentId] = bot with { Run = null };
+        }
     }
 
     // Under the lock. A snapshot carries the bot's run and client too, as the manager's own BotInfo does.

@@ -102,7 +102,6 @@
     private AssignmentDraft draft = new();
     // The assignment the draft was made from: a change to it from elsewhere replaces an unedited draft.
     private BotAssignment? basis;
-    private bool started;
     private ForeverRouteInfo[] routes = [];
     private string? routesError;
     private RecordedPathInfo[] paths = [];
@@ -112,6 +111,14 @@
 
     private bool Changed => draft.Build() != Bot.Assignment;
 
+    // The draft before the first await: the first render comes during it, and a choice made then was
+    // replaced when OnParametersSet made the draft afterwards (known issue 77).
+    protected override void OnInitialized()
+    {
+        draft = AssignmentDraft.From(Bot.Assignment, Bot.Game);
+        basis = Bot.Assignment;
+    }
+
     protected override async Task OnInitializedAsync()
     {
         Subscribe(() => pathingStatus.Reconnected += Reload, () => pathingStatus.Reconnected -= Reload);
@@ -120,13 +127,7 @@
 
     protected override void OnParametersSet()
     {
-        if (!started)
-        {
-            draft = AssignmentDraft.From(Bot.Assignment, Bot.Game);
-            basis = Bot.Assignment;
-            started = true;
-        }
-        else if (Bot.Assignment != basis)
+        if (Bot.Assignment != basis)
         {
             if (draft == AssignmentDraft.From(basis, Bot.Game))
             {

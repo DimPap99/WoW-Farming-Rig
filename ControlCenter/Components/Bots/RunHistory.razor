@@ -47,12 +47,24 @@ else
 
     private List<RunReport> runs = [];
     private string? error;
+    private bool reading;
 
     protected override async Task OnInitializedAsync()
     {
         Subscribe(() => feed.RunEnded += OnRunEnded, () => feed.RunEnded -= OnRunEnded);
         Subscribe(() => feed.Resynced += OnResynced, () => feed.Resynced -= OnResynced);
+        Subscribe(() => feed.Changed += OnFleetChanged, () => feed.Changed -= OnFleetChanged);
         await ReadAsync();
+    }
+
+    // A read that failed while the hub stayed up is tried again at the bot's next change: Resynced
+    // comes only after a reconnect (known issue 77).
+    private void OnFleetChanged(string? agentId)
+    {
+        if (error is not null && (agentId is null || agentId == AgentId))
+        {
+            OnResynced();
+        }
     }
 
     private void OnRunEnded(RunRecord record)
@@ -63,6 +75,12 @@ else
             {
                 runs.RemoveAll(run => run.Run.RunId == record.Report.Run.RunId);
                 runs.Insert(0, record.Report);
+                // As many as the manager keeps: the page is not a longer history (known issue 77).
+                if (runs.Count > BotManagerApi.KeptRuns)
+                {
+                    runs.RemoveRange(BotManagerApi.KeptRuns, runs.Count - BotManagerApi.KeptRuns);
+                }
+
                 StateHasChanged();
             });
         }
@@ -79,18 +97,29 @@ else
 
     private async Task ReadAsync()
     {
+        if (reading)
+        {
+            return;
+        }
+
+        reading = true;
         try
         {
             ServiceResult<RunRecord[]> read = await manager.GetRunsAsync(AgentId, Token);
             error = read.Ok ? null : $"The runs could not be read: {read.Error}";
             if (read.Ok)
             {
-                // A run that ended while this was read is kept, newest first.
-                runs = [.. read.Value.Select(record => record.Report).UnionBy(runs, run => run.Run.RunId).OrderByDescending(run => run.EndedAt)];
+                // A run that ended while this was read is kept, newest first, as many as the manager keeps.
+                runs = [.. read.Value.Select(record => record.Report).UnionBy(runs, run => run.Run.RunId)
+                    .OrderByDescending(run => run.EndedAt).Take(BotManagerApi.KeptRuns)];
             }
         }
         catch (OperationCanceledException)
         {
+        }
+        finally
+        {
+            reading = false;
         }
     }
 }

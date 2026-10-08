@@ -29,8 +29,9 @@
         @if (bots.Count == 0)
         {
             <div class="pa-card pa-empty">
-                <p>No bots yet. A bot is a game PC's resident agent, and it appears here when it dials in:</p>
-                <p><code>HeadlessServer\run.bat --agent --manager @manager.Service.Url</code></p>
+                <p>No bots yet. A bot is a game PC's resident agent, and it appears here when it dials in, with the
+                    manager's address as that PC reaches it (and the shared <code>ApiKey</code> when it is another PC):</p>
+                <p><code>HeadlessServer\run.bat --agent --manager http://&lt;the manager's PC&gt;:@BotManagerApi.DefaultPort</code></p>
                 <p class="pa-faint">The agent keeps its id in <code>agent_identity.json</code>, so a PC stays the same bot across restarts.</p>
             </div>
         }

@@ -1,6 +1,8 @@
 using ControlCenter.Components.Shared;
 using ControlCenter.Pathing;
 
+using Contracts.Pathing;
+
 using Contracts.Bots;
 
 using System;
@@ -71,10 +73,15 @@ public static class BotFormat
             : $"{character.Class} {character.Level.ToString(CultureInfo.InvariantCulture)}{(character.Race is null ? null : " " + character.Race)}";
     }
 
-    /// <summary>A zone map position as a player reads it: the zone's name and its coordinates.</summary>
-    public static string Place(BotPosition position, WorldSnapshot? world)
+    /// <summary>
+    /// A zone map position as a player reads it: the zone's name and its coordinates. The zone is named
+    /// from the Pathing Service's world, so only for a bot that plays its era: another era's maps share its
+    /// numbers, not its zones (known issue 77).
+    /// </summary>
+    public static string Place(BotPosition position, WorldSnapshot? world, AgentGame? game)
     {
-        string zone = world?.Zone(position.UiMapId)?.Name ?? $"map {position.UiMapId.ToString(CultureInfo.InvariantCulture)}";
+        ZoneInfo? named = game is not null && world?.World.Era == game.Era ? world.Zone(position.UiMapId) : null;
+        string zone = named?.Name ?? $"map {position.UiMapId.ToString(CultureInfo.InvariantCulture)}";
         return $"{zone} {position.MapX.ToString("F1", CultureInfo.InvariantCulture)}, {position.MapY.ToString("F1", CultureInfo.InvariantCulture)}";
     }
 
