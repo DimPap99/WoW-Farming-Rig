@@ -120,9 +120,8 @@ public sealed class ForeverTaskActivity : IForeverActivity
     {
         if (runnerTask != agenda.Current)
             StartCurrent(bars, facts);
-        // A task already done by a condition the agenda tracks is passed by.
-        while (agenda.Current is { } done && done.Until.IsMet(agenda.Progress, bars))
-            Finish(done, bars, facts);
+        // A task already done by a condition the agenda tracks is passed by, once round at most.
+        PassDone(bars, facts);
         if (runner is null)
             return ForeverActivityResult.Done;
 
@@ -155,13 +154,48 @@ public sealed class ForeverTaskActivity : IForeverActivity
     // Ends the current task, says what it did and starts the next one.
     private void Finish(ForeverTask task, VisualBarSample bars, in ForeverFacts facts)
     {
-        if (logger.IsEnabled(LogLevel.Information))
-            logger.LogInformation("Forever task done: {Task} ({Progress})", task.Name, agenda.Progress);
+        LogDone(task, agenda.Progress);
         int laps = agenda.Laps;
         agenda.Complete();
-        if (agenda.Laps != laps && logger.IsEnabled(LogLevel.Information))
-            logger.LogInformation("Forever agenda lap {Lap} done; starting over", agenda.Laps);
+        LogLap(laps);
         StartCurrent(bars, facts);
+    }
+
+    // The tasks already done, completed in one go, and the next one started; a repeating agenda whose
+    // every task is done ends, and the run with it.
+    private void PassDone(VisualBarSample bars, in ForeverFacts facts)
+    {
+        int laps = agenda.Laps;
+        bool passed = false;
+        bool allDone = agenda.PassDone(task => task.Until.IsMet(agenda.Progress, bars), (task, progress) =>
+        {
+            passed = true;
+            LogDone(task, progress);
+        });
+        LogLap(laps);
+        if (allDone)
+        {
+            runner?.Exit();
+            runner = null;
+            runnerTask = null;
+            logger.LogInformation("Every step of the route is already done: the run ends");
+        }
+        else if (passed)
+        {
+            StartCurrent(bars, facts);
+        }
+    }
+
+    private void LogDone(ForeverTask task, ForeverTaskProgress progress)
+    {
+        if (logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("Forever task done: {Task} ({Progress})", task.Name, progress);
+    }
+
+    private void LogLap(int lapsBefore)
+    {
+        if (agenda.Laps != lapsBefore && logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("Forever agenda lap {Lap} done; starting over", agenda.Laps);
     }
 
     private void StartCurrent(VisualBarSample bars, in ForeverFacts facts)

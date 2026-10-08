@@ -40,7 +40,7 @@ is not saved, with the step that is wrong.
 | `Name` | shown in logs; the file name when left out |
 | `UIMapId` | the map the coordinates are on (1411 Durotar, 1413 The Barrens, 1420 Tirisfal Glades; `--where` prints it) |
 | `Steps` | the steps, in order; at least one |
-| `Repeat` | `true` starts over after the last step, a farming loop that runs until the time bound |
+| `Repeat` | `true` starts over after the last step, a farming loop that runs until the time bound. A route whose every step is already done (each ends by a level the character has) ends at once, Complete: going round again would find the same |
 | `CostZones` | `"Apply"` plans every walk with the era's authored roads and danger zones (`Json/road/forever/<continent>`, which the agent's data sync brings before a run); `"Ignore"`, or none, plans without them, as runs always did. By name only, in any case: anything else, a number too, is refused | `"Ignore"` |
 
 The Control Center's route designer previews a route's legs under the same choice, so what it
@@ -138,7 +138,7 @@ Taking and handing in the quest is still the player's.
 - a map the map data does not have;
 - a roam without an `Area` of two or more corners, or without an `Until`
   (it would never end), or with `Kills` or `Level` below 1 or `Minutes` not
-  above 0;
+  a number above 0 (`NaN` and `Infinity` are refused too);
 - any field the format does not know: a misspelt `"Kils"` is refused with
   where it is (`Steps[1].Roam.Until.Kils`) instead of silently doing nothing.
 

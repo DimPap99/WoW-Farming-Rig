@@ -363,22 +363,25 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
                     }
                     Thread.Sleep(PollMs);
                 }
+                // How the run stood, read before the bot is turned off: turning it off
+                // fails a run that has no kill yet ("Controller stopped").
+                ForeverAutonomousGoal.RunState ended = automatic.State;
+                bool timedOut = DateTime.UtcNow >= autoDeadline;
                 if (controller.IsBotActive)
                     controller.ToggleBotStatus();
                 output.Line($"{ForeverRunProtocol.SummaryPrefix} {automatic.CompletedKills}; deaths observed: {automatic.ObservedDeaths}; " +
                     $"corpses looted: {automatic.CompletedLoots}; " +
                     $"status: {automatic.Status}; {automatic.LastFailure}");
-                bool timedOut = DateTime.UtcNow >= autoDeadline;
                 // A repeating route has no end of its own: the time bound, reached
                 // without a failure, is how it ends.
-                if (timedOut && request.Route is { Repeat: true } && automatic.State != ForeverAutonomousGoal.RunState.Failed)
+                if (timedOut && request.Route is { Repeat: true } && ended != ForeverAutonomousGoal.RunState.Failed)
                 {
                     output.Line($"Time limit reached; the repeating route ran until then ({automatic.AgendaStatus}).");
                     return ForeverRunProtocol.ExitComplete;
                 }
                 if (timedOut)
                     output.Problem("Trial time limit reached before the run completed.");
-                return automatic.State == ForeverAutonomousGoal.RunState.Complete ? ForeverRunProtocol.ExitComplete : ForeverRunProtocol.ExitFailed;
+                return ended == ForeverAutonomousGoal.RunState.Complete ? ForeverRunProtocol.ExitComplete : ForeverRunProtocol.ExitFailed;
             }
 
             if (controller.GoapAgent?.AvailableGoals is not [ForeverTrialGoal goal])

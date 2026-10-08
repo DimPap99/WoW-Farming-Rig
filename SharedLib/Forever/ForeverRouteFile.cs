@@ -244,9 +244,10 @@ public static class ForeverRouteFile
             why = $"{step} needs an Until with Kills, Minutes or Level, or it would never end";
             return false;
         }
-        if (until.Kills is < 1 || until.Minutes is <= 0 || until.Level is < 1)
+        // NaN, Infinity and 1e400 read as numbers too, and none of them ends a step (known issue 69).
+        if (until.Kills is < 1 || until.Minutes is { } minutes && !(double.IsFinite(minutes) && minutes > 0) || until.Level is < 1)
         {
-            why = "Until needs Kills and Level of at least 1, and Minutes above 0";
+            why = "Until needs Kills and Level of at least 1, and Minutes a number above 0";
             return false;
         }
         ends = new ForeverUntil(until.Kills, Minutes: until.Minutes, Level: until.Level);

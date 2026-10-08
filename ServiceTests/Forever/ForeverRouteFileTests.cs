@@ -36,6 +36,13 @@ public sealed class ForeverRouteFileTests
         { $"{{ {Head}, \"Steps\": [ {{ \"Roam\": {{ \"Area\": [[51, 44]], \"Until\": {{ \"Kills\": 3 }} }} }} ] }}", "step 1: a Roam needs an Area" },
         { $"{{ {Head}, \"Steps\": [ {{ \"Roam\": {{ \"Area\": [[51, 44], [53, 46]], \"Until\": {{ \"Kills\": 0 }} }} }} ] }}",
             "step 1: Until needs Kills" },
+        // Newtonsoft reads these as numbers, and none of them ends a step (known issue 69).
+        { $"{{ {Head}, \"Steps\": [ {{ \"Roam\": {{ \"Area\": [[51, 44], [53, 46]], \"Until\": {{ \"Minutes\": NaN }} }} }} ] }}",
+            "step 1: Until needs" },
+        { $"{{ {Head}, \"Steps\": [ {{ \"Roam\": {{ \"Area\": [[51, 44], [53, 46]], \"Until\": {{ \"Minutes\": Infinity }} }} }} ] }}",
+            "step 1: Until needs" },
+        { $"{{ {Head}, \"Steps\": [ {{ \"Quest\": {{ \"Id\": 5441, \"Until\": {{ \"Minutes\": 1e400 }} }} }} ] }}",
+            "step 1: Until needs" },
         { "{ \"UIMapId\": 9999, \"Steps\": [ { \"Travel\": { \"To\": [50, 50] } } ] }", "not in the map data" },
         { $"{{ {Head}, \"Steps\": [ {{ \"Travel\": {{ \"Too\": [52, 44] }} }} ] }}", "Too" },
         { $"{{ {Head}, \"Steps\": [ {{ \"Visit\": {{ \"Role\": \"vendor\", \"Npc\": \"Gornek\" }} }} ] }}",

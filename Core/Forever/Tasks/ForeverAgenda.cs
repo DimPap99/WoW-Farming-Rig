@@ -1,5 +1,6 @@
 using SharedLib.Forever;
 
+using System;
 using System.Collections.Generic;
 
 namespace Core.Forever;
@@ -43,6 +44,7 @@ public sealed class ForeverAgenda
     private readonly List<ForeverTask> tasks;
     private readonly bool repeat;
     private int index;
+    private bool ended;
 
     public ForeverAgenda(IEnumerable<ForeverTask> tasks, bool repeat = false)
     {
@@ -52,7 +54,7 @@ public sealed class ForeverAgenda
 
     public IReadOnlyList<ForeverTask> Tasks => tasks;
 
-    public ForeverTask? Current => index < tasks.Count ? tasks[index] : null;
+    public ForeverTask? Current => !ended && index < tasks.Count ? tasks[index] : null;
 
     public ForeverTaskProgress Progress { get; private set; } = new();
 
@@ -101,12 +103,43 @@ public sealed class ForeverAgenda
     {
         if (index < tasks.Count)
             index++;
-        if (repeat && index == tasks.Count && tasks.Count > 0)
+        if (repeat && !ended && index == tasks.Count && tasks.Count > 0)
         {
             index = 0;
             Laps++;
         }
         Progress = new();
+    }
+
+    /// <summary>Ends the agenda now, a repeating one too: nothing is current from here on.</summary>
+    public void End()
+    {
+        ended = true;
+        Progress = new();
+    }
+
+    /// <summary>
+    /// Completes the tasks already done, as <paramref name="isDone"/> says of the current one, once
+    /// round the agenda at most, telling <paramref name="passing"/> of each first. A repeating agenda
+    /// whose every task is done ends instead of going round again, which finds the same: a level the
+    /// character has is met again at once (known issue 69). True when it ended so.
+    /// </summary>
+    public bool PassDone(Func<ForeverTask, bool> isDone, Action<ForeverTask, ForeverTaskProgress> passing)
+    {
+        int passed = 0;
+        while (Current is { } task && isDone(task))
+        {
+            if (passed++ == tasks.Count)
+            {
+                End();
+                return true;
+            }
+
+            passing(task, Progress);
+            Complete();
+        }
+
+        return false;
     }
 
     public void CountKill() => Progress.Kills++;

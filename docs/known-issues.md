@@ -396,22 +396,6 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       does not load; `LoadPathProfile` answers whether it loaded, and `CreateSession` replaces the
       session only once the new one is built; one name rule for every name (the plan's step 3).
 
-69. **A repeating route with nothing left to do spins forever.**
-    - **Where:** `Core/Forever/Activities/ForeverTaskActivity.Update`, `SharedLib/Forever/ForeverRouteFile`
-      (`TryUntil`), `Core/Forever/ForeverRun`.
-    - **Cause:** `while (agenda.Current is { } done && done.Until.IsMet(...)) Finish(done)` passes the
-      tasks already done; with `"Repeat": true` the agenda wraps, and a `Level` already reached is met
-      again on the same frame. Nothing ends the loop.
-    - **Effect:** a repeating route whose steps all end by a level the character has (or outgrows
-      mid-run) spins the bot's thread at full speed and writes about four lines a lap, until the log
-      file's 1 GB cap; the character stands still, and the thread outlives the run inside the agent.
-    - **Also:** `Until.Minutes` of NaN, Infinity or 1e400 (Newtonsoft reads all three) passes the check,
-      so the step never ends. A repeating route that reaches its time bound with no kill is reported
-      Failed: the run turns the bot off, which fails the goal, before it reads how the goal stood.
-    - **Fix:** the agenda passes done tasks at most one lap at a time, and a repeating route whose every
-      step is already done ends Complete, saying so; `Minutes` must be a finite number above 0; the run
-      reads the goal's state before it turns the bot off.
-
 70. **One malformed route file takes the route library offline.**
     - **Where:** `SharedLib/Forever/ForeverRouteFile.TryParse`, `PathingService/Forever/ForeverRouteLibrary`,
       `PathingService/Sync/SyncLibrary`.
@@ -542,6 +526,19 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+69. **A repeating route with nothing left to do spun for ever** (Phase 3 review, 2026-10-08). The task
+    activity passed the tasks already done with `while (current is met) Finish(current)`, and with
+    `"Repeat": true` the agenda wrapped to tasks met again at once (a `Level` the character has), so
+    the bot's thread spun at full speed, wrote about four lines a lap and outlived the run.
+    `ForeverAgenda.PassDone` now completes the done tasks once round at most, and a repeating agenda
+    whose every task is done ends (`ForeverAgenda.End`): the run ends Complete, saying "every step of
+    the route is already done". Also: `Until.Minutes` must be a finite number above 0 (NaN, Infinity
+    and 1e400 passed, and the step never ended); and `ForeverRun` reads how the goal stood before it
+    turns the bot off, which failed a repeating route that reached its bound with no kill ("Controller
+    stopped"). Tests: `ForeverAgendaTests` (the old loop misses the deadline), `ForeverRouteFileTests`.
+    The time bound's outcome needs a live run: a repeating route that reaches its bound with no kill
+    ends Complete.
 
 67. **A client probe that threw stopped the run under way** (Phase 3 review, 2026-10-08). The probe
     caught a fixed list of exceptions, and `TelemetryPublisher`, a `BackgroundService`, caught none:
