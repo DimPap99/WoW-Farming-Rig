@@ -24,7 +24,7 @@ public sealed class TelemetryPublisherTests : IDisposable
     {
         ThrowingProbe probe = new();
         FakeRuntimeFactory factory = new();
-        await using AgentUnderTest agent = await AgentUnderTest.StartAsync(folder, null, factory, probe: probe);
+        await using AgentUnderTest agent = await AgentUnderTest.StartAsync(folder, null, factory, probe: probe.Probe);
 
         Assert.True(agent.Host.Start(BotAssignment.ForForever("crossroads_trip.json", 5)).Accepted);
         await Eventually.True(() => probe.Calls >= 1);
@@ -40,7 +40,8 @@ public sealed class TelemetryPublisherTests : IDisposable
     {
         SteppedClock clock = new();
         CountingProbe probe = new();
-        await using AgentUnderTest agent = await AgentUnderTest.StartAsync(folder, null, new FakeRuntimeFactory(), probe: probe, clock: clock);
+        await using AgentUnderTest agent = await AgentUnderTest.StartAsync(folder, null, new FakeRuntimeFactory(), probe: probe.Probe,
+            clock: clock);
         await Eventually.True(() => probe.Calls >= 1);
 
         // Six seconds pass on the monotonic clock while the wall clock is set back an hour.
@@ -55,7 +56,7 @@ public sealed class TelemetryPublisherTests : IDisposable
         Directory.Delete(folder, recursive: true);
     }
 
-    private sealed class ThrowingProbe : IGameProbe
+    private sealed class ThrowingProbe
     {
         private int calls;
 
@@ -68,7 +69,7 @@ public sealed class TelemetryPublisherTests : IDisposable
         }
     }
 
-    private sealed class CountingProbe : IGameProbe
+    private sealed class CountingProbe
     {
         private int calls;
 

@@ -78,8 +78,11 @@ internal sealed class FakeRuntime(BotAssignment assignment, bool ignoreStop, Tim
     }
 }
 
-/// <summary>Builds <see cref="FakeRuntime"/>s and keeps them for the test; refuses with <see cref="Refusal"/> when set.</summary>
-internal sealed class FakeRuntimeFactory : IBotRuntimeFactory
+/// <summary>
+/// Builds <see cref="FakeRuntime"/>s (its <see cref="Create"/> is the agent's <see cref="CreateRuntime"/>) and keeps
+/// them for the test; refuses with <see cref="Refusal"/> when set.
+/// </summary>
+internal sealed class FakeRuntimeFactory
 {
     public ConcurrentQueue<FakeRuntime> Built { get; } = new();
 
@@ -92,42 +95,21 @@ internal sealed class FakeRuntimeFactory : IBotRuntimeFactory
 
     public FakeRuntime Last => Built.Last();
 
-    public bool TryCreate(BotAssignment assignment, out IBotRuntime runtime, out string refusal)
+    public (IBotRuntime? Runtime, string? Refusal) Create(BotAssignment assignment)
     {
         if (Refusal is { } why)
         {
-            runtime = null!;
-            refusal = why;
-            return false;
+            return (null, why);
         }
 
         FakeRuntime created = new(assignment, IgnoreStop, DisposeTakes);
         Built.Enqueue(created);
-        runtime = created;
-        refusal = string.Empty;
-        return true;
+        return (created, null);
     }
 }
 
-internal sealed class FakeProbe : IGameProbe
-{
-    public AgentGame? Game { get; set; } = new("forever", "forever", 4242, "1.60.1.70009");
-
-    public AgentGame? Probe()
-    {
-        return Game;
-    }
-}
-
-internal sealed class FakeProfiles : IClassProfileCatalog
-{
-    public string[] List()
-    {
-        return ["Hunter_10.json"];
-    }
-}
-
-internal sealed class FakeProcess : IAgentProcess
+/// <summary>Keeps the restarts the agent asked for (its <see cref="Restart"/> is the agent's <see cref="RestartProcess"/>).</summary>
+internal sealed class FakeProcess
 {
     public ConcurrentQueue<string> Restarts { get; } = new();
 

@@ -33,7 +33,7 @@ param(
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-$RestartExitCode = 75   # HeadlessServer's AgentProcess.RestartExitCode
+$RestartExitCode = 75   # BotAgent's AgentProcess.RestartExitCode
 $FirstDelaySeconds = 5
 $LongestDelaySeconds = 300
 $QuickFailure = [TimeSpan]::FromMinutes(1)

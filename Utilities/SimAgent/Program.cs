@@ -40,12 +40,12 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 builder.Logging.ClearProviders().AddSerilog(Log.Logger, dispose: true);
 
-builder.Services.AddSingleton(SimOptions.From(builder.Configuration));
+SimOptions sim = SimOptions.From(builder.Configuration);
+SimGame game = new(sim);
 builder.Services.AddBotAgent(AgentOptions.From(builder.Configuration), sink);
-builder.Services.AddSingleton<IBotRuntimeFactory, SimRuntimeFactory>();
-builder.Services.AddSingleton<IGameProbe, SimGame>();
-builder.Services.AddSingleton<IClassProfileCatalog, SimGame>();
-builder.Services.AddSingleton<IAgentProcess, SimGame>();
+builder.Services.AddSingleton<CreateRuntime>(sp => new SimRuntimeFactory(sim, sp.GetRequiredService<ILoggerFactory>()).Create);
+builder.Services.AddSingleton<ProbeGame>(game.Probe);
+builder.Services.AddSingleton<ListClassProfiles>(SimGame.List);
 if (builder.Configuration["Sim:Data"] is { Length: > 0 } data)
 {
     builder.Services.AddDataSync(new DataConfig { Root = data }, PathingServiceOptions.FromIfConfigured(builder.Configuration));

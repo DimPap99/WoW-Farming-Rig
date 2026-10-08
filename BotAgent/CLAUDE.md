@@ -5,20 +5,21 @@ out to the Bot Manager over, the run host (one run at a time; stop releases inpu
 sync that pulls a run's files from the Pathing Service first, telemetry and its log stream. Plain
 `net10.0`, referencing `Contracts`, `ServiceClients` and `DataConfig` (the folders the sync writes
 to) - no Core, so `ServiceTests/Agent` runs it on Linux against fake runtimes. `HeadlessServer`
-composes it with Core's runtimes (`IBotRuntimeFactory`, `IGameProbe`, `IClassProfileCatalog`,
-`IAgentProcess`).
+composes it with Core's runtimes, each a delegate (`CreateRuntime`, `ProbeGame`, `ListClassProfiles`);
+a test or `Utilities/SimAgent` gives a lambda or a method of its fake.
 
 ```
 AgentIdentity.cs           the agent's id (agent_identity.json) and name
 AgentOptions.cs            Agent:IdentityFile, Agent:Name, Agent:StopGraceMs, BotManager:Url/ApiKey
 AgentRegistration.cs       AddBotAgent: the order hosted services start and stop in; AddDataSync
-Runtime/IBotRuntime.cs     IBotRuntime, IBotRuntimeFactory, IGameProbe, IClassProfileCatalog,
-                           IRunPreparation, IAgentProcess
+AgentProcess.cs            the default RestartProcess: the host stops and the process exits with 75
+Runtime/IBotRuntime.cs     IBotRuntime, and the delegates: CreateRuntime (a runtime or why not),
+                           ProbeGame, ListClassProfiles, PrepareRun, RestartProcess
 Runtime/BotRuntimeHost.cs  one run at a time, on its own thread; stop, grace, force, abandon
 Link/AgentLink.cs          dial out, back off, register on every connection, obey, report
 Telemetry/TelemetryPublisher.cs   a BotSnapshot a second, the log since the last batch
 Telemetry/AgentLogSink.cs  the Serilog sink the console's lines come from
-Sync/DataSync.cs           IRunPreparation: a run's files from the Pathing Service, before it starts
+Sync/DataSync.cs           a PrepareRun: a run's files from the Pathing Service, before it starts
 Sync/ProfilePaths.cs       the paths a class profile names, read from its JSON without the bot
 Sync/SyncState.cs          .sync/state.json: what was last synced, so a local change is told apart
 ```
@@ -28,7 +29,7 @@ Sync/SyncState.cs          .sync/state.json: what was last synced, so a local ch
 **A stop is a cancellation, never a kill.** The host cancels the run's token and waits: the run
 releases input and returns. Only after `StopGrace` does the host call `ForceRelease` (keys only:
 it must not block on the run), and after half the grace again it abandons the run: reported
-`Abandoned`, then `IAgentProcess.Restart`. Never call into a run's controller from the host; two
+`Abandoned`, then the `RestartProcess` (`AgentProcess` unless the host gives its own). Never call into a run's controller from the host; two
 threads toggling a bot race it back on.
 
 **The run host stops first.** `AddBotAgent` registers it last, so the host stops it before the

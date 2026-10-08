@@ -54,8 +54,7 @@ public sealed class RuntimeRefusalTests : IDisposable
     {
         HeadlessRuntimeFactory factory = Factory(game: null);
 
-        Assert.False(factory.TryCreate(BotAssignment.ForForever(RouteFile, 5), out _, out string refusal));
-        Assert.Equal("no WoW client is running on this PC", refusal);
+        Assert.Equal("no WoW client is running on this PC", Refused(factory.Create(BotAssignment.ForForever(RouteFile, 5))));
     }
 
     [Fact]
@@ -64,10 +63,8 @@ public sealed class RuntimeRefusalTests : IDisposable
         HeadlessRuntimeFactory classic = Factory(new AgentGame("som", "precata", 1, "1.15.7.61582"));
         HeadlessRuntimeFactory forever = Factory(new AgentGame("forever", "forever", 1, "1.60.1.70009"));
 
-        Assert.False(classic.TryCreate(BotAssignment.ForForever(RouteFile, 5), out _, out string notForever));
-        Assert.False(forever.TryCreate(BotAssignment.ForClassic("Hunter_10.json"), out _, out string notClassic));
-        Assert.Contains("needs WoW: Forever", notForever);
-        Assert.Contains("needs a Classic client", notClassic);
+        Assert.Contains("needs WoW: Forever", Refused(classic.Create(BotAssignment.ForForever(RouteFile, 5))));
+        Assert.Contains("needs a Classic client", Refused(forever.Create(BotAssignment.ForClassic("Hunter_10.json"))));
     }
 
     [Fact]
@@ -77,12 +74,10 @@ public sealed class RuntimeRefusalTests : IDisposable
         File.WriteAllText(Path.Combine(root, "path", "_forever", "broken.json"),
             """{ "UIMapId": 1411, "Steps": [ { "Travel": { "To": [152, 44] } } ] }""");
 
-        Assert.False(ForeverRuntime.TryCreate(new ForeverAssignment("missing.json", 5), game, Data(), NullLoggerFactory.Instance,
-            out _, out string missing));
-        Assert.False(ForeverRuntime.TryCreate(new ForeverAssignment("broken.json", 5), game, Data(), NullLoggerFactory.Instance,
-            out _, out string broken));
-        Assert.Contains("not in this PC's", missing);
-        Assert.Contains("step 1: the map point", broken);
+        Assert.Contains("not in this PC's",
+            Refused(ForeverRuntime.Create(new ForeverAssignment("missing.json", 5), game, Data(), NullLoggerFactory.Instance)));
+        Assert.Contains("step 1: the map point",
+            Refused(ForeverRuntime.Create(new ForeverAssignment("broken.json", 5), game, Data(), NullLoggerFactory.Instance)));
     }
 
     [Fact]
@@ -90,8 +85,9 @@ public sealed class RuntimeRefusalTests : IDisposable
     {
         AgentGame game = new("forever", "forever", int.MaxValue, "1.60.1.70009");
 
-        Assert.True(ForeverRuntime.TryCreate(new ForeverAssignment(RouteFile, 5), game, Data(), NullLoggerFactory.Instance,
-            out IBotRuntime runtime, out string refusal), refusal);
+        (IBotRuntime? runtime, string? refusal) = ForeverRuntime.Create(new ForeverAssignment(RouteFile, 5), game, Data(),
+            NullLoggerFactory.Instance);
+        Assert.True(runtime is not null, refusal);
         using (runtime)
         {
             BotTelemetry before = runtime.Read();
@@ -120,8 +116,8 @@ public sealed class RuntimeRefusalTests : IDisposable
         DataConfig data = new() { Root = root, Exp = "som" };
 
         // Known issue 68: the bot turned on with no GOAP thread, and the run said Running.
-        Assert.False(ClassicRuntime.TryCreate(new ClassicAssignment("Hunter.json", "override.json"), game, data, new RunOptions(),
-            new ConfigurationBuilder().Build(), NullLoggerFactory.Instance, out _, out string refusal));
+        string refusal = Refused(ClassicRuntime.Create(new ClassicAssignment("Hunter.json", "override.json"), game, data, new RunOptions(),
+            new ConfigurationBuilder().Build(), NullLoggerFactory.Instance));
         Assert.Contains("the path override.json is not a recorded path", refusal);
         Assert.Contains(why, refusal);
     }
@@ -133,9 +129,8 @@ public sealed class RuntimeRefusalTests : IDisposable
         File.Delete(Path.Combine(root, "dbc", "forever", "WorldMapArea.json"));
 
         // It threw out of the factory, and the run was reported Failed (known issue 77).
-        Assert.False(ForeverRuntime.TryCreate(new ForeverAssignment(RouteFile, 5), game, Data(), NullLoggerFactory.Instance,
-            out _, out string refusal));
-        Assert.StartsWith("Forever's map data (Json/dbc/forever) could not be read", refusal);
+        Assert.StartsWith("Forever's map data (Json/dbc/forever) could not be read",
+            Refused(ForeverRuntime.Create(new ForeverAssignment(RouteFile, 5), game, Data(), NullLoggerFactory.Instance)));
     }
 
     [Fact]
@@ -156,14 +151,14 @@ public sealed class RuntimeRefusalTests : IDisposable
 
     private static HeadlessRuntimeFactory Factory(AgentGame? game)
     {
-        return new HeadlessRuntimeFactory(new RunOptions(), new ConfigurationBuilder().Build(), new FixedProbe(game), NullLoggerFactory.Instance);
+        return new HeadlessRuntimeFactory(new RunOptions(), new ConfigurationBuilder().Build(), () => game, NullLoggerFactory.Instance);
     }
 
-    private sealed class FixedProbe(AgentGame? game) : IGameProbe
+    // Why it was refused: no runtime was built.
+    private static string Refused((IBotRuntime? Runtime, string? Refusal) created)
     {
-        public AgentGame? Probe()
-        {
-            return game;
-        }
+        Assert.Null(created.Runtime);
+        Assert.NotNull(created.Refusal);
+        return created.Refusal;
     }
 }

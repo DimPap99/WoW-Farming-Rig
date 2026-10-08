@@ -1,3 +1,5 @@
+using BotAgent;
+
 using HeadlessServer;
 using HeadlessServer.Hosting;
 

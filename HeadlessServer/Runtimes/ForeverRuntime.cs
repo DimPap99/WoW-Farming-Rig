@@ -51,17 +51,15 @@ public sealed partial class ForeverRuntime : IBotRuntime
 
     public string Summary { get; }
 
-    /// <summary>A runtime for the route, once its file is on this PC and a run would load it.</summary>
-    public static bool TryCreate(ForeverAssignment assignment, AgentGame game, DataConfig data, ILoggerFactory loggerFactory,
-        out IBotRuntime runtime, out string refusal)
+    /// <summary>A runtime for the route, once its file is on this PC and a run would load it; else why not.</summary>
+    public static (IBotRuntime? Runtime, string? Refusal) Create(ForeverAssignment assignment, AgentGame game, DataConfig data,
+        ILoggerFactory loggerFactory)
     {
-        runtime = null!;
         DataConfig forever = new() { Root = Path.GetFullPath(data.Root), Exp = ForeverRunRequest.Client };
         string file = Path.Combine(forever.Path, ForeverRouteFile.Folder, assignment.Route);
         if (!File.Exists(file))
         {
-            refusal = $"the route {assignment.Route} is not in this PC's Json/path/{ForeverRouteFile.Folder}";
-            return false;
+            return (null, $"the route {assignment.Route} is not in this PC's Json/path/{ForeverRouteFile.Folder}");
         }
 
         WorldMapAreaDB maps;
@@ -72,14 +70,12 @@ public sealed partial class ForeverRuntime : IBotRuntime
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Newtonsoft.Json.JsonException)
         {
             // Refused, not failed: nothing attached yet (known issue 77).
-            refusal = $"Forever's map data (Json/dbc/{ForeverRunRequest.Client}) could not be read: {ex.Message}";
-            return false;
+            return (null, $"Forever's map data (Json/dbc/{ForeverRunRequest.Client}) could not be read: {ex.Message}");
         }
 
         if (!ForeverRouteFile.TryLoad(file, maps, out ForeverRoute route, out string error))
         {
-            refusal = $"the route is refused: {error}";
-            return false;
+            return (null, $"the route is refused: {error}");
         }
 
         // The live tests' logs, beside the data folder.
@@ -93,13 +89,10 @@ public sealed partial class ForeverRuntime : IBotRuntime
         };
         if (request.Problem is string problem)
         {
-            refusal = problem;
-            return false;
+            return (null, problem);
         }
 
-        runtime = new ForeverRuntime(request, assignment.Route, game.ProcessId, loggerFactory, Directory.Exists(logs) ? logs : null);
-        refusal = string.Empty;
-        return true;
+        return (new ForeverRuntime(request, assignment.Route, game.ProcessId, loggerFactory, Directory.Exists(logs) ? logs : null), null);
     }
 
     public BotRunResult Run(CancellationToken stop)

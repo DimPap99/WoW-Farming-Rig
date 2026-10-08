@@ -19,18 +19,18 @@ namespace BotAgent.Runtime;
 /// kill: the run's token is cancelled and the run releases input and ends by itself. Only a run that
 /// has not ended after the grace period (<see cref="AgentOptions.StopGrace"/>) is forced: its keys
 /// are released from here, and one that still does not end is abandoned and the agent's process
-/// restarted, the in-process equivalent of ending a child that would not stop. The host's own
-/// shutdown stops a run the same way.
+/// restarted (<see cref="RestartProcess"/>), the in-process equivalent of ending a child that would
+/// not stop. The host's own shutdown stops a run the same way.
 /// </summary>
-public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerable<IRunPreparation> preparations,
-    IAgentProcess process, AgentOptions options, TimeProvider clock, ILogger<BotRuntimeHost> logger) : IHostedService, IDisposable
+public sealed partial class BotRuntimeHost(CreateRuntime createRuntime, IEnumerable<PrepareRun> preparations,
+    RestartProcess restart, AgentOptions options, TimeProvider clock, ILogger<BotRuntimeHost> logger) : IHostedService, IDisposable
 {
     /// <summary>After the grace period, how long the forced release may take.</summary>
     public static readonly TimeSpan ReleaseWait = TimeSpan.FromSeconds(2);
 
     private readonly TimeSpan abandonWait = options.StopGrace / 2;
 
-    private readonly IRunPreparation[] preparations = [.. preparations];
+    private readonly PrepareRun[] preparations = [.. preparations];
     private readonly Lock sync = new();
     private ActiveRun? active;
     private RunReport? last;
@@ -238,9 +238,10 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
             else
             {
                 run.State = BotRunState.Starting;
-                if (!factory.TryCreate(assignment, out IBotRuntime created, out string refusal))
+                (IBotRuntime? created, string? refusal) = createRuntime(assignment);
+                if (created is null)
                 {
-                    result = new BotRunResult(BotRunOutcome.Refused, refusal);
+                    result = new BotRunResult(BotRunOutcome.Refused, refusal ?? "no runtime for the assignment");
                 }
                 else
                 {
@@ -296,12 +297,12 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
     // Null to go on; a result ends the run before anything attached.
     private BotRunResult? Prepare(ActiveRun run, BotAssignment assignment)
     {
-        foreach (IRunPreparation preparation in preparations)
+        foreach (PrepareRun prepare in preparations)
         {
             RunPreparation prepared;
             try
             {
-                prepared = preparation.PrepareAsync(assignment, run.Stop.Token).GetAwaiter().GetResult();
+                prepared = prepare(assignment, run.Stop.Token).GetAwaiter().GetResult();
             }
             catch (OperationCanceledException) when (run.Stop.IsCancellationRequested)
             {
@@ -403,7 +404,7 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
 
         LogEnded(logger, run.Info.Summary, BotRunOutcome.Abandoned, report.Message);
         RunEnded?.Invoke(report);
-        process.Restart($"the run {run.Info.Summary} could not be torn down");
+        restart($"the run {run.Info.Summary} could not be torn down");
     }
 
     private static async Task<bool> EndsWithin(ActiveRun run, TimeSpan wait)

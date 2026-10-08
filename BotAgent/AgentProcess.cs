@@ -1,16 +1,17 @@
-using BotAgent.Runtime;
-
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace HeadlessServer.Hosting;
+using System;
+
+namespace BotAgent;
 
 /// <summary>
-/// The agent's way out when a run cannot be torn down: the host stops, and <c>Program.Main</c> ends
-/// the process with <see cref="RestartExitCode"/>, which takes the stuck run's threads with it; the
-/// logon task's loop (<c>run-agent.ps1</c>) starts the agent again on that code.
+/// The agent's way out when a run cannot be torn down, the <see cref="Runtime.RestartProcess"/>
+/// <see cref="AgentRegistration.AddBotAgent"/> registers: the host stops with <see cref="RestartExitCode"/>
+/// as the process's exit code, and the process ends, which takes the stuck run's threads with it; the
+/// launcher's loop (HeadlessServer's <c>run-agent.ps1</c>) starts the agent again on that code.
 /// </summary>
-public sealed partial class AgentProcess(IHostApplicationLifetime lifetime, ILogger<AgentProcess> logger) : IAgentProcess
+public sealed partial class AgentProcess(IHostApplicationLifetime lifetime, ILogger<AgentProcess> logger)
 {
     /// <summary>EX_TEMPFAIL: "try again", which the launcher's loop does.</summary>
     public const int RestartExitCode = 75;

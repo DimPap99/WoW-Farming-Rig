@@ -54,10 +54,9 @@ public static class HeadlessHost
         builder.Services.AddBotAgent(linked ? agent : agent with { Manager = null }, sink, identity);
         // Before a run, the files it needs from the Pathing Service; without one, this PC's copies.
         builder.Services.AddDataSync(DataConfig.Load(), PathingServiceOptions.FromIfConfigured(builder.Configuration));
-        builder.Services.AddSingleton<IBotRuntimeFactory, HeadlessRuntimeFactory>();
-        builder.Services.AddSingleton<IGameProbe, WowGameProbe>();
-        builder.Services.AddSingleton<IClassProfileCatalog, ClassProfileFolder>();
-        builder.Services.AddSingleton<IAgentProcess, AgentProcess>();
+        builder.Services.AddSingleton<CreateRuntime>(sp => ActivatorUtilities.CreateInstance<HeadlessRuntimeFactory>(sp).Create);
+        builder.Services.AddSingleton<ProbeGame>(sp => ActivatorUtilities.CreateInstance<WowGameProbe>(sp).Probe);
+        builder.Services.AddSingleton<ListClassProfiles>(ClassProfileFolder.List);
 
         if (options.ClassConfig is not null && startProfile)
         {

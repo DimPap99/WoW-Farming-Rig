@@ -252,7 +252,7 @@ public sealed class DataSyncTests : IDisposable
     {
         Write(here, RouteFile, Trip);
         DataSync sync = new(new PathingClient(new HttpClient { BaseAddress = ClosedPort.NewUrl() }), here.Config(),
-            new FakeProbe { Game = Forever }, TimeProvider.System, NullLogger<DataSync>.Instance);
+            () => Forever, TimeProvider.System, NullLogger<DataSync>.Instance);
 
         RunPreparation local = await sync.PrepareAsync(BotAssignment.ForForever(Route, 5), Token);
         RunPreparation missing = await sync.PrepareAsync(BotAssignment.ForForever("missing.json", 5), Token);
@@ -268,7 +268,7 @@ public sealed class DataSyncTests : IDisposable
     public async Task With_no_service_set_a_run_uses_this_PCs_copies()
     {
         Write(here, RouteFile, Trip);
-        DataSync sync = new(null, here.Config(), new FakeProbe { Game = Forever }, TimeProvider.System, NullLogger<DataSync>.Instance);
+        DataSync sync = new(null, here.Config(), () => Forever, TimeProvider.System, NullLogger<DataSync>.Instance);
 
         RunPreparation local = await sync.PrepareAsync(BotAssignment.ForForever(Route, 5), Token);
         RunPreparation missing = await sync.PrepareAsync(BotAssignment.ForForever("missing.json", 5), Token);
@@ -302,7 +302,7 @@ public sealed class DataSyncTests : IDisposable
         Write(central, RouteFile, Trip);
         using PathingServiceFactory service = new(central.Root);
         FakeRuntimeFactory runtimes = new();
-        await using AgentUnderTest agent = await AgentUnderTest.StartAsync(here.Root, null, runtimes, preparation: Sync(service));
+        await using AgentUnderTest agent = await AgentUnderTest.StartAsync(here.Root, null, runtimes, preparation: Sync(service).PrepareAsync);
 
         Assert.True(agent.Host.Start(BotAssignment.ForForever(Route, 5)).Accepted);
 
@@ -315,7 +315,7 @@ public sealed class DataSyncTests : IDisposable
     {
         StalledPreparation preparation = new();
         FakeRuntimeFactory runtimes = new();
-        await using AgentUnderTest agent = await AgentUnderTest.StartAsync(here.Root, null, runtimes, preparation: preparation);
+        await using AgentUnderTest agent = await AgentUnderTest.StartAsync(here.Root, null, runtimes, preparation: preparation.PrepareAsync);
         TaskCompletionSource<RunReport> ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
         agent.Host.RunEnded += report => ended.TrySetResult(report);
 
@@ -334,7 +334,7 @@ public sealed class DataSyncTests : IDisposable
         DelegatingHandler? between = null)
     {
         HttpClient http = between is null ? service.CreateClient() : service.CreateDefaultClient(between);
-        return new DataSync(new PathingClient(http), here.Config(), new FakeProbe { Game = game ?? Forever },
+        return new DataSync(new PathingClient(http), here.Config(), () => game ?? Forever,
             TimeProvider.System, NullLogger<DataSync>.Instance, fileNames);
     }
 
@@ -378,7 +378,7 @@ public sealed class DataSyncTests : IDisposable
     }
 
     // A sync that never answers, until the run's stop cancels it.
-    private sealed class StalledPreparation : IRunPreparation
+    private sealed class StalledPreparation
     {
         private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
 

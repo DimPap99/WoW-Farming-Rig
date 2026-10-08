@@ -56,15 +56,13 @@ public sealed partial class ClassicRuntime : IBotRuntime
 
     public string Summary { get; }
 
-    /// <summary>A runtime for the profile, once the addon is configured on this PC and the files are there.</summary>
-    public static bool TryCreate(ClassicAssignment assignment, AgentGame game, DataConfig data, RunOptions options,
-        IConfiguration configuration, ILoggerFactory loggerFactory, out IBotRuntime runtime, out string refusal)
+    /// <summary>A runtime for the profile, once the addon is configured on this PC and the files are there; else why not.</summary>
+    public static (IBotRuntime? Runtime, string? Refusal) Create(ClassicAssignment assignment, AgentGame game, DataConfig data,
+        RunOptions options, IConfiguration configuration, ILoggerFactory loggerFactory)
     {
-        runtime = null!;
         if (!File.Exists(Path.Join(data.Class, assignment.ClassProfile)))
         {
-            refusal = $"the class profile {assignment.ClassProfile} is not in this PC's Json/class";
-            return false;
+            return (null, $"the class profile {assignment.ClassProfile} is not in this PC's Json/class");
         }
 
         if (assignment.PathOverride is { } path)
@@ -72,28 +70,23 @@ public sealed partial class ClassicRuntime : IBotRuntime
             string file = Path.Join(data.Path, path);
             if (!File.Exists(file))
             {
-                refusal = $"the path {path} is not in this PC's Json/path";
-                return false;
+                return (null, $"the path {path} is not in this PC's Json/path");
             }
 
             // Read now, before anything attaches: a path that does not load left the bot idle under
             // "Running" (known issue 68).
             if (RecordedPathFile.LoadProblem(file) is string why)
             {
-                refusal = $"the path {path} is not a recorded path: {why}";
-                return false;
+                return (null, $"the path {path} is not a recorded path: {why}");
             }
         }
 
         if (MissingConfiguration() is string missing)
         {
-            refusal = missing;
-            return false;
+            return (null, missing);
         }
 
-        runtime = new ClassicRuntime(assignment, game.ProcessId, options, configuration, loggerFactory);
-        refusal = string.Empty;
-        return true;
+        return (new ClassicRuntime(assignment, game.ProcessId, options, configuration, loggerFactory), null);
     }
 
     /// <summary>

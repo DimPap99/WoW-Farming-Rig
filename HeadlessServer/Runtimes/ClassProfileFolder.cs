@@ -2,12 +2,12 @@ using BotAgent.Runtime;
 
 namespace HeadlessServer.Runtimes;
 
-/// <summary>The class profiles in this PC's <c>Json/class</c>, named as assignments name them.</summary>
-public sealed class ClassProfileFolder : IClassProfileCatalog
+/// <summary>The class profiles in this PC's <c>Json/class</c>, named as assignments name them (the agent's <see cref="ListClassProfiles"/>).</summary>
+public static class ClassProfileFolder
 {
     public const string Extension = ".json";
 
-    public string[] List()
+    public static string[] List()
     {
         string folder = Path.GetFullPath(DataConfig.Load().Class);
         if (!Directory.Exists(folder))

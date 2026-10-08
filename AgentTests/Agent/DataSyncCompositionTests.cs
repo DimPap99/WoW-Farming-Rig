@@ -43,7 +43,7 @@ public sealed class DataSyncCompositionTests
 
         using IHost host = HeadlessHost.Build(configuration, null, new RunOptions { Agent = true }, new AgentLogSink());
 
-        Assert.IsType<DataSync>(Assert.Single(host.Services.GetServices<IRunPreparation>()));
+        Assert.IsType<DataSync>(Assert.Single(host.Services.GetServices<PrepareRun>()).Target);
         Assert.Equal(pathing is not null, host.Services.GetService<IPathingClient>() is not null);
     }
 

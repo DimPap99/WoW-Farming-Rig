@@ -15,14 +15,16 @@ using System.Threading;
 namespace BotManager.Registry;
 
 /// <summary>
-/// <see cref="IBotRegistry"/> in JSON files under one folder: <c>bots.json</c> holds every bot, and
+/// The bots, their assignments and their run history, which the manager owns; live state (online,
+/// snapshots, logs) is memory only. JSON files under one folder: <c>bots.json</c> holds every bot, and
 /// <c>runs/&lt;agentId&gt;.json</c> each bot's last <see cref="MaxRuns"/> runs. Files are written
 /// to a temporary name and renamed, so a crash never leaves half a file, and before memory changes, so
 /// a write that fails changes nothing. A file that does not parse is kept aside and the store starts
 /// without it; one that cannot be read (a lock, its rights) stops the start instead: starting empty
-/// would write over every other bot at the first registration (known issue 72).
+/// would write over every other bot at the first registration (known issue 72). SQLite only if it
+/// becomes necessary.
 /// </summary>
-public sealed class JsonBotRegistry : IBotRegistry
+public sealed class JsonBotRegistry
 {
     public const string BotsFile = "bots.json";
     public const string RunsFolder = "runs";
@@ -63,6 +65,7 @@ public sealed class JsonBotRegistry : IBotRegistry
         }
     }
 
+    /// <summary>Creates or replaces the bot's record, on disk first: a write that fails throws and changes nothing.</summary>
     public void Save(BotRecord bot)
     {
         if (!AssignmentRules.IsAgentId(bot.AgentId))
@@ -77,6 +80,10 @@ public sealed class JsonBotRegistry : IBotRegistry
         }
     }
 
+    /// <summary>
+    /// Creates or replaces the bot's record in memory only, for a write that failed while the record must
+    /// count anyway (an agent that registered); the next save that succeeds writes it too.
+    /// </summary>
     public void Keep(BotRecord bot)
     {
         if (!AssignmentRules.IsAgentId(bot.AgentId))
@@ -90,6 +97,7 @@ public sealed class JsonBotRegistry : IBotRegistry
         }
     }
 
+    /// <summary>Forgets the bot and its run history, on disk first; false when there was none.</summary>
     public bool Remove(string agentId)
     {
         lock (sync)
@@ -106,6 +114,7 @@ public sealed class JsonBotRegistry : IBotRegistry
         }
     }
 
+    /// <summary>The bot's ended runs, newest first.</summary>
     public IReadOnlyList<RunReport> Runs(string agentId)
     {
         if (!AssignmentRules.IsAgentId(agentId))
@@ -119,6 +128,7 @@ public sealed class JsonBotRegistry : IBotRegistry
         }
     }
 
+    /// <summary>Adds an ended run, newest first; a run reported again replaces its first report.</summary>
     public void AddRun(string agentId, RunReport run)
     {
         if (!AssignmentRules.IsAgentId(agentId))

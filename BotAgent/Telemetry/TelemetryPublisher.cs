@@ -19,7 +19,7 @@ namespace BotAgent.Telemetry;
 /// always written. A tick that fails is logged and the next one runs: on .NET 10 a background
 /// service that faults stops the host, and with it the run (known issue 67).
 /// </summary>
-public sealed partial class TelemetryPublisher(AgentIdentity identity, BotRuntimeHost host, AgentLink link, IGameProbe probe,
+public sealed partial class TelemetryPublisher(AgentIdentity identity, BotRuntimeHost host, AgentLink link, ProbeGame probe,
     AgentLogSink sink, TimeProvider clock, ILogger<TelemetryPublisher> logger) : BackgroundService
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(1);
@@ -106,7 +106,7 @@ public sealed partial class TelemetryPublisher(AgentIdentity identity, BotRuntim
     {
         try
         {
-            AgentGame? found = probe.Probe();
+            AgentGame? found = probe();
             probeFailure = null;
             return found;
         }

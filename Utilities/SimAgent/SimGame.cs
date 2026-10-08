@@ -6,12 +6,9 @@ using System;
 
 namespace SimAgent;
 
-/// <summary>The PC as the agent sees it: a made-up client always running, a few class profiles, and a restart that is an exit.</summary>
-public sealed class SimGame(SimOptions options) : IGameProbe, IClassProfileCatalog, IAgentProcess
+/// <summary>The PC as the agent sees it: a made-up client always running (<see cref="ProbeGame"/>) and a few class profiles (<see cref="ListClassProfiles"/>).</summary>
+public sealed class SimGame(SimOptions options)
 {
-    /// <summary>The exit code that asks a launcher to start the agent again (HeadlessServer's AgentProcess).</summary>
-    public const int RestartExitCode = 75;
-
     public AgentGame? Probe()
     {
         return options.Forever
@@ -19,14 +16,8 @@ public sealed class SimGame(SimOptions options) : IGameProbe, IClassProfileCatal
             : new AgentGame(options.Client, "precata", Environment.ProcessId, "1.15.7.61582 (simulated)");
     }
 
-    public string[] List()
+    public static string[] List()
     {
         return ["Hunter_10.json", "Warrior_1.json", "Forever/Paladin_Forever_Auto.json"];
-    }
-
-    public void Restart(string reason)
-    {
-        Console.Error.WriteLine($"Restart asked: {reason}");
-        Environment.Exit(RestartExitCode);
     }
 }

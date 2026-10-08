@@ -30,7 +30,7 @@ namespace BotManager.Bots;
 /// waits on a listener (known issue 73). An agent is reached only over the connection it opened; a
 /// bot whose agent is not connected is offline, and commands to it are refused rather than queued.
 /// </summary>
-public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub> agents, IHubContext<FleetHub> fleet,
+public sealed partial class BotFleet(JsonBotRegistry registry, IHubContext<AgentHub> agents, IHubContext<FleetHub> fleet,
     HubSendQueue sends, BotFleetOptions options, TimeProvider clock, ILogger<BotFleet> logger)
 {
 

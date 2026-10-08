@@ -2,11 +2,12 @@ using Contracts.Bots;
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace BotAgent.Runtime;
 
 /// <summary>
-/// One run of the bot, built for an assignment by an <see cref="IBotRuntimeFactory"/>: run once, on a
+/// One run of the bot, built for an assignment by a <see cref="CreateRuntime"/>: run once, on a
 /// thread of its own, until it ends or its token is cancelled. Cancelling is how a run is stopped,
 /// and the run releases what it holds before it returns, as <c>Game/CLAUDE.md</c> requires: the
 /// host never tears a run down under its feet, only after it returned or its grace period ran out.
@@ -40,43 +41,23 @@ public sealed record BotTelemetry(BotRunState State, BotCharacter? Character = n
     BotPosition? Position = null, string? Activity = null, string? Agenda = null, BotProgress? Progress = null,
     string? Message = null);
 
-/// <summary>Builds the runtime an assignment needs: Classic or Forever.</summary>
-public interface IBotRuntimeFactory
-{
-    /// <summary>
-    /// A runtime for <paramref name="assignment"/>, or why there is none (no client, the wrong client,
-    /// a file missing). Nothing has attached to the game when it refuses.
-    /// </summary>
-    bool TryCreate(BotAssignment assignment, out IBotRuntime runtime, out string refusal);
-}
+/// <summary>
+/// The runtime an assignment needs (Classic or Forever), or why there is none: no client, the wrong
+/// client, a file missing. Nothing has attached to the game when it refuses.
+/// </summary>
+public delegate (IBotRuntime? Runtime, string? Refusal) CreateRuntime(BotAssignment assignment);
 
-/// <summary>What WoW client runs on this PC.</summary>
-public interface IGameProbe
-{
-    /// <summary>The client running now, or null.</summary>
-    AgentGame? Probe();
-}
+/// <summary>The WoW client running on this PC now, or null.</summary>
+public delegate AgentGame? ProbeGame();
 
-/// <summary>The class profiles on this PC, for the manager to offer Classic assignments from.</summary>
-public interface IClassProfileCatalog
-{
-    /// <summary>Profile names relative to the class folder, <c>/</c> between subfolders.</summary>
-    string[] List();
-}
+/// <summary>The class profiles on this PC, for the manager to offer Classic assignments from: names relative to the class folder, <c>/</c> between subfolders.</summary>
+public delegate string[] ListClassProfiles();
 
-/// <summary>Something done before a run starts, such as pulling the data it needs.</summary>
-public interface IRunPreparation
-{
-    /// <summary>Prepares for <paramref name="assignment"/>: false with why refuses the run before anything attaches.</summary>
-    System.Threading.Tasks.Task<RunPreparation> PrepareAsync(BotAssignment assignment, CancellationToken token);
-}
+/// <summary>Something done before a run starts, such as pulling the data it needs: false with why refuses the run before anything attaches.</summary>
+public delegate Task<RunPreparation> PrepareRun(BotAssignment assignment, CancellationToken token);
 
 /// <summary>What a preparation found: whether the run may go on, and what a person should know.</summary>
 public sealed record RunPreparation(bool Proceed, string? Message);
 
-/// <summary>The process itself: a run that cannot be torn down leaves it only one way out.</summary>
-public interface IAgentProcess
-{
-    /// <summary>Ends the process with the code that asks its launcher to start it again.</summary>
-    void Restart(string reason);
-}
+/// <summary>Ends the process with the code that asks its launcher to start it again: a run that cannot be torn down leaves it only that way out.</summary>
+public delegate void RestartProcess(string reason);

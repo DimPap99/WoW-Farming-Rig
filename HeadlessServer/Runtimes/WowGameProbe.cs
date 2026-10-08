@@ -13,13 +13,13 @@ using System.Diagnostics;
 namespace HeadlessServer.Runtimes;
 
 /// <summary>
-/// The WoW client on this PC, as <see cref="WowProcess"/> finds it (the <c>--pid</c> one, else the
+/// The agent's <see cref="ProbeGame"/>: the WoW client on this PC, as <see cref="WowProcess"/> finds it (the <c>--pid</c> one, else the
 /// first known executable), without attaching to it: no polling thread, nothing composed. Any failure
 /// is no client: the process gone meanwhile, WMI failing, a client run as administrator while the
 /// agent is not, or not Windows. It is called every few seconds and by every run, so one that throws
 /// stopped the run under way (known issue 67); why is logged once, until the probe succeeds again.
 /// </summary>
-public sealed partial class WowGameProbe(RunOptions options, ILogger<WowGameProbe> logger) : IGameProbe
+public sealed partial class WowGameProbe(RunOptions options, ILogger<WowGameProbe> logger)
 {
     private readonly Lock sync = new();
     private string? failing;

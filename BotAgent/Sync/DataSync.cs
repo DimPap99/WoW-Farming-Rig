@@ -31,8 +31,8 @@ namespace BotAgent.Sync;
 /// </summary>
 /// <param name="fileNames">How this PC's file system compares names; by default case-insensitive on
 /// Windows. A test of the Windows behaviour gives it.</param>
-public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, IGameProbe probe, TimeProvider clock,
-    ILogger<DataSync> logger, StringComparer? fileNames = null) : IRunPreparation
+public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, ProbeGame probe, TimeProvider clock,
+    ILogger<DataSync> logger, StringComparer? fileNames = null)
 {
     /// <summary>The folder of <see cref="DataConfig.Sync"/> that local changes are kept in, one folder per sync.</summary>
     public const string BackupFolder = "backup";
@@ -48,6 +48,7 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
     private readonly TimeProvider clock = clock;
     private readonly ILogger<DataSync> logger = logger;
 
+    /// <summary>A run's preparation (<see cref="PrepareRun"/>): the files <paramref name="assignment"/> needs, pulled.</summary>
     public async Task<RunPreparation> PrepareAsync(BotAssignment assignment, CancellationToken token)
     {
         Session session = new(this, SyncState.Load(data.Sync, fileNames), token);
@@ -64,7 +65,7 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
             }
 
             // The cost zones of the client this PC runs; with none running, the run is refused next anyway.
-            if (probe.Probe()?.Era is { } era && DataConfig.Eras.Contains(era))
+            if (probe()?.Era is { } era && DataConfig.Eras.Contains(era))
             {
                 await session.PullAllAsync(SyncSets.CostZones, era);
             }

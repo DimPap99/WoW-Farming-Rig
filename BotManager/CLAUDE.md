@@ -22,8 +22,9 @@ Program.cs                     host (a class in a namespace, so tests can host i
 Hosting/BotManagerRegistration AddBotManager / UseBotManager - the composition root
 (ServiceHosting)               the key's guard, logging, ApiResult and its HTTP answers, HubSendQueue
                                (the fleet hub's one send loop: no agent waits on a listener)
-Registry/IBotRegistry.cs       what is kept between connections: BotRecord, run history
-Registry/JsonBotRegistry.cs    data/bots.json and data/runs/<agentId>.json, written then renamed
+Registry/BotRecord.cs          what is kept about a bot between its connections
+Registry/JsonBotRegistry.cs    the bots and their run history: data/bots.json and data/runs/<agentId>.json,
+                               written then renamed
 Bots/BotFleet.cs               registry + who is online over which connection + snapshots, logs, commands
 Bots/BotFleetOptions.cs        CommandTimeoutSeconds
 Bots/BotEndpoints.cs           /api/v1/health, /api/v1/bots/...

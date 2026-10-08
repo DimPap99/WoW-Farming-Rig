@@ -36,7 +36,7 @@ public static class BotManagerRegistration
     public static IServiceCollection AddBotManager(this IServiceCollection services)
     {
         services.AddSingleton(TimeProvider.System);
-        services.AddSingleton<IBotRegistry>(sp =>
+        services.AddSingleton(sp =>
         {
             string configured = sp.GetRequiredService<IConfiguration>()[DataKey] is { Length: > 0 } data ? data : DefaultData;
             string folder = Path.Combine(sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath, configured);
@@ -76,7 +76,7 @@ public static class BotManagerRegistration
         app.MapHub<FleetHub>(BotManagerApi.FleetHub);
 
         // The registry is read now, so a damaged file is reported at startup, not at the first agent.
-        app.Services.GetRequiredService<IBotRegistry>();
+        app.Services.GetRequiredService<JsonBotRegistry>();
 
         return app;
     }

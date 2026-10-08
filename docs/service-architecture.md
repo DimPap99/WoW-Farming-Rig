@@ -153,7 +153,7 @@ the management side is down.
 | Data | Owner | Others |
 |---|---|---|
 | Recorded paths `Json/path`, Forever routes `Json/path/_forever`, cost zones `Json/road/<era>`, navmesh tiles, area grids | Pathing Service | Agents keep synced local copies: a run's files are pulled before it starts, never deleted (Phase 3). Formats on disk stay as they are. |
-| Bots, assignments, run history | Bot Manager | JSON file store behind `IBotRegistry`; SQLite only if it becomes necessary |
+| Bots, assignments, run history | Bot Manager | JSON file store (`JsonBotRegistry`); SQLite only if it becomes necessary |
 | Live state: vitals, goal, position, kills, log | Agent | streamed to the manager, always also logged to file |
 | Committed static data: `Json/dbc`, `Json/area`, spells, items, class profiles | the repository | read locally by whatever needs it |
 
@@ -268,7 +268,7 @@ The heavy lifting lives in reusable classes:
 | `PathingService/Watch/WatchBroadcaster` | PathingAPI's broadcaster, now routes only: `RoutePlanner`'s answers to the route watchers |
 | `ServiceClients/Pathing/PathEditor`, `ZoneMath` | the path editing model (recorder and editor) and map-world arithmetic for clients |
 | `ServiceClients/Routes` (`RouteEditor`, `RouteLegs`, `RoutePoints`, `ForeverRouteWriter`, `ForeverRouteReader`) | the route design model: nodes of four kinds, legs replanned or exact, undo; legs planned through a delegate - the Pathing Service's client, or a planner in process -; what a bot follows of a design, written as a Forever route file or a recorded path and read back. Any client designs with it, the Control Center now and BlazorServer or the agent when they need to |
-| agent `BotRuntimeHost` + `IBotRuntimeFactory` | `ForeverRunHost` / `ForeverRunOutput`; builds a Classic or Forever runtime per run (composition only) |
+| agent `BotRuntimeHost` + `CreateRuntime` | `ForeverRunHost` / `ForeverRunOutput`; builds a Classic or Forever runtime per run (composition only) |
 | `BotAgent/Sync/DataSync`, `PathingService/Sync/SyncLibrary` | the data sync: a run's files from the Pathing Service before it starts, compared by `ServiceClients/Sync/SyncHash` |
 | `HeadlessServer/Hosting/ResidentHost`, `run-agent.ps1` | BlazorServer's restart loop, for the agent, and the loop around its process |
 

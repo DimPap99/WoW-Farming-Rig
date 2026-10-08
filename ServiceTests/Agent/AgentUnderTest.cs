@@ -3,6 +3,8 @@ using BotAgent.Link;
 using BotAgent.Runtime;
 using BotAgent.Telemetry;
 
+using Contracts.Bots;
+
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -86,8 +88,11 @@ internal sealed class AgentUnderTest : IAsyncDisposable
 
     public AgentIdentity Identity => provider.GetRequiredService<AgentIdentity>();
 
+    /// <summary>The client the agent finds unless a test gives it a probe.</summary>
+    public static AgentGame Game { get; } = new("forever", "forever", 4242, "1.60.1.70009");
+
     public static async Task<AgentUnderTest> StartAsync(string folder, ManagerSlot? manager, FakeRuntimeFactory factory,
-        FakeProcess? process = null, int graceMs = 2000, IRunPreparation? preparation = null, IGameProbe? probe = null,
+        FakeProcess? process = null, int graceMs = 2000, PrepareRun? preparation = null, ProbeGame? probe = null,
         TimeProvider? clock = null)
     {
         ServiceCollection services = new();
@@ -105,10 +110,10 @@ internal sealed class AgentUnderTest : IAsyncDisposable
         AgentOptions options = new(Path.Combine(folder, "agent_identity.json"), "Test agent",
             manager is null ? null : new BotManagerOptions(ManagerSlot.Address), TimeSpan.FromMilliseconds(graceMs), "test 1.0");
         services.AddBotAgent(options, new AgentLogSink());
-        services.AddSingleton<IBotRuntimeFactory>(factory);
-        services.AddSingleton(probe ?? new FakeProbe());
-        services.AddSingleton<IClassProfileCatalog, FakeProfiles>();
-        services.AddSingleton<IAgentProcess>(process ?? new FakeProcess());
+        services.AddSingleton<CreateRuntime>(factory.Create);
+        services.AddSingleton<ProbeGame>(probe ?? (() => Game));
+        services.AddSingleton<ListClassProfiles>(() => ["Hunter_10.json"]);
+        services.AddSingleton<RestartProcess>((process ?? new FakeProcess()).Restart);
         if (preparation is not null)
         {
             services.AddSingleton(preparation);

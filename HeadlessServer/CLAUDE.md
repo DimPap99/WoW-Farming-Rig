@@ -17,8 +17,7 @@ Hosting/ResidentHost.cs       runs the host; an agent's is built again after a f
 Hosting/HeadlessLogging.cs    Serilog: file, debug, console (behind a queue), and the agent's log stream
 Hosting/StopOnSignals.cs      the window closing and the session ending stop the host, held until it stopped
 Hosting/StartFromCommandLine  a profile given on the command line runs at once
-Hosting/AgentProcess.cs       the way out for a run that cannot be torn down (exit code 75)
-Runtimes/HeadlessRuntimeFactory   which runtime an assignment needs, refused before attaching
+Runtimes/HeadlessRuntimeFactory   which runtime an assignment needs, refused before attaching (CreateRuntime)
 Runtimes/ClassicRuntime.cs    the Classic bot, composed per run (InitState, profile, on; off, dispose)
 Runtimes/ForeverRuntime.cs    Core's ForeverRun for a route, with the trial runner's gates
 Runtimes/WowGameProbe.cs      which client runs, without attaching

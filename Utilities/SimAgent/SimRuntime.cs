@@ -24,21 +24,17 @@ public sealed record SimOptions(string Client, int ClickSeconds)
     public bool Forever => Client == ForeverClient;
 }
 
-/// <summary>Builds a <see cref="SimRuntime"/>, refusing a run of the other kind as the real agent does.</summary>
-public sealed class SimRuntimeFactory(SimOptions options, ILoggerFactory loggers) : IBotRuntimeFactory
+/// <summary>Builds a <see cref="SimRuntime"/> (the agent's <see cref="CreateRuntime"/>), refusing a run of the other kind as the real agent does.</summary>
+public sealed class SimRuntimeFactory(SimOptions options, ILoggerFactory loggers)
 {
-    public bool TryCreate(BotAssignment assignment, out IBotRuntime runtime, out string refusal)
+    public (IBotRuntime? Runtime, string? Refusal) Create(BotAssignment assignment)
     {
         if ((assignment.Kind == BotRuntimeKind.Forever) != options.Forever)
         {
-            runtime = null!;
-            refusal = $"a {assignment.Kind} run needs a {assignment.Kind} client, and this PC runs {options.Client} (simulated)";
-            return false;
+            return (null, $"a {assignment.Kind} run needs a {assignment.Kind} client, and this PC runs {options.Client} (simulated)");
         }
 
-        runtime = new SimRuntime(assignment, options, loggers.CreateLogger<SimRuntime>());
-        refusal = string.Empty;
-        return true;
+        return (new SimRuntime(assignment, options, loggers.CreateLogger<SimRuntime>()), null);
     }
 }
 

@@ -44,7 +44,7 @@ public sealed record AgentLinkOptions(TimeSpan[] Backoff, TimeSpan RefusedRetry)
 /// back. With no manager configured the agent runs on its own and this does nothing.
 /// </summary>
 public sealed partial class AgentLink(AgentIdentity identity, AgentOptions options, AgentLinkOptions linkOptions,
-    BotRuntimeHost host, IGameProbe probe, IClassProfileCatalog profiles, ILogger<AgentLink> logger) : BackgroundService
+    BotRuntimeHost host, ProbeGame probe, ListClassProfiles profiles, ILogger<AgentLink> logger) : BackgroundService
 {
     /// <summary>Run reports kept while the manager is down.</summary>
     public const int KeptReports = 50;
@@ -239,7 +239,7 @@ public sealed partial class AgentLink(AgentIdentity identity, AgentOptions optio
     private AgentHello Hello()
     {
         return new AgentHello(identity.AgentId, identity.Name, identity.Machine, BotManagerApi.AgentProtocol, options.Version,
-            probe.Probe(), host.CurrentRun, profiles.List());
+            probe(), host.CurrentRun, profiles());
     }
 
     private void OnRunEnded(RunReport report)
