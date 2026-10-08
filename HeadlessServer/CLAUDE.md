@@ -127,6 +127,10 @@ changes. `Json/.sync/` (gitignored) holds what was synced and the local changes 
 logging overrides for `System.Net.Http.HttpClient` and `Polly` in `headless_appsettings.json` keep
 its HTTP client out of the console; keep them when copying settings around.
 
+**`data_config.json` is read once per host.** The sync, the runtimes and the profile list share the
+`DataConfig` that `HeadlessHost.Build` loads (a test gives its own): a change to the file counts from
+the agent's next start, not its next run.
+
 **Forever runs only as an agent assignment.** A Forever route goes through Core's `ForeverRun`
 with the trial runner's gates: the verified profile, the preflight, a click into the game window
 (the console shows "waiting for a click"), the time bound. A profile on the command line is a

@@ -14,6 +14,7 @@ using Microsoft.Extensions.Hosting;
 using ServiceClients.Pathing;
 
 using System.Collections.Generic;
+using System.IO;
 
 using Xunit;
 
@@ -45,6 +46,30 @@ public sealed class DataSyncCompositionTests
 
         Assert.IsType<DataSync>(Assert.Single(host.Services.GetServices<PrepareRun>()).Target);
         Assert.Equal(pathing is not null, host.Services.GetService<IPathingClient>() is not null);
+    }
+
+    // The sync, the runtimes and the profile list each read data_config.json from the working directory.
+    [Fact]
+    public void The_agent_runs_from_the_data_folder_it_was_given()
+    {
+        string root = Directory.CreateTempSubdirectory("agent-data-").FullName;
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "class", "Forever"));
+            File.WriteAllText(Path.Combine(root, "class", "Hunter_10.json"), "{}");
+            File.WriteAllText(Path.Combine(root, "class", "Forever", "Paladin.json"), "{}");
+            DataConfig data = new() { Root = root };
+
+            using IHost host = HeadlessHost.Build(new ConfigurationBuilder().Build(), null, new RunOptions { Agent = true },
+                new AgentLogSink(), data: data);
+
+            Assert.Same(data, host.Services.GetRequiredService<DataConfig>());
+            Assert.Equal(["Forever/Paladin.json", "Hunter_10.json"], host.Services.GetRequiredService<ListClassProfiles>()());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     // A host built again after a fault started the command line's profile again, unasked (known issue 76).

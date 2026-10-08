@@ -7,9 +7,10 @@ public static class ClassProfileFolder
 {
     public const string Extension = ".json";
 
-    public static string[] List()
+    /// <summary>The profiles in <paramref name="classFolder"/> (<see cref="DataConfig.Class"/>), <c>/</c> between subfolders.</summary>
+    public static string[] List(string classFolder)
     {
-        string folder = Path.GetFullPath(DataConfig.Load().Class);
+        string folder = Path.GetFullPath(classFolder);
         if (!Directory.Exists(folder))
         {
             return [];

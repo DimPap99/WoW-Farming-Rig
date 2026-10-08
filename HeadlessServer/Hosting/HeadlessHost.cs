@@ -27,9 +27,12 @@ public static class HeadlessHost
     /// <param name="linked">Whether it dials out to the Bot Manager: not while another process holds the same id.</param>
     /// <param name="startProfile">Whether the command line's profile starts: in the first host only, never in one
     /// built again after a fault (known issue 76).</param>
+    /// <param name="data">The data folder the agent syncs into and runs from; <c>data_config.json</c>'s when null,
+    /// read once for the host.</param>
     public static IHost Build(IConfiguration configuration, string? environment, RunOptions options, AgentLogSink sink,
-        AgentIdentity? identity = null, bool linked = true, bool startProfile = true)
+        AgentIdentity? identity = null, bool linked = true, bool startProfile = true, DataConfig? data = null)
     {
+        data ??= DataConfig.Load();
         HostApplicationBuilder builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
             DisableDefaults = true,
@@ -50,13 +53,14 @@ public static class HeadlessHost
         builder.Services.Configure<HostOptions>(host => host.ShutdownTimeout = agent.ShutdownTimeout());
 
         builder.Services.AddSingleton(options);
+        builder.Services.AddSingleton(data);
         builder.Services.AddHostedService<StopOnSignals>();
         builder.Services.AddBotAgent(linked ? agent : agent with { Manager = null }, sink, identity);
         // Before a run, the files it needs from the Pathing Service; without one, this PC's copies.
-        builder.Services.AddDataSync(DataConfig.Load(), PathingServiceOptions.FromIfConfigured(builder.Configuration));
+        builder.Services.AddDataSync(data, PathingServiceOptions.FromIfConfigured(builder.Configuration));
         builder.Services.AddSingleton<CreateRuntime>(sp => ActivatorUtilities.CreateInstance<HeadlessRuntimeFactory>(sp).Create);
         builder.Services.AddSingleton<ProbeGame>(sp => ActivatorUtilities.CreateInstance<WowGameProbe>(sp).Probe);
-        builder.Services.AddSingleton<ListClassProfiles>(ClassProfileFolder.List);
+        builder.Services.AddSingleton<ListClassProfiles>(() => ClassProfileFolder.List(data.Class));
 
         if (options.ClassConfig is not null && startProfile)
         {

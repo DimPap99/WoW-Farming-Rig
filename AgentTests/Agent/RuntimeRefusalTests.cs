@@ -67,6 +67,20 @@ public sealed class RuntimeRefusalTests : IDisposable
         Assert.Contains("needs a Classic client", Refused(forever.Create(BotAssignment.ForClassic("Hunter_10.json"))));
     }
 
+    // It read data_config.json from the working directory for every run.
+    [Fact]
+    public void The_factory_runs_from_the_data_folder_it_was_given()
+    {
+        HeadlessRuntimeFactory factory = Factory(new AgentGame("forever", "forever", int.MaxValue, "1.60.1.70009"));
+
+        (IBotRuntime? runtime, string? refusal) = factory.Create(BotAssignment.ForForever(RouteFile, 5));
+        using (runtime)
+        {
+            Assert.True(runtime is not null, refusal);
+            Assert.Equal($"route {RouteFile}", runtime.Summary);
+        }
+    }
+
     [Fact]
     public void A_route_that_is_not_there_or_would_be_refused_never_runs()
     {
@@ -149,9 +163,9 @@ public sealed class RuntimeRefusalTests : IDisposable
         return new DataConfig { Root = root, Exp = "forever" };
     }
 
-    private static HeadlessRuntimeFactory Factory(AgentGame? game)
+    private HeadlessRuntimeFactory Factory(AgentGame? game)
     {
-        return new HeadlessRuntimeFactory(new RunOptions(), new ConfigurationBuilder().Build(), () => game, NullLoggerFactory.Instance);
+        return new HeadlessRuntimeFactory(new RunOptions(), new ConfigurationBuilder().Build(), Data(), () => game, NullLoggerFactory.Instance);
     }
 
     // Why it was refused: no runtime was built.
