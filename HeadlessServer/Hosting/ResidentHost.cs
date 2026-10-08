@@ -30,9 +30,10 @@ public enum HostEnd
 /// Runs HeadlessServer's host, and keeps the agent's running: a host that fails is built again after
 /// <see cref="RestartDelay"/>, as <c>BlazorServer/Program.Main</c> does, keeping the log stream and the
 /// configuration (which reloads its file, so a setting fixed meanwhile is read). A host fails when it
-/// throws before it was asked to stop, or when one of its background services faults: on .NET 10 that
-/// stops the host as quietly as a stop does (<c>Run</c> returns, exit code 0), so a fault is read from
-/// the services' tasks. A failure while a run is still under way ends the process with
+/// throws before it was asked to stop, or when one of its background services ends by itself, faulted
+/// or cancelled: on .NET 10 that stops the host as quietly as a stop does (<c>Run</c> returns, exit
+/// code 0), so the services are looked at as the host starts stopping, when one that ended is what
+/// stopped it. A failure while a run is still under way ends the process with
 /// <see cref="AgentProcess.RestartExitCode"/> instead, and the logon task's loop (<c>run-agent.ps1</c>)
 /// starts a new one.
 /// </summary>
@@ -82,39 +83,41 @@ public static partial class ResidentHost
 
     /// <summary>What follows a host's end, from what was seen of it.</summary>
     /// <param name="restartRequested">A run could not be torn down (the exit code asks for a new process).</param>
-    /// <param name="threw">Building or running it threw.</param>
-    /// <param name="stopRequested">It was asked to stop: by a person, the system, or a faulted service.</param>
-    /// <param name="serviceFaulted">One of its background services faulted.</param>
+    /// <param name="failed">A background service ended by itself and stopped it, or it threw before it was asked to stop.</param>
+    /// <param name="stopFailed">It threw once it was asked to stop: the stop failed, not the host (BlazorServer's rule too).</param>
     /// <param name="runUnderWay">A run had not ended when the host did.</param>
-    public static HostEnd Decide(bool restartRequested, bool threw, bool stopRequested, bool serviceFaulted, bool runUnderWay)
+    public static HostEnd Decide(bool restartRequested, bool failed, bool stopFailed, bool runUnderWay)
     {
         if (restartRequested)
         {
             return HostEnd.Restart;
         }
 
-        // A throw once a stop was asked for is the stop failing, not the host: BlazorServer's rule too.
-        bool failed = serviceFaulted || (threw && !stopRequested);
-        if (!failed)
+        if (failed)
         {
-            return threw ? HostEnd.StoppedOnError : HostEnd.Stopped;
+            return runUnderWay ? HostEnd.Restart : HostEnd.Rebuild;
         }
 
-        return runUnderWay ? HostEnd.Restart : HostEnd.Rebuild;
+        return stopFailed ? HostEnd.StoppedOnError : HostEnd.Stopped;
     }
 
     private static (HostEnd End, Exception? Failure) RunOnce(Func<IHost> build, Func<int> exitCode)
     {
-        BackgroundService[] services = [];
         BotRuntimeHost? runs = null;
         bool stopRequested = false;
+        Exception? fault = null;
         Exception? thrown = null;
         try
         {
             using IHost host = build();
-            services = [.. host.Services.GetServices<IHostedService>().OfType<BackgroundService>()];
+            BackgroundService[] services = [.. host.Services.GetServices<IHostedService>().OfType<BackgroundService>()];
             runs = host.Services.GetService<BotRuntimeHost>();
-            host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(() => stopRequested = true);
+            host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(() =>
+            {
+                stopRequested = true;
+                // A service that has already ended is what stopped the host; a person's stop finds them all running.
+                fault = services.Select(EndedBy).FirstOrDefault(why => why is not null);
+            });
             host.Run();
         }
         catch (Exception ex)
@@ -122,10 +125,23 @@ public static partial class ResidentHost
             thrown = ex;
         }
 
-        Exception? fault = services.Select(service => service.ExecuteTask?.Exception).FirstOrDefault(exception => exception is not null);
-        HostEnd end = Decide(exitCode() == AgentProcess.RestartExitCode, thrown is not null, stopRequested, fault is not null,
+        bool failed = fault is not null || (thrown is not null && !stopRequested);
+        HostEnd end = Decide(exitCode() == AgentProcess.RestartExitCode, failed, thrown is not null && stopRequested,
             runs?.CurrentRun is not null);
-        return (end, thrown ?? fault);
+        return (end, fault ?? thrown);
+    }
+
+    // Why a service that ended by itself ended: what it threw, or that it was cancelled, which on .NET 10
+    // stops the host as a fault does but leaves no exception to read (the review's V37). Null while it runs
+    // or once it is done.
+    private static Exception? EndedBy(BackgroundService service)
+    {
+        return service.ExecuteTask switch
+        {
+            { IsFaulted: true } task => task.Exception,
+            { IsCanceled: true } => new OperationCanceledException($"{service.GetType().Name} ended cancelled before the host was stopped"),
+            _ => null,
+        };
     }
 
     #region Logging

@@ -23,17 +23,17 @@ namespace AgentTests.Agent;
 public sealed class ResidentHostTests
 {
     [Theory]
-    [InlineData(false, false, false, false, false, HostEnd.Stopped)]
-    [InlineData(false, true, true, false, false, HostEnd.StoppedOnError)]
-    [InlineData(false, true, false, false, false, HostEnd.Rebuild)]
-    [InlineData(false, false, true, true, false, HostEnd.Rebuild)]
-    [InlineData(false, true, true, true, false, HostEnd.Rebuild)]
-    [InlineData(false, false, true, true, true, HostEnd.Restart)]
-    [InlineData(true, false, true, false, false, HostEnd.Restart)]
-    public void What_follows_a_hosts_end(bool restartRequested, bool threw, bool stopRequested, bool serviceFaulted, bool runUnderWay,
-        HostEnd end)
+    [InlineData(false, false, false, false, HostEnd.Stopped)]
+    // A person's stop with a run still under way: the process ends, and nobody asked for another.
+    [InlineData(false, false, false, true, HostEnd.Stopped)]
+    [InlineData(false, false, true, false, HostEnd.StoppedOnError)]
+    [InlineData(false, true, false, false, HostEnd.Rebuild)]
+    [InlineData(false, true, true, false, HostEnd.Rebuild)]
+    [InlineData(false, true, false, true, HostEnd.Restart)]
+    [InlineData(true, false, false, false, HostEnd.Restart)]
+    public void What_follows_a_hosts_end(bool restartRequested, bool failed, bool stopFailed, bool runUnderWay, HostEnd end)
     {
-        Assert.Equal(end, ResidentHost.Decide(restartRequested, threw, stopRequested, serviceFaulted, runUnderWay));
+        Assert.Equal(end, ResidentHost.Decide(restartRequested, failed, stopFailed, runUnderWay));
     }
 
     [Fact]
@@ -42,6 +42,20 @@ public sealed class ResidentHostTests
         int built = 0;
 
         int code = ResidentHost.Run(() => ++built == 1 ? Host<Faulting>() : Host<Stopping>(), NullLogger.Instance, resident: true,
+            TimeSpan.Zero, () => 0);
+
+        Assert.Equal(2, built);
+        Assert.Equal(0, code);
+    }
+
+    // The review's V37: a service cancelled by its own call stopped the host, with no exception to read,
+    // and the agent ended with 0, which ends run-agent.ps1's loop.
+    [Fact]
+    public void A_host_whose_service_ends_cancelled_is_built_again()
+    {
+        int built = 0;
+
+        int code = ResidentHost.Run(() => ++built == 1 ? Host<Cancelled>() : Host<Stopping>(), NullLogger.Instance, resident: true,
             TimeSpan.Zero, () => 0);
 
         Assert.Equal(2, built);
@@ -99,6 +113,16 @@ public sealed class ResidentHostTests
         {
             await Task.Delay(10, stoppingToken);
             throw new InvalidOperationException("the link broke");
+        }
+    }
+
+    // A call with a timeout of its own that gave up: cancelled, though nothing stopped the service.
+    private sealed class Cancelled : BackgroundService
+    {
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            await Task.Delay(10, stoppingToken);
+            throw new OperationCanceledException("a call gave up");
         }
     }
 

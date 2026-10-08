@@ -113,12 +113,14 @@ written as before. Keep a new console sink behind it.
 
 **An agent's host is built again; its process is started again.** `ResidentHost` decides after each
 host: a stop (Ctrl+C, the window closing, a logoff) ends the process with the host's code; a failure
-(the host threw before it was asked to stop, or a background service faulted) builds a new host after
-3 s in the same process, or, with a run still under way, ends it with 75, since only a new process
-takes a run's threads. On .NET 10 a faulted `BackgroundService` stops the host and `Run()` returns
-as after a stop, exit code 0 (.NET 11 changes this), so faults are read from the services'
-`ExecuteTask`; without that, a broken link would end the agent with 0 and `run-agent.ps1` would not
-start it again. A profile run without `--agent` is never built again: a failure exits 1.
+(the host threw before it was asked to stop, or a background service ended by itself, faulted or
+cancelled) builds a new host after 3 s in the same process, or, with a run still under way, ends it
+with 75, since only a new process takes a run's threads. On .NET 10 such a service stops the host and
+`Run()` returns as after a stop, exit code 0 (.NET 11 changes this), so `ResidentHost` looks at the
+services as the host starts stopping (`ApplicationStopping`): one that has already ended is what
+stopped it, and a person's stop finds them all running. A cancelled one leaves no exception to read
+(the review's V37); without this, a broken link would end the agent with 0 and `run-agent.ps1` would
+not start it again. A profile run without `--agent` is never built again: a failure exits 1.
 
 **Every run syncs first, when a Pathing Service is set.** With `PathingService:Url` (or
 `--pathing-service`), a run, an assignment or a profile on the command line alike, pulls its files
