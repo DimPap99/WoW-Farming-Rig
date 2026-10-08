@@ -14,7 +14,8 @@ RunOptions.cs                 the CLI surface
 DependencyInjection.cs        StartupConfig options from RunOptions (a Classic run's composition)
 Hosting/HeadlessHost.cs       the Generic Host: BotAgent, its data sync, and the runtimes below
 Hosting/ResidentHost.cs       runs the host; an agent's is built again after a failure; exit codes
-Hosting/HeadlessLogging.cs    Serilog: file, debug, console, and the agent's log stream
+Hosting/HeadlessLogging.cs    Serilog: file, debug, console (behind a queue), and the agent's log stream
+Hosting/StopOnSignals.cs      the window closing and the session ending stop the host, held until it stopped
 Hosting/StartFromCommandLine  a profile given on the command line runs at once
 Hosting/AgentProcess.cs       the way out for a run that cannot be torn down (exit code 75)
 Runtimes/HeadlessRuntimeFactory   which runtime an assignment needs, refused before attaching
@@ -39,16 +40,20 @@ install-agent-task.ps1        the logon task that runs run-agent.ps1; uninstall-
 powershell -ExecutionPolicy Bypass -File .\install-agent-task.ps1    # the agent at every logon
 ```
 
-The logon task runs `run-agent.ps1`, which runs the Release build (`dotnet run -c Release
---no-build`) in a loop: build first. Its settings are this folder's `headless_appsettings.json`;
+The logon task runs `run-agent.ps1`, which runs the Release build's `HeadlessServer.dll` with
+`dotnet` in a loop: build first. Its settings are this folder's `headless_appsettings.json`;
 `-Manager`, `-PathingService` and `-Name` put them on the agent's command line instead. Ctrl+C in
-the agent's window stops it (keys released first) and ends the loop; `uninstall-agent-task.ps1`
-removes the task and leaves a running agent alone.
+the agent's window, closing it, or a logoff stops it (keys released first) and ends the loop;
+Task Scheduler's End terminates it without that. `uninstall-agent-task.ps1` removes the task and
+leaves a running agent alone.
 
 **The class profile is positional, not an option.** There is no `-c`/`--classconfig`; it comes
 first and bare, and it is needed unless `--agent` is given. Passing `-c Warrior_1.json` fails to parse.
 
-`run.bat` passes `--no-build --no-restore`, so **build first** or you run a stale binary.
+`run.bat` runs the Release build directly (`dotnet bin\Release\<tfm>\HeadlessServer.dll`), so
+**build first** or you run a stale binary. Never through `dotnet run`: it puts the agent in a job
+that ends it the moment `dotnet.exe` ends, which closing the window ends first, before the agent
+releases the game's keys (known issue 65).
 
 ## Options
 
@@ -89,8 +94,8 @@ worked although this file said it did.
 with no game at all (it runs on Linux, refusing every run: "no WoW client is running"), and each
 run composes Core for the client the probe found, then disposes it.
 
-**Stop releases input first.** A stop (a command, Ctrl+C, a logoff, the host stopping) cancels the
-run's token; the run turns the bot off, which releases what it holds, and only then is torn down.
+**Stop releases input first.** A stop (a command, Ctrl+C, the window closing, a logoff, the host
+stopping) cancels the run's token; the run turns the bot off, which releases what it holds, and only then is torn down.
 A run that has not ended after `Agent:StopGraceMs` (10 s) has its keys released from outside; one
 that still does not end is abandoned and the process exits with 75, which `run-agent.ps1` starts
 again. See `Game/CLAUDE.md` for why the order matters.
@@ -101,7 +106,7 @@ that blocks every write to it, which held the bot's threads in their log calls (
 written as before. Keep a new console sink behind it.
 
 **An agent's host is built again; its process is started again.** `ResidentHost` decides after each
-host: a stop (Ctrl+C, a logoff, the task ending) ends the process with the host's code; a failure
+host: a stop (Ctrl+C, the window closing, a logoff) ends the process with the host's code; a failure
 (the host threw before it was asked to stop, or a background service faulted) builds a new host after
 3 s in the same process, or, with a run still under way, ends it with 75, since only a new process
 takes a run's threads. On .NET 10 a faulted `BackgroundService` stops the host and `Run()` returns

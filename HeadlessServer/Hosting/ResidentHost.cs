@@ -9,7 +9,7 @@ namespace HeadlessServer.Hosting;
 /// <summary>How a host ended, and so what the process does next.</summary>
 public enum HostEnd
 {
-    /// <summary>It was stopped (Ctrl+C, a logoff, the logon task ending, a standalone run done): the process ends with the host's exit code.</summary>
+    /// <summary>It was stopped (Ctrl+C, the window closing, a logoff, a standalone run done): the process ends with the host's exit code.</summary>
     Stopped,
 
     /// <summary>It was stopped, and the stop itself threw: the process ends with an error, and is not built again.</summary>

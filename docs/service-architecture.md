@@ -88,8 +88,10 @@ the management side is down.
    - A crash restarts it. A failed host is built again in the process (`ResidentHost`, as
      `BlazorServer/Program.Main` does). A process that ends, such as one whose stuck run asked
      for a new process (exit code 75), is started again by `run-agent.ps1`. The logon task runs
-     that script and restarts it if it fails. With no manager configured the agent works
+     that script, and tries again if it fails to start. With no manager configured the agent works
      standalone, as the CLI always did.
+   - Ctrl+C, closing its window and a logoff stop it cleanly (`StopOnSignals`); Task Scheduler's
+     End terminates it.
 2. **Stop is a command, not a kill.** The agent's `BotRuntimeHost` stops a run by releasing
    input first, as `Game/CLAUDE.md` requires, and tears it down after a grace period (the
    `StopGraceMs` logic from `ForeverRunHost`).

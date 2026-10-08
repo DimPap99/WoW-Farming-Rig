@@ -379,22 +379,6 @@ Items 63 to 77 come from the review of Phase 3 (its eleven commits in 4e65fd27..
 `~/RiderProjects/WoW-Farming-Rig-review/phase3/phase3-review.md` on the machine it ran on; the
 plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fixes-plan.md).
 
-65. **Only Ctrl+C stops the agent cleanly.**
-    - **Where:** `HeadlessServer/Hosting/HeadlessHost`, `run-agent.ps1`, `run.bat`; the promise is in
-      `HeadlessHost`, `Program`, `ResidentHost`, `run-agent.ps1`, `uninstall-agent-task.ps1`,
-      `HeadlessServer/CLAUDE.md`, item 21 and Phase 3's Windows checklist (item 10).
-    - **Cause:** the Generic Host's console lifetime handles SIGINT, SIGQUIT and SIGTERM, on Windows
-      Ctrl+C, Ctrl+Break and CTRL_SHUTDOWN. Closing the window (CTRL_CLOSE, .NET's SIGHUP) is not
-      handled, so Windows ends the process. A process that loaded user32 (any Classic run) gets neither
-      the logoff nor the shutdown event. `dotnet run` puts the agent in a job that kills it the moment
-      `dotnet.exe` ends, which closing the window ends first. Task Scheduler's End terminates.
-    - **Effect:** closing the agent's window, the obvious way to stop it, leaves a movement key held
-      in a game that keeps running, and no run report is sent. A sign-out neither stops nor reports
-      the run.
-    - **Fix:** the agent stops on SIGHUP (the window closing) and on the session ending, and holds
-      Windows off until the run has released its input; `run-agent.ps1` and `run.bat` start the built
-      agent directly, not through `dotnet run`. Task Scheduler's End stays a kill, and the docs say so.
-
 66. **An unattended Classic start can delete the addon's frame configuration.**
     - **Where:** `Core/DependencyInjection.ProbeWoWProcess`, through `AddWoWProcess`, which every
       Classic run's composition calls (`ClassicRuntime.Compose`), and `--loadonly`.
@@ -588,6 +572,24 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+65. **Only Ctrl+C stopped the agent cleanly** (Phase 3 review, 2026-10-08). The Generic Host's
+    console lifetime handles Ctrl+C, Ctrl+Break and SIGTERM. Closing the window (CTRL_CLOSE, .NET's
+    SIGHUP) was not handled, a process that loaded user32 hears no logoff, and `dotnet run` put the
+    agent in a job that killed it as soon as `dotnet.exe` ended: closing the window or signing out
+    left a movement key held in a game that kept running, with no report.
+    - `StopOnSignals` (HeadlessServer) stops the host on SIGHUP and, on Windows, on the session ending
+      (`SystemEvents.SessionEnding`), and holds the signal until the host has stopped, at most 4.5 s,
+      since Windows ends the process once the handler returns.
+    - `run-agent.ps1`, `run.bat` and `rundev.bat` run the newest Release build's `HeadlessServer.dll`
+      with `dotnet`, never through `dotnet run`.
+    - `run-agent.ps1` no longer ends its loop when its log cannot be written and times runs with a
+      stopwatch; the logon task runs at normal priority. Task Scheduler's End terminates, and the
+      scripts and guides say so.
+    - Tests: `StopOnSignalsTests` (the hold and its bound; the real agent, sent SIGHUP on Linux, exits
+      0 where it was ended with 129). Live under pwsh 7 on Linux: `kill -9` restarts the agent 5 s
+      later, SIGTERM and SIGHUP end it with 0 and the loop with it. Windows checklist: the window
+      closes, a logoff.
 
 64. **A click into the agent's window froze the bot with a key held** (Phase 3 review, 2026-10-08).
     Serilog's console sink wrote synchronously, and in the Windows 10 console a click starts a
@@ -880,8 +882,8 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       disposed. `AddWoWProcess` cancels its probe's token, and `Main` ends with `Environment.Exit`, so
       a run that could not be torn down cannot keep the process alive. Checked on Linux (SIGTERM ends
       an agent cleanly); on Windows with a game it is on the Phase 3 checklist.
-    - **Corrected by the Phase 3 review:** on Windows only Ctrl+C and Ctrl+Break stop it cleanly;
-      closing the window, a logoff and the task's End do not (item 65).
+    - **Corrected by the Phase 3 review:** on Windows only Ctrl+C and Ctrl+Break stopped it
+      cleanly; closing the window and a logoff do since item 65's fix, and the task's End terminates.
 
 22. **Configuration keys on HeadlessServer's command line failed the parse** (Phase 3).
     `HeadlessServer/CLAUDE.md` said `--Pathing:Engine=Navmesh` reached the configuration, but

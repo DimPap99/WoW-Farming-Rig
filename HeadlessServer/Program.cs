@@ -18,7 +18,7 @@ namespace HeadlessServer;
 /// The bot without a UI, and this PC's resident bot agent. A class profile on the command line runs
 /// at once, as it always has; <c>--agent</c> keeps the process for the Bot Manager's assignments, and
 /// builds its host again if it fails (<see cref="ResidentHost"/>). It runs on the Generic Host, so
-/// Ctrl+C or a logoff stops it cleanly: a run releases input first.
+/// Ctrl+C, closing its window or a logoff stops it cleanly: a run releases input first.
 /// </summary>
 public static class Program
 {

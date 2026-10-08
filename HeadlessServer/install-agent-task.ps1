@@ -7,17 +7,19 @@
 .DESCRIPTION
   The agent has to run in your desktop session to see the game and drive it, which a Windows
   service cannot, so it starts from a logon task: for the current user, interactive, without
-  administrator rights. The task runs run-agent.ps1 in a minimized window. That script starts the
-  agent again whenever it ends with anything but 0, and Task Scheduler restarts the script if it
-  fails. The task has no time limit, runs on batteries, and runs once: logging on again while it
-  runs starts nothing new. Running this script again replaces the task.
+  administrator rights, at normal priority (a task's default would run the bot below the game). The
+  task runs run-agent.ps1 in a minimized window. That script starts the agent again whenever it ends
+  with anything but 0, and Task Scheduler tries the task again if it fails to start. The task has no
+  time limit, runs on batteries, and runs once: logging on again while it runs starts nothing new.
+  Running this script again replaces the task.
 
   The agent runs the Release build: build it first (build.bat). Its settings are
   headless_appsettings.json's (the Bot Manager, the Pathing Service, ApiKey); -Manager,
   -PathingService and -Name put them on its command line instead.
 
-  To stop the agent, press Ctrl+C in its window: it releases the game's keys first, and the loop
-  ends. uninstall-agent-task.ps1 removes the task.
+  To stop the agent, press Ctrl+C in its window or close it: it releases the game's keys first, and
+  the loop ends. Task Scheduler's End terminates it without that. uninstall-agent-task.ps1 removes
+  the task.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\install-agent-task.ps1
@@ -54,8 +56,10 @@ $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ($arguments -join " ") -WorkingDirectory $PSScriptRoot
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+# Priority 4 is normal: the default (7) runs PowerShell, dotnet and the bot below the game's threads.
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
-    -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
+    -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew `
+    -Priority 4
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings `
     -Description "This PC's bot agent (WoW Farming Rig): HeadlessServer --agent, kept running by run-agent.ps1." -Force | Out-Null

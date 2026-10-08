@@ -17,8 +17,9 @@ namespace HeadlessServer.Hosting;
 
 /// <summary>
 /// HeadlessServer on the Generic Host: the bot agent (BotAgent) with Core's runtimes and the data
-/// sync. Ctrl+C, a logoff or a stop from the Task Scheduler stops the host, which stops a run the way
-/// a stop command does: input released first, then the run torn down.
+/// sync. Ctrl+C, closing the window or a logoff (<see cref="StopOnSignals"/>) stops the host, which
+/// stops a run the way a stop command does: input released first, then the run torn down. Task
+/// Scheduler's End terminates the process.
 /// </summary>
 public static class HeadlessHost
 {
@@ -45,6 +46,7 @@ public static class HeadlessHost
         builder.Services.Configure<HostOptions>(host => host.ShutdownTimeout = ShutdownTimeout);
 
         builder.Services.AddSingleton(options);
+        builder.Services.AddHostedService<StopOnSignals>();
         builder.Services.AddBotAgent(AgentOptions.From(builder.Configuration), sink);
         // Before a run, the files it needs from the Pathing Service; without one, this PC's copies.
         builder.Services.AddDataSync(DataConfig.Load(), PathingServiceOptions.FromIfConfigured(builder.Configuration));

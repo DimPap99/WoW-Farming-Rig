@@ -1,4 +1,4 @@
 @ECHO OFF
 
-dotnet run -c Release --no-build --no-restore -e:ASPNETCORE_ENVIRONMENT=Development -- %*
-pause
+set "ASPNETCORE_ENVIRONMENT=Development"
+call "%~dp0run.bat" %*
