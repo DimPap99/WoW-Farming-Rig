@@ -3,6 +3,7 @@ using Contracts.Bots;
 
 using Microsoft.Extensions.Logging;
 
+using ServiceClients;
 using ServiceClients.Bots;
 
 using System;
@@ -16,21 +17,19 @@ namespace BotManager.Registry;
 
 /// <summary>
 /// The bots, their assignments and their run history, which the manager owns; live state (online,
-/// snapshots, logs) is memory only. JSON files under one folder: <c>bots.json</c> holds every bot, and
-/// <c>runs/&lt;agentId&gt;.json</c> each bot's last <see cref="MaxRuns"/> runs. Files are written
-/// to a temporary name and renamed, so a crash never leaves half a file, and before memory changes, so
-/// a write that fails changes nothing. A file that does not parse is kept aside and the store starts
-/// without it; one that cannot be read (a lock, its rights) stops the start instead: starting empty
-/// would write over every other bot at the first registration (known issue 72). SQLite only if it
-/// becomes necessary.
+/// snapshots, logs) is memory only. JSON files under one folder: <c>bots.json</c> holds every bot,
+/// and <c>runs/&lt;agentId&gt;.json</c> each bot's last <see cref="MaxRuns"/> runs. A file is written
+/// whole or not at all (<see cref="AtomicFile"/>), so a crash never leaves half of one, and before
+/// memory changes, so a write that fails changes nothing. A file that does not parse is kept aside
+/// and the store starts without it; one that cannot be read (a lock, its rights) stops the start
+/// instead: starting empty would write over every other bot at the first registration (known issue
+/// 72). SQLite only if it becomes necessary.
 /// </summary>
 public sealed class JsonBotRegistry
 {
     public const string BotsFile = "bots.json";
     public const string RunsFolder = "runs";
     public const int MaxRuns = BotManagerApi.KeptRuns;
-
-    private const string TemporaryExtension = ".tmp";
 
     private static readonly JsonSerializerOptions FileJson = new(ContractJson.Options) { WriteIndented = true };
 
@@ -187,18 +186,6 @@ public sealed class JsonBotRegistry
 
     private static void Write<T>(string file, T value)
     {
-        string temporary = $"{file}.{Guid.NewGuid():N}{TemporaryExtension}";
-        try
-        {
-            File.WriteAllText(temporary, JsonSerializer.Serialize(value, FileJson));
-            File.Move(temporary, file, overwrite: true);
-        }
-        finally
-        {
-            if (File.Exists(temporary))
-            {
-                File.Delete(temporary);
-            }
-        }
+        AtomicFile.WriteAllText(file, JsonSerializer.Serialize(value, FileJson));
     }
 }
