@@ -25,6 +25,9 @@ public sealed class AgentLogSink(LogEventLevel minimum = LogEventLevel.Informati
     private readonly Lock sync = new();
     private readonly Queue<(long Number, BotLogLine Line)> lines = new();
     private long next = 1;
+    // What reached the manager. The sink outlives the hosts a process builds, and so does this: a host
+    // built again resent up to Kept lines when its publisher counted from 0 (known issue 76).
+    private long sent;
 
     public LogEventLevel Minimum => minimum;
 
@@ -50,6 +53,23 @@ public sealed class AgentLogSink(LogEventLevel minimum = LogEventLevel.Informati
                 lines.Dequeue();
             }
         }
+    }
+
+    /// <summary>Up to <paramref name="max"/> lines not sent yet, oldest first, and the number of the last; see <see cref="MarkSent"/>.</summary>
+    public BotLogLine[] ReadUnsent(int max, out long last)
+    {
+        return ReadAfter(Interlocked.Read(ref sent), max, out last);
+    }
+
+    /// <summary>The lines up to <paramref name="last"/> reached the manager.</summary>
+    public void MarkSent(long last)
+    {
+        long seen;
+        do
+        {
+            seen = Interlocked.Read(ref sent);
+        }
+        while (last > seen && Interlocked.CompareExchange(ref sent, last, seen) != seen);
     }
 
     /// <summary>Up to <paramref name="max"/> lines after line <paramref name="after"/>, oldest first, and the number of the last.</summary>

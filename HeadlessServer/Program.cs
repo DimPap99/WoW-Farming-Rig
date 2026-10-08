@@ -105,9 +105,14 @@ public static class Program
             log.LogWarning("Another agent with this id ({AgentId}) runs on this PC: this run reports to no Bot Manager", identity.AgentId);
         }
 
-        // An agent's host is built again when it fails; a profile's run ends with its host.
-        return ResidentHost.Run(() => HeadlessHost.Build(configuration, environment, options, sink, identity, linked: claim is not null), log,
-            resident: options.Agent);
+        // An agent's host is built again when it fails, and a profile on the command line starts in the first only.
+        bool first = true;
+        return ResidentHost.Run(() =>
+        {
+            IHost host = HeadlessHost.Build(configuration, environment, options, sink, identity, linked: claim is not null, startProfile: first);
+            first = false;
+            return host;
+        }, log, resident: options.Agent);
     }
 
     // --help and --version come back as NotParsed too, but they are a satisfied request.

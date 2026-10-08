@@ -49,7 +49,8 @@ public sealed partial class AgentLink(AgentIdentity identity, AgentOptions optio
     /// <summary>Run reports kept while the manager is down.</summary>
     public const int KeptReports = 50;
 
-    private static readonly TimeSpan FinalFlush = TimeSpan.FromSeconds(3);
+    /// <summary>How long a stopping link has to send the reports it keeps.</summary>
+    public static readonly TimeSpan FinalFlush = TimeSpan.FromSeconds(3);
 
     private readonly ConcurrentQueue<RunReport> reports = new();
     private readonly SemaphoreSlim flushing = new(1, 1);

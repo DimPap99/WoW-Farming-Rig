@@ -102,7 +102,7 @@ run composes Core for the client the probe found, then disposes it.
 
 **Stop releases input first.** A stop (a command, Ctrl+C, the window closing, a logoff, the host
 stopping) cancels the run's token; the run turns the bot off, which releases what it holds, and only then is torn down.
-A run that has not ended after `Agent:StopGraceMs` (10 s) has its keys released from outside; one
+A run that has not ended after `Agent:StopGraceMs` (10 s, at most 60) has its keys released from outside; one
 that still does not end is abandoned and the process exits with 75, which `run-agent.ps1` starts
 again. See `Game/CLAUDE.md` for why the order matters.
 

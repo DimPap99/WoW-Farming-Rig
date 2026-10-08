@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 
+using ServiceClients;
 using ServiceClients.Bots;
 
 using System;
@@ -19,19 +20,24 @@ public sealed record AgentIdentity(string AgentId, string Name, string Machine)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    /// <summary>The identity kept in <paramref name="file"/>, created there when it has none.</summary>
+    /// <summary>
+    /// The identity kept in <paramref name="file"/>, created there when it has none, or holds no id. A file
+    /// that cannot be read (a lock, its rights) throws: a new id there would make the manager see a new bot
+    /// (known issue 76).
+    /// </summary>
     public static AgentIdentity LoadOrCreate(string file, string? configuredName, ILogger logger)
     {
         string? id = null;
         if (File.Exists(file))
         {
+            string text = File.ReadAllText(file);
             try
             {
-                id = JsonSerializer.Deserialize<Stored>(File.ReadAllText(file), Json)?.AgentId;
+                id = JsonSerializer.Deserialize<Stored>(text, Json)?.AgentId;
             }
-            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+            catch (JsonException ex)
             {
-                logger.LogWarning(ex, "{File} could not be read; this agent takes a new id and the manager sees a new bot", file);
+                logger.LogWarning(ex, "{File} is damaged; this agent takes a new id and the manager sees a new bot", file);
             }
         }
 
@@ -44,9 +50,7 @@ public sealed record AgentIdentity(string AgentId, string Name, string Machine)
                 Directory.CreateDirectory(folder);
             }
 
-            string temporary = file + ".tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(new Stored(id, DateTimeOffset.UtcNow), Json));
-            File.Move(temporary, file, overwrite: true);
+            AtomicFile.WriteAllText(file, JsonSerializer.Serialize(new Stored(id, DateTimeOffset.UtcNow), Json));
             if (logger.IsEnabled(LogLevel.Information))
             {
                 logger.LogInformation("This agent is {AgentId}, kept in {File}", id, Path.GetFullPath(file));

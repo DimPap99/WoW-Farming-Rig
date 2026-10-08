@@ -46,4 +46,18 @@ public sealed class DataSyncCompositionTests
         Assert.IsType<DataSync>(Assert.Single(host.Services.GetServices<IRunPreparation>()));
         Assert.Equal(pathing is not null, host.Services.GetService<IPathingClient>() is not null);
     }
+
+    // A host built again after a fault started the command line's profile again, unasked (known issue 76).
+    [Fact]
+    public void Only_the_first_host_starts_the_command_lines_profile()
+    {
+        IConfiguration configuration = new ConfigurationBuilder().Build();
+        RunOptions options = new() { Agent = true, ClassConfig = "Warrior_1.json" };
+
+        using IHost first = HeadlessHost.Build(configuration, null, options, new AgentLogSink());
+        using IHost again = HeadlessHost.Build(configuration, null, options, new AgentLogSink(), startProfile: false);
+
+        Assert.Contains(first.Services.GetServices<IHostedService>(), service => service is StartFromCommandLine);
+        Assert.DoesNotContain(again.Services.GetServices<IHostedService>(), service => service is StartFromCommandLine);
+    }
 }

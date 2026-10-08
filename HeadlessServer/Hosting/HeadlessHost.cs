@@ -23,13 +23,12 @@ namespace HeadlessServer.Hosting;
 /// </summary>
 public static class HeadlessHost
 {
-    /// <summary>Long enough for a stopped run's grace period, its forced release and its last report.</summary>
-    public static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(30);
-
     /// <param name="identity">The agent's identity, as the process holds it; read from its file when null.</param>
     /// <param name="linked">Whether it dials out to the Bot Manager: not while another process holds the same id.</param>
+    /// <param name="startProfile">Whether the command line's profile starts: in the first host only, never in one
+    /// built again after a fault (known issue 76).</param>
     public static IHost Build(IConfiguration configuration, string? environment, RunOptions options, AgentLogSink sink,
-        AgentIdentity? identity = null, bool linked = true)
+        AgentIdentity? identity = null, bool linked = true, bool startProfile = true)
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
@@ -46,11 +45,12 @@ public static class HeadlessHost
             ValidateOnBuild = true,
             ValidateScopes = true,
         }));
-        builder.Services.Configure<HostOptions>(host => host.ShutdownTimeout = ShutdownTimeout);
+        AgentOptions agent = AgentOptions.From(builder.Configuration);
+        // Long enough for a stopped run's grace, its forced release, its abandon and its last report.
+        builder.Services.Configure<HostOptions>(host => host.ShutdownTimeout = agent.ShutdownTimeout());
 
         builder.Services.AddSingleton(options);
         builder.Services.AddHostedService<StopOnSignals>();
-        AgentOptions agent = AgentOptions.From(builder.Configuration);
         builder.Services.AddBotAgent(linked ? agent : agent with { Manager = null }, sink, identity);
         // Before a run, the files it needs from the Pathing Service; without one, this PC's copies.
         builder.Services.AddDataSync(DataConfig.Load(), PathingServiceOptions.FromIfConfigured(builder.Configuration));
@@ -59,7 +59,7 @@ public static class HeadlessHost
         builder.Services.AddSingleton<IClassProfileCatalog, ClassProfileFolder>();
         builder.Services.AddSingleton<IAgentProcess, AgentProcess>();
 
-        if (options.ClassConfig is not null)
+        if (options.ClassConfig is not null && startProfile)
         {
             builder.Services.AddHostedService<StartFromCommandLine>();
         }

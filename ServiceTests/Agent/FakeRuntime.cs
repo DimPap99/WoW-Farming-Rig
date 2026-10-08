@@ -2,6 +2,7 @@ using BotAgent.Runtime;
 
 using Contracts.Bots;
 
+using System;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
@@ -13,7 +14,7 @@ namespace ServiceTests.Agent;
 /// before it returns, as a real runtime must. One that ignores its stop stands for a run stuck in
 /// the game, until the test lets it go.
 /// </summary>
-internal sealed class FakeRuntime(BotAssignment assignment, bool ignoreStop) : IBotRuntime
+internal sealed class FakeRuntime(BotAssignment assignment, bool ignoreStop, TimeSpan disposeTakes = default) : IBotRuntime
 {
     public const string Ran = "run";
     public const string Released = "released";
@@ -21,6 +22,7 @@ internal sealed class FakeRuntime(BotAssignment assignment, bool ignoreStop) : I
     public const string Disposed = "disposed";
 
     private readonly ManualResetEventSlim stuck = new(false);
+    private volatile bool disposed;
 
     public ConcurrentQueue<string> Calls { get; } = new();
 
@@ -52,6 +54,12 @@ internal sealed class FakeRuntime(BotAssignment assignment, bool ignoreStop) : I
 
     public BotTelemetry Read()
     {
+        // As the Classic runtime reads once torn down: attaching, with nothing done.
+        if (disposed)
+        {
+            return new BotTelemetry(BotRunState.Starting, Message: "attaching to the client");
+        }
+
         return new BotTelemetry(BotRunState.Running, new BotCharacter("Hunter", 12, "Orc"), new BotVitals(90, 50, null, false),
             new BotPosition(1413, 51.9f, 29.9f), "Task/Travel", "task 1 of 1", new BotProgress(Kills, 0, Kills));
     }
@@ -65,6 +73,8 @@ internal sealed class FakeRuntime(BotAssignment assignment, bool ignoreStop) : I
     public void Dispose()
     {
         Calls.Enqueue(Disposed);
+        disposed = true;
+        Thread.Sleep(disposeTakes);
     }
 }
 
@@ -74,6 +84,9 @@ internal sealed class FakeRuntimeFactory : IBotRuntimeFactory
     public ConcurrentQueue<FakeRuntime> Built { get; } = new();
 
     public bool IgnoreStop { get; set; }
+
+    /// <summary>How long a runtime's dispose takes, as a Classic run's container does.</summary>
+    public TimeSpan DisposeTakes { get; set; }
 
     public string? Refusal { get; set; }
 
@@ -88,7 +101,7 @@ internal sealed class FakeRuntimeFactory : IBotRuntimeFactory
             return false;
         }
 
-        FakeRuntime created = new(assignment, IgnoreStop);
+        FakeRuntime created = new(assignment, IgnoreStop, DisposeTakes);
         Built.Enqueue(created);
         runtime = created;
         refusal = string.Empty;

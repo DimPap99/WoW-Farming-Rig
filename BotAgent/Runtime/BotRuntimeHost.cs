@@ -35,6 +35,7 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
     private ActiveRun? active;
     private RunReport? last;
     private BotAssignment? assignment;
+    private bool stopping;
 
     /// <summary>A run ended, or was abandoned; raised once per run, on the thread that saw it end.</summary>
     public event Action<RunReport>? RunEnded;
@@ -93,6 +94,12 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
         ActiveRun run;
         lock (sync)
         {
+            // A run started now would be cut off by the process ending under it (known issue 76).
+            if (stopping)
+            {
+                return new CommandAck(false, "the agent is stopping", null);
+            }
+
             if (active is { } current)
             {
                 return new CommandAck(false, $"a run is already under way: {current.Info.Summary}", null);
@@ -190,6 +197,7 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
         ActiveRun? run;
         lock (sync)
         {
+            stopping = true;
             run = active;
         }
 
@@ -251,17 +259,38 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
         }
         finally
         {
-            try
+            if (runtime is not null)
             {
-                runtime?.Dispose();
-            }
-            catch (Exception ex)
-            {
-                LogRunError(logger, ex, run.Info.Summary);
+                // Its last state, read before it is torn down, then out of telemetry's reach: a runtime being
+                // disposed reads as one attaching, and the report took that, losing its kills (known issue 76).
+                run.Final = TryRead(runtime);
+                run.State = BotRunState.Stopping;
+                run.Runtime = null;
+                try
+                {
+                    runtime.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    LogRunError(logger, ex, run.Info.Summary);
+                }
             }
         }
 
         Finish(run, result);
+    }
+
+    private BotTelemetry? TryRead(IBotRuntime runtime)
+    {
+        try
+        {
+            return runtime.Read();
+        }
+        catch (Exception ex)
+        {
+            LogRunError(logger, ex, "reading the run's last state");
+            return null;
+        }
     }
 
     // Null to go on; a result ends the run before anything attached.
@@ -301,7 +330,8 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
         BotRunOutcome outcome = run.StopRequested && result.Outcome is BotRunOutcome.Failed or BotRunOutcome.Refused
             ? BotRunOutcome.Stopped
             : result.Outcome;
-        RunReport report = new(run.Info, outcome, clock.GetUtcNow(), result.Message, result.ExitCode, run.LastTelemetry?.Progress);
+        RunReport report = new(run.Info, outcome, clock.GetUtcNow(), result.Message, result.ExitCode,
+            (run.Final ?? run.LastTelemetry)?.Progress);
         bool abandoned;
         lock (sync)
         {
@@ -310,6 +340,8 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
                 active = null;
             }
 
+            // Exactly one of this and the abandon reports the run.
+            run.Finished = true;
             abandoned = run.Abandoned;
             if (!abandoned)
             {
@@ -317,12 +349,15 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
             }
         }
 
-        run.Ended.TrySetResult();
+        // Raised before the run's end is signalled: a host that stops waits for that, then lets the link go,
+        // and the report raised after it was lost (known issue 76).
         if (!abandoned)
         {
             LogEnded(logger, run.Info.Summary, outcome, result.Message);
             RunEnded?.Invoke(report);
         }
+
+        run.Ended.TrySetResult();
     }
 
     private async Task WatchStopAsync(ActiveRun run)
@@ -356,6 +391,12 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
             null, run.LastTelemetry?.Progress);
         lock (sync)
         {
+            // Ended in the meantime: its own report went out, and nothing needs a restart.
+            if (run.Finished)
+            {
+                return;
+            }
+
             run.Abandoned = true;
             last = report;
         }
@@ -383,6 +424,8 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
         private volatile int runState = (int)state;
         private volatile bool stopRequested;
         private volatile bool abandoned;
+        private volatile bool finished;
+        private volatile BotTelemetry? final;
         private volatile IBotRuntime? runtime;
         private volatile string? message;
         private volatile BotTelemetry? lastTelemetry;
@@ -394,6 +437,9 @@ public sealed partial class BotRuntimeHost(IBotRuntimeFactory factory, IEnumerab
         public BotRunState State { get => (BotRunState)runState; set => runState = (int)value; }
         public bool StopRequested { get => stopRequested; set => stopRequested = value; }
         public bool Abandoned { get => abandoned; set => abandoned = value; }
+        public bool Finished { get => finished; set => finished = value; }
+        /// <summary>What the runtime showed as it returned, before it was disposed.</summary>
+        public BotTelemetry? Final { get => final; set => final = value; }
         public IBotRuntime? Runtime { get => runtime; set => runtime = value; }
         public string? Message { get => message; set => message = value; }
         public BotTelemetry? LastTelemetry { get => lastTelemetry; set => lastTelemetry = value; }

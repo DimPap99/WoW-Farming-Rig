@@ -35,7 +35,6 @@ public sealed partial class TelemetryPublisher(AgentIdentity identity, BotRuntim
     private bool probed;
     private string? probeFailure;
     private string? tickFailure;
-    private long sentLine;
 
     /// <summary>The last snapshot taken, sent or not.</summary>
     public BotSnapshot? Latest { get; private set; }
@@ -95,10 +94,10 @@ public sealed partial class TelemetryPublisher(AgentIdentity identity, BotRuntim
         }
 
         await link.SendSnapshotAsync(snapshot, stopping);
-        BotLogLine[] lines = sink.ReadAfter(sentLine, BatchLines, out long last);
+        BotLogLine[] lines = sink.ReadUnsent(BatchLines, out long last);
         if (lines.Length > 0 && await link.SendLogAsync(lines, stopping))
         {
-            sentLine = last;
+            sink.MarkSent(last);
         }
     }
 

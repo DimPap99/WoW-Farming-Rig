@@ -16,7 +16,10 @@ public sealed partial class StartFromCommandLine(RunOptions options, BotRuntimeH
 {
     public const int ExitRefused = 1;
 
+    private readonly Lock sync = new();
     private string? runId;
+    // A run can end before Start hands its id back: its report waits here (known issue 76).
+    private RunReport? endedEarly;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -39,7 +42,18 @@ public sealed partial class StartFromCommandLine(RunOptions options, BotRuntimeH
             return Task.CompletedTask;
         }
 
-        runId = started.RunId;
+        RunReport? ended;
+        lock (sync)
+        {
+            runId = started.RunId;
+            ended = endedEarly?.Run.RunId == runId ? endedEarly : null;
+        }
+
+        if (ended is not null)
+        {
+            Stop(ended);
+        }
+
         return Task.CompletedTask;
     }
 
@@ -51,11 +65,26 @@ public sealed partial class StartFromCommandLine(RunOptions options, BotRuntimeH
 
     private void Ended(RunReport report)
     {
-        if (report.Run.RunId != runId)
+        lock (sync)
         {
-            return;
+            if (runId is null)
+            {
+                endedEarly ??= report;
+                return;
+            }
+
+            if (report.Run.RunId != runId)
+            {
+                return;
+            }
         }
 
+        Stop(report);
+    }
+
+    // The standalone process ends with its run: an error code for a run that did not complete.
+    private void Stop(RunReport report)
+    {
         if (report.Outcome is not (BotRunOutcome.Complete or BotRunOutcome.Stopped))
         {
             Environment.ExitCode = ExitRefused;

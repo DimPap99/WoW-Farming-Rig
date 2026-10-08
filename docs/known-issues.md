@@ -424,22 +424,6 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       address, the machine's own name); a WebSocket upgrade from another site is refused as a write is;
       `ServiceKey:TrustLoopback=false` serves no caller without the key, for a service behind a proxy.
 
-76. **The agent's run host has small races and leaks.**
-    - Telemetry read a disposed runtime between a run's end and its report, so a Classic report lost its
-      kills and deaths.
-    - A run's report could be lost when the host stopped (the run's end was signalled before the report
-      was raised), or sent twice (Stopped, then Abandoned) when the run ended as the abandon fired.
-    - A Start that arrived while the host stopped was accepted, and the process exited under it.
-    - `Agent:StopGraceMs` had no upper bound, and the host's 30 s shutdown timeout did not follow it:
-      from about 19 s of grace the Abandoned report and the restart code were lost, from about 30 s the
-      forced release too.
-    - A host built again after a fault started the command line's profile again, unasked; a standalone
-      run that ended before its id was recorded left the process idle.
-    - An identity file that could not be read for an I/O error was replaced by a new id.
-    - Each host built again resent up to 2,000 log lines, which a console then showed out of order.
-    - **Fix:** in `BotRuntimeHost`, `TelemetryPublisher`, `AgentLogSink`, `HeadlessHost`,
-      `StartFromCommandLine` and `AgentIdentity`; see the plan.
-
 77. **Smaller findings of the Phase 3 review.**
     - **Agent and HeadlessServer:** `--Section:Key value` dropped a value starting with `-` (item 22);
       a standalone run started by a double-click closed its window, and the reason with it; a Forever
@@ -460,6 +444,30 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+76. **The agent's run host had small races and leaks** (Phase 3 review, 2026-10-08).
+    - Telemetry read a runtime while it was disposed (as one attaching, with no progress), and the
+      report took that: a Classic report lost its kills and deaths. The run's last state is read
+      before it is disposed, and out of telemetry's reach while it is.
+    - A report was raised after the run's end was signalled, so a stopping host could let the link go
+      first; it is raised before now. The abandon checks, under the host's lock, that the run did not
+      end meanwhile, so a run is reported once.
+    - A start taken while the host stopped ran under a process about to end: refused now ("the agent
+      is stopping").
+    - `Agent:StopGraceMs` had no bound and the shutdown a fixed 30 s: from about 19 s of grace the
+      abandon's report and restart were lost. The grace is at most 60 s, and the shutdown waits for it
+      (`AgentOptions.ShutdownTimeout`: the grace and half again, the forced release, the last flush).
+    - A host built again after a fault started the command line's profile again; only the first does.
+      A standalone run that ended before its id was recorded left the process idle; its report waits
+      for the id now.
+    - An identity file that could not be read (a lock, its rights) was replaced by a new id; it throws
+      now, and the id is written with `AtomicFile`.
+    - Each host built again resent up to 2,000 log lines: the sink, which outlives the hosts, keeps what
+      was sent.
+    - Tests: `RunHostRacesTests` (each fails on the old behaviour), and
+      `DataSyncCompositionTests.Only_the_first_host_starts_the_command_lines_profile`. The two
+      microsecond races (an abandon and an end; an end before `Start` returns) are fixed by their
+      structure, not tested.
 
 74. **Two agents with one id hid one of them** (Phase 3 review, 2026-10-08; decided 2026-10-08: refuse
     the second machine). "The newest wins" took a bot over silently: the old connection was neither

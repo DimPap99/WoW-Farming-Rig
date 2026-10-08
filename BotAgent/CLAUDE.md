@@ -48,9 +48,17 @@ second; a runtime answers from read-only taps and must tolerate being read while
 and with it the run under way. The publisher logs a tick that fails and goes on, and a probe that
 throws is no client (known issue 67); keep any new loop that way.
 
-**Log lines are numbered.** The publisher sends a batch only when the link is up and advances its
-cursor only once the batch went, so a console catches up after the manager was down (2000 lines
-kept). Lines below Information stay in the file log.
+**Log lines are numbered.** The publisher sends a batch only when the link is up and marks it sent in
+the sink only once it went, so a console catches up after the manager was down (2000 lines kept).
+The sink keeps that mark, as it outlives the hosts a process builds: a publisher of its own resent
+up to 2000 lines at every host built again (known issue 76). Lines below Information stay in the
+file log.
+
+**A run's report is raised before its end is signalled, and keeps its last state.** A host that stops
+waits for the run's end and then lets the link go, so a report raised after it was lost; and the run's
+progress is read once more before the runtime is disposed, as one being disposed reads as attaching. A
+start is refused once the host stops, and the shutdown waits as long as the grace needs
+(`AgentOptions.ShutdownTimeout`, the grace at most 60 s) (known issue 76).
 
 **A run syncs before it starts.** `DataSync` is the run's preparation (state `Syncing`): a Forever
 run needs its route, a Classic run its override and every path its profile names (path groups
