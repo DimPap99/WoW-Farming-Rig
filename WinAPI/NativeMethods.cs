@@ -392,4 +392,17 @@ public static partial class NativeMethods
 
     [LibraryImport("user32.dll")]
     public static partial nint MonitorFromWindow(nint hWnd, uint dwFlags);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial uint GetConsoleProcessList(ref uint first, uint count);
+
+    /// <summary>
+    /// Whether this process is alone on its console: Windows made the window for it (a double-click, a
+    /// shortcut), so it closes with the process. A console a batch file or a shell runs in has those too.
+    /// </summary>
+    public static bool IsAloneOnConsole()
+    {
+        uint[] processes = new uint[2];
+        return GetConsoleProcessList(ref processes[0], (uint)processes.Length) == 1;
+    }
 }

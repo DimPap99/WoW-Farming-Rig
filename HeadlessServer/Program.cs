@@ -2,6 +2,7 @@ using BotAgent;
 using BotAgent.Telemetry;
 
 using CommandLine;
+using CommandLine.Text;
 
 using HeadlessServer.Hosting;
 using HeadlessServer.Runtimes;
@@ -107,12 +108,20 @@ public static class Program
 
         // An agent's host is built again when it fails, and a profile on the command line starts in the first only.
         bool first = true;
-        return ResidentHost.Run(() =>
+        int code = ResidentHost.Run(() =>
         {
             IHost host = HeadlessHost.Build(configuration, environment, options, sink, identity, linked: claim is not null, startProfile: first);
             first = false;
             return host;
         }, log, resident: options.Agent);
+
+        // A run started by a double-click that failed would take its reason with its window.
+        if (code != ExitOk && !options.Agent)
+        {
+            KeepWindowOpen();
+        }
+
+        return code;
     }
 
     // --help and --version come back as NotParsed too, but they are a satisfied request.
@@ -144,7 +153,9 @@ public static class Program
 
         if (options.Problem is string problem)
         {
+            // The usage too, as a missing argument the parser itself refuses would show it.
             log.LogError("{Problem}", problem);
+            Console.WriteLine(HelpText.AutoBuild(parsed, help => help, example => example));
             options = null;
             exitCode = ExitError;
             return false;
@@ -154,11 +165,11 @@ public static class Program
         return true;
     }
 
-    // Keeps the window open when launched by double-click. ReadKey throws when stdin is
-    // redirected or no console is attached; run.bat ends with pause anyway.
+    // Keeps the window open when Windows made it for this process (a double-click, a shortcut): run.bat's
+    // window has cmd too, and pauses itself. ReadKey throws when no console is attached.
     private static void KeepWindowOpen()
     {
-        if (Console.IsInputRedirected)
+        if (Console.IsInputRedirected || !OperatingSystem.IsWindows() || !WinAPI.NativeMethods.IsAloneOnConsole())
         {
             return;
         }

@@ -127,6 +127,18 @@ public sealed class RuntimeRefusalTests : IDisposable
     }
 
     [Fact]
+    public void A_route_run_without_Forevers_map_data_is_refused_not_failed()
+    {
+        AgentGame game = new("forever", "forever", 1, "1.60.1.70009");
+        File.Delete(Path.Combine(root, "dbc", "forever", "WorldMapArea.json"));
+
+        // It threw out of the factory, and the run was reported Failed (known issue 77).
+        Assert.False(ForeverRuntime.TryCreate(new ForeverAssignment(RouteFile, 5), game, Data(), NullLoggerFactory.Instance,
+            out _, out string refusal));
+        Assert.StartsWith("Forever's map data (Json/dbc/forever) could not be read", refusal);
+    }
+
+    [Fact]
     public void The_probe_finds_no_client_where_none_runs()
     {
         Assert.Null(new WowGameProbe(new RunOptions { Pid = int.MaxValue }, NullLogger<WowGameProbe>.Instance).Probe());

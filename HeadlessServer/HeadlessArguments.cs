@@ -66,8 +66,16 @@ public static class HeadlessArguments
         return name.Contains(':') && !name.StartsWith(':') && !name.EndsWith(':');
     }
 
+    // The next argument is the key's value unless it is an option: a negative number is a value
+    // (--Navmesh:Query:EdgeMargin -1), which was dropped, or took the next key as the value (known issue 77).
     private static bool TakesNextAsValue(string[] args, int i)
     {
-        return !args[i].Contains('=') && i + 1 < args.Length && !args[i + 1].StartsWith('-');
+        return !args[i].Contains('=') && i + 1 < args.Length && (!args[i + 1].StartsWith('-') || IsNegativeNumber(args[i + 1]));
+    }
+
+    private static bool IsNegativeNumber(string arg)
+    {
+        return arg.Length > 1 && arg[0] == '-' &&
+               (char.IsAsciiDigit(arg[1]) || arg[1] == '.' && arg.Length > 2 && char.IsAsciiDigit(arg[2]));
     }
 }

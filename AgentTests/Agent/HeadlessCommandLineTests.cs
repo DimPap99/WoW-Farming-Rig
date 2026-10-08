@@ -23,6 +23,17 @@ public sealed class HeadlessCommandLineTests
         Assert.Equal(["--Pathing:Engine=Navmesh", "--BotManager:Url", "http://botbox:5030"], HeadlessArguments.ForConfiguration(args));
     }
 
+    // A negative number was dropped, or the next key taken as the value (known issue 77).
+    [Fact]
+    public void A_keys_value_may_be_a_negative_number_but_not_an_option()
+    {
+        string[] args = ["--Navmesh:Query:EdgeMargin", "-1", "--Agent:Name=PC1", "--Navmesh:Query:Jitter", "-.5", "--Section:Key", "-m", "Local"];
+
+        Assert.Equal(["--Navmesh:Query:EdgeMargin", "-1", "--Agent:Name=PC1", "--Navmesh:Query:Jitter", "-.5", "--Section:Key"],
+            HeadlessArguments.ForConfiguration(args));
+        Assert.Equal(["-m", "Local"], HeadlessArguments.ForParser(args));
+    }
+
     [Theory]
     [InlineData("--Agent:Name=PC1", true)]
     [InlineData("--Navmesh:Query:EdgeMargin", true)]

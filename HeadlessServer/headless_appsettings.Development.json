@@ -6,7 +6,7 @@
       "Override": {
         "Microsoft": "Warning",
         "Microsoft.Hosting.Lifetime": "Information",
-        "HeadlessServer.Program": "Debug",
+        "Program": "Debug",
 
         "Game.WowProcessInput": "Verbose",
         "Core.ConfigurableInput": "Verbose",

@@ -85,7 +85,8 @@ from `BlazorServer` into the wrong filename here silently changes nothing.
 
 **Configuration keys and options are two readers, split before either sees them.** A
 `--Section:Key=value` (or `--Section:Key value`) argument goes to the configuration only
-(`HeadlessArguments`); everything else goes to `CommandLineParser`. Before the split,
+(`HeadlessArguments`); everything else goes to `CommandLineParser`. After a key, a negative number
+(`-1`, `-.5`) is its value, and anything else starting with `-` is an option (known issue 77). Before the split,
 CommandLineParser refused such a key (`UnknownOptionError`), so `--Pathing:Engine=Navmesh` never
 worked although this file said it did.
 

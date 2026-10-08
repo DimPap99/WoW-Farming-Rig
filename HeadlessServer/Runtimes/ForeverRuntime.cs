@@ -64,7 +64,19 @@ public sealed partial class ForeverRuntime : IBotRuntime
             return false;
         }
 
-        if (!ForeverRouteFile.TryLoad(file, new WorldMapAreaDB(forever), out ForeverRoute route, out string error))
+        WorldMapAreaDB maps;
+        try
+        {
+            maps = new WorldMapAreaDB(forever);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Newtonsoft.Json.JsonException)
+        {
+            // Refused, not failed: nothing attached yet (known issue 77).
+            refusal = $"Forever's map data (Json/dbc/{ForeverRunRequest.Client}) could not be read: {ex.Message}";
+            return false;
+        }
+
+        if (!ForeverRouteFile.TryLoad(file, maps, out ForeverRoute route, out string error))
         {
             refusal = $"the route is refused: {error}";
             return false;
