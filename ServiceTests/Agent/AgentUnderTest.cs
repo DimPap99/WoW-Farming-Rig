@@ -5,12 +5,12 @@ using BotAgent.Telemetry;
 
 using Contracts.Bots;
 
-using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 using ServiceClients.Bots;
 
+using ServiceTests.Api;
 using ServiceTests.Bots;
 
 using System;
@@ -104,8 +104,7 @@ internal sealed class AgentUnderTest : IAsyncDisposable
 
         services.AddSingleton(new AgentLinkOptions([TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(200)], TimeSpan.FromSeconds(1))
         {
-            HttpMessageHandlerFactory = manager is null ? null : manager.Handler,
-            Transports = HttpTransportType.LongPolling,
+            Connection = manager is null ? null : InMemoryHub.Over(manager.Handler),
         });
         AgentOptions options = new(Path.Combine(folder, "agent_identity.json"), "Test agent",
             manager is null ? null : new BotManagerOptions(ManagerSlot.Address), TimeSpan.FromMilliseconds(graceMs), "test 1.0");

@@ -16,7 +16,7 @@ AgentProcess.cs            the default RestartProcess: the host stops and the pr
 Runtime/IBotRuntime.cs     IBotRuntime, and the delegates: CreateRuntime (a runtime or why not),
                            ProbeGame, ListClassProfiles, PrepareRun, RestartProcess
 Runtime/BotRuntimeHost.cs  one run at a time, on its own thread; stop, grace, force, abandon
-Link/AgentLink.cs          dial out, back off, register on every connection, obey, report
+Link/AgentLink.cs          dial out (ServiceClients' ServiceHubs), register on every connection, obey, report
 Telemetry/TelemetryPublisher.cs   a BotSnapshot a second, the log since the last batch
 Telemetry/AgentLogSink.cs  the Serilog sink the console's lines come from
 Sync/DataSync.cs           a PrepareRun: a run's files from the Pathing Service, before it starts

@@ -26,10 +26,15 @@ namespace ControlCenter.Bots;
 /// <see cref="BotInfo"/>, so pages read it here instead of each polling, and passes log lines and
 /// ended runs on to the consoles. Its events come on SignalR's threads.
 /// </summary>
-public sealed partial class FleetFeed(IServiceProvider services, IFleetConnectionFactory connections, ILogger<FleetFeed> logger)
+/// <param name="connect">A connection to the fleet hub: the manager's at <c>BotManager:Url</c>
+/// (<see cref="ServiceHubs.Build"/>), or a test's in-memory one.</param>
+public sealed partial class FleetFeed(IServiceProvider services, Func<HubConnection> connect, ILogger<FleetFeed> logger)
     : BackgroundService
 {
-    /// <summary>The waits between attempts to connect, the last one repeated: the feed never gives up.</summary>
+    /// <summary>
+    /// The waits between attempts to connect (<see cref="ServiceHubs.Wait"/>), the last one repeated: the
+    /// feed never gives up.
+    /// </summary>
     public static readonly TimeSpan[] Backoff = [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)];
 
     private readonly Lock sync = new();
@@ -109,22 +114,9 @@ public sealed partial class FleetFeed(IServiceProvider services, IFleetConnectio
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await using HubConnection hub = connections.Create();
+        await using HubConnection hub = connect();
         Listen(hub);
-
-        int failures = 0;
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                failures = await StayConnectedAsync(hub, failures, stoppingToken) ? 0 : failures + 1;
-                await Task.Delay(Backoff[Math.Min(failures, Backoff.Length - 1)], stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-        }
+        await ServiceHubs.StayConnectedAsync(hub, Backoff, FollowAsync, ex => LogUnreachable(logger, ex.Message), stoppingToken);
     }
 
     public override void Dispose()
@@ -133,52 +125,25 @@ public sealed partial class FleetFeed(IServiceProvider services, IFleetConnectio
         base.Dispose();
     }
 
-    // Connects, reads the bots and follows the hub until the connection closes: true when it got
-    // that far. A failure is logged only when it follows a success, so an outage logs once.
-    private async Task<bool> StayConnectedAsync(HubConnection hub, int failures, CancellationToken stopping)
+    // Reads the bots, then follows the hub until the connection closes. What the hub streams while the
+    // bots are read is held and applied after the list; what came before the read is in the list.
+    private async Task<bool> FollowAsync(HubConnection hub, Task closed, CancellationToken stopping)
     {
-        TaskCompletionSource closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        Task OnClosed(Exception? _)
+        if (!await ResyncAsync(stopping))
         {
-            closed.TrySetResult();
-            return Task.CompletedTask;
+            return false;
         }
 
-        hub.Closed += OnClosed;
+        SetConnected(true);
         try
         {
-            // From before the first message can arrive until the list is read.
-            Hold();
-            try
-            {
-                await hub.StartAsync(stopping);
-            }
-            catch (Exception ex) when (!stopping.IsCancellationRequested)
-            {
-                Release(null);
-                if (failures == 0)
-                {
-                    LogUnreachable(logger, ex.Message);
-                }
-
-                return false;
-            }
-
-            if (!await ResyncAsync(stopping))
-            {
-                await hub.StopAsync(CancellationToken.None);
-                return false;
-            }
-
-            SetConnected(true);
             LogConnected(logger);
-            await closed.Task.WaitAsync(stopping);
+            await closed.WaitAsync(stopping);
             LogLost(logger);
             return true;
         }
         finally
         {
-            hub.Closed -= OnClosed;
             SetConnected(false);
         }
     }

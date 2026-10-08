@@ -2,10 +2,15 @@ using ControlCenter.Bots;
 using ControlCenter.Components;
 using ControlCenter.Pathing;
 
+using Contracts.Bots;
+using Contracts.Pathing;
+
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
+using ServiceClients;
 using ServiceClients.Bots;
 using ServiceClients.Pathing;
 
@@ -45,16 +50,24 @@ public static class ControlCenterRegistration
             return zones;
         });
         // Connected only while a page watches the routes the service plans.
-        services.AddSingleton<IWatchConnectionFactory, WatchConnectionFactory>();
-        services.AddSingleton<WatchFeed>();
+        services.AddSingleton(sp =>
+        {
+            PathingServiceOptions pathing = sp.GetRequiredService<PathingServiceOptions>();
+            return new WatchFeed(() => ServiceHubs.Build(pathing.Url, PathingApi.WatchHub, pathing.ApiKey),
+                sp.GetRequiredService<ILogger<WatchFeed>>());
+        });
 
         // The Bot Manager is called from here only, never forwarded: /api/v1 is the Pathing
         // Service's on this host. Registers BotManagerOptions too (BotManager:Url).
         services.AddBotManagerClient();
         services.AddSingleton<BotManagerStatus>();
         services.AddHostedService(sp => sp.GetRequiredService<BotManagerStatus>());
-        services.AddSingleton<IFleetConnectionFactory, FleetConnectionFactory>();
-        services.AddSingleton<FleetFeed>();
+        services.AddSingleton(sp =>
+        {
+            BotManagerOptions manager = sp.GetRequiredService<BotManagerOptions>();
+            return new FleetFeed(sp, () => ServiceHubs.Build(manager.Url, BotManagerApi.FleetHub, manager.ApiKey),
+                sp.GetRequiredService<ILogger<FleetFeed>>());
+        });
         services.AddHostedService(sp => sp.GetRequiredService<FleetFeed>());
 
         return services;

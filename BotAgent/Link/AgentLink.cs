@@ -1,26 +1,24 @@
 using BotAgent.Runtime;
 
-using Contracts;
 using Contracts.Bots;
 
-using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.Http.Connections.Client;
 using Microsoft.AspNetCore.SignalR.Client;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+using ServiceClients;
 using ServiceClients.Bots;
 
 using System;
 using System.Collections.Concurrent;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace BotAgent.Link;
 
 /// <summary>How the link dials out, and how a test reaches an in-memory manager.</summary>
-/// <param name="Backoff">The waits between attempts, the last repeated; each varies by a fifth so agents do not dial in step.</param>
+/// <param name="Backoff">The waits between attempts (<see cref="ServiceHubs.Wait"/>), the last repeated.</param>
 /// <param name="RefusedRetry">How long a manager that refused this agent (another protocol) is left alone.</param>
 public sealed record AgentLinkOptions(TimeSpan[] Backoff, TimeSpan RefusedRetry)
 {
@@ -29,11 +27,8 @@ public sealed record AgentLinkOptions(TimeSpan[] Backoff, TimeSpan RefusedRetry)
          TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(30)],
         TimeSpan.FromMinutes(5));
 
-    /// <summary>For a test server: the handler every request goes through.</summary>
-    public Func<HttpMessageHandler>? HttpMessageHandlerFactory { get; init; }
-
-    /// <summary>For a test server, which has no WebSockets: long polling.</summary>
-    public HttpTransportType? Transports { get; init; }
+    /// <summary>For a test server: how the connection reaches it (its handler, long polling).</summary>
+    public Action<HttpConnectionOptions>? Connection { get; init; }
 }
 
 /// <summary>
@@ -103,12 +98,15 @@ public sealed partial class AgentLink(AgentIdentity identity, AgentOptions optio
             return;
         }
 
-        HubConnection hub = Build(manager);
+        HubConnection hub = ServiceHubs.Build(manager.Url, BotManagerApi.AgentHub, manager.ApiKey, linkOptions.Connection);
+        hub.On<BotCommand, CommandAck>(AgentHubMethods.Command, Obey);
+        hub.On<BotAssignment?>(AgentHubMethods.Assign, assignment => host.Assignment = assignment);
         connection = hub;
         host.RunEnded += OnRunEnded;
         try
         {
-            await StayConnectedAsync(hub, manager, stopping);
+            await ServiceHubs.StayConnectedAsync(hub, linkOptions.Backoff, (open, closed, token) => RegisterAsync(open, manager, closed, token),
+                ex => LogUnreachable(logger, manager.Url, ex.Message), stopping);
         }
         finally
         {
@@ -118,103 +116,32 @@ public sealed partial class AgentLink(AgentIdentity identity, AgentOptions optio
         }
     }
 
-    private async Task StayConnectedAsync(HubConnection hub, BotManagerOptions manager, CancellationToken stopping)
+    // On every connection, since the manager may have restarted. A manager that refuses this agent is left alone a while.
+    private async Task<bool> RegisterAsync(HubConnection hub, BotManagerOptions manager, Task closed, CancellationToken stopping)
     {
-        int failures = 0;
-        while (!stopping.IsCancellationRequested)
+        AgentWelcome welcome = await hub.InvokeAsync<AgentWelcome>(AgentHubMethods.Register, Hello(), stopping);
+        if (!welcome.Accepted)
         {
-            TaskCompletionSource closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            Task OnClosed(Exception? _)
-            {
-                closed.TrySetResult();
-                return Task.CompletedTask;
-            }
-
-            hub.Closed += OnClosed;
-            TimeSpan wait;
-            try
-            {
-                await hub.StartAsync(stopping);
-                AgentWelcome welcome = await hub.InvokeAsync<AgentWelcome>(AgentHubMethods.Register, Hello(), stopping);
-                if (!welcome.Accepted)
-                {
-                    LogRefused(logger, manager.Url, welcome.Reason ?? "no reason given");
-                    await hub.StopAsync(stopping);
-                    wait = linkOptions.RefusedRetry;
-                }
-                else
-                {
-                    host.Assignment = welcome.Assignment;
-                    registered = true;
-                    failures = 0;
-                    LogConnected(logger, manager.Url, identity.Name, identity.AgentId);
-                    await FlushReportsAsync(hub, stopping);
-                    await closed.Task.WaitAsync(stopping);
-                    registered = false;
-                    LogLost(logger, manager.Url);
-                    wait = Backoff(0);
-                }
-            }
-            catch (OperationCanceledException) when (stopping.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                registered = false;
-                if (failures == 0)
-                {
-                    LogUnreachable(logger, manager.Url, ex.Message);
-                }
-
-                wait = Backoff(failures++);
-                if (hub.State != HubConnectionState.Disconnected)
-                {
-                    await hub.StopAsync(CancellationToken.None);
-                }
-            }
-            finally
-            {
-                hub.Closed -= OnClosed;
-            }
-
-            try
-            {
-                await Task.Delay(wait, stopping);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
+            LogRefused(logger, manager.Url, welcome.Reason ?? "no reason given");
+            await hub.StopAsync(stopping);
+            await Task.Delay(linkOptions.RefusedRetry, stopping);
+            return false;
         }
-    }
 
-    private HubConnection Build(BotManagerOptions manager)
-    {
-        HubConnection hub = new HubConnectionBuilder()
-            .WithUrl(new Uri(manager.Url, BotManagerApi.AgentHub), http =>
-            {
-                if (!string.IsNullOrEmpty(manager.ApiKey))
-                {
-                    http.Headers[ServiceKey.Header] = manager.ApiKey;
-                }
-
-                if (linkOptions.HttpMessageHandlerFactory is { } handler)
-                {
-                    http.HttpMessageHandlerFactory = _ => handler();
-                }
-
-                if (linkOptions.Transports is { } transports)
-                {
-                    http.Transports = transports;
-                }
-            })
-            .AddMessagePackProtocol()
-            .Build();
-
-        hub.On<BotCommand, CommandAck>(AgentHubMethods.Command, Obey);
-        hub.On<BotAssignment?>(AgentHubMethods.Assign, assignment => host.Assignment = assignment);
-        return hub;
+        host.Assignment = welcome.Assignment;
+        registered = true;
+        try
+        {
+            LogConnected(logger, manager.Url, identity.Name, identity.AgentId);
+            await FlushReportsAsync(hub, stopping);
+            await closed.WaitAsync(stopping);
+            LogLost(logger, manager.Url);
+            return true;
+        }
+        finally
+        {
+            registered = false;
+        }
     }
 
     private CommandAck Obey(BotCommand command)
@@ -293,12 +220,6 @@ public sealed partial class AgentLink(AgentIdentity identity, AgentOptions optio
         {
             return false;
         }
-    }
-
-    private TimeSpan Backoff(int failures)
-    {
-        TimeSpan step = linkOptions.Backoff[Math.Min(failures, linkOptions.Backoff.Length - 1)];
-        return step * (0.8 + 0.4 * Random.Shared.NextDouble());
     }
 
     #region Logging

@@ -38,12 +38,11 @@ Hosting/ServiceStatus.cs           the base of both pollers (2 s): Online, Error
 Pathing/PathingStatus.cs           the Pathing Service's poller: + capabilities, health; only that service's health counts
 Pathing/WorldCache.cs              zones, continents, places, test routes; read again on Reconnected
 Pathing/WatchFeed.cs               the routes the service plans, as a route watcher of /watchHub,
-                                   connected while a page watches; WatchConnectionFactory
+                                   connected while a page watches
 Pathing/ZoneLookup.cs              a point's zone from the service's area grid, kept per cell
 Bots/BotManagerStatus.cs           the Bot Manager's poller: + ManagerHealth (bots, online)
 Bots/FleetFeed.cs                  the one client of the manager's /fleetHub: every BotInfo, kept
                                    current; Changed, Resynced, Log, RunEnded for the pages
-Bots/FleetConnectionFactory.cs     the feed's hub connection (MessagePack, the manager's key)
 Bots/BotLogBuffer.cs               a console's log: the backlog joined to the stream, each line once
 Bots/AssignmentDraft.cs            the assignment form's fields, Missing and Refusal (AssignmentRules)
 World/WorldScene.cs                what a page shows on the world view: routes, markers, labels, shapes;
@@ -119,11 +118,14 @@ a service that is down - only for the page's own cancellation (`Token`), which h
 clients retry queries, so a poll of a service that just went down takes a few seconds to say so.
 
 **The fleet pages read the feed, nothing polls the bots.** `FleetFeed` is one hosted SignalR
-client of `/fleetHub` that reconnects forever. The hub replays nothing, so after every connect it
-reads the bots over REST and raises `Resynced`; what the hub streams while that read is under way
-is held and applied after the list, so a bot that registered meanwhile is not overwritten by the
-older list. Snapshots update a bot's `Latest`, `Run` and `Game`, as the manager's own `BotInfo`
-does. The hub sends every bot's snapshots and logs to everyone: a console filters by agent id.
+client of `/fleetHub` that reconnects forever. Both feeds connect as every hub client does
+(ServiceClients' `ServiceHubs`: built with the key, kept up with jittered backoff) and take a
+`Func<HubConnection>`, which a test points at its in-memory server. The hub replays nothing, so
+after every connect the feed reads the bots over REST and raises `Resynced`; what the hub streams
+while that read is under way is held and applied after the list, so a bot that registered meanwhile
+is not overwritten by the older list. Snapshots update a bot's `Latest`, `Run` and `Game`, as the
+manager's own `BotInfo` does. The hub sends every bot's snapshots and logs to everyone: a console
+filters by agent id.
 
 **A console's log must not lose or repeat a line where the backlog meets the stream.** `BotLog`
 starts holding streamed lines (`BotLogBuffer.BeginBacklog`) before it subscribes and reads the

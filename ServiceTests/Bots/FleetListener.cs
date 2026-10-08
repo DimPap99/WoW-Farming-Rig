@@ -1,9 +1,9 @@
 using Contracts.Bots;
 
-using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
-using Microsoft.Extensions.DependencyInjection;
+
+using ServiceTests.Api;
 
 using System;
 using System.Threading.Channels;
@@ -42,14 +42,7 @@ internal sealed class FleetListener : IAsyncDisposable
 
     public static async Task<FleetListener> ConnectAsync<TEntry>(WebApplicationFactory<TEntry> factory) where TEntry : class
     {
-        HubConnection connection = new HubConnectionBuilder()
-            .WithUrl(new Uri(factory.Server.BaseAddress, BotManagerApi.FleetHub), options =>
-            {
-                options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler();
-                options.Transports = HttpTransportType.LongPolling;
-            })
-            .AddMessagePackProtocol()
-            .Build();
+        HubConnection connection = InMemoryHub.Connect(factory.Server, BotManagerApi.FleetHub);
         FleetListener listener = new(connection);
         await connection.StartAsync(TestContext.Current.CancellationToken);
         return listener;

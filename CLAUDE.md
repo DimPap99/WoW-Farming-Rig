@@ -77,8 +77,9 @@ before working in one.
   guard, the services' logging, `ApiResult` and its HTTP answers, a hub's send loop; never referenced by the
   agent or the bot
 - `ServiceClients/` - Typed clients for the services (`IPathingClient`, `IBotManagerClient`), shared by UI and
-  agent, the key rules every service applies (`Security/ServiceKeyPolicy`), the one rule for a library file's
-  name (`LibraryName`), assignment rules, the path
+  agent, how a client dials a service's hub and stays on it (`ServiceHubs`), the key rules every service
+  applies (`Security/ServiceKeyPolicy`), the one rule for a library file's name (`LibraryName`), assignment
+  rules, the path
   editing model (`PathEditor`), map-world arithmetic (`ZoneMath`) and the route design model (`Routes/`:
   `RouteEditor` with node and leg kinds and undo, `RouteLegs` planning through any planner, what a bot
   follows of a design, the Forever route writer and reader)

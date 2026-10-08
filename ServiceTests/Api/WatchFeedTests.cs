@@ -3,8 +3,6 @@ using Contracts.Pathing;
 
 using ControlCenter.Pathing;
 
-using Microsoft.AspNetCore.Http.Connections;
-using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -29,21 +27,6 @@ public sealed class WatchFeedTests
     private static readonly Point3 ElwynnVendor = new(-8898.32f, -117.35608f, 81.840546f);
     private static readonly Point3 ElwynnPath = new(-8779.58f, -106.12012f, 0);
 
-    private sealed class TestConnections(PathingServiceFactory factory) : IWatchConnectionFactory
-    {
-        public HubConnection Create()
-        {
-            return new HubConnectionBuilder()
-                .WithUrl(new Uri(factory.Server.BaseAddress, PathingApi.WatchHub), options =>
-                {
-                    options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler();
-                    options.Transports = HttpTransportType.LongPolling;
-                })
-                .AddMessagePackProtocol()
-                .Build();
-        }
-    }
-
     private static async Task Until(Func<bool> condition)
     {
         DateTime deadline = DateTime.UtcNow + Wait;
@@ -60,7 +43,7 @@ public sealed class WatchFeedTests
         Assert.SkipUnless(TestData.HasPrecataTiles, TestData.NoTiles);
         using PathingServiceFactory factory = new(TestData.RepoJson);
         PathingClient client = new(factory.CreateClient());
-        await using WatchFeed feed = new(new TestConnections(factory), NullLogger<WatchFeed>.Instance);
+        await using WatchFeed feed = new(() => InMemoryHub.Connect(factory.Server, PathingApi.WatchHub), NullLogger<WatchFeed>.Instance);
 
         Assert.False(feed.Live);
         IDisposable lease = feed.Watch();
@@ -97,6 +80,5 @@ public sealed class WatchFeedTests
         using ControlCenterFactory factory = new();
 
         Assert.NotNull(factory.Services.GetService<WatchFeed>());
-        Assert.IsType<WatchConnectionFactory>(factory.Services.GetRequiredService<IWatchConnectionFactory>());
     }
 }

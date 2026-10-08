@@ -1,10 +1,9 @@
-using Contracts;
 using Contracts.Bots;
 
-using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
-using Microsoft.Extensions.DependencyInjection;
+
+using ServiceTests.Api;
 
 using System;
 using System.Collections.Concurrent;
@@ -57,22 +56,7 @@ internal sealed class FakeAgent : IAsyncDisposable
     public static async Task<FakeAgent> ConnectAsync<TEntry>(WebApplicationFactory<TEntry> factory, string agentId,
         string? key = null, string? remote = null) where TEntry : class
     {
-        HubConnection connection = new HubConnectionBuilder()
-            .WithUrl(new Uri(factory.Server.BaseAddress, BotManagerApi.AgentHub), options =>
-            {
-                options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler();
-                options.Transports = HttpTransportType.LongPolling;
-                if (key is not null)
-                {
-                    options.Headers[ServiceKey.Header] = key;
-                }
-                if (remote is not null)
-                {
-                    options.Headers[Api.RemoteAddress.Header] = remote;
-                }
-            })
-            .AddMessagePackProtocol()
-            .Build();
+        HubConnection connection = InMemoryHub.Connect(factory.Server, BotManagerApi.AgentHub, key, remote);
         FakeAgent agent = new(connection, agentId);
         await connection.StartAsync(TestContext.Current.CancellationToken);
         return agent;

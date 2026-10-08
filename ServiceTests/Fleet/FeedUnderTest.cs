@@ -2,14 +2,14 @@ using ControlCenter.Bots;
 
 using Contracts.Bots;
 
-using Microsoft.AspNetCore.Http.Connections;
-using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using ServiceClients;
 using ServiceClients.Bots;
 
 using ServiceTests.Agent;
+using ServiceTests.Api;
 
 using System;
 using System.Net.Http;
@@ -51,7 +51,8 @@ internal sealed class FeedUnderTest : IAsyncDisposable
         services.AddSingleton<IBotManagerClient>(new BotManagerClient(new HttpClient(handler) { BaseAddress = ManagerSlot.Address }));
         ServiceProvider provider = services.BuildServiceProvider();
 
-        FleetFeed feed = new(provider, new SlotConnections(slot), NullLogger<FleetFeed>.Instance);
+        FleetFeed feed = new(provider, () => ServiceHubs.Build(ManagerSlot.Address, BotManagerApi.FleetHub, null, InMemoryHub.Over(slot.Handler)),
+            NullLogger<FleetFeed>.Instance);
         await feed.StartAsync(TestContext.Current.CancellationToken);
         return new FeedUnderTest(provider, feed);
     }
@@ -61,22 +62,6 @@ internal sealed class FeedUnderTest : IAsyncDisposable
         await Feed.StopAsync(CancellationToken.None);
         Feed.Dispose();
         await provider.DisposeAsync();
-    }
-
-    /// <summary>The fleet hub of the slot's manager, as each connect finds it.</summary>
-    private sealed class SlotConnections(ManagerSlot slot) : IFleetConnectionFactory
-    {
-        public HubConnection Create()
-        {
-            return new HubConnectionBuilder()
-                .WithUrl(new Uri(ManagerSlot.Address, BotManagerApi.FleetHub), options =>
-                {
-                    options.HttpMessageHandlerFactory = _ => slot.Handler();
-                    options.Transports = HttpTransportType.LongPolling;
-                })
-                .AddMessagePackProtocol()
-                .Build();
-        }
     }
 
     /// <summary>Each request to the slot's manager of the moment, or refused when there is none.</summary>

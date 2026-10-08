@@ -1,9 +1,7 @@
 using Contracts;
 using Contracts.Pathing;
 
-using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
-using Microsoft.Extensions.DependencyInjection;
 
 using ServiceClients;
 using ServiceClients.Pathing;
@@ -88,14 +86,7 @@ public sealed class WatchHubTests
 
     private static HubConnection Connect(PathingServiceFactory factory)
     {
-        return new HubConnectionBuilder()
-            .WithUrl(new Uri(factory.Server.BaseAddress, PathingApi.WatchHub), options =>
-            {
-                options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler();
-                options.Transports = HttpTransportType.LongPolling;
-            })
-            .AddMessagePackProtocol()
-            .Build();
+        return InMemoryHub.Connect(factory.Server, PathingApi.WatchHub);
     }
 
     private static TaskCompletionSource<T> Completion<T>()
