@@ -1,11 +1,17 @@
 # Phase 3 review - the fixes: plan and handoff
 
-**Status (2026-10-08):** step 1 (this plan, known issues 63 to 77) is written. A max-level review
-of Phase 3 (its eleven commits in 4e65fd27..e71c5781: the route library, `ForeverRun`, the Bot
-Manager, the agent, the fleet pages and the sync), checked against ef51cc7d, found 16 medium and
-about 40 low findings and nothing high, and 17 design findings. None was fixed at ef51cc7d: the
-agent, manager and fleet code had not changed since Phase 3. The review's full report (every
-verdict, probe and location, line numbers at e71c5781) is outside the repository, at
+**Status (2026-10-08):** all three steps are built on `fix/phase3-review`, 36 commits after
+ef51cc7d with this record, not pushed: the known issues 63 to 77 (step 1), every bug with a test that fails on the
+old code (step 2), and the 17 design findings (step 3). `dotnet test`: 653 passed, 522 before. What
+is left needs Windows, and most of it a game: items 12 to 21 of the Windows checklist in
+[phase3-plan.md](phase3-plan.md). Still open from the review: known issue 30's Pathing Service half.
+"As built" below lists each step's commit.
+
+A max-level review of Phase 3 (its eleven commits in 4e65fd27..e71c5781: the route library,
+`ForeverRun`, the Bot Manager, the agent, the fleet pages and the sync), checked against ef51cc7d,
+found 16 medium and about 40 low findings and nothing high, and 17 design findings. None was fixed at
+ef51cc7d: the agent, manager and fleet code had not changed since Phase 3. The review's full report
+(every verdict, probe and location, line numbers at e71c5781) is outside the repository, at
 `~/RiderProjects/WoW-Farming-Rig-review/phase3/phase3-review.md` on the machine it ran on.
 
 ## Decisions (2026-10-08)
@@ -45,7 +51,7 @@ As in [phase1-fixes-plan.md](phase1-fixes-plan.md):
 - A fix that lands in code a refactor merges waits for the refactor, so it is written once (item 75
   after `ServiceHosting`; the name parts of items 68 and 70 after the one name rule).
 - Windows-only behaviour (window close, logoff, QuickEdit, the probe, DXGI) is built and unit-tested
-  here, and goes on the Windows checklist below.
+  here, and goes on the Windows checklist (items 12 to 21 in [phase3-plan.md](phase3-plan.md)).
 - When a fix lands, its known-issues item moves to "Fixed" with the commit, or is rewritten to say
   what is left.
 
@@ -281,20 +287,56 @@ tests guard it; a fix that lands in the merged code comes with it.
     `ForeverRun.Request` and `Trial`); `ExitRefused` means one thing; the three conventions of the
     agent's state files become the contract's JSON.
 
-## Windows checklist additions
+## As built (2026-10-08)
 
-For the Phase 3 checklist in [phase3-plan.md](phase3-plan.md), with a game where it says so:
+Step 1: 9a779143 (known issues 63 to 77, this plan).
 
-1. **The window closes:** with a Classic run moving, close the agent's window. The character stops
-   (keys released), the console shows "Application is shutting down", and the fleet shows the run
-   Stopped.
-2. **A logoff:** the same with a sign-out (the run is reported Stopped, or nothing is held when
-   WoW closes first).
-3. **QuickEdit:** click into the agent's window during a run (Windows 10 console). The bot plays on,
-   and a Stop from the Control Center stops it at once.
-4. **Minimized:** minimize WoW and start a Classic assignment. It is refused with "the WoW window is
-   minimized", and `frame_config.json` is still there; restored, the next start runs.
-5. **A locked PC:** lock it and start a Classic assignment. It is refused, and the agent stays up (no
-   crash, no restart in `run-agent.log`).
-6. **As administrator:** WoW run as administrator, the agent not: the agent stays online and refuses a
-   run with the reason.
+Step 2, one commit per fix, each with a test that failed on the old code (or with the fix taken out):
+
+| step | item | commit |
+|---|---|---|
+| 2.1 the agent's crash and its silence | 63 | 3d2498bb |
+| 2.2 the console cannot hold the bot | 64 | d7593380 |
+| 2.3 a clean stop whichever way the agent is stopped | 65 | 5ac44ad7 |
+| 2.4 a Classic start that never deletes | 66 | 31504162 |
+| 2.5 a probe that fails stops nothing | 67 | 48dda20e |
+| 2.6 a repeating route with nothing left to do | 69 | 7e63b4cf |
+| 2.7 one malformed route file | 70 | 84d14c4e |
+| 2.8 case twins | 71 | f7b89a0c |
+| 2.9 the registry keeps its bots | 72 | be3e03cf |
+| 2.10 one send loop for the fleet hub | 73 | 7a2f2a4e |
+| 2.11 one agent per id | 74 | 035c3caf |
+| 2.12 the agent's run host | 76 | 1e340066 |
+| 2.13 a stop while the controller is built | 23 | 8ae20ac5 |
+| 2.14 the Classic run's paths | 68 | cc572156 |
+| 2.15 smaller findings | 77 | fe570171 (HeadlessServer), 838ed8b3 (fleet pages), 2554bdb0 (sync) |
+
+Two races are fixed by their structure and have no test: an abandon in the instant the run ends
+(the review's V15: the abandon checks `Finished` under the lock), and a standalone run that ends
+before `Start` hands its id back (V33: the report waits in `StartFromCommandLine`).
+
+Step 3, the design findings:
+
+| design | commit | what it closed |
+|---|---|---|
+| 1 `ServiceHosting` | 38f6e9d6 | item 75 (the key rules), item 46's 400 for an unreadable request |
+| 2 one name rule (`LibraryName`) | 130f6fcd | the name parts of items 68 and 70 |
+| 3 one client stack | d425edbd | item 46's client half |
+| 4 delegates for the one-method interfaces | 25bbd203 | |
+| 5 one hub loop (`ServiceHubs`) | 2eae4178 | jitter for the feeds too |
+| 6 `AtomicFile` everywhere | abdf6851 | |
+| 7 the agent's data folder loaded once | bd53d3c4 | |
+| 8 a run's result as a value | 32d7be0d, bbe90024 | `ForeverRun.Run(int processId, CancellationToken)` too |
+| 9 the stuck-run machinery | 8ae20ac5 (2.13) | the grace, release and abandon stay, for a run that ignores its token |
+| 10 `ResidentHost` | 4a5679f5 | the review's V37 |
+| 11 the manager tracked once | 2c5f54f6 | item 77's last finding (V23), item 30's manager half |
+| 12 log lines carry their number | bb69e0b3 | agent protocol 2; V45 |
+| 13 the assignment push goes | 1f5e8d66 | |
+| 14 `ForeverRunRequest` holds the command line's rules | e143e5a1 | |
+| 15 one owner per rule | 373a48ed | the listing is `LibraryName.Files` for every library |
+| 16 a cheap client probe | d5799f1c | the review's E1 |
+| 17 the smaller design findings | 56bc08b8 | one JSON for the state files (`ContractJson.Files`) |
+
+`Utilities/SimAgent` and `Utilities/ForeverControllerTrial`, outside the solution, build with every
+change. The Windows checklist additions are items 12 to 21 of the checklist in
+[phase3-plan.md](phase3-plan.md).

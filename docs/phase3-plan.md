@@ -2,7 +2,8 @@
 
 **Status (2026-10-06):** all six steps and the finishing docs are built and pushed to `main`. What
 is left needs Windows, and most of it a game: the Windows checklist below (item 1 passed), then decision 7, deleting BlazorServer's
-Forever runs page. This file holds the whole plan as agreed, what each step delivered and how it
+Forever runs page. **2026-10-08:** a review of Phase 3 and its fixes are on `fix/phase3-review`
+([phase3-fixes-plan.md](phase3-fixes-plan.md)); the checklist gained items 12 to 21 for them. This file holds the whole plan as agreed, what each step delivered and how it
 was checked, and the list to test on Windows. The design itself is
 [service-architecture.md](service-architecture.md); what was found along the way is in
 [known-issues.md](known-issues.md).
@@ -307,8 +308,9 @@ Windows PC can run these; report what happens next to each.
 and `frame_config.json` from BlazorServer.
 
 1. **Build and tests.** `dotnet build WoWFarmingRig.sln`, `dotnet build Utilities/ForeverControllerTrial`,
-   `dotnet build Utilities/ForeverVisualReader`, `dotnet test` (202 expected then, 339 since step 6;
-   tile tests skip without the precata tiles). `dotnet run --project Utilities/ForeverVisualReader -c Release -- --logic-test`
+   `dotnet build Utilities/ForeverVisualReader`, `dotnet test` (202 expected then, 339 since step 6,
+   653 with the review's fixes; tile tests skip without the precata tiles). With the fixes,
+   `dotnet build Utilities/SimAgent` too. `dotnet run --project Utilities/ForeverVisualReader -c Release -- --logic-test`
    runs the Forever logic checks, which now import `SharedLib.Forever`.
    **Passed on Windows, 2026-10-05.** All three build with no errors. `dotnet test`: 201 passed,
    1 skipped (the minimap tiles); the precata navmesh is on that PC, so the tile tests ran.
@@ -352,8 +354,9 @@ and `frame_config.json` from BlazorServer.
    `--urls=http://0.0.0.0:5030` there; on the bot PC `$env:ApiKey="<secret>"` and
    `--manager http://<that-pc>:5030`. Without the key the agent is refused (401) and keeps trying.
 9. **Stop grace.** If a run ever fails to end after a stop, after ~15 s the agent logs that it
-   releases the keys, reports the run Abandoned and exits with code 75 (known issue 23 is one way:
-   a Classic run started while the addon's data is not on screen).
+   releases the keys, reports the run Abandoned and exits with code 75. Known issue 23 was one way
+   (a Classic run started while the addon's data is not on screen); with the review's fixes a stop
+   ends that wait at once (item 17 below).
 10. **Logoff.** With a run going, sign out of Windows: the run stops and releases (SIGTERM path).
 11. **The logon task, the restart loop and the sync.** Only the last point needs the game.
     - `HeadlessServer\build.bat`, then
@@ -377,6 +380,34 @@ and `frame_config.json` from BlazorServer.
     - `uninstall-agent-task.ps1` removes the task; a running agent keeps running until Ctrl+C.
     - With the game: a Classic assignment whose profile's paths are only on the Pathing Service
       pulls them, and the bot walks them.
+
+The review's fixes (`fix/phase3-review`, [phase3-fixes-plan.md](phase3-fixes-plan.md)), with a game
+where it says so. Update the manager and every agent together: they speak agent protocol 2, and an
+agent built before is refused with "update the older one".
+
+12. **The window closes:** with a Classic run moving, close the agent's window. The character stops
+    (keys released), the console shows "Application is shutting down", and the fleet shows the run
+    Stopped (known issue 65).
+13. **A logoff:** the same with a sign-out (the run is reported Stopped, or nothing is held when
+    WoW closes first).
+14. **QuickEdit:** click into the agent's window during a run (Windows 10 console). The bot plays on,
+    and a Stop from the Control Center stops it at once (known issue 64).
+15. **Minimized:** minimize WoW and start a Classic assignment. It is refused with "the WoW window is
+    minimized", and `frame_config.json` is still there; restored, the next start runs (known issue 66).
+16. **A locked PC:** lock it and start a Classic assignment. It is refused, and the agent stays up (no
+    crash, no restart in `run-agent.log`) (known issue 63).
+17. **A stop while attaching:** start a Classic assignment with the addon's data off screen, and stop
+    it within 10 s: it ends Stopped at once, no Abandoned and no exit 75 (known issue 23).
+18. **As administrator:** WoW run as administrator, the agent not: the agent stays online and refuses a
+    run with the reason (known issue 67).
+19. **One agent per id:** a second `run.bat --agent` from the same folder ends with "Another agent with
+    this id"; the folder copied to a second PC, its agent is refused naming the first machine while
+    that one is online (known issue 74).
+20. **A cheap probe:** with the agent idle, Task Manager shows no WMI work (`WmiPrvSE.exe`) every 5 s;
+    WoW started, the fleet shows its client within 5 s, and keeps it during a run (design 16).
+21. **The trial runner's rules:** `dotnet run --project Utilities/ForeverControllerTrial -- --roam 10 10 20 20 0`
+    is refused ("a roam needs at least one kill to make") and `-- --travel 52 101` too (off the map),
+    before anything attaches (design 14).
 
 When these pass, decision 7 applies: delete BlazorServer's Forever runs page and its host (known
 issue 24).
