@@ -51,7 +51,7 @@ public sealed class ForeverRouteLibrary(DataConfig dataConfig)
 
         WorldMapAreaDB? db = Maps(out string? problem);
         List<ForeverRouteInfo> routes = [];
-        foreach (string file in Directory.EnumerateFiles(Folder, "*" + PathName.Extension).Order(StringComparer.OrdinalIgnoreCase))
+        foreach (string file in Directory.EnumerateFiles(Folder, "*" + LibraryName.Extension).Order(StringComparer.OrdinalIgnoreCase))
         {
             string name = Path.GetFileName(file);
             // A file no request could name is not offered: nothing could open, save or assign it.
@@ -166,32 +166,20 @@ public sealed class ForeverRouteLibrary(DataConfig dataConfig)
     public bool TryResolve(string? name, out string file, out string error)
     {
         file = string.Empty;
-        if (string.IsNullOrWhiteSpace(name))
+        if (LibraryName.Problem(name) is string problem)
         {
-            error = "a route name is required";
+            error = problem;
             return false;
         }
 
-        if (name.Length > PathName.MaxLength)
+        if (name!.Contains('/'))
         {
-            error = $"a route name is at most {PathName.MaxLength} characters";
-            return false;
-        }
-
-        if (name.Contains('/') || !PathName.IsPlainSegment(name))
-        {
-            error = $"'{name}' is not a valid route name: use a plain file name such as my_route{PathName.Extension}";
-            return false;
-        }
-
-        if (name.Length <= PathName.Extension.Length || !name.EndsWith(PathName.Extension, StringComparison.OrdinalIgnoreCase))
-        {
-            error = $"'{name}' must end in {PathName.Extension}";
+            error = $"'{name}' is not a valid route name: use a plain file name such as my_route{LibraryName.Extension}";
             return false;
         }
 
         file = Path.GetFullPath(Path.Join(Folder, name));
-        if (!PathName.IsUnder(Folder, file))
+        if (!LibraryName.IsUnder(Folder, file))
         {
             error = $"'{name}' is outside the route folder";
             return false;

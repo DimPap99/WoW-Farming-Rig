@@ -4,7 +4,7 @@ using PathingService.Forever;
 using PathingService.Hosting;
 using PathingService.Paths;
 
-using ServiceClients.Bots;
+using ServiceClients;
 using ServiceClients.Sync;
 
 using ServiceHosting;
@@ -105,7 +105,7 @@ public sealed class SyncLibrary(DataConfig dataConfig, ForeverRouteLibrary route
         }
 
         SearchOption depth = set == SyncSets.ForeverRoutes ? SearchOption.TopDirectoryOnly : SearchOption.AllDirectories;
-        foreach (string file in Directory.EnumerateFiles(folder, "*" + PathName.Extension, depth))
+        foreach (string file in Directory.EnumerateFiles(folder, "*" + LibraryName.Extension, depth))
         {
             string name = PathName.Relative(folder, file);
             if (TryResolve(set, folder, name, out _, out _))
@@ -126,14 +126,14 @@ public sealed class SyncLibrary(DataConfig dataConfig, ForeverRouteLibrary route
                 return routes.TryResolve(name, out file, out error);
             default:
                 file = string.Empty;
-                if (!AssignmentRules.IsRelativeName(name))
+                if (!LibraryName.IsRelativeName(name))
                 {
-                    error = $"'{name}' is not a zone file name: continent/uiMap{PathName.Extension} with plain names";
+                    error = $"'{name}' is not a zone file name: continent/uiMap{LibraryName.Extension} with plain names";
                     return false;
                 }
 
                 file = Path.GetFullPath(Path.Join(folder, name));
-                if (!PathName.IsUnder(folder, file))
+                if (!LibraryName.IsUnder(folder, file))
                 {
                     error = $"'{name}' is outside the cost zone folder";
                     return false;

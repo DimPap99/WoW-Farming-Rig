@@ -361,31 +361,28 @@ Items 63 to 77 come from the review of Phase 3 (its eleven commits in 4e65fd27..
 `~/RiderProjects/WoW-Farming-Rig-review/phase3/phase3-review.md` on the machine it ran on; the
 plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fixes-plan.md).
 
-68. **The agent takes path names the Pathing Service refuses.** (A path override that does not load
-    is fixed: see "Fixed".)
-    - **Where:** `ServiceClients/Bots/AssignmentRules.IsRelativeName`, which the manager, the Control Center
-      and the agent apply, against `PathingService/Paths/PathName`, which items 43 and 46 tightened alone.
-    - **Effect:** an assignment may name `_forever/x.json` as a Classic path, or a name with `%` or a
-      segment ending in a dot: saved, synced as "used as this PC has them", then refused by the run.
-    - **Also:** a path of a class profile that is missing, other than the one an override replaces, is
-      still found only after the run attached and pressed the flush key (now with the loader's reason).
-    - **Fix (the plan's step 3, with the one name rule):** one rule for every name.
-
-70. **A route named `.JSON` is saved but never listed.** (The malformed file that took the library
-    offline is fixed: see "Fixed".)
-    - **Where:** `PathingService/Forever/ForeverRouteLibrary` and `PathingService/Sync/SyncLibrary`, which
-      list `*.json`; the names' rule accepts `.json` in any case (`PathName`, `TryResolve`,
-      `AssignmentRules`).
-    - **Effect:** on Linux a route saved as `Durotar.JSON` answers "saved" but is never listed or synced:
-      it cannot be opened, deleted or assigned from the pages.
-    - **Fix (the plan's step 3, with the one name rule):** a name ends in `.json`, exactly.
-
 77. **Left of the Phase 3 review's smaller findings.** (The rest is fixed: see "Fixed".)
     - `BotManagerStatus` takes any JSON at the manager's `/health` (item 50's twin): a `BotManager:Url`
       pointing at the Pathing Service shows a green "Bots 0 of 0". It goes with the plan's step 3, where
       the Control Center stops polling the manager and takes its state from the fleet feed.
 
 ## Fixed
+
+68. **The agent took path names the Pathing Service refused** (Phase 3 review, 2026-10-08; the rest of
+    item 68 is fixed below). The file-name rule existed twice, `AssignmentRules` (the manager, the Control
+    Center, the agent) and the service's `PathName`, and items 43 and 46 tightened `PathName` alone: an
+    assignment could name `_forever/x.json` as a Classic path, a `%` or a segment ending in a dot. One
+    rule now, `ServiceClients/LibraryName` (relative, plain segments, `.json` exactly, never leaving its
+    folder; `IsRecordedPathName` outside the Forever route folder), which `PathName`, the route
+    library, the sync on both ends, `AssignmentRules`, the manager and the profile reader use;
+    `_forever` is spelled once, in Contracts' `SyncSets`. Left: a class profile's path that is missing,
+    other than the one an override replaces, is still found once the run attached, with the loader's
+    reason. Tests: `LibraryNameTests` (each assignment case fails on the old rules).
+
+70. **A route named `.JSON` was saved but never listed** (Phase 3 review, 2026-10-08; the malformed file
+    is fixed below). The names' rule took `.json` in any case while the library and the sync list
+    `*.json`, case-sensitively on Linux. A name ends in `.json` exactly now (`LibraryName.Extension`).
+    Tests: `ForeverRouteApiTests.A_route_named_JSON_is_refused`, `LibraryNameTests`.
 
 75. **The key rules trusted loopback too far** (Phase 3 review, 2026-10-08). "This machine" was the TCP
     peer alone, whatever the request named; the cross-site rule let every GET through, a WebSocket's

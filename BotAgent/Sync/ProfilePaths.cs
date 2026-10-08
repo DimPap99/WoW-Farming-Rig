@@ -1,4 +1,4 @@
-using ServiceClients.Bots;
+using ServiceClients;
 
 using System;
 using System.Collections.Generic;
@@ -139,7 +139,7 @@ public static class ProfilePaths
         foreach (string name in names)
         {
             string normalized = Normalize(name);
-            if (!AssignmentRules.IsRelativeName(normalized))
+            if (!LibraryName.IsRelativeName(normalized))
             {
                 skipped.Add(name);
             }

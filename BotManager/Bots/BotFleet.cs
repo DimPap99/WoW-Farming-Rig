@@ -8,6 +8,7 @@ using Contracts.Bots;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 
+using ServiceClients;
 using ServiceClients.Bots;
 
 using ServiceHosting;
@@ -111,7 +112,7 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             // A hello without a client says only that none runs now: the last one seen is kept.
             record = new BotRecord(hello.AgentId, Clean(hello.Name, hello.Machine, hello.AgentId), machine, known?.FirstSeen ?? now, now,
                 hello.Protocol, Clean(hello.AgentVersion, string.Empty), hello.Game ?? known?.Game,
-                [.. (hello.ClassProfiles ?? []).Where(AssignmentRules.IsRelativeName).Take(MaxClassProfiles)], known?.Assignment);
+                [.. (hello.ClassProfiles ?? []).Where(LibraryName.IsRelativeName).Take(MaxClassProfiles)], known?.Assignment);
             // An agent that registers is online whether or not its record could be written.
             Record(record);
 

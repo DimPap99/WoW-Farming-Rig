@@ -39,8 +39,8 @@ client, which is a different world.
 folder is named after an era, so an era from a request (the Pathing Service's sync, `?era=`) is
 taken only when it is one of these. Add to it when `ClientEra` gains an era.
 
-**`ForeverRouteFolder` is the one spelling of `_forever`.** `ForeverRouteFile.Folder` (SharedLib)
-is defined from it, and `ForeverRoutes` is the folder. `Sync` (`.sync` in the root) is where an
+**`ForeverRouteFolder` is `_forever`, spelled once, in Contracts' `SyncSets`.** `ForeverRouteFile.Folder`
+(SharedLib) and ServiceClients' `LibraryName` are defined from it, and `ForeverRoutes` is the folder. `Sync` (`.sync` in the root) is where an
 agent keeps what it last synced from the Pathing Service and the local changes it kept aside.
 
 **`Locations` holds `teleport_locations.txt`, the one copy.** Each line carries its own map id,

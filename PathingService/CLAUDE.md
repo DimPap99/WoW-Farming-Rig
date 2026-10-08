@@ -177,8 +177,10 @@ the 3D view and the old map drew (tile meshes, terrain, drawings) is gone with t
 - `ServiceTests/Stores` pins all three. Change a format and BlazorServer and the bot stop
   agreeing with this service.
 
-**Names are checked once, in `PathName`.** Relative, `/` between folders, plain segments, ends
-in `.json`, and never under `_forever/` (Forever route files, a different format). A plain segment
+**Names are checked by one rule, `ServiceClients/LibraryName`, which the manager, the Control Center
+and the agent apply too.** Relative, `/` between folders, plain segments, ends in `.json` exactly (the
+libraries list `*.json`, case-sensitively on Linux), and, for a recorded path, never under `_forever/`
+(Forever route files, a different format; `PathName` adds the path folder's own checks). A plain segment
 does not end in a dot or a space: Windows drops those, so `_forever./x.json` would open a Forever
 route there; the `_forever/` guard runs again on the resolved path. `%` is refused too: a `/`
 sent as `%2F` would make one flat file. The old controller joined any name onto the folder.

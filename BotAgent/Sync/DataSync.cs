@@ -6,7 +6,6 @@ using Contracts.Pathing;
 using Microsoft.Extensions.Logging;
 
 using ServiceClients;
-using ServiceClients.Bots;
 using ServiceClients.Pathing;
 using ServiceClients.Sync;
 
@@ -40,9 +39,6 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
 
     /// <summary>How many names a message lists before it says how many more.</summary>
     public const int NamesShown = 3;
-
-    private static readonly StringComparison FileNameComparison =
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     // Fields, not the constructor's parameters: a sync's session reaches them through its DataSync.
     // Two names are one file as the file system compares them.
@@ -118,7 +114,12 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
     // Where a file of a set lives on this PC, or null for a name that would leave the set's folder.
     private string? LocalFile(string set, string? era, string name)
     {
-        bool named = set == SyncSets.ForeverRoutes ? AssignmentRules.IsFileName(name) : AssignmentRules.IsRelativeName(name);
+        bool named = set switch
+        {
+            SyncSets.ForeverRoutes => LibraryName.IsFileName(name),
+            SyncSets.Paths => LibraryName.IsRecordedPathName(name),
+            _ => LibraryName.IsRelativeName(name),
+        };
         if (!named)
         {
             return null;
@@ -131,7 +132,7 @@ public sealed partial class DataSync(IPathingClient? pathing, DataConfig data, I
             _ => data.RoadOf(era!),
         });
         string file = Path.GetFullPath(Path.Join(folder, name));
-        return file.StartsWith(Path.TrimEndingDirectorySeparator(folder) + Path.DirectorySeparatorChar, FileNameComparison) ? file : null;
+        return LibraryName.IsUnder(folder, file) ? file : null;
     }
 
     private static string Count(int files)

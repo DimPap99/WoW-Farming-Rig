@@ -21,7 +21,7 @@ public sealed class DataConfig
     public const string TeleportLocationsFile = "teleport_locations.txt";
 
     /// <summary>WoW: Forever's route files, a folder of <see cref="Path"/> in a format of their own.</summary>
-    public const string ForeverRouteFolder = "_forever";
+    public const string ForeverRouteFolder = Contracts.Pathing.SyncSets.ForeverRouteFolder;
 
     /// <summary>The folder under <see cref="Root"/> where an agent keeps what it last synced, and its backups.</summary>
     public const string SyncFolder = ".sync";

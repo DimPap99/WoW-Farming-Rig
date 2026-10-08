@@ -13,6 +13,9 @@ public static class SyncSets
     /// <summary>WoW: Forever's route files (<c>Json/path/_forever</c>).</summary>
     public const string ForeverRoutes = "forever-routes";
 
+    /// <summary>The folder of the path library that holds the Forever route files: the one spelling of <c>_forever</c>.</summary>
+    public const string ForeverRouteFolder = "_forever";
+
     /// <summary>One era's roads and danger zones (<c>Json/road/&lt;era&gt;</c>); the only set asked for by era.</summary>
     public const string CostZones = "costzones";
 

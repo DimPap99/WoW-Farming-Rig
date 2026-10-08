@@ -81,6 +81,21 @@ public sealed class ForeverRouteApiTests
         Assert.Contains("step 2 is empty", opened.Value.Info.Problem);
     }
 
+    // The library lists *.json, case-sensitively on Linux: a route saved as .JSON was never listed (known issue 70).
+    [Fact]
+    public async Task A_route_named_JSON_is_refused()
+    {
+        using TempDataRoot data = ForeverData();
+        using PathingServiceFactory factory = new(data.Root);
+        PathingClient client = new(factory.CreateClient());
+
+        ServiceResult saved = await client.SaveForeverRouteAsync("Durotar.JSON", Commented, TestContext.Current.CancellationToken);
+
+        Assert.Equal(400, saved.Status);
+        Assert.Contains("must end in .json", saved.Error);
+        Assert.False(File.Exists(Path.Combine(RouteFolder(data), "Durotar.JSON")));
+    }
+
     [Fact]
     public async Task A_name_that_is_another_routes_but_for_case_is_refused()
     {

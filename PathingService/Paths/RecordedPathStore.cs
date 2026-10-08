@@ -56,7 +56,7 @@ public sealed class RecordedPathStore(DataConfig dataConfig)
             return result;
         }
 
-        foreach (string file in Directory.EnumerateFiles(Root, "*" + PathName.Extension, SearchOption.AllDirectories))
+        foreach (string file in Directory.EnumerateFiles(Root, "*" + LibraryName.Extension, SearchOption.AllDirectories))
         {
             string name = PathName.Relative(Root, file);
             if (PathName.IsForeverRoute(name) ||
