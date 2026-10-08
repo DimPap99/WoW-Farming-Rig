@@ -1,5 +1,6 @@
 using BotManager.Agents;
 using BotManager.Fleet;
+using BotManager.Hosting;
 using BotManager.Registry;
 
 using Contracts.Bots;
@@ -21,12 +22,13 @@ namespace BotManager.Bots;
 /// <summary>
 /// The bots: what the registry keeps about them, which agents are connected now and over which
 /// connection, their latest snapshot and log, and the commands sent to them. Every change is sent
-/// on to the fleet hub's listeners (the Control Center). An agent is reached only over the
-/// connection it opened; a bot whose agent is not connected is offline, and commands to it are
-/// refused rather than queued.
+/// on to the fleet hub's listeners (the Control Center), posted under the lock to one send loop
+/// (<see cref="HubSendQueue"/>), so they get the changes in the order they happened and no agent
+/// waits on a listener (known issue 73). An agent is reached only over the connection it opened; a
+/// bot whose agent is not connected is offline, and commands to it are refused rather than queued.
 /// </summary>
 public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub> agents, IHubContext<FleetHub> fleet,
-    BotFleetOptions options, TimeProvider clock, ILogger<BotFleet> logger)
+    HubSendQueue sends, BotFleetOptions options, TimeProvider clock, ILogger<BotFleet> logger)
 {
 
     /// <summary>Log lines kept per bot, for a console opened late.</summary>
@@ -60,19 +62,19 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
 
     // --- from agents -----------------------------------------------------------------------
 
-    public async Task<AgentWelcome> RegisterAsync(string connectionId, AgentHello hello)
+    public Task<AgentWelcome> RegisterAsync(string connectionId, AgentHello hello)
     {
         if (hello.Protocol != BotManagerApi.AgentProtocol)
         {
             LogRefused(logger, Printable(Cap(hello.AgentId ?? string.Empty)), $"protocol {hello.Protocol}");
-            return new AgentWelcome(false,
-                $"this manager speaks agent protocol {BotManagerApi.AgentProtocol} and the agent {hello.Protocol}: update the older one", null);
+            return Task.FromResult(new AgentWelcome(false,
+                $"this manager speaks agent protocol {BotManagerApi.AgentProtocol} and the agent {hello.Protocol}: update the older one", null));
         }
 
         if (!AssignmentRules.IsAgentId(hello.AgentId))
         {
             LogRefused(logger, Printable(Cap(hello.AgentId ?? string.Empty)), "its id");
-            return new AgentWelcome(false, $"'{hello.AgentId}' is not an agent id: letters, digits, - and _", null);
+            return Task.FromResult(new AgentWelcome(false, $"'{hello.AgentId}' is not an agent id: letters, digits, - and _", null));
         }
 
         DateTimeOffset now = clock.GetUtcNow();
@@ -93,45 +95,43 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             }
             online[hello.AgentId] = new LiveBot(connectionId) { Run = hello.Run, Game = hello.Game };
             agentByConnection[connectionId] = hello.AgentId;
+            Broadcast(FleetHubMethods.BotChanged, InfoOf(record));
         }
 
         LogRegistered(logger, record.Name, record.AgentId, Printable(hello.Run?.Summary ?? "idle"));
-        await fleet.Clients.All.SendAsync(FleetHubMethods.BotChanged, Info(record));
-        return new AgentWelcome(true, null, record.Assignment);
+        return Task.FromResult(new AgentWelcome(true, null, record.Assignment));
     }
 
-    public async Task SnapshotAsync(string connectionId, BotSnapshot snapshot)
+    public Task SnapshotAsync(string connectionId, BotSnapshot snapshot)
     {
-        BotSnapshot latest;
         lock (sync)
         {
             if (!TryLive(connectionId, out string agentId, out LiveBot? live))
             {
-                return;
+                return Task.CompletedTask;
             }
 
             // The connection says who sent it, whatever the snapshot claims.
-            latest = snapshot with { AgentId = agentId };
+            BotSnapshot latest = snapshot with { AgentId = agentId };
             live.Latest = latest;
             live.Run = latest.Run;
             live.Game = latest.Game ?? live.Game;
+            Broadcast(FleetHubMethods.Snapshot, latest);
         }
 
-        await fleet.Clients.All.SendAsync(FleetHubMethods.Snapshot, latest);
+        return Task.CompletedTask;
     }
 
-    public async Task LogAsync(string connectionId, BotLogLine[] lines)
+    public Task LogAsync(string connectionId, BotLogLine[] lines)
     {
-        string agentId;
-        BotLogLine[] kept;
         lock (sync)
         {
-            if (!TryLive(connectionId, out agentId, out _) || lines is null || lines.Length == 0)
+            if (!TryLive(connectionId, out string agentId, out _) || lines is null || lines.Length == 0)
             {
-                return;
+                return Task.CompletedTask;
             }
 
-            kept = [.. (lines.Length > KeptLogLines ? lines[^KeptLogLines..] : lines).Select(line => line with { Message = Cap(line.Message) })];
+            BotLogLine[] kept = [.. (lines.Length > KeptLogLines ? lines[^KeptLogLines..] : lines).Select(line => line with { Message = Cap(line.Message) })];
             if (!logs.TryGetValue(agentId, out Queue<BotLogLine>? log))
             {
                 logs[agentId] = log = new Queue<BotLogLine>();
@@ -146,12 +146,14 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             {
                 log.Dequeue();
             }
+
+            Broadcast(FleetHubMethods.Log, agentId, kept);
         }
 
-        await fleet.Clients.All.SendAsync(FleetHubMethods.Log, agentId, kept);
+        return Task.CompletedTask;
     }
 
-    public async Task RunEndedAsync(string connectionId, RunReport report)
+    public Task RunEndedAsync(string connectionId, RunReport report)
     {
         report = report with { Message = Cap(report.Message), Run = report.Run with { Summary = Cap(report.Run.Summary) } };
         string agentId;
@@ -159,22 +161,24 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
         {
             if (!TryLive(connectionId, out agentId, out LiveBot? live))
             {
-                return;
+                return Task.CompletedTask;
             }
 
+            // A write that fails throws to the agent, which keeps the report and sends it again.
+            registry.AddRun(agentId, report);
             if (live.Run?.RunId == report.Run.RunId)
             {
                 live.Run = null;
             }
+
+            Broadcast(FleetHubMethods.RunEnded, new RunRecord(agentId, report));
         }
 
-        // A write that fails throws to the agent, which keeps the report and sends it again.
-        registry.AddRun(agentId, report);
         LogRunEnded(logger, agentId, Printable(report.Run.Summary), report.Outcome, Printable(report.Message));
-        await fleet.Clients.All.SendAsync(FleetHubMethods.RunEnded, new RunRecord(agentId, report));
+        return Task.CompletedTask;
     }
 
-    public async Task DisconnectedAsync(string connectionId)
+    public Task DisconnectedAsync(string connectionId)
     {
         BotRecord? record;
         lock (sync)
@@ -182,7 +186,7 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             if (!agentByConnection.Remove(connectionId, out string? agentId) ||
                 !online.TryGetValue(agentId, out LiveBot? live) || live.ConnectionId != connectionId)
             {
-                return;
+                return Task.CompletedTask;
             }
 
             online.Remove(agentId);
@@ -191,14 +195,16 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             {
                 record = record with { LastSeen = clock.GetUtcNow(), Game = live.Game ?? record.Game };
                 Record(record);
+                Broadcast(FleetHubMethods.BotChanged, InfoOf(record));
             }
         }
 
         if (record is not null)
         {
             LogOffline(logger, record.Name, record.AgentId);
-            await fleet.Clients.All.SendAsync(FleetHubMethods.BotChanged, Info(record));
         }
+
+        return Task.CompletedTask;
     }
 
     // --- from the Control Center ------------------------------------------------------------
@@ -243,6 +249,7 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             }
 
             connection = online.GetValueOrDefault(agentId)?.ConnectionId;
+            Broadcast(FleetHubMethods.BotChanged, InfoOf(record));
         }
 
         if (connection is not null)
@@ -250,7 +257,6 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             await agents.Clients.Client(connection).SendAsync(AgentHubMethods.Assign, assignment);
         }
 
-        await fleet.Clients.All.SendAsync(FleetHubMethods.BotChanged, Info(record));
         return FleetResult.Done;
     }
 
@@ -264,33 +270,33 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
         return CommandAsync(agentId, BotCommandKind.Stop, token);
     }
 
-    public async Task<FleetResult> ForgetAsync(string agentId)
+    public Task<FleetResult> ForgetAsync(string agentId)
     {
         lock (sync)
         {
             if (online.ContainsKey(agentId))
             {
-                return FleetResult.Conflict("the bot is online; stop its agent first");
+                return Task.FromResult(FleetResult.Conflict("the bot is online; stop its agent first"));
             }
 
             try
             {
                 if (!registry.Remove(agentId))
                 {
-                    return FleetResult.NotFound;
+                    return Task.FromResult(FleetResult.NotFound);
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 LogNotRecorded(logger, agentId, ex.Message);
-                return FleetResult.Failed($"the bot was not forgotten: {ex.Message}");
+                return Task.FromResult(FleetResult.Failed($"the bot was not forgotten: {ex.Message}"));
             }
 
             logs.Remove(agentId);
+            Broadcast(FleetHubMethods.BotRemoved, agentId);
         }
 
-        await fleet.Clients.All.SendAsync(FleetHubMethods.BotRemoved, agentId);
-        return FleetResult.Done;
+        return Task.FromResult(FleetResult.Done);
     }
 
     /// <summary>The bot's latest log lines, oldest first; null for a bot the manager does not know.</summary>
@@ -379,11 +385,23 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
     {
         lock (sync)
         {
-            LiveBot? live = online.GetValueOrDefault(record.AgentId);
-            return new BotInfo(record.AgentId, record.Name, record.Machine, live is not null, record.FirstSeen, record.LastSeen,
-                record.Protocol, record.AgentVersion, live?.Game ?? record.Game, record.ClassProfiles, record.Assignment,
-                live?.Run, live?.Latest);
+            return InfoOf(record);
         }
+    }
+
+    // Under the lock: the bot as the registry keeps it and as it is live now.
+    private BotInfo InfoOf(BotRecord record)
+    {
+        LiveBot? live = online.GetValueOrDefault(record.AgentId);
+        return new BotInfo(record.AgentId, record.Name, record.Machine, live is not null, record.FirstSeen, record.LastSeen,
+            record.Protocol, record.AgentVersion, live?.Game ?? record.Game, record.ClassProfiles, record.Assignment,
+            live?.Run, live?.Latest);
+    }
+
+    // Under the lock, so the listeners get the changes in the order they happened.
+    private void Broadcast(string method, params object?[] args)
+    {
+        sends.Post(fleet.Clients.All, method, args);
     }
 
     private static string Clean(string? value, string fallback, string? second = null)

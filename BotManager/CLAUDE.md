@@ -22,6 +22,7 @@ Program.cs                     host (a class in a namespace, so tests can host i
 Hosting/BotManagerRegistration AddBotManager / UseBotManager - the composition root
 Hosting/ServiceKeyGuard.cs     the key: ServiceClients' ServiceKeyPolicy, as the Pathing Service applies it
 Hosting/BotManagerLogging.cs   Serilog to console + daily file
+Hosting/HubSendQueue.cs        the fleet hub's one send loop: no agent waits on a listener
 Registry/IBotRegistry.cs       what is kept between connections: BotRecord, run history
 Registry/JsonBotRegistry.cs    data/bots.json and data/runs/<agentId>.json, written then renamed
 Bots/BotFleet.cs               registry + who is online over which connection + snapshots, logs, commands
@@ -40,6 +41,12 @@ connected is offline: commands to it answer 409 and are not queued. No answer wi
 `CommandTimeoutSeconds` (10) answers 504. SignalR reports an invocation cancelled by its token as a
 `HubException` ("Invocation canceled by the server"), not as a cancellation, so `BotFleet` tells a
 timeout by its own token.
+
+**No agent call waits on the fleet's listeners.** SignalR reads an agent's next message, the answer
+to a command included, only once its current hub call returned; a call that awaited the send to
+every Control Center froze every agent's connection while one of them did not read (known issue 73).
+`BotFleet` posts every change to `HubSendQueue`, under its lock, so listeners get the changes in the
+order they happened; never `await fleet.Clients...` in an agent's call.
 
 **An agent registers on every connection, and the newest connection wins.** A reconnect can arrive
 before the old connection's end; the old connection's disconnect is then ignored. Anything an agent

@@ -41,6 +41,9 @@ public static class BotManagerRegistration
             return new JsonBotRegistry(folder, sp.GetRequiredService<ILogger<JsonBotRegistry>>());
         });
         services.AddSingleton(sp => BotFleetOptions.From(sp.GetRequiredService<IConfiguration>()));
+        // The fleet hub's one send loop: no agent waits on a listener.
+        services.AddSingleton<HubSendQueue>();
+        services.AddHostedService(sp => sp.GetRequiredService<HubSendQueue>());
         services.AddSingleton<BotFleet>();
 
         services.AddSignalR(options => options.MaximumReceiveMessageSize = MaxAgentMessageBytes)

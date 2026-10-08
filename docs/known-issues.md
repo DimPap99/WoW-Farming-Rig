@@ -405,17 +405,6 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       it cannot be opened, deleted or assigned from the pages.
     - **Fix (the plan's step 3, with the one name rule):** a name ends in `.json`, exactly.
 
-73. **One stalled Control Center freezes every agent.**
-    - **Where:** `BotManager/Bots/BotFleet` (every `fleet.Clients.All.SendAsync`).
-    - **Cause:** each agent hub method awaits the send to every fleet listener, and SignalR reads an
-      agent's next message, the answer to a command included, only once the current method returned.
-    - **Effect:** a second Control Center that sleeps, sits at a breakpoint or is on a slow link stalls
-      every agent's snapshots, logs and registrations for about 10 s, and Start and Stop answer 504;
-      again at each reconnect. Two changes of one bot can also reach the listeners reversed, as the
-      bot's info is built outside the lock.
-    - **Fix:** one send loop for the fleet hub, fed in order under the fleet's lock, as the watch hub's
-      broadcaster does.
-
 74. **Two agents with one id hide one of them.**
     - **Where:** `BotManager/Bots/BotFleet.RegisterAsync`; `BotAgent/AgentIdentity` and HeadlessServer's
       start.
@@ -486,6 +475,16 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+73. **One stalled Control Center froze every agent** (Phase 3 review, 2026-10-08). Every agent hub
+    call awaited `fleet.Clients.All.SendAsync`, the send to every fleet listener, and SignalR reads an
+    agent's next message, the answer to a command included, only once its current call returned: a
+    Control Center that slept or sat at a breakpoint stalled every agent's snapshots, logs and
+    registrations for about 10 s, and Start and Stop answered 504; two changes of one bot could also
+    reach the listeners reversed. `BotFleet` now posts every change, built and posted under its lock,
+    to `HubSendQueue`, one send loop, as the watch hub's broadcaster does, and never awaits a send.
+    Test: `StalledListenerTests` (a listener that never reads; the calls returned only with the
+    queue).
 
 72. **The Bot Manager's registry could lose its bots** (Phase 3 review, 2026-10-08).
     - `JsonBotRegistry.Read` took any I/O error for a damaged file: a lock at startup (OneDrive, a backup
