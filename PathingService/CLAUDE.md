@@ -188,7 +188,9 @@ Continent names in the cost-zone, navmesh and bake routes are the client's own w
 only, for the same reason, by one rule (`ClientContinents`): any case, then the client's own case.
 A save is refused (409) when its name differs only in case from a file or folder already there
 (`PathName.StoredSpelling`): on Linux both can exist, and a Windows bot that synced both would run
-the one it was not given (known issue 71).
+the one it was not given (known issue 71). Every listing of a library (the paths, the routes, the
+sync's sets, the agent's class profiles, BlazorServer's route list) is `LibraryName.Files`: the names a
+request could open, by name ignoring case.
 
 **The path folder holds more than recorded paths.** The class profiles' path groups
 (`PathsFilenames`, `1-8_*.json`: `PathSettings` with requirements, commented) live beside the

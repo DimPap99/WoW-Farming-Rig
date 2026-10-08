@@ -51,11 +51,9 @@ public sealed class ForeverRouteLibrary(DataConfig dataConfig)
 
         WorldMapAreaDB? db = Maps(out string? problem);
         List<ForeverRouteInfo> routes = [];
-        foreach (string file in Directory.EnumerateFiles(Folder, "*" + LibraryName.Extension).Order(StringComparer.OrdinalIgnoreCase))
+        foreach ((string name, string file) in LibraryName.Files(Folder, nested: false))
         {
-            string name = Path.GetFileName(file);
-            // A file no request could name is not offered: nothing could open, save or assign it.
-            if (TryResolve(name, out _, out _) && TryRead(file, out string text))
+            if (TryRead(file, out string text))
             {
                 routes.Add(Describe(name, text, db, problem, new FileInfo(file)));
             }

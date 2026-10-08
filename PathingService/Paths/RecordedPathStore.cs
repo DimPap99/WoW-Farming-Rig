@@ -51,14 +51,8 @@ public sealed class RecordedPathStore(DataConfig dataConfig)
     public IReadOnlyList<RecordedPathInfo> List(string? filter)
     {
         List<RecordedPathInfo> result = [];
-        if (!Directory.Exists(Root))
+        foreach ((string name, string file) in LibraryName.Files(Root, nested: true))
         {
-            return result;
-        }
-
-        foreach (string file in Directory.EnumerateFiles(Root, "*" + LibraryName.Extension, SearchOption.AllDirectories))
-        {
-            string name = PathName.Relative(Root, file);
             if (PathName.IsForeverRoute(name) ||
                 (!string.IsNullOrEmpty(filter) && !name.Contains(filter, StringComparison.OrdinalIgnoreCase)) ||
                 RecordedPathFile.Problem(file) is not null)
@@ -70,10 +64,9 @@ public sealed class RecordedPathStore(DataConfig dataConfig)
             string screenshot = Path.ChangeExtension(file, PathName.ScreenshotExtension);
             result.Add(new RecordedPathInfo(name, info.Length,
                 new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero),
-                File.Exists(screenshot) ? PathName.Relative(Root, screenshot) : null));
+                File.Exists(screenshot) ? LibraryName.Relative(Root, screenshot) : null));
         }
 
-        result.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
         return result;
     }
 

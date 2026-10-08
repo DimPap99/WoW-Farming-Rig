@@ -1,5 +1,6 @@
 using BotAgent.Runtime;
 
+using Contracts;
 using Contracts.Bots;
 
 using Core.Forever;
@@ -25,7 +26,7 @@ public sealed class HeadlessRuntimeFactory(RunOptions options, IConfiguration co
             return (null, "no WoW client is running on this PC");
         }
 
-        bool forever = game.Client == ForeverRunRequest.Client;
+        bool forever = GameClients.IsForever(game.Client);
         return assignment switch
         {
             { Kind: BotRuntimeKind.Forever, Forever: { } route } when forever =>

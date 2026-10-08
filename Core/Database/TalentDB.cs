@@ -1,4 +1,6 @@
-﻿using Core.Talents;
+﻿using Contracts;
+
+using Core.Talents;
 
 using Microsoft.Extensions.Logging;
 
@@ -26,7 +28,7 @@ public sealed class TalentDB
     {
         this.spellDB = spellDB;
 
-        bool optional = string.Equals(dataConfig.Exp, "forever", StringComparison.OrdinalIgnoreCase);
+        bool optional = GameClients.IsForever(dataConfig.Exp);
         talentTabs = LoadJsonSafe<TalentTab>(logger, Join(dataConfig.ExpDbc, "talenttab.json"), optional);
         talentTreeElements = LoadJsonSafe<TalentTreeElement>(logger, Join(dataConfig.ExpDbc, "talent.json"), optional);
     }

@@ -1,3 +1,5 @@
+using Contracts;
+
 using Core.Goals;
 
 using Game;
@@ -200,7 +202,7 @@ public sealed class ForeverRun(ForeverRunRequest request, ILoggerFactory loggerF
             services.AddCoreBase(trialLogger);
             services.AddSingleton(new DataConfig
             {
-                Root = request.DataRoot, Exp = ForeverRunRequest.Client
+                Root = request.DataRoot, Exp = GameClients.Forever
             });
             services.AddCoreNormal(trialLogger);
 

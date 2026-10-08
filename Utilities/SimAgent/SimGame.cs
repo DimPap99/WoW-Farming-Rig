@@ -1,5 +1,6 @@
 using BotAgent.Runtime;
 
+using Contracts;
 using Contracts.Bots;
 
 using System;
@@ -12,7 +13,7 @@ public sealed class SimGame(SimOptions options)
     public AgentGame? Probe()
     {
         return options.Forever
-            ? new AgentGame(SimOptions.ForeverClient, "forever", Environment.ProcessId, "1.60.1.70009 (simulated)")
+            ? new AgentGame(GameClients.Forever, DataConfig.ClientEra(GameClients.Forever), Environment.ProcessId, "1.60.1.70009 (simulated)")
             : new AgentGame(options.Client, "precata", Environment.ProcessId, "1.15.7.61582 (simulated)");
     }
 

@@ -99,20 +99,7 @@ public sealed class SyncLibrary(DataConfig dataConfig, ForeverRouteLibrary route
     // What a set offers is what a request could name; route files sit in one folder, the others nest.
     private IEnumerable<(string Name, string File)> Files(string set, string folder)
     {
-        if (!Directory.Exists(folder))
-        {
-            yield break;
-        }
-
-        SearchOption depth = set == SyncSets.ForeverRoutes ? SearchOption.TopDirectoryOnly : SearchOption.AllDirectories;
-        foreach (string file in Directory.EnumerateFiles(folder, "*" + LibraryName.Extension, depth))
-        {
-            string name = PathName.Relative(folder, file);
-            if (TryResolve(set, folder, name, out _, out _))
-            {
-                yield return (name, file);
-            }
-        }
+        return LibraryName.Files(folder, nested: set != SyncSets.ForeverRoutes).Where(entry => TryResolve(set, folder, entry.Name, out _, out _));
     }
 
     private bool TryResolve(string set, string folder, string? name, out string file, out string error)

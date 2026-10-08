@@ -60,12 +60,6 @@ public static class PathName
         return true;
     }
 
-    /// <summary>The name of a file under <paramref name="root"/>, as <see cref="TryResolve"/> accepts it.</summary>
-    public static string Relative(string root, string fullPath)
-    {
-        return Path.GetRelativePath(root, fullPath).Replace(Path.DirectorySeparatorChar, '/');
-    }
-
     /// <summary>True when a listed file belongs to the Forever route folder (<see cref="ForeverRouteFile.Folder"/>).</summary>
     public static bool IsForeverRoute(string canonical)
     {

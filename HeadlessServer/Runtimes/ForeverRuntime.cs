@@ -1,5 +1,6 @@
 using BotAgent.Runtime;
 
+using Contracts;
 using Contracts.Bots;
 
 using Core;
@@ -55,8 +56,9 @@ public sealed partial class ForeverRuntime : IBotRuntime
     public static (IBotRuntime? Runtime, string? Refusal) Create(ForeverAssignment assignment, AgentGame game, DataConfig data,
         ILoggerFactory loggerFactory)
     {
-        DataConfig forever = new() { Root = Path.GetFullPath(data.Root), Exp = ForeverRunRequest.Client };
-        string file = Path.Combine(forever.Path, ForeverRouteFile.Folder, assignment.Route);
+        DataConfig forever = new() { Root = Path.GetFullPath(data.Root), Exp = GameClients.Forever };
+        // A library name: the manager and the run host checked it (AssignmentRules).
+        string file = Path.Join(forever.ForeverRoutes, assignment.Route);
         if (!File.Exists(file))
         {
             return (null, $"the route {assignment.Route} is not in this PC's Json/path/{ForeverRouteFile.Folder}");
@@ -70,7 +72,7 @@ public sealed partial class ForeverRuntime : IBotRuntime
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Newtonsoft.Json.JsonException)
         {
             // Refused, not failed: nothing attached yet (known issue 77).
-            return (null, $"Forever's map data (Json/dbc/{ForeverRunRequest.Client}) could not be read: {ex.Message}");
+            return (null, $"Forever's map data (Json/dbc/{GameClients.Forever}) could not be read: {ex.Message}");
         }
 
         if (!ForeverRouteFile.TryLoad(file, maps, out ForeverRoute route, out string error))

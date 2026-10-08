@@ -4,6 +4,8 @@ using Contracts.Pathing;
 using PathingService.Hosting;
 using PathingService.Paths;
 
+using ServiceClients;
+
 using ServiceHosting;
 
 using SharedLib.Converters;
@@ -114,7 +116,7 @@ public sealed class RecordedPathStoreTests
 
         string[] listed = [.. store.List(null).Select(p => p.Name)];
         string[] left = [.. Directory.EnumerateFiles(repo.Path, "*.json", SearchOption.AllDirectories)
-            .Select(file => PathName.Relative(repo.Path, file))
+            .Select(file => LibraryName.Relative(repo.Path, file))
             .Where(name => !PathName.IsForeverRoute(name))
             .Except(listed)];
 

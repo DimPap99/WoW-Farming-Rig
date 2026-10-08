@@ -2,7 +2,9 @@ using Contracts.Pathing;
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace ServiceClients;
 
@@ -105,6 +107,30 @@ public static class LibraryName
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// The files of the library at <paramref name="folder"/> (its subfolders too when <paramref name="nested"/>) that a request
+    /// could name, with their names, as every listing gives them: by name, ignoring case. A file no request could name is not
+    /// offered, since nothing could open, save, sync or assign it; on Windows that leaves out <c>.JSON</c> too.
+    /// </summary>
+    public static IReadOnlyList<(string Name, string File)> Files(string folder, bool nested)
+    {
+        if (!Directory.Exists(folder))
+        {
+            return [];
+        }
+
+        return [.. Directory.EnumerateFiles(folder, "*" + Extension, nested ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly)
+            .Select(file => (Name: Relative(folder, file), File: file))
+            .Where(entry => IsRelativeName(entry.Name))
+            .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>A file's name in the library at <paramref name="folder"/>: relative to it, <c>/</c> between folders.</summary>
+    public static string Relative(string folder, string file)
+    {
+        return Path.GetRelativePath(folder, file).Replace(Path.DirectorySeparatorChar, '/');
     }
 
     /// <summary>True when <paramref name="fullPath"/> lies inside <paramref name="root"/> (both full paths), as this OS compares them.</summary>

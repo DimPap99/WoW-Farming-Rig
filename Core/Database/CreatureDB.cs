@@ -1,3 +1,5 @@
+using Contracts;
+
 using Microsoft.Extensions.Logging;
 
 using SharedLib;
@@ -27,7 +29,7 @@ public sealed class CreatureDB
         // Qualified: both File and Path are imported statically and each has Exists.
         if (!System.IO.File.Exists(path))
         {
-            LogLevel level = string.Equals(dataConfig.Exp, "forever", StringComparison.OrdinalIgnoreCase)
+            LogLevel level = GameClients.IsForever(dataConfig.Exp)
                 ? LogLevel.Debug : LogLevel.Warning;
             if (logger.IsEnabled(level))
                 logger.Log(level, "Missing file: {Path}", path);

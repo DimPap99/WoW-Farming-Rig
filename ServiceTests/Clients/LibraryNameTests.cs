@@ -3,6 +3,9 @@ using Contracts.Bots;
 using ServiceClients;
 using ServiceClients.Bots;
 
+using System.IO;
+using System.Linq;
+
 using Xunit;
 
 namespace ServiceTests.Clients;
@@ -56,5 +59,31 @@ public sealed class LibraryNameTests
     public void An_assignment_refuses_a_route_named_JSON()
     {
         Assert.NotNull(AssignmentRules.Problem(BotAssignment.ForForever("Durotar.JSON", 30)));
+    }
+
+    // The route library, the web page's route list, the path store, the sync and the agent's profile list
+    // each listed a folder their own way: other files, another order, names a request could not open.
+    [Fact]
+    public void A_library_lists_what_a_request_could_name_by_name_ignoring_case()
+    {
+        DirectoryInfo folder = Directory.CreateTempSubdirectory("library-");
+        try
+        {
+            foreach (string name in new[] { "b.json", "A.json", "bad%.json", "notes.txt", "sub/d.json", "sub/x.json./e.json" })
+            {
+                string file = Path.Join(folder.FullName, name);
+                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                File.WriteAllText(file, "[]");
+            }
+
+            Assert.Equal(["A.json", "b.json"], LibraryName.Files(folder.FullName, nested: false).Select(entry => entry.Name));
+            Assert.Equal(["A.json", "b.json", "sub/d.json"], LibraryName.Files(folder.FullName, nested: true).Select(entry => entry.Name));
+            Assert.Equal(Path.Join(folder.FullName, "sub", "d.json"), LibraryName.Files(folder.FullName, nested: true)[2].File);
+            Assert.Empty(LibraryName.Files(Path.Join(folder.FullName, "missing"), nested: true));
+        }
+        finally
+        {
+            folder.Delete(recursive: true);
+        }
     }
 }

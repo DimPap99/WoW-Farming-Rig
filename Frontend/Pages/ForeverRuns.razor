@@ -336,7 +336,7 @@
     private string selected = string.Empty;
     // The run's time bound, in minutes.
     private const int MinMinutes = 1;
-    private const int MaxMinutes = 600;
+    private const int MaxMinutes = Contracts.Bots.BotManagerApi.MaxMinutes;
     private int minutes = 20;
     private string error = string.Empty;
     private bool showSnapshots;

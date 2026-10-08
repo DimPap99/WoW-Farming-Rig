@@ -1,5 +1,6 @@
 using BotAgent.Runtime;
 
+using Contracts;
 using Contracts.Bots;
 
 using Microsoft.Extensions.Configuration;
@@ -13,15 +14,13 @@ namespace SimAgent;
 /// <summary>What this agent pretends to be: <c>Sim:Client</c> (forever or a Classic client) and <c>Sim:ClickSeconds</c>.</summary>
 public sealed record SimOptions(string Client, int ClickSeconds)
 {
-    public const string ForeverClient = "forever";
-
     public static SimOptions From(IConfiguration configuration)
     {
-        return new SimOptions(configuration["Sim:Client"] is { Length: > 0 } client ? client : ForeverClient,
+        return new SimOptions(configuration["Sim:Client"] is { Length: > 0 } client ? client : GameClients.Forever,
             configuration.GetValue("Sim:ClickSeconds", 5));
     }
 
-    public bool Forever => Client == ForeverClient;
+    public bool Forever => GameClients.IsForever(Client);
 }
 
 /// <summary>Builds a <see cref="SimRuntime"/> (the agent's <see cref="CreateRuntime"/>), refusing a run of the other kind as the real agent does.</summary>

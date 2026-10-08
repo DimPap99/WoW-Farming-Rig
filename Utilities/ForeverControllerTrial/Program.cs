@@ -1,3 +1,6 @@
+using Contracts;
+using Contracts.Bots;
+
 using Core.Forever;
 
 using Microsoft.Extensions.Logging;
@@ -59,7 +62,7 @@ if (routeIndex >= 0 && routeName is null)
 }
 if (minutes is [])
 {
-    Console.Error.WriteLine("Use --minutes <n> with a time bound from 1 to 600 minutes.");
+    Console.Error.WriteLine($"Use --minutes <n> with a time bound from 1 to {BotManagerApi.MaxMinutes} minutes.");
     return ForeverRunProtocol.ExitUsage;
 }
 bool task = travel is not null || roam is not null || routeName is not null;
@@ -84,7 +87,7 @@ if (args.Where((_, i) => !values.Contains(i))
 ForeverRoute? route = null;
 if (routeName is not null)
 {
-    DataConfig routeData = new() { Root = Path.GetFullPath("Json"), Exp = "forever" };
+    DataConfig routeData = new() { Root = Path.GetFullPath("Json"), Exp = GameClients.Forever };
     string routePath = ForeverRouteFile.Resolve(routeData, routeName);
     if (!ForeverRouteFile.TryLoad(routePath, new WorldMapAreaDB(routeData), out ForeverRoute loaded, out string routeError))
     {

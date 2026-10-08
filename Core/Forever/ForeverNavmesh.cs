@@ -1,3 +1,5 @@
+using Contracts;
+
 using Microsoft.Extensions.Logging;
 
 using PPather.Navmesh;
@@ -19,7 +21,7 @@ public static class ForeverNavmesh
     {
         NavmeshBakeOptions bake = new();
         string version = typeof(NavmeshPathfinder).Assembly.GetName().Version?.ToString() ?? "0";
-        string hash = NavmeshSettings.ComputeSettingsHash("forever", version,
+        string hash = NavmeshSettings.ComputeSettingsHash(GameClients.Forever, version,
             bake.AgentRadius, bake.AgentMaxClimb, bake.WalkableSlope);
         return Path.Combine(data.Navmesh, continent, hash);
     }

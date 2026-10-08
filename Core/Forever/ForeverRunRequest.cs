@@ -1,3 +1,6 @@
+using Contracts;
+using Contracts.Bots;
+
 using SharedLib.Forever;
 
 using System;
@@ -44,12 +47,6 @@ public sealed record ForeverRunRequest(ForeverRunMode Mode)
     public const int RoamSeconds = 900;
     public const int RouteSeconds = 1200;
 
-    /// <summary>The longest time bound a run may ask for.</summary>
-    public const double MaxMinutes = 600;
-
-    /// <summary>The client whose data a run reads, under <see cref="DataRoot"/>.</summary>
-    public const string Client = "forever";
-
     /// <summary>For <see cref="ForeverRunMode.Travel"/>: the point of the current zone's map, 0 to 100.</summary>
     public (double X, double Y)? TravelTo { get; init; }
 
@@ -62,7 +59,7 @@ public sealed record ForeverRunRequest(ForeverRunMode Mode)
     /// <summary>The autonomous run's time bound in minutes, instead of its mode's own.</summary>
     public double? Minutes { get; init; }
 
-    /// <summary>The data folder (<c>Json</c>) the run reads its profiles, maps and navmesh from.</summary>
+    /// <summary>The data folder (<c>Json</c>) the run reads its profiles, maps and navmesh from: <see cref="GameClients.Forever"/>'s.</summary>
     public required string DataRoot { get; init; }
 
     /// <summary>Where a capture the bars cannot be read from is kept; null keeps none.</summary>
@@ -144,9 +141,10 @@ public sealed record ForeverRunRequest(ForeverRunMode Mode)
             return $"a time bound is for an autonomous run that moves; a {Mode} run keeps its own";
         }
 
-        if (Minutes is { } bound && !(double.IsFinite(bound) && bound is > 0 and <= MaxMinutes))
+        // An assignment's bound: what the manager takes, an agent runs.
+        if (Minutes is { } bound && !(double.IsFinite(bound) && bound is > 0 and <= BotManagerApi.MaxMinutes))
         {
-            return $"the time bound is above 0 and at most {MaxMinutes} minutes";
+            return $"the time bound is above 0 and at most {BotManagerApi.MaxMinutes} minutes";
         }
 
         return null;

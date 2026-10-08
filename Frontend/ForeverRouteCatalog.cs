@@ -1,8 +1,9 @@
+using ServiceClients;
+
 using SharedLib;
 using SharedLib.Forever;
 
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 
 namespace Frontend;
@@ -14,15 +15,15 @@ public sealed record ForeverRouteChoice(string FullPath, string File, string Nam
 /// <summary>The route files a WoW: Forever run can start from.</summary>
 public static class ForeverRouteCatalog
 {
-    /// <summary>The route files in <paramref name="folder"/> by name, each loaded and checked as a run would.</summary>
+    /// <summary>
+    /// The route files in <paramref name="folder"/>, as the Pathing Service's library lists them (<see cref="LibraryName.Files"/>),
+    /// each loaded and checked as a run would.
+    /// </summary>
     public static IReadOnlyList<ForeverRouteChoice> Load(string folder, WorldMapAreaDB maps)
     {
-        if (!Directory.Exists(folder))
-            return [];
         List<ForeverRouteChoice> routes = [];
-        foreach (string path in Directory.EnumerateFiles(folder, "*.json").OrderBy(Path.GetFileName))
+        foreach ((string file, string path) in LibraryName.Files(folder, nested: false))
         {
-            string file = Path.GetFileName(path);
             routes.Add(ForeverRouteFile.TryLoad(path, maps, out ForeverRoute route, out string error)
                 ? new(path, file, route.Name, [.. route.Tasks.Select(task => task.Name)], route.Repeat, string.Empty)
                 : new(path, file, file, [], false, error));
