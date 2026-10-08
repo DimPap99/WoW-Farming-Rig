@@ -104,8 +104,12 @@ commit that fixed it.
       its token. After the grace period the agent releases the keys (none are held yet), reports the
       run `Abandoned` and restarts (exit code 75). Standalone HeadlessServer always waited the same
       way, forever. Found by reading the code, not observed.
-    - **Fix:** a stop-aware wait for a readable frame before `BotController` is built, as `ForeverRun`
-      waits for its first frame.
+    - **A Forever run too** (Phase 3 review): a stop between `ForeverRun`'s first frame and the
+      controller's first readable class cannot end it, since the stop cancels the only thread that brings
+      frames and the constructor's wait takes no token. The run ends Abandoned with exit code 75.
+    - **Fix:** the constructor's wait reads its token, and each runtime ties the run's stop to that
+      token while the controller is built, and only then, so a stop still releases input before
+      anything is torn down.
 
 24. **BlazorServer's "Forever runs" page still starts runs as a child process.**
     - **Where:** `Frontend/ForeverRunHost`, `ForeverRunFiles`, `ForeverRouteCatalog`,
@@ -171,6 +175,8 @@ commit that fixed it.
       Polly logs the last failed attempt at Error); the Control Center's pollers are not.
     - The pathing client no longer repeats a 500 or a 503 (item 37), which takes those out of the
       noise; a service that is down is still retried and logged on every poll.
+    - The manager's half comes from `BotManagerStatus`'s 2 s poll on the retrying client, which the
+      fleet feed's own connection makes redundant (Phase 3 review; the plan's step 3).
 
 31. **A file deleted centrally stays on the bot PCs.**
     - **Where:** `BotAgent/Sync/DataSync`. The sync never deletes (Phase 3, decision 5): it brings a
@@ -274,6 +280,10 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
       APIs throw there, and `UseExceptionHandler` makes it a 500. Its client does not repeat a
       POST, but a GET is repeated. The Pathing Service answers 400 since the Phase 1 review
       (`StatusCodeSelector` in `PathingServiceRegistration`); the manager needs the same lines.
+    - The Phase 3 review found two halves left: `AssignmentRules` still accepts the names `PathName`
+      now refuses (item 68), and the Bot Manager's client still repeats a GET the manager answered 500
+      or timed out, and counts the manager's own 504 as a failure (item 37 changed the pathing client's
+      copy only). Both go with the plan's step 3.
 
 Items 47 to 56 come from the review of Phase 2 (7ef44187..4e65fd27, 2026-10-07), checked against
 0ec0be56. The report is outside the repository, at
@@ -284,7 +294,8 @@ fixed the same day on `fix/phase2-review` (see "Fixed"); what is left:
     - **Where:** the Control Center's pages, which call the Pathing Service and the Bot Manager from
       the server with their keys; its proxy forwards to another machine reads only.
     - **Effect:** whoever reaches the Control Center can delete tiles, bake, edit paths and zones,
-      and start or stop bots. Harmless while it binds localhost and one person uses it.
+      and start or stop bots. Nearly harmless while it binds localhost and one person uses it: a web
+      page can still reach it through DNS rebinding, and the hubs through a WebSocket (item 75).
     - **Fix (not started; with central hosting):** logins, with an admin role for what changes every
       bot (deleting tiles, bakes and area grids, stopping bots) and users for the rest, checked by
       the pages and the proxy; with cookie logins, anti-forgery on top of the cross-site rule.
@@ -299,9 +310,11 @@ fixed the same day on `fix/phase2-review` (see "Fixed"); what is left:
       it was made from, and the service refuses a stale one.
 
 56. **Left from the Phase 2 review's smaller findings.**
-    - The agent host still stops on a malformed `PathingService:Url` (or `BotManager:Url`), and
-      `run-agent.ps1` restarts it into the same error: kept, as an agent that cannot sync must not
-      run a bot on stale copies. BlazorServer no longer stops for it.
+    - The agent host still stops on a malformed `PathingService:Url` (or `BotManager:Url`), and is
+      built again into the same error: kept, as an agent that cannot sync must not run a bot on stale
+      copies. BlazorServer no longer stops for it. (Corrected by the Phase 3 review: `ResidentHost`
+      builds the host again in the same process every 3 s, with no backoff; `run-agent.ps1` is not
+      involved.)
     - BlazorServer's own map (Frontend) still skips a shared-era tile folder that is missing when it
       starts (Cataclysm only); the Pathing Service serves it since the review.
     - The report's unverified cleanups are not done: magic strings in `ApiReference.razor` and
@@ -360,6 +373,248 @@ fixed the same day on `fix/phase2-review` (see "Fixed"); what is left:
       Forever routes page) and coming back starts every mode afresh, an unsaved route included.
     - **Fix (not started):** the layers' choices in a scoped session every `WorldLayers` reads and
       tells, and the route being designed in one, so they outlive the page too.
+
+Items 63 to 77 come from the review of Phase 3 (its eleven commits in 4e65fd27..e71c5781,
+2026-10-08), checked against ef51cc7d. The report is outside the repository, at
+`~/RiderProjects/WoW-Farming-Rig-review/phase3/phase3-review.md` on the machine it ran on; the
+plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fixes-plan.md).
+
+63. **A Classic run that fails to start crashes the agent, and nothing logs why.**
+    - **Where:** `Game/WoWProcess/WowProcess` (its poll thread), composed per run by
+      `HeadlessServer/Runtimes/ClassicRuntime`; `HeadlessServer/Program`.
+    - **Cause:** `WowProcess` polls on a foreground thread that waits on the token of the
+      `CancellationTokenSource` it was given, and nothing ties the thread to the object. Only
+      `BotController.Dispose` cancels the source. When building the controller fails after
+      `WowProcess` started (DXGI's `DuplicateOutput` throws on the lock screen, at a UAC prompt or in a
+      disconnected RDP session), the run's container disposes the source without cancelling it, and
+      the thread's next `token.WaitHandle` throws `ObjectDisposedException`. The old `Program`'s
+      `UnhandledException` logger went with Phase 3.
+    - **Effect:** the run is reported Refused, then within 5 s the agent's process dies (0xE0434352),
+      with no line in `headless_out.log` or the Control Center's console. `run-agent.ps1` starts it
+      again; `run.bat --agent` stays down.
+    - **Fix:** `WowProcess` owns its thread: a background thread on a token source of its own, linked
+      to the one it is given, which `Dispose` cancels and joins, so the container ends it; a poll that
+      throws is a client gone, not a crash. `Program` logs an unhandled exception again.
+
+64. **A click into the agent's window freezes the bot with a key held.**
+    - **Where:** `HeadlessServer/Hosting/HeadlessLogging` (the console sink).
+    - **Cause:** Serilog's console sink writes synchronously under one lock. In the Windows 10 console
+      (conhost, QuickEdit on by default) a click starts a selection, and every write to the console
+      waits until it ends.
+    - **Effect:** every thread that logs stops at its next line: the bot mid-action with a movement key
+      down, and a Stop from the Control Center, which logs before it acts (504 after 10 s; the grace,
+      the forced release and the abandon never start). Snapshots still say Running. Windows Terminal,
+      Windows 11's default, does not block.
+    - **Fix:** the console sink behind a bounded queue that drops lines when full
+      (`Serilog.Sinks.Async`), so no bot thread waits on the console.
+
+65. **Only Ctrl+C stops the agent cleanly.**
+    - **Where:** `HeadlessServer/Hosting/HeadlessHost`, `run-agent.ps1`, `run.bat`; the promise is in
+      `HeadlessHost`, `Program`, `ResidentHost`, `run-agent.ps1`, `uninstall-agent-task.ps1`,
+      `HeadlessServer/CLAUDE.md`, item 21 and Phase 3's Windows checklist (item 10).
+    - **Cause:** the Generic Host's console lifetime handles SIGINT, SIGQUIT and SIGTERM, on Windows
+      Ctrl+C, Ctrl+Break and CTRL_SHUTDOWN. Closing the window (CTRL_CLOSE, .NET's SIGHUP) is not
+      handled, so Windows ends the process. A process that loaded user32 (any Classic run) gets neither
+      the logoff nor the shutdown event. `dotnet run` puts the agent in a job that kills it the moment
+      `dotnet.exe` ends, which closing the window ends first. Task Scheduler's End terminates.
+    - **Effect:** closing the agent's window, the obvious way to stop it, leaves a movement key held
+      in a game that keeps running, and no run report is sent. A sign-out neither stops nor reports
+      the run.
+    - **Fix:** the agent stops on SIGHUP (the window closing) and on the session ending, and holds
+      Windows off until the run has released its input; `run-agent.ps1` and `run.bat` start the built
+      agent directly, not through `dotnet run`. Task Scheduler's End stays a kill, and the docs say so.
+
+66. **An unattended Classic start can delete the addon's frame configuration.**
+    - **Where:** `Core/DependencyInjection.ProbeWoWProcess`, through `AddWoWProcess`, which every
+      Classic run's composition calls (`ClassicRuntime.Compose`), and `--loadonly`.
+    - **Cause:** the probe deletes `frame_config.json` when the window's client size, the addon version
+      or the frame count does not match, and the addon's config and folder when the addon's version
+      cannot be read. BlazorServer relies on that to open its configuration page; the old
+      HeadlessServer ran the probe once, with a person at the PC.
+    - **Effect:** a Classic start while WoW is minimized (its client area is 0 by 0), resized or under
+      RDP at another resolution deletes the file, and every later Classic run on that PC is refused
+      until someone configures the addon again in BlazorServer and copies the files back. `--loadonly`
+      (`loadall.bat`) with `addon_config.json` missing deletes the addon from the game's folder.
+    - **Fix:** HeadlessServer probes without deleting and refuses with what does not match ("the WoW
+      window is minimized"); BlazorServer keeps its behaviour. `--loadonly` refuses without both files,
+      as it did before Phase 3.
+
+67. **A client probe that throws stops the run under way.**
+    - **Where:** `HeadlessServer/Runtimes/WowGameProbe`, `BotAgent/Telemetry/TelemetryPublisher`,
+      `WinAPI/ExecutablePath`, `Game/WowProcess.ReadInfo`.
+    - **Cause:** the probe catches a fixed list of exceptions, and the publisher, a `BackgroundService`,
+      catches none. `ExecutablePath` answers "" when WMI has no path (the process ended meanwhile, or
+      runs as administrator while the agent does not), and `ReadInfo` then reads `Wow.exe` in the
+      working directory: `FileNotFoundException`. WMI failures throw `ManagementException` or
+      `COMException`.
+    - **Effect:** on .NET 10 a faulted background service stops the host, which stops the run (reported
+      Stopped, though nobody asked), and `ResidentHost` builds a new host 3 s later. With WoW running
+      as administrator the probe fails every time, so the agent goes offline every few seconds for
+      good. The probe's 5 s are measured on the wall clock, so a clock set back stops it that long.
+    - **Fix:** the probe answers "no client" for any failure and keeps why; the publisher never faults
+      on a tick; `ReadInfo` says what it could not read; the interval is measured on a monotonic clock.
+
+68. **A path override that does not load leaves the bot idle under "Running".**
+    - **Where:** `HeadlessServer/Runtimes/ClassicRuntime` (`TryCreate`, `Run`), `Core/BotController`
+      (`LoadPathProfile`, `CreateSession`), `ServiceClients/Bots/AssignmentRules`.
+    - **Cause:** `LoadPathProfile` returns nothing, and its failure is only logged. The override is
+      parsed when the session resolves its `GoapAgent`, after `CreateSession` disposed the old session,
+      so `GoapAgent` still points at the disposed one, and turning the bot on sets that one active.
+      `TryCreate` checks only that the override exists, and the profile's own paths not at all: a
+      missing one is found after the run attached and pressed the flush key, though the factory
+      promises that a refusal never touched the game. `AssignmentRules` accepts names the service
+      refuses (`_forever/x.json`, `%`, a segment ending in a dot).
+    - **Effect:** a malformed override (a truncated local copy used while the service is down, a
+      Forever route given as one) gives a run that says Running "profile X on path" while the
+      character stands still until someone stops it.
+    - **Fix:** `TryCreate` reads every path the run needs before it attaches and refuses one that
+      does not load; `LoadPathProfile` answers whether it loaded, and `CreateSession` replaces the
+      session only once the new one is built; one name rule for every name (the plan's step 3).
+
+69. **A repeating route with nothing left to do spins forever.**
+    - **Where:** `Core/Forever/Activities/ForeverTaskActivity.Update`, `SharedLib/Forever/ForeverRouteFile`
+      (`TryUntil`), `Core/Forever/ForeverRun`.
+    - **Cause:** `while (agenda.Current is { } done && done.Until.IsMet(...)) Finish(done)` passes the
+      tasks already done; with `"Repeat": true` the agenda wraps, and a `Level` already reached is met
+      again on the same frame. Nothing ends the loop.
+    - **Effect:** a repeating route whose steps all end by a level the character has (or outgrows
+      mid-run) spins the bot's thread at full speed and writes about four lines a lap, until the log
+      file's 1 GB cap; the character stands still, and the thread outlives the run inside the agent.
+    - **Also:** `Until.Minutes` of NaN, Infinity or 1e400 (Newtonsoft reads all three) passes the check,
+      so the step never ends. A repeating route that reaches its time bound with no kill is reported
+      Failed: the run turns the bot off, which fails the goal, before it reads how the goal stood.
+    - **Fix:** the agenda passes done tasks at most one lap at a time, and a repeating route whose every
+      step is already done ends Complete, saying so; `Minutes` must be a finite number above 0; the run
+      reads the goal's state before it turns the bot off.
+
+70. **One malformed route file takes the route library offline.**
+    - **Where:** `SharedLib/Forever/ForeverRouteFile.TryParse`, `PathingService/Forever/ForeverRouteLibrary`,
+      `PathingService/Sync/SyncLibrary`.
+    - **Cause:** Newtonsoft reads `"Steps":[null]`, `[a,,b]` and `[,a]` as null steps without a
+      `JsonException`, and `TryStep` dereferences the step: a `NullReferenceException`, which `TryParse`
+      does not catch. The library describes every file in one loop.
+    - **Effect:** a step deleted by hand that leaves its comma makes `GET /api/v1/forever/routes` answer
+      500: the Forever routes page, the assignment form and the designer show no route at all, and the
+      file cannot be opened from the page to fix it. An agent assigned the route reports Failed, with
+      the exception's text, instead of Refused.
+    - **Also:** a name ending in `.JSON` is accepted, but the library and the sync list `*.json`,
+      case-sensitively on Linux: such a route answers "saved" and is never listed or synced.
+    - **Fix:** an empty step is refused with its number; the library shows a file it cannot read as
+      refused instead of failing the list; a name ends in `.json`, exactly.
+
+71. **Names that differ only in case are one file on a Windows bot.**
+    - **Where:** `BotAgent/Sync/DataSync` (its manifest is case-insensitive on Windows); the Pathing
+      Service's `ForeverRouteLibrary.Save` and `RecordedPathStore.Save`; the route designer
+      (`ForeverLibrary.razor`).
+    - **Cause:** a Linux Pathing Service can hold `Route.json` and `route.json`; on Windows they are one
+      file, and the manifest keeps the first in ordinal order. Nothing refuses a name that differs from
+      another only in case, and the designer, which finds an existing route ignoring case, saves the
+      name as typed.
+    - **Effect:** a Windows bot assigned `route.json` pulls `Route.json`'s bytes into
+      `_forever\route.json` (a correct local copy is kept aside, then overwritten) and runs the other
+      route, while the assignment, the console and the history say `route.json`.
+    - **Fix:** the service refuses a name that another file of its folder has in another case; the sync
+      refuses a run whose named file has such a twin on the service and leaves other twins alone; the
+      designer replaces a route under its stored name.
+
+72. **The Bot Manager's registry can lose its bots.**
+    - **Where:** `BotManager/Registry/JsonBotRegistry`, `BotManager/Bots/BotFleet`,
+      `ServiceClients/Bots/AssignmentRules.IsAgentId`.
+    - **Cause:** `Read` takes any I/O error for a damaged file: a sharing lock at startup (on Windows:
+      OneDrive, a backup tool, an editor) empties the registry, the move aside fails the same way and is
+      swallowed, and the first registration rewrites `bots.json` with one bot. `Save` and `Remove`
+      change memory before they write, and a failed write is caught nowhere, inside the fleet's lock.
+      Run reports are delivered at least once, and `AddRun` keeps a repeat. Agent text is stored and
+      logged as sent.
+    - **Effect:** a start that met a lock loses every other bot and assignment. A write that fails (disk
+      full, a read-only folder) answers "not saved" for an assignment the manager then runs, keeps every
+      agent from registering, and leaves a disconnected bot shown online. A report whose acknowledgement
+      was lost is in the history twice. An agent id such as `CON` is a device on a Windows manager, and
+      a run message with a line break forges a line in the manager's log.
+    - **Fix:** only unreadable JSON is kept aside, and an I/O error stops the start. The write comes
+      first, memory after: a registration or a disconnect whose write fails is logged and goes on, and an
+      assignment answers that it was not saved and keeps the old one. One report per run. Device names
+      are not agent ids; agent text is capped, and its line breaks escaped in the manager's log.
+
+73. **One stalled Control Center freezes every agent.**
+    - **Where:** `BotManager/Bots/BotFleet` (every `fleet.Clients.All.SendAsync`).
+    - **Cause:** each agent hub method awaits the send to every fleet listener, and SignalR reads an
+      agent's next message, the answer to a command included, only once the current method returned.
+    - **Effect:** a second Control Center that sleeps, sits at a breakpoint or is on a slow link stalls
+      every agent's snapshots, logs and registrations for about 10 s, and Start and Stop answer 504;
+      again at each reconnect. Two changes of one bot can also reach the listeners reversed, as the
+      bot's info is built outside the lock.
+    - **Fix:** one send loop for the fleet hub, fed in order under the fleet's lock, as the watch hub's
+      broadcaster does.
+
+74. **Two agents with one id hide one of them.**
+    - **Where:** `BotManager/Bots/BotFleet.RegisterAsync`; `BotAgent/AgentIdentity` and HeadlessServer's
+      start.
+    - **Cause:** "the newest wins": a second connection registering an id that is online takes it over
+      silently; the old connection is neither closed nor told, and its snapshots and reports are
+      acknowledged and dropped. Nothing keeps two agents with one id from running: a HeadlessServer
+      folder copied to another PC (`agent_identity.json` comes with it), or two processes from one
+      folder. One connection may also register a second id, leaving the first online for good, and a
+      registration without a client overwrites the client last seen.
+    - **Effect:** the displaced bot plays on unseen and cannot be stopped, and its run history is lost.
+    - **Fix (decided 2026-10-08):** an id online from another machine is refused, naming that machine; a
+      reconnect from the same machine replaces its old connection, which is closed; calls on a connection
+      that is no longer the bot's fail, so the agent keeps its reports; one connection is one agent; one
+      agent per id runs on a PC; a hello without a client keeps the last one seen.
+
+75. **The key rules trust loopback too far.**
+    - **Where:** `ServiceClients/Security/ServiceKeyPolicy` and `ForwardPolicy`, both services' guards,
+      both forwarders; `AllowedHosts: "*"` in the four hosts' settings.
+    - **Cause:** "this machine" is decided from the TCP peer alone, whatever the `Host` header says. The
+      cross-site rule leaves GET alone, and a WebSocket upgrade is a GET; SignalR accepts a WebSocket from
+      any origin, without negotiate.
+    - **Effect:**
+      - Any web page in a browser on a service's machine can open `/fleetHub` (the whole fleet's
+        stream) or `/agentHub` (register as any bot, and take its commands) without the key.
+      - DNS rebinding makes a page of another site "this machine" and same-origin. A probe read the
+        bots, set an assignment, started a run and deleted a continent's tiles; through a forwarder,
+        which adds the key, anything. Chrome 142+ and Firefox 153+ stop it today, Safari and older
+        browsers do not.
+      - Behind a reverse proxy or a tunnel on the same machine, or with forwarded headers turned on,
+        every remote caller is 127.0.0.1.
+    - **Fix:** loopback is trusted only when the `Host` names this machine (localhost, a loopback
+      address, the machine's own name); a WebSocket upgrade from another site is refused as a write is;
+      `ServiceKey:TrustLoopback=false` serves no caller without the key, for a service behind a proxy.
+
+76. **The agent's run host has small races and leaks.**
+    - Telemetry read a disposed runtime between a run's end and its report, so a Classic report lost its
+      kills and deaths.
+    - A run's report could be lost when the host stopped (the run's end was signalled before the report
+      was raised), or sent twice (Stopped, then Abandoned) when the run ended as the abandon fired.
+    - A Start that arrived while the host stopped was accepted, and the process exited under it.
+    - `Agent:StopGraceMs` had no upper bound, and the host's 30 s shutdown timeout did not follow it:
+      from about 19 s of grace the Abandoned report and the restart code were lost, from about 30 s the
+      forced release too.
+    - A host built again after a fault started the command line's profile again, unasked; a standalone
+      run that ended before its id was recorded left the process idle.
+    - An identity file that could not be read for an I/O error was replaced by a new id.
+    - Each host built again resent up to 2,000 log lines, which a console then showed out of order.
+    - **Fix:** in `BotRuntimeHost`, `TelemetryPublisher`, `AgentLogSink`, `HeadlessHost`,
+      `StartFromCommandLine` and `AgentIdentity`; see the plan.
+
+77. **Smaller findings of the Phase 3 review.**
+    - **Agent and HeadlessServer:** `--Section:Key value` dropped a value starting with `-` (item 22);
+      a standalone run started by a double-click closed its window, and the reason with it; a Forever
+      runtime whose map data could not be read was Failed instead of Refused; the logon task ran the
+      agent below normal priority, and its threads below WoW's; `run-agent.ps1` ended its loop when its
+      log could not be written, and timed runs in local time (a DST change misjudged one backoff);
+      `RunOptions`' profile is no longer `Required`, so a missing one prints one line instead of the
+      usage; `headless_appsettings.Development.json` overrides a logger name nothing uses.
+    - **Bot Manager and Control Center:** `BotManagerStatus` took any JSON at `/health` for the
+      manager's (item 50's twin); Stop was disabled while a Start was in flight; a console's first read of
+      the log or the runs that failed was never retried; a run's end left the card and the console
+      showing it for up to a second; the assignment form built its draft after its first awaits, so a
+      choice made then was replaced; text typed on the Forever routes page during a save was marked
+      saved; the "no bots yet" hint printed the Control Center's own address of the manager; the run
+      history kept every run ever shown; a bot's zone was named from the Pathing Service's client,
+      whatever client the bot played.
+    - **Sync:** answers were taken with no size limit, and bytes were never checked against the
+      manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
 
@@ -436,7 +691,9 @@ fixed the same day on `fix/phase2-review` (see "Fixed"); what is left:
     `health.Coverage`, `Bake` and `Lanes` unchecked: `PathingService:Url` set to the Bot Manager, or a
     service on an older build, ended every page at its first render. `PathingStatus` now takes only
     this version's Pathing Service health, and the API version from the capabilities; anything else
-    is the service offline with why. Tested with the Bot Manager's body and a Phase 1 body.
+    is the service offline with why. Tested with the Bot Manager's body and a Phase 1 body. The
+    Phase 3 review found the twin left open: `BotManagerStatus` takes any JSON at the manager's
+    `/health` (item 77).
 
 51. **The Control Center kept the service's facts until the service came back** (Phase 2 review,
     2026-10-07). `/world` (tile counts) and `/capabilities` (game files) were read once, so a
@@ -633,12 +890,16 @@ fixed the same day on `fix/phase2-review` (see "Fixed"); what is left:
       disposed. `AddWoWProcess` cancels its probe's token, and `Main` ends with `Environment.Exit`, so
       a run that could not be torn down cannot keep the process alive. Checked on Linux (SIGTERM ends
       an agent cleanly); on Windows with a game it is on the Phase 3 checklist.
+    - **Corrected by the Phase 3 review:** on Windows only Ctrl+C and Ctrl+Break stop it cleanly;
+      closing the window, a logoff and the task's End do not (item 65).
 
 22. **Configuration keys on HeadlessServer's command line failed the parse** (Phase 3).
     `HeadlessServer/CLAUDE.md` said `--Pathing:Engine=Navmesh` reached the configuration, but
     CommandLineParser parsed the same arguments and refused the unknown option
     (`UnknownOptionError`). `HeadlessArguments` now gives `--Section:Key` arguments to the
-    configuration only and the rest to the parser.
+    configuration only and the rest to the parser. The Phase 3 review found a hole: a value that
+    starts with `-` (`--Navmesh:Query:EdgeMargin -1`) was dropped, or took the next key as its value
+    (item 77).
 
 26. **The Control Center's toggles never looked pressed** (Phase 3, step 5). Blazor writes a
     `bool` attribute as present or absent, `true` as an empty value, so `aria-pressed="@navmesh"`
