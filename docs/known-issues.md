@@ -96,21 +96,6 @@ commit that fixed it.
     Control Center no longer loads Leaflet since 2026-10-05). Nothing visibly breaks; align them
     (a local 1.9.4 stylesheet) when the map is next worked on.
 
-23. **A Classic run waits for the addon without listening to its stop.**
-    - **Where:** `Core/BotController`'s constructor, reached from `HeadlessServer/Runtimes/ClassicRuntime`.
-    - **Cause:** it loops on `wait.Update(5000)` until the addon reads the player's class, and checks
-      no token.
-    - **Effect:** a Classic run started while the addon's data is not on screen cannot be stopped by
-      its token. After the grace period the agent releases the keys (none are held yet), reports the
-      run `Abandoned` and restarts (exit code 75). Standalone HeadlessServer always waited the same
-      way, forever. Found by reading the code, not observed.
-    - **A Forever run too** (Phase 3 review): a stop between `ForeverRun`'s first frame and the
-      controller's first readable class cannot end it, since the stop cancels the only thread that brings
-      frames and the constructor's wait takes no token. The run ends Abandoned with exit code 75.
-    - **Fix:** the constructor's wait reads its token, and each runtime ties the run's stop to that
-      token while the controller is built, and only then, so a stop still releases input before
-      anything is torn down.
-
 24. **BlazorServer's "Forever runs" page still starts runs as a child process.**
     - **Where:** `Frontend/ForeverRunHost`, `ForeverRunFiles`, `ForeverRouteCatalog`,
       `ForeverRunOutput`, `Pages/ForeverRuns.razor`.
@@ -444,6 +429,18 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+23. **A run waited for the addon without listening to its stop** (Phase 3; the Forever half found by
+    the Phase 3 review; fixed 2026-10-08). `BotController`'s constructor waited with `wait.Update(5000)`
+    until the addon read the player's class, and read no token. A stop cancels the thread that brings
+    frames, so a Classic run started while the addon's data was not on screen, or a Forever run stopped
+    between its first frame and the class read, could never end: after the grace the agent released
+    the keys, reported the run Abandoned and restarted (exit code 75); standalone HeadlessServer waited
+    for good. The wait now takes the token (`Wait.Update(timeout, token)`) and a cancelled one ends the
+    constructor with `OperationCanceledException`. `ClassicRuntime` cancels the composition's token on a
+    stop only while the controller is built (after it, a stop turns the bot off first), and reports such
+    a run "stopped before it started"; `ForeverRun` already shares one token. Test: `WaitTests` (with the
+    old wait the token is not read and it times out). A run against a game is Windows checklist item 9.
 
 76. **The agent's run host had small races and leaks** (Phase 3 review, 2026-10-08).
     - Telemetry read a runtime while it was disposed (as one attaching, with no progress), and the

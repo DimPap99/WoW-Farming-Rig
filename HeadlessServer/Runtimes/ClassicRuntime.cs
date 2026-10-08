@@ -122,8 +122,15 @@ public sealed partial class ClassicRuntime : IBotRuntime
             }
 
             provider = composed;
-            // Waits until the addon reads the player's class, as HeadlessServer always did.
-            IBotController controller = composed.GetRequiredService<IBotController>();
+            // Waits until the addon reads the player's class, as HeadlessServer always did. A stop meanwhile
+            // cancels the composition's token, which ends that wait (known issue 23); only while it is built:
+            // after it, a stop turns the bot off first, and the token is cancelled when it is torn down.
+            IBotController controller;
+            using (stop.Register(composed.GetRequiredService<CancellationTokenSource>().Cancel))
+            {
+                controller = composed.GetRequiredService<IBotController>();
+            }
+
             readers = new Readers(controller, composed.GetRequiredService<PlayerReader>(), composed.GetRequiredService<AddonBits>(),
                 composed.GetRequiredService<SessionStat>());
             if (stop.IsCancellationRequested)
@@ -164,6 +171,10 @@ public sealed partial class ClassicRuntime : IBotRuntime
             return stopped
                 ? new BotRunResult(BotRunOutcome.Stopped, "stopped")
                 : new BotRunResult(BotRunOutcome.Complete, "the bot stopped itself");
+        }
+        catch (OperationCanceledException) when (!started && stop.IsCancellationRequested)
+        {
+            return new BotRunResult(BotRunOutcome.Stopped, "stopped before it started");
         }
         catch (Exception ex) when (!started)
         {

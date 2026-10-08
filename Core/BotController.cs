@@ -126,9 +126,12 @@ public sealed partial class BotController : IBotController, IDisposable
         addonThread.Priority = ThreadPriority.AboveNormal;
         addonThread.Start();
 
+        // Until the addon reads the player's class. A cancelled token ends the wait (the
+        // constructor throws OperationCanceledException): it stops the only thread that brings
+        // frames, so the wait would never end and a stop could not end the run (known issue 23).
         do
         {
-            if (!wait.Update(5000))
+            if (!wait.Update(5000, cts.Token))
                 logger.LogError("There is a problem, unable " +
                     "to read the players UnitClass and UnitRace!");
         } while (

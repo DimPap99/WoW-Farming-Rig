@@ -47,6 +47,22 @@ public sealed class Wait
         return result;
     }
 
+    /// <summary>
+    /// As <see cref="Update(int)"/>, but a cancelled <paramref name="token"/> ends the wait at once with
+    /// <see cref="OperationCanceledException"/>: frames stop coming when it is, so the wait would only
+    /// time out, again and again.
+    /// </summary>
+    public bool Update(int timeoutMs, CancellationToken token)
+    {
+        bool result = globalTime.Wait(timeoutMs, token);
+        if (result)
+        {
+            globalTime.Reset();
+        }
+
+        return result;
+    }
+
     public void Fixed(int durationMs)
     {
         token.WaitHandle.WaitOne(durationMs);
