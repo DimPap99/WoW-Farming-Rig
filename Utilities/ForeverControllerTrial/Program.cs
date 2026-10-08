@@ -42,12 +42,12 @@ if (routeIndex >= 0 && routeIndex + 1 < args.Length && !args[routeIndex + 1].Sta
     routeName = args[routeIndex + 1];
     values.Add(routeIndex + 1);
 }
-if (travel is [] || travel is not null && travel.Any(OffMap))
+if (travel is [])
 {
     Console.Error.WriteLine("Use --travel <x> <y> with map coordinates of the current zone, 0 to 100.");
     return ForeverRunProtocol.ExitUsage;
 }
-if (roam is [] || roam is not null && (roam[..4].Any(OffMap) || roam[4] < 1 || roam[4] != Math.Floor(roam[4])))
+if (roam is [] || roam is not null && (roam[4] != Math.Floor(roam[4]) || roam[4] > int.MaxValue))
 {
     Console.Error.WriteLine("Use --roam <x1> <y1> <x2> <y2> <kills>: opposite corners on the current zone's map, 0 to 100, and a number of kills.");
     return ForeverRunProtocol.ExitUsage;
@@ -57,7 +57,7 @@ if (routeIndex >= 0 && routeName is null)
     Console.Error.WriteLine("Use --route <file>, a route file in Json/path/_forever or a path to one.");
     return ForeverRunProtocol.ExitUsage;
 }
-if (minutes is [] || minutes is [<= 0 or > ForeverRunRequest.MaxMinutes])
+if (minutes is [])
 {
     Console.Error.WriteLine("Use --minutes <n> with a time bound from 1 to 600 minutes.");
     return ForeverRunProtocol.ExitUsage;
@@ -114,7 +114,30 @@ double[]? NumbersAfter(string flag, int count)
     return numbers;
 }
 
-static bool OffMap(double coordinate) => coordinate is < 0 or > ForeverMapPoint.MapSize || !double.IsFinite(coordinate);
+ForeverRunMode mode = travel is not null ? ForeverRunMode.Travel
+    : roam is not null ? ForeverRunMode.Roam
+    : route is not null ? ForeverRunMode.Route
+    : sweep ? ForeverRunMode.Sweep
+    : args.Contains("--auto-run") ? ForeverRunMode.AutoRun
+    : args.Contains("--auto-check") ? ForeverRunMode.AutoCheck
+    : run ? ForeverRunMode.Run
+    : ForeverRunMode.Check;
+ForeverRunRequest request = new(mode)
+{
+    TravelTo = travel is [double travelX, double travelY] ? (travelX, travelY) : null,
+    Roam = roam is [double x1, double y1, double x2, double y2, double kills] ? new ForeverRoamRequest(x1, y1, x2, y2, (int)kills) : null,
+    Route = route,
+    Minutes = minutes is [double bound] ? bound : null,
+    DataRoot = Path.GetFullPath("Json"),
+    // A capture the bars cannot be read from is kept beside the live logs, when there are any.
+    UnreadableFrameFolder = Directory.Exists(Path.Combine("local", "logs")) ? Path.GetFullPath(Path.Combine("local", "logs")) : null,
+};
+// The request's own rules: a point on the map, a roam with kills to make, a time bound where it counts.
+if (request.Problem is string problem)
+{
+    Console.Error.WriteLine($"Refused: {problem}.");
+    return ForeverRunProtocol.ExitUsage;
+}
 
 int pidIndex = Array.IndexOf(args, "--pid");
 int? requestedPid = null;
@@ -163,24 +186,6 @@ if (listen)
     { IsBackground = true, Name = "Forever run listener" }.Start();
 }
 
-ForeverRunMode mode = travel is not null ? ForeverRunMode.Travel
-    : roam is not null ? ForeverRunMode.Roam
-    : route is not null ? ForeverRunMode.Route
-    : sweep ? ForeverRunMode.Sweep
-    : args.Contains("--auto-run") ? ForeverRunMode.AutoRun
-    : args.Contains("--auto-check") ? ForeverRunMode.AutoCheck
-    : run ? ForeverRunMode.Run
-    : ForeverRunMode.Check;
-ForeverRunRequest request = new(mode)
-{
-    TravelTo = travel is [double travelX, double travelY] ? (travelX, travelY) : null,
-    Roam = roam is [double x1, double y1, double x2, double y2, double kills] ? new ForeverRoamRequest(x1, y1, x2, y2, (int)kills) : null,
-    Route = route,
-    Minutes = minutes is [double bound] ? bound : null,
-    DataRoot = Path.GetFullPath("Json"),
-    // A capture the bars cannot be read from is kept beside the live logs, when there are any.
-    UnreadableFrameFolder = Directory.Exists(Path.Combine("local", "logs")) ? Path.GetFullPath(Path.Combine("local", "logs")) : null,
-};
 ILoggerFactory loggerFactory = LoggerFactory.Create(b => b.AddProvider(new TrialLoggerProvider()));
 return new ForeverRun(request, loggerFactory, new ConsoleRunOutput()).Run(wow.Id, cts.Token).ExitCode;
 

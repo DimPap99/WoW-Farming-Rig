@@ -202,7 +202,10 @@ Forever code:
   `ForeverVerifiedSetup` (the verified profiles, map and classes),
   `ForeverProfileRules` (what a Forever profile may use), and `ForeverRun` with
   `ForeverRunRequest`: one bounded, gated run of the normal controller, as the
-  trial runner (now a command line over it) and the resident agent start it.
+  trial runner (now a command line over it) and the resident agent start it. The
+  request's `Problem` holds the rules both are refused by (what a mode needs, points
+  on the map, a roam's kills, where a time bound counts); `ForeverRun.Run` returns
+  its exit code and last word (`ForeverRunResult`).
 - `SharedLib/Forever/` - the route model, data only: `ForeverRouteFile` (route
   files), the task records and the `ForeverTasks` API, `ForeverUntil`,
   `ForeverMapPoint` and `ForeverArea`, and `ForeverDestinations` (a visit's or a

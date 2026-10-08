@@ -1,6 +1,7 @@
 using SharedLib.Forever;
 
 using System;
+using System.Linq;
 
 namespace Core.Forever;
 
@@ -85,13 +86,69 @@ public sealed record ForeverRunRequest(ForeverRunMode Mode)
         _ => AutoRunSeconds,
     };
 
-    /// <summary>Why the request cannot run as it is, or null.</summary>
-    public string? Problem => Mode switch
+    /// <summary>
+    /// Why the request cannot run as it is, or null: what its mode needs and nothing of another mode's,
+    /// points on the map, a roam that has kills to make, and a time bound only where it counts. The trial
+    /// runner's command line and an agent's assignment are refused alike, before anything attaches.
+    /// </summary>
+    public string? Problem => FindProblem();
+
+    private string? FindProblem()
     {
-        ForeverRunMode.Travel when TravelTo is null => "a travel needs its point",
-        ForeverRunMode.Roam when Roam is null => "a roam needs its area and kills",
-        ForeverRunMode.Route when Route is null => "a route run needs its route",
-        _ when Minutes is <= 0 or > MaxMinutes => $"the time bound is above 0 and at most {MaxMinutes} minutes",
-        _ => null,
-    };
+        string? missing = Mode switch
+        {
+            ForeverRunMode.Travel when TravelTo is null => "a travel needs its point",
+            ForeverRunMode.Roam when Roam is null => "a roam needs its area and kills",
+            ForeverRunMode.Route when Route is null => "a route run needs its route",
+            _ => null,
+        };
+        if (missing is not null)
+        {
+            return missing;
+        }
+
+        // A travel given a route ran the route, under the travel's bound.
+        if (TravelTo is not null && Mode != ForeverRunMode.Travel)
+        {
+            return $"a point to travel to is for a travel, not a {Mode} run";
+        }
+
+        if (Roam is not null && Mode != ForeverRunMode.Roam)
+        {
+            return $"an area to roam is for a roam, not a {Mode} run";
+        }
+
+        if (Route is not null && Mode != ForeverRunMode.Route)
+        {
+            return $"a route is for a route run, not a {Mode} run";
+        }
+
+        if (TravelTo is { } point && !(ForeverMapPoint.OnMap(point.X) && ForeverMapPoint.OnMap(point.Y)))
+        {
+            return $"the point to travel to is off the map: its coordinates are 0 to {ForeverMapPoint.MapSize}";
+        }
+
+        if (Roam is { } area && !new[] { area.X1, area.Y1, area.X2, area.Y2 }.All(ForeverMapPoint.OnMap))
+        {
+            return $"the area to roam is off the map: its corners are 0 to {ForeverMapPoint.MapSize}";
+        }
+
+        // With none to make, it ended at once.
+        if (Roam is { Kills: < 1 })
+        {
+            return "a roam needs at least one kill to make";
+        }
+
+        if (Minutes is not null && !(IsAutonomous && Moves))
+        {
+            return $"a time bound is for an autonomous run that moves; a {Mode} run keeps its own";
+        }
+
+        if (Minutes is { } bound && !(double.IsFinite(bound) && bound is > 0 and <= MaxMinutes))
+        {
+            return $"the time bound is above 0 and at most {MaxMinutes} minutes";
+        }
+
+        return null;
+    }
 }

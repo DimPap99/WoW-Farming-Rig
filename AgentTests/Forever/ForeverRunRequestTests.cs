@@ -74,6 +74,37 @@ public sealed class ForeverRunRequestTests
         }.Problem);
     }
 
+    // The trial runner's command line checked these itself, so an assignment of another mode would have
+    // copied them: a roam with no kills completed at once, a point off its map was refused only after
+    // attaching, and a travel given a route ran the route under the travel's bound.
+    [Fact]
+    public void A_request_holds_the_command_lines_rules()
+    {
+        ForeverRoute trip = new("trip", [ForeverTasks.TravelTo(new(1411, 52, 44))], false);
+
+        Assert.Contains("off the map", new ForeverRunRequest(ForeverRunMode.Travel) { DataRoot = Root, TravelTo = (52, 101) }.Problem);
+        Assert.Contains("off the map", new ForeverRunRequest(ForeverRunMode.Travel) { DataRoot = Root, TravelTo = (double.NaN, 4) }.Problem);
+        Assert.Contains("off the map", new ForeverRunRequest(ForeverRunMode.Roam)
+        {
+            DataRoot = Root,
+            Roam = new ForeverRoamRequest(-1, 0, 10, 10, 3),
+        }.Problem);
+        Assert.Contains("at least one kill", new ForeverRunRequest(ForeverRunMode.Roam)
+        {
+            DataRoot = Root,
+            Roam = new ForeverRoamRequest(0, 0, 10, 10, 0),
+        }.Problem);
+        Assert.Contains("a route is for a route run", new ForeverRunRequest(ForeverRunMode.Travel)
+        {
+            DataRoot = Root,
+            TravelTo = (52, 44),
+            Route = trip,
+        }.Problem);
+        Assert.Contains("keeps its own", new ForeverRunRequest(ForeverRunMode.Run) { DataRoot = Root, Minutes = 30 }.Problem);
+        Assert.Contains("minutes", new ForeverRunRequest(ForeverRunMode.Route) { DataRoot = Root, Route = trip, Minutes = double.NaN }.Problem);
+        Assert.Null(new ForeverRunRequest(ForeverRunMode.Roam) { DataRoot = Root, Roam = new ForeverRoamRequest(0, 0, 100, 100, 1) }.Problem);
+    }
+
     [Fact]
     public void A_request_with_a_problem_is_refused_before_anything_attaches()
     {

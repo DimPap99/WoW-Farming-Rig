@@ -15,6 +15,12 @@ public readonly record struct ForeverMapPoint(int UIMapId, double X, double Y)
     /// <summary>Map coordinates run from 0 to this.</summary>
     public const double MapSize = 100;
 
+    /// <summary>Whether <paramref name="coordinate"/> lies on a map: a number from 0 to <see cref="MapSize"/>.</summary>
+    public static bool OnMap(double coordinate)
+    {
+        return double.IsFinite(coordinate) && coordinate is >= 0 and <= MapSize;
+    }
+
     /// <summary>
     /// The point in world yards, with the instance map its world positions
     /// report, or false with why. Any zone in the map data converts; whether
@@ -24,7 +30,7 @@ public readonly record struct ForeverMapPoint(int UIMapId, double X, double Y)
     {
         world = default;
         instanceMapId = 0;
-        if (!double.IsFinite(X) || !double.IsFinite(Y) || X is < 0 or > MapSize || Y is < 0 or > MapSize)
+        if (!OnMap(X) || !OnMap(Y))
         {
             reason = $"the map point {this} is outside 0 to {MapSize}";
             return false;
