@@ -13,6 +13,8 @@ using PPather.Navmesh;
 using PPather.Planning;
 using PPather.Storage;
 
+using ServiceHosting;
+
 using SharedLib;
 
 using System;
@@ -142,23 +144,23 @@ public sealed class BakeAdmin : IDisposable
     }
 
     /// <summary>Starts a bake in the background.</summary>
-    public StoreResult<BakeStatus> Start(BakeRequest request)
+    public ApiResult<BakeStatus> Start(BakeRequest request)
     {
         if (BakeProblem(request, out string? continent) is string problem)
         {
-            return StoreResult<BakeStatus>.Invalid(problem);
+            return ApiResult<BakeStatus>.Invalid(problem);
         }
 
         if (!HasGameFiles)
         {
-            return StoreResult<BakeStatus>.Conflict(NoGameFiles);
+            return ApiResult<BakeStatus>.Conflict(NoGameFiles);
         }
 
         lock (gate)
         {
             if (Busy() is string busy)
             {
-                return StoreResult<BakeStatus>.Conflict(busy);
+                return ApiResult<BakeStatus>.Conflict(busy);
             }
 
             Job bake = new(JobKind.Bake, continent, NewEngine());
@@ -174,10 +176,10 @@ public sealed class BakeAdmin : IDisposable
             logger.LogInformation("Bake started: {Scope}", continent ?? "every continent");
         }
 
-        return StoreResult<BakeStatus>.Done(Status);
+        return ApiResult<BakeStatus>.Done(Status);
     }
 
-    public StoreResult<BakeStatus> Cancel()
+    public ApiResult<BakeStatus> Cancel()
     {
         Job? current;
         lock (gate)
@@ -186,19 +188,19 @@ public sealed class BakeAdmin : IDisposable
         }
 
         return current is { Kind: JobKind.Bake, Engine: PPatherService engine } && !current.Ended.IsCompleted && engine.CancelBake()
-            ? StoreResult<BakeStatus>.Done(Status)
-            : StoreResult<BakeStatus>.Conflict("no bake is running");
+            ? ApiResult<BakeStatus>.Done(Status)
+            : ApiResult<BakeStatus>.Conflict("no bake is running");
     }
 
     /// <summary>
     /// Deletes every baked tile of <paramref name="continent"/>, stale settings hashes included. The
     /// planner lets go of the continent's tiles afterwards, whatever the delete managed.
     /// </summary>
-    public StoreResult<CacheCleared> Clear(string continent)
+    public ApiResult<CacheCleared> Clear(string continent)
     {
         if (continents.Resolve(continent) is not string resolved)
         {
-            return StoreResult<CacheCleared>.Invalid(continents.Refusal(continent));
+            return ApiResult<CacheCleared>.Invalid(continents.Refusal(continent));
         }
 
         TaskCompletionSource ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -206,7 +208,7 @@ public sealed class BakeAdmin : IDisposable
         {
             if (Busy() is string busy)
             {
-                return StoreResult<CacheCleared>.Conflict(busy);
+                return ApiResult<CacheCleared>.Conflict(busy);
             }
 
             job = new Job(JobKind.Clear, resolved, null) { Ended = ended.Task };
@@ -237,12 +239,12 @@ public sealed class BakeAdmin : IDisposable
                 logger.LogInformation("Navmesh tiles of {Continent} deleted: {Bytes} bytes", resolved, freed);
             }
 
-            return StoreResult<CacheCleared>.Done(new CacheCleared(resolved, freed));
+            return ApiResult<CacheCleared>.Done(new CacheCleared(resolved, freed));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             logger.LogWarning("Not every tile of {Continent} could be deleted: {Reason}", resolved, ex.Message);
-            return StoreResult<CacheCleared>.Conflict($"not every tile of {resolved} could be deleted ({ex.Message}); ask again");
+            return ApiResult<CacheCleared>.Conflict($"not every tile of {resolved} could be deleted ({ex.Message}); ask again");
         }
         finally
         {
@@ -253,24 +255,24 @@ public sealed class BakeAdmin : IDisposable
     }
 
     /// <summary>Extracts the area-id grid of <paramref name="continent"/>, or of every continent, in the background.</summary>
-    public StoreResult StartAreaGrid(string? continent)
+    public ApiResult StartAreaGrid(string? continent)
     {
         string? resolved = null;
         if (continent is not null && (resolved = continents.Resolve(continent)) is null)
         {
-            return StoreResult.Invalid(continents.Refusal(continent));
+            return ApiResult.Invalid(continents.Refusal(continent));
         }
 
         if (!HasGameFiles)
         {
-            return StoreResult.Conflict(NoGameFiles);
+            return ApiResult.Conflict(NoGameFiles);
         }
 
         lock (gate)
         {
             if (Busy() is string busy)
             {
-                return StoreResult.Conflict(busy);
+                return ApiResult.Conflict(busy);
             }
 
             Job grid = new(JobKind.AreaGrid, resolved, NewEngine());
@@ -278,7 +280,7 @@ public sealed class BakeAdmin : IDisposable
             job = grid;
         }
 
-        return StoreResult.Done;
+        return ApiResult.Done;
     }
 
     /// <summary>Cancels a running bake and waits a while for its job to end, so its last tiles are whole.</summary>

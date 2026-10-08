@@ -10,6 +10,8 @@ using Microsoft.Extensions.Logging;
 
 using ServiceClients.Bots;
 
+using ServiceHosting;
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -249,11 +251,11 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
         return registry.Get(agentId) is { } record ? Info(record) : null;
     }
 
-    public async Task<FleetResult> AssignAsync(string agentId, BotAssignment? assignment)
+    public async Task<ApiResult> AssignAsync(string agentId, BotAssignment? assignment)
     {
         if (assignment is not null && AssignmentRules.Problem(assignment) is string problem)
         {
-            return FleetResult.Invalid(problem);
+            return ApiResult.Invalid(problem);
         }
 
         BotRecord? record;
@@ -263,7 +265,7 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             record = registry.Get(agentId);
             if (record is null)
             {
-                return FleetResult.NotFound;
+                return ApiResult.NotFound;
             }
 
             record = record with { Assignment = assignment };
@@ -275,7 +277,7 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             {
                 // Nothing changed: the bot keeps the assignment it had.
                 LogNotRecorded(logger, record.Name, ex.Message);
-                return FleetResult.Failed($"the assignment was not saved: {ex.Message}");
+                return ApiResult.Unreadable($"the assignment was not saved: {ex.Message}");
             }
 
             connection = online.GetValueOrDefault(agentId)?.ConnectionId;
@@ -287,46 +289,46 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             await agents.Clients.Client(connection).SendAsync(AgentHubMethods.Assign, assignment);
         }
 
-        return FleetResult.Done;
+        return ApiResult.Done;
     }
 
-    public Task<FleetResult<CommandAck>> StartAsync(string agentId, CancellationToken token)
+    public Task<ApiResult<CommandAck>> StartAsync(string agentId, CancellationToken token)
     {
         return CommandAsync(agentId, BotCommandKind.Start, token);
     }
 
-    public Task<FleetResult<CommandAck>> StopAsync(string agentId, CancellationToken token)
+    public Task<ApiResult<CommandAck>> StopAsync(string agentId, CancellationToken token)
     {
         return CommandAsync(agentId, BotCommandKind.Stop, token);
     }
 
-    public Task<FleetResult> ForgetAsync(string agentId)
+    public Task<ApiResult> ForgetAsync(string agentId)
     {
         lock (sync)
         {
             if (online.ContainsKey(agentId))
             {
-                return Task.FromResult(FleetResult.Conflict("the bot is online; stop its agent first"));
+                return Task.FromResult(ApiResult.Conflict("the bot is online; stop its agent first"));
             }
 
             try
             {
                 if (!registry.Remove(agentId))
                 {
-                    return Task.FromResult(FleetResult.NotFound);
+                    return Task.FromResult(ApiResult.NotFound);
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 LogNotRecorded(logger, agentId, ex.Message);
-                return Task.FromResult(FleetResult.Failed($"the bot was not forgotten: {ex.Message}"));
+                return Task.FromResult(ApiResult.Unreadable($"the bot was not forgotten: {ex.Message}"));
             }
 
             logs.Remove(agentId);
             Broadcast(FleetHubMethods.BotRemoved, agentId);
         }
 
-        return Task.FromResult(FleetResult.Done);
+        return Task.FromResult(ApiResult.Done);
     }
 
     /// <summary>The bot's latest log lines, oldest first; null for a bot the manager does not know.</summary>
@@ -349,7 +351,7 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
         return registry.Get(agentId) is null ? null : [.. registry.Runs(agentId).Select(run => new RunRecord(agentId, run))];
     }
 
-    private async Task<FleetResult<CommandAck>> CommandAsync(string agentId, BotCommandKind kind, CancellationToken token)
+    private async Task<ApiResult<CommandAck>> CommandAsync(string agentId, BotCommandKind kind, CancellationToken token)
     {
         BotRecord? record;
         string? connection;
@@ -361,17 +363,17 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
 
         if (record is null)
         {
-            return FleetResult<CommandAck>.NotFound;
+            return ApiResult<CommandAck>.NotFound;
         }
 
         if (connection is null)
         {
-            return FleetResult<CommandAck>.Conflict($"{record.Name} is offline: its agent is not connected");
+            return ApiResult<CommandAck>.Conflict($"{record.Name} is offline: its agent is not connected");
         }
 
         if (kind == BotCommandKind.Start && record.Assignment is null)
         {
-            return FleetResult<CommandAck>.Conflict($"{record.Name} has no assignment to start");
+            return ApiResult<CommandAck>.Conflict($"{record.Name} has no assignment to start");
         }
 
         BotCommand command = new(Guid.NewGuid().ToString("N"), kind, kind == BotCommandKind.Start ? record.Assignment : null);
@@ -387,14 +389,14 @@ public sealed partial class BotFleet(IBotRegistry registry, IHubContext<AgentHub
             // SignalR reports a cancelled invocation as a HubException, so the tokens tell what happened.
             token.ThrowIfCancellationRequested();
             return timeout.IsCancellationRequested
-                ? FleetResult<CommandAck>.Timeout($"{record.Name}'s agent did not answer within {options.CommandTimeout.TotalSeconds:0} s")
-                : FleetResult<CommandAck>.Conflict($"{record.Name}'s agent could not take the command: {ex.Message}");
+                ? ApiResult<CommandAck>.Timeout($"{record.Name}'s agent did not answer within {options.CommandTimeout.TotalSeconds:0} s")
+                : ApiResult<CommandAck>.Conflict($"{record.Name}'s agent could not take the command: {ex.Message}");
         }
 
         LogCommand(logger, kind, record.Name, ack.Accepted, Printable(ack.Reason ?? ack.RunId ?? string.Empty));
         return ack.Accepted
-            ? FleetResult<CommandAck>.Done(ack)
-            : FleetResult<CommandAck>.Conflict(ack.Reason ?? $"{record.Name} refused to {kind.ToString().ToLowerInvariant()}");
+            ? ApiResult<CommandAck>.Done(ack)
+            : ApiResult<CommandAck>.Conflict(ack.Reason ?? $"{record.Name} refused to {kind.ToString().ToLowerInvariant()}");
     }
 
     private bool TryLive(string connectionId, out string agentId, out LiveBot live)

@@ -12,6 +12,8 @@ using PPather;
 using PPather.Navmesh;
 using PPather.Planning;
 
+using ServiceHosting;
+
 using SharedLib;
 
 using System.Linq;
@@ -81,8 +83,8 @@ public static class NavmeshEndpoints
 
         app.MapPost(PathingApi.Bake, (BakeRequest request, BakeAdmin admin) =>
             {
-                StoreResult<BakeStatus> started = admin.Start(request);
-                return started.Outcome == StoreOutcome.Done
+                ApiResult<BakeStatus> started = admin.Start(request);
+                return started.Outcome == ApiOutcome.Done
                     ? Results.Accepted(PathingApi.Bake, started.Value)
                     : started.ToHttp();
             })
@@ -102,8 +104,8 @@ public static class NavmeshEndpoints
 
         app.MapPost(PathingApi.AreaGrids, (string? continent, BakeAdmin admin) =>
             {
-                StoreResult started = admin.StartAreaGrid(string.IsNullOrWhiteSpace(continent) ? null : continent);
-                return started.Outcome == StoreOutcome.Done ? Results.Accepted() : started.ToHttp();
+                ApiResult started = admin.StartAreaGrid(string.IsNullOrWhiteSpace(continent) ? null : continent);
+                return started.Outcome == ApiOutcome.Done ? Results.Accepted() : started.ToHttp();
             })
             .WithTags(Tag)
             .WithSummary("Extract the area-id grid of a continent (or all) from the game files, in the background")
@@ -118,6 +120,6 @@ public static class NavmeshEndpoints
     private static IResult NotAContinent(string continent, ClientContinents continents)
     {
         return Results.Problem(detail: continents.Refusal(continent),
-            statusCode: StatusCodes.Status400BadRequest, title: StoreResultHttp.RefusedTitle);
+            statusCode: StatusCodes.Status400BadRequest, title: ApiResultHttp.RefusedTitle);
     }
 }

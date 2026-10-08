@@ -9,6 +9,8 @@ using PathingService.Routes;
 
 using PPather.Planning;
 
+using ServiceHosting;
+
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -22,23 +24,20 @@ namespace PathingService.Watch;
 
 /// <summary>
 /// Streams every route the planner answers to the watch hub's route watchers. Planner events fire on
-/// query threads and only queue work here; one loop sends it in order, so a query never waits on a
-/// socket. With no watcher connected nothing is queued; the last routes are still remembered for a
-/// watcher who joins later.
+/// query threads and only post sends here; one loop sends them in order (<see cref="HubSendQueue"/>,
+/// the fleet hub's too), so a query never waits on a socket. With no watcher connected nothing is
+/// posted; the last routes are still remembered for a watcher who joins later.
 /// </summary>
 public sealed class WatchBroadcaster(
     RoutePlanner planner,
     IHubContext<WatchHub> hub,
-    ILogger<WatchBroadcaster> logger) : BackgroundService
+    HubSendQueue sends) : IHostedService
 {
     /// <summary>Routes with points (found or partial) sent to a watcher as it joins.</summary>
     public const int RememberedRoutes = 5;
 
     /// <summary>The hub group of the route watchers (<see cref="WatchHubMethods.WatchRoutes"/>).</summary>
     public const string RouteWatchers = "routes";
-
-    private readonly Channel<Func<CancellationToken, Task>> work =
-        Channel.CreateUnbounded<Func<CancellationToken, Task>>(new UnboundedChannelOptions { SingleReader = true });
 
     private readonly Lock recentLock = new();
     private readonly Queue<WatchRoute> recent = new();
@@ -58,13 +57,10 @@ public sealed class WatchBroadcaster(
         }
 
         IClientProxy watcher = hub.Clients.Client(connectionId);
-        Enqueue(async token =>
+        foreach (WatchRoute route in routes)
         {
-            foreach (WatchRoute route in routes)
-            {
-                await SendAsync(watcher, WatchHubMethods.RoutePlanned, token, route);
-            }
-        });
+            sends.Post(watcher, WatchHubMethods.RoutePlanned, route);
+        }
     }
 
     public void WatcherLeft(string connectionId)
@@ -80,44 +76,19 @@ public sealed class WatchBroadcaster(
             recent.Clear();
         }
 
-        Enqueue(token => SendAsync(hub.Clients.Group(RouteWatchers), WatchHubMethods.Clear, token));
+        sends.Post(hub.Clients.Group(RouteWatchers), WatchHubMethods.Clear);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    public Task StartAsync(CancellationToken cancellationToken)
     {
         planner.RoutePlanned += OnRoutePlanned;
-
-        try
-        {
-            await foreach (Func<CancellationToken, Task> item in work.Reader.ReadAllAsync(stoppingToken))
-            {
-                try
-                {
-                    await item(stoppingToken);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Watch broadcast failed");
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Shutdown.
-        }
-        finally
-        {
-            planner.RoutePlanned -= OnRoutePlanned;
-        }
+        return Task.CompletedTask;
     }
 
-    private void Enqueue(Func<CancellationToken, Task> item)
+    public Task StopAsync(CancellationToken cancellationToken)
     {
-        work.Writer.TryWrite(item);
+        planner.RoutePlanned -= OnRoutePlanned;
+        return Task.CompletedTask;
     }
 
     // On the querying thread.
@@ -138,7 +109,7 @@ public sealed class WatchBroadcaster(
 
         if (!watchers.IsEmpty)
         {
-            Enqueue(token => SendAsync(hub.Clients.Group(RouteWatchers), WatchHubMethods.RoutePlanned, token, route));
+            sends.Post(hub.Clients.Group(RouteWatchers), WatchHubMethods.RoutePlanned, route);
         }
     }
 
@@ -152,20 +123,5 @@ public sealed class WatchBroadcaster(
     private static Point3 Point(Vector3 v)
     {
         return new Point3(v.X, v.Y, v.Z);
-    }
-
-    private async Task SendAsync(IClientProxy clients, string method, CancellationToken token, params object?[] args)
-    {
-        try
-        {
-            await clients.SendCoreAsync(method, args, token);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            if (logger.IsEnabled(LogLevel.Debug))
-            {
-                logger.LogDebug(ex, "Watch hub send {Method} failed", method);
-            }
-        }
     }
 }

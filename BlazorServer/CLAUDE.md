@@ -63,9 +63,12 @@ exists (Phase 3). There are no controllers here any more.
 
 **The forward is a door to the Pathing Service.** This host listens on `*:5000` and adds the
 service's key, while the service serves this machine and its key whoever stands behind it. So the
-forward applies the rules to its own caller first (`ServiceClients/Security/ForwardPolicy`, known
+forward applies the rules to its own caller first (`ServiceClients/Security/ForwardPolicy`, through
+`ServiceHosting.ForwardGuard`, the Control Center's too; known
 issue 47): this PC gets anything; another machine on the LAN reads and authors what the map authors
 (paths, roads, danger zones: `ForwardPolicy.LeafletMapAuthors`), but deletes no tiles and starts or
 cancels no bake or area grid without the key (403, which the bake panel shows); no page on another
 site writes at all; a request this host forwarded itself is refused (508). Bake and clear from the
-bot PC itself, or from the Control Center.
+bot PC itself, or from the Control Center. A request over loopback must name this machine
+(`UseHostCheck`): a page of another site that a DNS rebinding pointed here would drive the dashboard
+(known issue 75).

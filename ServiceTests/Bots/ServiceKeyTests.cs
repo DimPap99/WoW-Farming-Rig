@@ -10,6 +10,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 using ServiceClients.Security;
 
+using ServiceHosting;
+
 using ServiceTests.Api;
 
 using System.Net;
@@ -159,7 +161,7 @@ public sealed class ServiceKeyTests
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            builder.UseSetting(PathingService.Hosting.PathingLogging.FileKey, string.Empty);
+            builder.UseSetting(ServiceHosting.ServiceLogging.FileKey, string.Empty);
             builder.UseSetting(ServiceKey.ConfigKey, key);
             builder.ConfigureServices(services => services.AddSingleton<IStartupFilter, RemoteAddress>());
             builder.ConfigureTestServices(services =>

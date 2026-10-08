@@ -7,7 +7,8 @@ data and streams the routes it plans to the watch hub. Bots keep planning in the
 service owns the data and plans for the UI (the Control Center).
 
 Plain `net10.0`, so it runs on Linux and macOS. It references `Contracts`, `PPather`,
-`DataConfig`, `SharedLib`, `ServiceClients` (the shared key rules, `AtomicFile`, `SyncHash`) and
+`DataConfig`, `SharedLib`, `ServiceClients` (the shared key rules, `AtomicFile`, `SyncHash`),
+`ServiceHosting` (the key's guard, logging, `ApiResult`, the watch hub's send loop) and
 `Utilities/ForeverCasc` only. **Never add a reference to `Core`,
 `Game`, `WinAPI` or `Frontend`** - that would drag the bot (and Windows) into a service.
 
@@ -29,10 +30,8 @@ is its UI.
 ```
 Program.cs                         host: validation on build, default URL, logging, the API
 Hosting/PathingServiceRegistration AddPathingService / UsePathingService - the composition root
-Hosting/PathingLogging.cs          Serilog to console + daily file (LogFile)
-Hosting/StoreResult.cs             store outcomes (incl. Conflict) and their one mapping to HTTP
-Hosting/ServiceKeyGuard.cs         the key (ServiceClients' ServiceKeyPolicy): other machines need ApiKey;
-                                   no write another site made a browser send
+(ServiceHosting)                   the key's guard (UseServiceKey), logging (AddServiceLogging, LogFile),
+                                   ApiResult and its one mapping to HTTP, 400 for a request it cannot read
 Routes/RouteHandler.cs             RouteRequest -> RoutePlanner -> RouteResponse (the only mapping)
 Routes/RouteEndpoints.cs           POST /api/v1/routes/find
 Paths/PathName.cs                  the one check every path name passes
@@ -77,7 +76,9 @@ another client answers `BadRequest`. Serving two clients from one process needs 
 to stop being static first: it is filled by whoever loads first.
 
 **Other machines need the key.** A request from this machine (loopback, or no remote address, as the
-in-memory test server has) is always served; one from another machine only with `ApiKey` in the
+in-memory test server has) is served when it names this machine (its Host: localhost, a loopback
+address or the machine's name; a page that a DNS rebinding pointed here names another), and with
+`TrustLoopback=false`, for a service behind a proxy, not at all without the key; one from another machine only with `ApiKey` in the
 `X-Api-Key` header, and not at all while no key is configured. Bound beyond localhost without a key
 (`--urls=http://0.0.0.0:5010`), the service stops right after it starts. The check runs before the
 API, the hub and the world data. The Control Center and BlazorServer forward the browser's calls with

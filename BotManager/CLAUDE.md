@@ -3,7 +3,7 @@
 The Bot Manager from `docs/service-architecture.md`: the registry of bots (one per game PC, each its
 resident agent), their assignments and run history, the hub agents dial out to, and the live state
 it fans out to the Control Center. It plays nothing and plans nothing. Plain `net10.0`; it references
-`Contracts` and `ServiceClients` only - **never `Core`, `Game`, `WinAPI`, `Frontend` or `PPather`**.
+`Contracts`, `ServiceClients` and `ServiceHosting` only - **never `Core`, `Game`, `WinAPI`, `Frontend` or `PPather`**.
 
 ## Run
 
@@ -20,14 +20,12 @@ The port is `Contracts.Bots.BotManagerApi.DefaultPort` (5030). Its data lives in
 ```
 Program.cs                     host (a class in a namespace, so tests can host it beside the Pathing Service)
 Hosting/BotManagerRegistration AddBotManager / UseBotManager - the composition root
-Hosting/ServiceKeyGuard.cs     the key: ServiceClients' ServiceKeyPolicy, as the Pathing Service applies it
-Hosting/BotManagerLogging.cs   Serilog to console + daily file
-Hosting/HubSendQueue.cs        the fleet hub's one send loop: no agent waits on a listener
+(ServiceHosting)               the key's guard, logging, ApiResult and its HTTP answers, HubSendQueue
+                               (the fleet hub's one send loop: no agent waits on a listener)
 Registry/IBotRegistry.cs       what is kept between connections: BotRecord, run history
 Registry/JsonBotRegistry.cs    data/bots.json and data/runs/<agentId>.json, written then renamed
 Bots/BotFleet.cs               registry + who is online over which connection + snapshots, logs, commands
 Bots/BotFleetOptions.cs        CommandTimeoutSeconds
-Bots/FleetResult.cs            outcomes and their one mapping to HTTP
 Bots/BotEndpoints.cs           /api/v1/health, /api/v1/bots/...
 Agents/AgentHub.cs             /agentHub: Register, Snapshot, Log, RunEnded (Contracts' AgentHubMethods)
 Fleet/FleetHub.cs              /fleetHub: what the Control Center follows (FleetHubMethods)
@@ -69,7 +67,8 @@ rights) stops the start, since starting empty would write over every other bot (
 Agent text is capped (`MaxMessageLength`), and the manager's log escapes its line breaks.
 
 **The key is the Pathing Service's rules.** This machine (loopback, or no remote address at all, as
-an in-memory test server has) is always served. Another machine needs `ApiKey` in the `X-Api-Key`
+an in-memory test server has) is served when the request names it, as `ServiceHosting`'s guard has
+every service do; a WebSocket opened from another site is refused (known issue 75). Another machine needs `ApiKey` in the `X-Api-Key`
 header, and without a configured key it is refused. A manager bound beyond localhost without a key
 stops right after it starts. The rules are `ServiceClients/Security/ServiceKeyPolicy`, shared by every
 service and client.

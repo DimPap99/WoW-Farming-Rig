@@ -10,6 +10,8 @@ using PathingService.Status;
 
 using PPather;
 
+using ServiceHosting;
+
 using SharedLib;
 using SharedLib.Data;
 
@@ -72,16 +74,16 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
     /// NPCs of <paramref name="type"/> whose first spawn lies inside the zone's area, by name: the
     /// rule the bot's NPC routing uses (the zone's hit box, so a city's NPCs count for the city).
     /// </summary>
-    public StoreResult<NpcInfo[]> Npcs(int uiMapId, string? type)
+    public ApiResult<NpcInfo[]> Npcs(int uiMapId, string? type)
     {
         if (!maps.TryGet(uiMapId, out WorldMapArea zone))
         {
-            return StoreResult<NpcInfo[]>.Invalid($"uiMap {uiMapId} is not in the {data.Exp} map data");
+            return ApiResult<NpcInfo[]>.Invalid($"uiMap {uiMapId} is not in the {data.Exp} map data");
         }
 
         if (!TryParseType(type, out NpcFlags flag))
         {
-            return StoreResult<NpcInfo[]>.Invalid(
+            return ApiResult<NpcInfo[]>.Invalid(
                 $"'{type}' is not an NPC type; use one of {string.Join(", ", NpcFlagsExtensions.ToDictionary().Keys.Order())}");
         }
 
@@ -105,7 +107,7 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
         }
 
         found.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
-        return StoreResult<NpcInfo[]>.Done([.. found]);
+        return ApiResult<NpcInfo[]>.Done([.. found]);
     }
 
     /// <summary>Creatures searched for by name are listed up to this many.</summary>
@@ -115,11 +117,11 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
     /// Creatures on the continent <paramref name="mapId"/> whose name holds <paramref name="name"/>,
     /// where each first spawns, by name; at most <see cref="MaxFound"/>.
     /// </summary>
-    public StoreResult<NpcInfo[]> Search(int mapId, string? name)
+    public ApiResult<NpcInfo[]> Search(int mapId, string? name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Trim().Length < 2)
         {
-            return StoreResult<NpcInfo[]>.Invalid("a name to search for needs two letters or more");
+            return ApiResult<NpcInfo[]>.Invalid("a name to search for needs two letters or more");
         }
 
         string text = name.Trim();
@@ -130,15 +132,15 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .Take(MaxFound)
             .Select(c => new NpcInfo(c.Entry, c.Name, Point(spawns[c.Entry][0])))];
-        return StoreResult<NpcInfo[]>.Done(found);
+        return ApiResult<NpcInfo[]>.Done(found);
     }
 
     /// <summary>One of the <see cref="SpawnLayers"/> inside the zone's area, every spawn or node of it, in world yards.</summary>
-    public StoreResult<SpawnPoint[]> Spawns(int uiMapId, string? layer)
+    public ApiResult<SpawnPoint[]> Spawns(int uiMapId, string? layer)
     {
         if (!maps.TryGet(uiMapId, out WorldMapArea zone))
         {
-            return StoreResult<SpawnPoint[]>.Invalid($"uiMap {uiMapId} is not in the {data.Exp} map data");
+            return ApiResult<SpawnPoint[]>.Invalid($"uiMap {uiMapId} is not in the {data.Exp} map data");
         }
 
         WorldMapArea hitbox = maps.HitBoxOf(zone);
@@ -182,10 +184,10 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
                 }
                 break;
             default:
-                return StoreResult<SpawnPoint[]>.Invalid($"'{layer}' is not a layer; use one of {string.Join(", ", SpawnLayers.All)}");
+                return ApiResult<SpawnPoint[]>.Invalid($"'{layer}' is not a layer; use one of {string.Join(", ", SpawnLayers.All)}");
         }
 
-        return StoreResult<SpawnPoint[]>.Done([.. found]);
+        return ApiResult<SpawnPoint[]>.Done([.. found]);
     }
 
     private void AddCreatures(List<SpawnPoint> found, int mapId, IEnumerable<Creature> wanted, Func<Vector3, bool> inside,

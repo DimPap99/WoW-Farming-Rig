@@ -6,6 +6,8 @@ using Microsoft.Extensions.Logging;
 
 using PathingService.Hosting;
 
+using ServiceHosting;
+
 using System.Threading.Tasks;
 
 namespace PathingService.Navmesh;
@@ -38,7 +40,7 @@ public static class StartupBakes
 
         if (!string.IsNullOrWhiteSpace(bake))
         {
-            StoreResult<BakeStatus> started = admin.Start(new BakeRequest(Continent(bake)));
+            ApiResult<BakeStatus> started = admin.Start(new BakeRequest(Continent(bake)));
             Report(logger, "Startup bake", bake, started.Outcome, started.Error);
         }
 
@@ -47,7 +49,7 @@ public static class StartupBakes
             // Once the bake, if one started, has ended.
             _ = admin.Idle.ContinueWith(_ =>
             {
-                StoreResult started = admin.StartAreaGrid(Continent(bakeArea));
+                ApiResult started = admin.StartAreaGrid(Continent(bakeArea));
                 Report(logger, "Startup area-grid extraction", bakeArea, started.Outcome, started.Error);
             }, TaskScheduler.Default);
         }
@@ -60,9 +62,9 @@ public static class StartupBakes
         return scope is AllContinents or "*" ? null : scope;
     }
 
-    private static void Report(ILogger logger, string what, string scope, StoreOutcome outcome, string? error)
+    private static void Report(ILogger logger, string what, string scope, ApiOutcome outcome, string? error)
     {
-        if (outcome == StoreOutcome.Done)
+        if (outcome == ApiOutcome.Done)
         {
             if (logger.IsEnabled(LogLevel.Information))
             {

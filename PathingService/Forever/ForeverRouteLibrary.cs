@@ -6,6 +6,8 @@ using PathingService.Paths;
 
 using ServiceClients;
 
+using ServiceHosting;
+
 using SharedLib;
 using SharedLib.Forever;
 
@@ -63,98 +65,98 @@ public sealed class ForeverRouteLibrary(DataConfig dataConfig)
     }
 
     /// <summary>One route file's text, comments and all, and what a run makes of it.</summary>
-    public StoreResult<ForeverRouteDocument> Get(string name)
+    public ApiResult<ForeverRouteDocument> Get(string name)
     {
         if (!TryResolve(name, out string file, out string error))
         {
-            return StoreResult<ForeverRouteDocument>.Invalid(error);
+            return ApiResult<ForeverRouteDocument>.Invalid(error);
         }
 
         if (!File.Exists(file))
         {
-            return StoreResult<ForeverRouteDocument>.NotFound;
+            return ApiResult<ForeverRouteDocument>.NotFound;
         }
 
         if (!TryRead(file, out string text))
         {
-            return StoreResult<ForeverRouteDocument>.Unreadable($"{name} could not be read");
+            return ApiResult<ForeverRouteDocument>.Unreadable($"{name} could not be read");
         }
 
         WorldMapAreaDB? db = Maps(out string? problem);
-        return StoreResult<ForeverRouteDocument>.Done(new ForeverRouteDocument(name, text, Describe(name, text, db, problem, new FileInfo(file))));
+        return ApiResult<ForeverRouteDocument>.Done(new ForeverRouteDocument(name, text, Describe(name, text, db, problem, new FileInfo(file))));
     }
 
     /// <summary>
     /// Creates or replaces <paramref name="name"/> with <paramref name="text"/>, written exactly as
     /// given, once a run would load it; a refused route leaves the file as it was.
     /// </summary>
-    public StoreResult Save(string name, string? text)
+    public ApiResult Save(string name, string? text)
     {
         if (!TryResolve(name, out string file, out string error))
         {
-            return StoreResult.Invalid(error);
+            return ApiResult.Invalid(error);
         }
 
         if (string.IsNullOrWhiteSpace(text))
         {
-            return StoreResult.Invalid("a route file needs text");
+            return ApiResult.Invalid("a route file needs text");
         }
 
         if (Encoding.UTF8.GetByteCount(text) > MaxBytes)
         {
-            return StoreResult.Invalid($"a route file is at most {MaxBytes / 1024} KB");
+            return ApiResult.Invalid($"a route file is at most {MaxBytes / 1024} KB");
         }
 
         if (PathName.StoredSpelling(Folder, name) is string stored)
         {
-            return StoreResult.Conflict(PathName.CaseTwinRefusal(name, stored));
+            return ApiResult.Conflict(PathName.CaseTwinRefusal(name, stored));
         }
 
         if (Maps(out string? problem) is not { } db)
         {
-            return StoreResult.Unreadable(problem!);
+            return ApiResult.Unreadable(problem!);
         }
 
         if (!TryParse(text, name, db, out _, out string refused))
         {
-            return StoreResult.Invalid(refused);
+            return ApiResult.Invalid(refused);
         }
 
         Directory.CreateDirectory(Folder);
         AtomicFile.WriteAllText(file, text);
-        return StoreResult.Done;
+        return ApiResult.Done;
     }
 
-    public StoreResult Delete(string name)
+    public ApiResult Delete(string name)
     {
         if (!TryResolve(name, out string file, out string error))
         {
-            return StoreResult.Invalid(error);
+            return ApiResult.Invalid(error);
         }
 
         if (!File.Exists(file))
         {
-            return StoreResult.NotFound;
+            return ApiResult.NotFound;
         }
 
         File.Delete(file);
-        return StoreResult.Done;
+        return ApiResult.Done;
     }
 
     /// <summary>What a run would make of <paramref name="draft"/>'s text, saved as its name; nothing is written.</summary>
-    public StoreResult<ForeverRouteInfo> Check(ForeverRouteDraft? draft)
+    public ApiResult<ForeverRouteInfo> Check(ForeverRouteDraft? draft)
     {
         if (!TryResolve(draft?.Name, out _, out string error))
         {
-            return StoreResult<ForeverRouteInfo>.Invalid(error);
+            return ApiResult<ForeverRouteInfo>.Invalid(error);
         }
 
         if (Maps(out string? problem) is not { } db)
         {
-            return StoreResult<ForeverRouteInfo>.Unreadable(problem!);
+            return ApiResult<ForeverRouteInfo>.Unreadable(problem!);
         }
 
-        return StoreResult<ForeverRouteInfo>.Done(Describe(draft!.Name, draft.Text ?? string.Empty, db, null, null));
+        return ApiResult<ForeverRouteInfo>.Done(Describe(draft!.Name, draft.Text ?? string.Empty, db, null, null));
     }
 
     /// <summary>

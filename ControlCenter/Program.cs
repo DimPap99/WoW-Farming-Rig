@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
 
+using ServiceHosting;
+
 namespace ControlCenter;
 
 /// <summary>
@@ -30,7 +32,7 @@ public sealed class Program
             builder.WebHost.UseUrls(ControlCenterDefaults.DefaultUrl);
         }
 
-        builder.AddControlCenterLogging();
+        builder.AddServiceLogging();
         builder.Services.AddControlCenter();
 
         WebApplication app = builder.Build();

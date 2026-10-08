@@ -7,6 +7,8 @@ using PathingService.Paths;
 using ServiceClients.Bots;
 using ServiceClients.Sync;
 
+using ServiceHosting;
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -29,11 +31,11 @@ public sealed class SyncLibrary(DataConfig dataConfig, ForeverRouteLibrary route
     public const string ContentType = "application/octet-stream";
 
     /// <summary>Every file of <paramref name="set"/> that a request could name, sorted by name.</summary>
-    public StoreResult<SyncManifest> Manifest(string set, string? era)
+    public ApiResult<SyncManifest> Manifest(string set, string? era)
     {
         if (!TryFolder(set, era, out string folder, out string error))
         {
-            return StoreResult<SyncManifest>.Invalid(error);
+            return ApiResult<SyncManifest>.Invalid(error);
         }
 
         List<SyncFile> files = [];
@@ -46,25 +48,25 @@ public sealed class SyncLibrary(DataConfig dataConfig, ForeverRouteLibrary route
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                return StoreResult<SyncManifest>.Unreadable($"{name} could not be read: {ex.Message}");
+                return ApiResult<SyncManifest>.Unreadable($"{name} could not be read: {ex.Message}");
             }
 
             files.Add(new SyncFile(name, bytes.Length, SyncHash.Of(bytes)));
         }
 
         files.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
-        return StoreResult<SyncManifest>.Done(new SyncManifest(set, era, [.. files]));
+        return ApiResult<SyncManifest>.Done(new SyncManifest(set, era, [.. files]));
     }
 
     /// <summary>Where the file <paramref name="name"/> of <paramref name="set"/> is stored, once it is there.</summary>
-    public StoreResult<string> Find(string set, string name, string? era)
+    public ApiResult<string> Find(string set, string name, string? era)
     {
         if (!TryFolder(set, era, out string folder, out string error) || !TryResolve(set, folder, name, out string file, out error))
         {
-            return StoreResult<string>.Invalid(error);
+            return ApiResult<string>.Invalid(error);
         }
 
-        return File.Exists(file) ? StoreResult<string>.Done(file) : StoreResult<string>.NotFound;
+        return File.Exists(file) ? ApiResult<string>.Done(file) : ApiResult<string>.NotFound;
     }
 
     private bool TryFolder(string set, string? era, out string folder, out string error)

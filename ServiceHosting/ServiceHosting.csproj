@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- What the rig's ASP.NET hosts share: the key's guard, the forward's guard, logging, results and
+       their HTTP answers, a hub's send loop. Plain net10.0 on ASP.NET Core; it references Contracts
+       and ServiceClients only, and never the bot: the agent, which references ServiceClients, stays
+       free of ASP.NET. See docs/service-architecture.md. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Expressions" />
+    <PackageReference Include="Yarp.ReverseProxy" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contracts\Contracts.csproj" />
+    <ProjectReference Include="..\ServiceClients\ServiceClients.csproj" />
+  </ItemGroup>
+
+</Project>

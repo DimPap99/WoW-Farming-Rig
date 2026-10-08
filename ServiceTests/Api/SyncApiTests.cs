@@ -8,6 +8,8 @@ using ServiceClients;
 using ServiceClients.Pathing;
 using ServiceClients.Sync;
 
+using ServiceHosting;
+
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -129,9 +131,9 @@ public sealed class SyncApiTests
         using TempDataRoot data = SyncData();
         SyncLibrary library = new(data.Config(), new ForeverRouteLibrary(data.Config()));
 
-        StoreResult<string> found = library.Find(set, name, era);
+        ApiResult<string> found = library.Find(set, name, era);
 
-        Assert.Equal(StoreOutcome.Invalid, found.Outcome);
+        Assert.Equal(ApiOutcome.Invalid, found.Outcome);
         Assert.NotEmpty(found.Error!);
     }
 

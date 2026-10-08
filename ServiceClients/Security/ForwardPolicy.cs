@@ -43,8 +43,9 @@ public static class ForwardPolicy
     /// <param name="presented">The key the caller sent, if any.</param>
     /// <param name="openToOthers">What another machine may have without the key, besides reads.</param>
     /// <param name="forwarded">Whether it carries <see cref="HopHeader"/>.</param>
+    /// <param name="host">Its Host header: this machine is this machine only when it names it (DNS rebinding).</param>
     public static string? Refusal(string method, string path, IPAddress? remote, string? configuredKey, string? presented,
-        Func<string, string, bool> openToOthers, bool forwarded)
+        Func<string, string, bool> openToOthers, bool forwarded, string? host = null)
     {
         if (forwarded)
         {
@@ -52,7 +53,7 @@ public static class ForwardPolicy
                    "maybe this host itself, not the service";
         }
 
-        if (ServiceKeyPolicy.Refusal(configuredKey, presented, remote) is null || IsRead(method) || openToOthers(method, path))
+        if (ServiceKeyPolicy.Refusal(configuredKey, presented, remote, host) is null || IsRead(method) || openToOthers(method, path))
         {
             return null;
         }

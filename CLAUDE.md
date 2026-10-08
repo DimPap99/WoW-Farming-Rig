@@ -65,14 +65,17 @@ before working in one.
 - `ControlCenter/` ✎ - The central web UI on :5020: the World workspace - every world page as a mode
   over one deck.gl map (explore, the route designer, NPC routes, cost zones, navmesh and bakes, live
   routes) -, Forever route files as text, and the fleet with a console per bot; a client of the Pathing
-  Service and the Bot Manager, references Contracts and ServiceClients only
+  Service and the Bot Manager, references Contracts, ServiceClients and ServiceHosting only
 - `PPather/` ✎ - Pathfinding (DotRecast navmesh + legacy spot A*, MPQ reading)
 - `PathingService/` ✎ - The Pathing Service: concurrent route planning, the authoring API (paths, cost
   zones), world data, bakes and the watch hub; plain `net10.0`, never references Core/Game/WinAPI/Frontend
 - `BotManager/` ✎ - The Bot Manager: the registry of bots, assignments, commands (start, stop), run history,
-  the hub agents dial out to and the fleet stream for the Control Center; references Contracts and
-  ServiceClients only
+  the hub agents dial out to and the fleet stream for the Control Center; references Contracts,
+  ServiceClients and ServiceHosting only
 - `Contracts/` - Wire types and route constants shared by every service and client; no dependencies
+- `ServiceHosting/` ✎ - What the ASP.NET hosts share: the key's guard and the UIs' host check, the forwarders'
+  guard, the services' logging, `ApiResult` and its HTTP answers, a hub's send loop; never referenced by the
+  agent or the bot
 - `ServiceClients/` - Typed clients for the services (`IPathingClient`, `IBotManagerClient`), shared by UI and
   agent, the key rules every service applies (`Security/ServiceKeyPolicy`), assignment rules, the path
   editing model (`PathEditor`), map-world arithmetic (`ZoneMath`) and the route design model (`Routes/`:

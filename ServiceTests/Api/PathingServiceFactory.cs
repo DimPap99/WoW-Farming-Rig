@@ -5,6 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 using PathingService.Hosting;
 
+using ServiceHosting;
+
 namespace ServiceTests.Api;
 
 /// <summary>
@@ -15,7 +17,7 @@ internal sealed class PathingServiceFactory(string dataRoot, string client = Tes
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseSetting(PathingLogging.FileKey, string.Empty);
+        builder.UseSetting(ServiceLogging.FileKey, string.Empty);
         builder.ConfigureTestServices(services =>
             services.AddSingleton(new DataConfig { Root = dataRoot, Exp = client }));
     }

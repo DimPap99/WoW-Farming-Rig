@@ -6,6 +6,8 @@ using Microsoft.Extensions.Hosting;
 
 using PathingService.Hosting;
 
+using ServiceHosting;
+
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // Every registration is checked at startup, on the container that is actually used.
@@ -20,7 +22,7 @@ if (string.IsNullOrEmpty(builder.Configuration[WebHostDefaults.ServerUrlsKey]))
     builder.WebHost.UseUrls(PathingApi.DefaultUrl);
 }
 
-builder.AddPathingLogging();
+builder.AddServiceLogging();
 builder.Services.AddPathingService(builder.Configuration);
 
 WebApplication app = builder.Build();

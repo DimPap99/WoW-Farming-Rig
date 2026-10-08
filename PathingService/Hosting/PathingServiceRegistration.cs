@@ -21,6 +21,8 @@ using PathingService.World;
 
 using PPather.Planning;
 
+using ServiceHosting;
+
 using SharedLib;
 
 namespace PathingService.Hosting;
@@ -66,6 +68,9 @@ public static class PathingServiceRegistration
         services.AddSingleton<TestRoutes>();
         services.AddSingleton<BakeAdmin>();
 
+        // One loop sends what the watch hub streams, so a query never waits on a socket.
+        services.AddSingleton<HubSendQueue>();
+        services.AddHostedService(sp => sp.GetRequiredService<HubSendQueue>());
         services.AddSingleton<WatchBroadcaster>();
         services.AddHostedService(sp => sp.GetRequiredService<WatchBroadcaster>());
 
@@ -74,19 +79,8 @@ public static class PathingServiceRegistration
         services.AddSignalR().AddMessagePackProtocol();
 
         services.ConfigureHttpJsonOptions(options => ContractJson.Apply(options.SerializerOptions));
-        // A request the service cannot read (a body that is not the contract's JSON, a query that is
-        // not a number) is the caller's mistake: 400 with why. Minimal APIs answer so themselves in
-        // Production, but in Development, where run.sh runs, they throw, and the exception handler
-        // would answer 500, which a client takes for the service's own failure.
-        services.AddExceptionHandler(options => options.StatusCodeSelector = ex =>
-            ex is BadHttpRequestException bad ? bad.StatusCode : StatusCodes.Status500InternalServerError);
-        services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
-        {
-            if (context.Exception is BadHttpRequestException bad)
-            {
-                context.ProblemDetails.Detail = bad.Message;
-            }
-        });
+        // A request the service cannot read is the caller's mistake: 400 with why, in Development too.
+        services.AddServiceProblems();
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(swagger => swagger.SwaggerDoc("v1", new OpenApiInfo { Title = ApiTitle, Version = "v1" }));
 

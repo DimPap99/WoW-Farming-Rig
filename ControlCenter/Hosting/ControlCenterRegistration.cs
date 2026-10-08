@@ -9,6 +9,8 @@ using Microsoft.Extensions.Hosting;
 using ServiceClients.Bots;
 using ServiceClients.Pathing;
 
+using ServiceHosting;
+
 namespace ControlCenter.Hosting;
 
 public static class ControlCenterRegistration
@@ -64,6 +66,10 @@ public static class ControlCenterRegistration
         {
             app.UseExceptionHandler(ErrorPage, createScopeForErrors: true);
         }
+
+        // Its pages start and stop bots for whoever reaches them: a page of another site that a DNS
+        // rebinding pointed at this machine must not (known issue 75).
+        app.UseHostCheck();
 
         app.UseAntiforgery();
 

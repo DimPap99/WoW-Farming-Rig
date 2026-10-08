@@ -30,10 +30,11 @@ client and would start a real run.
 ```
 Program.cs                         host (a class, so tests can host it beside the service)
 Hosting/ControlCenterRegistration  AddControlCenter / UseControlCenter - the composition root
-Hosting/ServiceProxy.cs            YARP: /api/v1, /swagger, /tiles and /path to the service, the forward rules first
+Hosting/ServiceProxy.cs            YARP: /api/v1, /swagger, /tiles and /path to the service, ServiceHosting's
+                                   ForwardGuard first
 Hosting/ServiceStatus.cs           the base of both pollers (2 s): Online, Error, Changed,
                                    Reconnected; ServiceDescription names a service for the pages
-Hosting/ControlCenterLogging.cs    Serilog to console + daily file
+(ServiceHosting)                   logging (AddServiceLogging), the forward's guard, the host check
 Pathing/PathingStatus.cs           the Pathing Service's poller: + capabilities, health; only that service's health counts
 Pathing/WorldCache.cs              zones, continents, places, test routes; read again on Reconnected
 Pathing/WatchFeed.cs               the routes the service plans, as a route watcher of /watchHub,
@@ -90,11 +91,13 @@ service.
 
 **The proxy is a door, and checks who knocks.** The service serves this machine and its key whoever
 stands behind the proxy, so the proxy applies the rules to its own caller first
-(`ServiceClients/Security/ForwardPolicy`, known issue 47): this machine is forwarded anything, another
+(`ServiceClients/Security/ForwardPolicy` through `ServiceHosting.ForwardGuard`, the guard BlazorServer's
+forward shares, known issue 47): this machine is forwarded anything, another
 machine reads only (or anything with the key), no page on another site writes (403), and a request
 it forwarded itself comes back no further (508: `PathingService:Url` names a forwarder). The pages'
 own calls go from the server with the key, though: whoever reaches the Control Center can still bake
-and clear from its pages. Keep it on localhost until it has logins; when it is hosted centrally, the
+and clear from its pages. A request over loopback must name this machine (`UseHostCheck`): a page of
+another site that a DNS rebinding pointed here would drive the pages (known issue 75). Keep it on localhost until it has logins; when it is hosted centrally, the
 admin role is what may delete tiles, bake or stop bots, and users get the rest.
 
 **The Bot Manager is called from the server, never forwarded.** `/api/v1` is the root of both

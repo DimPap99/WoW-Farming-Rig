@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
 
+using ServiceHosting;
+
 namespace BotManager;
 
 /// <summary>
@@ -30,7 +32,7 @@ public sealed class Program
             builder.WebHost.UseUrls(BotManagerApi.DefaultUrl);
         }
 
-        builder.AddBotManagerLogging();
+        builder.AddServiceLogging();
         builder.Services.AddBotManager();
 
         WebApplication app = builder.Build();

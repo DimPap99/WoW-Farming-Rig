@@ -7,6 +7,8 @@ using PathingService.Hosting;
 
 using ServiceClients.Pathing;
 
+using ServiceHosting;
+
 using SharedLib;
 using SharedLib.Quests;
 
@@ -40,11 +42,11 @@ public sealed class QuestCatalog(DataConfig data, WorldMapAreaDB maps, WorldCata
     public QuestBook Book => loaded.Value.Book;
 
     /// <summary>The quests of zone <paramref name="uiMapId"/>, by level; a continent's map lists every quest given on it.</summary>
-    public StoreResult<QuestSummary[]> InZone(int uiMapId)
+    public ApiResult<QuestSummary[]> InZone(int uiMapId)
     {
         if (!maps.TryGet(uiMapId, out WorldMapArea zone))
         {
-            return StoreResult<QuestSummary[]>.Invalid($"uiMap {uiMapId} is not in the {data.Exp} map data");
+            return ApiResult<QuestSummary[]>.Invalid($"uiMap {uiMapId} is not in the {data.Exp} map data");
         }
 
         WorldMapArea hitbox = maps.HitBoxOf(zone);
@@ -68,15 +70,15 @@ public sealed class QuestCatalog(DataConfig data, WorldMapAreaDB maps, WorldCata
             }
         }
 
-        return StoreResult<QuestSummary[]>.Done([.. found.OrderBy(q => q.MinLevel).ThenBy(q => q.Level).ThenBy(q => q.Name, StringComparer.OrdinalIgnoreCase)]);
+        return ApiResult<QuestSummary[]>.Done([.. found.OrderBy(q => q.MinLevel).ThenBy(q => q.Level).ThenBy(q => q.Name, StringComparer.OrdinalIgnoreCase)]);
     }
 
     /// <summary>Quests whose name holds <paramref name="name"/>, at most <see cref="MaxFound"/>, by name.</summary>
-    public StoreResult<QuestSummary[]> Search(string? name)
+    public ApiResult<QuestSummary[]> Search(string? name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Trim().Length < 2)
         {
-            return StoreResult<QuestSummary[]>.Invalid("a name to search for needs two letters or more");
+            return ApiResult<QuestSummary[]>.Invalid("a name to search for needs two letters or more");
         }
 
         string text = name.Trim();
@@ -86,15 +88,15 @@ public sealed class QuestCatalog(DataConfig data, WorldMapAreaDB maps, WorldCata
             .ThenBy(g => g.Quest.MinLevel)
             .Take(MaxFound)
             .Select(g => Summary(g.Quest, g.Places.Count > 0 ? g.Places[0] : null))];
-        return StoreResult<QuestSummary[]>.Done(found);
+        return ApiResult<QuestSummary[]>.Done(found);
     }
 
     /// <summary>Quest <paramref name="id"/> with every place it sends a character to, by part.</summary>
-    public StoreResult<QuestDetail> Get(int id)
+    public ApiResult<QuestDetail> Get(int id)
     {
         if (!loaded.Value.ById.TryGetValue(id, out Giving? giving))
         {
-            return StoreResult<QuestDetail>.NotFound;
+            return ApiResult<QuestDetail>.NotFound;
         }
 
         // One part per who-or-what and what for, in the order the places come: start, objectives, end.
@@ -116,7 +118,7 @@ public sealed class QuestCatalog(DataConfig data, WorldMapAreaDB maps, WorldCata
         QuestPart[] filled = [.. parts.Select(p => p.Part with { Places = [.. p.Spots] })];
         int uiMapId = giving.ZoneArea == 0 ? 0 : maps.GetByAreaId(giving.ZoneArea).UIMapId;
 
-        return StoreResult<QuestDetail>.Done(new QuestDetail(quest.Id, quest.Name, uiMapId, quest.Level, quest.MinLevel, quest.MaxLevel,
+        return ApiResult<QuestDetail>.Done(new QuestDetail(quest.Id, quest.Name, uiMapId, quest.Level, quest.MinLevel, quest.MaxLevel,
             quest.Side.ToString(), quest.Races, quest.Classes, quest.Text, filled, [.. quest.PreAll.Select(Link)],
             [.. quest.PreAny.Select(Link)], quest.Next == 0 ? null : Link(quest.Next), quest.Repeatable));
     }

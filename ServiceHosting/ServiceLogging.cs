@@ -4,9 +4,10 @@ using Serilog;
 using Serilog.Templates;
 using Serilog.Templates.Themes;
 
-namespace ControlCenter.Hosting;
+namespace ServiceHosting;
 
-public static class ControlCenterLogging
+/// <summary>Serilog for a service: the console and, unless switched off, a daily file; levels from the <c>Serilog</c> section.</summary>
+public static class ServiceLogging
 {
     /// <summary>Configuration key for the rolling log file; an empty value turns the file off.</summary>
     public const string FileKey = "LogFile";
@@ -14,11 +15,14 @@ public static class ControlCenterLogging
     /// <summary>Where the log goes when <see cref="FileKey"/> is not configured at all.</summary>
     public const string DefaultFile = "out.log";
 
-    /// <summary>The other hosts' line shape (SharedLib's <c>LogOutputTemplates.Default</c>), which this host cannot reference.</summary>
+    /// <summary>
+    /// The bot hosts' line shape (SharedLib's <c>LogOutputTemplates.Default</c>), the source's last segment
+    /// computed here instead of by an enricher. The Pathing Service used SharedLib's without the enricher,
+    /// and its lines named no source.
+    /// </summary>
     public const string Template = "[{@t:HH:mm:ss:fff} {@l:u1}] {#if IsDefined(SourceContext)}[{Substring(SourceContext, LastIndexOf(SourceContext, '.') + 1),-17}] {#end}{@m}\n{@x}";
 
-    /// <summary>Serilog to the console and, unless switched off, a daily file; levels come from the <c>Serilog</c> section.</summary>
-    public static WebApplicationBuilder AddControlCenterLogging(this WebApplicationBuilder builder)
+    public static WebApplicationBuilder AddServiceLogging(this WebApplicationBuilder builder)
     {
         string? file = builder.Configuration[FileKey] ?? DefaultFile;
 

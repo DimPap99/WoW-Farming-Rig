@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Routing;
 
 using PathingService.Hosting;
 
+using ServiceHosting;
+
 namespace PathingService.Sync;
 
 public static class SyncEndpoints
@@ -24,8 +26,8 @@ public static class SyncEndpoints
 
         sync.MapGet($"{{set}}/{PathingApi.SyncFiles}/{{**name}}", (string set, string name, string? era, SyncLibrary library) =>
             {
-                StoreResult<string> file = library.Find(set, name, era);
-                return file.Outcome == StoreOutcome.Done
+                ApiResult<string> file = library.Find(set, name, era);
+                return file.Outcome == ApiOutcome.Done
                     ? (IResult)TypedResults.PhysicalFile(file.Value!, SyncLibrary.ContentType)
                     : file.ToHttp();
             })

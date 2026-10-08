@@ -260,11 +260,8 @@ against the code as of e71c5781. The plan to fix them is [phase1-fixes-plan.md](
     - `GET /costzones/{continent}` lists numeric file names only, while the loader applies every
       `*.json` in the folder; a legacy `{continent}.json` is listed but never applied, and one
       unreadable file fails the whole GET.
-    - The Bot Manager answers 500 to a request it cannot read (a body that is not the contract's
-      JSON, a query that is not a number) when it runs in Development, as `run.sh` runs it: minimal
-      APIs throw there, and `UseExceptionHandler` makes it a 500. Its client does not repeat a
-      POST, but a GET is repeated. The Pathing Service answers 400 since the Phase 1 review
-      (`StatusCodeSelector` in `PathingServiceRegistration`); the manager needs the same lines.
+    - (Fixed 2026-10-08: the Bot Manager answered 500 to a request it could not read in Development;
+      both services answer 400 now, through `ServiceHosting.AddServiceProblems`.)
     - The Phase 3 review found two halves left: `AssignmentRules` still accepts the names `PathName`
       now refuses (item 68), and the Bot Manager's client still repeats a GET the manager answered 500
       or timed out, and counts the manager's own 504 as a failure (item 37 changed the pathing client's
@@ -279,8 +276,8 @@ fixed the same day on `fix/phase2-review` (see "Fixed"); what is left:
     - **Where:** the Control Center's pages, which call the Pathing Service and the Bot Manager from
       the server with their keys; its proxy forwards to another machine reads only.
     - **Effect:** whoever reaches the Control Center can delete tiles, bake, edit paths and zones,
-      and start or stop bots. Nearly harmless while it binds localhost and one person uses it: a web
-      page can still reach it through DNS rebinding, and the hubs through a WebSocket (item 75).
+      and start or stop bots. Harmless while it binds localhost and one person uses it, now that a page
+      rebound to this machine and a WebSocket from another site are refused (item 75).
     - **Fix (not started; with central hosting):** logins, with an admin role for what changes every
       bot (deleting tiles, bakes and area grids, stopping bots) and users for the rest, checked by
       the pages and the proxy; with cookie logins, anti-forgery on top of the cross-site rule.
@@ -303,8 +300,8 @@ fixed the same day on `fix/phase2-review` (see "Fixed"); what is left:
     - BlazorServer's own map (Frontend) still skips a shared-era tile folder that is missing when it
       starts (Cataclysm only); the Pathing Service serves it since the review.
     - The report's unverified cleanups are not done: magic strings in `ApiReference.razor` and
-      `Error.razor`, about 500 lines of `PPatherService` only PathingAPI used, `ControlCenterLogging`
-      copying `PathingLogging`, `WorldDataFiles` re-implementing Frontend's static files, the
+      `Error.razor`, about 500 lines of `PPatherService` only PathingAPI used, `WorldDataFiles`
+      re-implementing Frontend's static files, the
       MessagePack 3.1.8 pin nothing references, and the benchmark's copy of the test routes.
 
 59. **Forever's world data is QuestieDB's, with its gaps** (2026-10-07).
@@ -383,31 +380,29 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       it cannot be opened, deleted or assigned from the pages.
     - **Fix (the plan's step 3, with the one name rule):** a name ends in `.json`, exactly.
 
-75. **The key rules trust loopback too far.**
-    - **Where:** `ServiceClients/Security/ServiceKeyPolicy` and `ForwardPolicy`, both services' guards,
-      both forwarders; `AllowedHosts: "*"` in the four hosts' settings.
-    - **Cause:** "this machine" is decided from the TCP peer alone, whatever the `Host` header says. The
-      cross-site rule leaves GET alone, and a WebSocket upgrade is a GET; SignalR accepts a WebSocket from
-      any origin, without negotiate.
-    - **Effect:**
-      - Any web page in a browser on a service's machine can open `/fleetHub` (the whole fleet's
-        stream) or `/agentHub` (register as any bot, and take its commands) without the key.
-      - DNS rebinding makes a page of another site "this machine" and same-origin. A probe read the
-        bots, set an assignment, started a run and deleted a continent's tiles; through a forwarder,
-        which adds the key, anything. Chrome 142+ and Firefox 153+ stop it today, Safari and older
-        browsers do not.
-      - Behind a reverse proxy or a tunnel on the same machine, or with forwarded headers turned on,
-        every remote caller is 127.0.0.1.
-    - **Fix:** loopback is trusted only when the `Host` names this machine (localhost, a loopback
-      address, the machine's own name); a WebSocket upgrade from another site is refused as a write is;
-      `ServiceKey:TrustLoopback=false` serves no caller without the key, for a service behind a proxy.
-
 77. **Left of the Phase 3 review's smaller findings.** (The rest is fixed: see "Fixed".)
     - `BotManagerStatus` takes any JSON at the manager's `/health` (item 50's twin): a `BotManager:Url`
       pointing at the Pathing Service shows a green "Bots 0 of 0". It goes with the plan's step 3, where
       the Control Center stops polling the manager and takes its state from the fleet feed.
 
 ## Fixed
+
+75. **The key rules trusted loopback too far** (Phase 3 review, 2026-10-08). "This machine" was the TCP
+    peer alone, whatever the request named; the cross-site rule let every GET through, a WebSocket's
+    opening included; and a proxy in front of a service made every remote caller 127.0.0.1. Any page in
+    a browser on a service's machine could open `/fleetHub` (the whole fleet's stream) or `/agentHub`
+    (register as any bot), and a page whose name a DNS rebinding pointed at 127.0.0.1 read the bots,
+    started runs and deleted tiles; through a forwarder, which adds the key, anything.
+    - Loopback is trusted only when the request names this machine (`ServiceKeyPolicy.NamesThisMachine`:
+      localhost, a loopback address or the machine's own name); otherwise it needs the key.
+    - A WebSocket opened from another site is refused as a write is.
+    - `TrustLoopback=false` serves no one without the key, for a service behind a proxy or a tunnel; with
+      forwarded headers on and loopback trusted the service warns at start.
+    - The UIs (the Control Center, BlazorServer) answer a request over loopback only when it names this
+      machine (`UseHostCheck`), so a rebound page drives no page and no forward.
+    - The guards live once, in the new `ServiceHosting` project, with the services' logging, `ApiResult`,
+      the 400 for a request that cannot be read and `HubSendQueue`.
+    - Tests: `LoopbackTrustTests` (each fails with its rule taken out).
 
 77. **Smaller findings of the Phase 3 review** (2026-10-08; what is left is item 77 above).
     - HeadlessServer: a negative number after `--Section:Key` is its value; a standalone run that failed

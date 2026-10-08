@@ -10,6 +10,8 @@ using PPather.Navmesh;
 
 using ServiceClients;
 
+using ServiceHosting;
+
 using SharedLib;
 
 using System;
@@ -32,11 +34,11 @@ public sealed class CostZoneStore(DataConfig dataConfig, ClientContinents contin
     /// <summary>A continent's old single road file (<c>{continent}.json</c>) is read as this uiMap.</summary>
     public const int LegacyRoadUiMap = 0;
 
-    public StoreResult<CostZoneSet> Get(string continent)
+    public ApiResult<CostZoneSet> Get(string continent)
     {
         if (ContinentProblem(ref continent) is string problem)
         {
-            return StoreResult<CostZoneSet>.Invalid(problem);
+            return ApiResult<CostZoneSet>.Invalid(problem);
         }
 
         string continentDir = IOPath.Join(dataConfig.Road, continent);
@@ -65,51 +67,51 @@ public sealed class CostZoneStore(DataConfig dataConfig, ClientContinents contin
         }
         catch (JsonException ex)
         {
-            return StoreResult<CostZoneSet>.Unreadable($"a {continent} zone file is not valid: {ex.Message}");
+            return ApiResult<CostZoneSet>.Unreadable($"a {continent} zone file is not valid: {ex.Message}");
         }
 
-        return StoreResult<CostZoneSet>.Done(new CostZoneSet(continent, roads, danger));
+        return ApiResult<CostZoneSet>.Done(new CostZoneSet(continent, roads, danger));
     }
 
     /// <summary>Replaces one map's roads; no roads deletes its file.</summary>
-    public StoreResult SaveRoads(string continent, int uiMapId, RoadZones? zones)
+    public ApiResult SaveRoads(string continent, int uiMapId, RoadZones? zones)
     {
         if ((TargetProblem(ref continent, uiMapId) ?? (zones is null ? "a road set is required" : CostZoneMapping.MissingEntry(zones))) is string problem)
         {
-            return StoreResult.Invalid(problem);
+            return ApiResult.Invalid(problem);
         }
 
         RoadData data = CostZoneMapping.ToModel(zones!);
         if (CostZoneLoader.Problem(data) is string invalid)
         {
-            return StoreResult.Invalid(invalid);
+            return ApiResult.Invalid(invalid);
         }
 
         Write(IOPath.Join(dataConfig.Road, continent), uiMapId, data, empty: data.Roads.Length == 0);
-        return StoreResult.Done;
+        return ApiResult.Done;
     }
 
     /// <summary>Replaces one map's danger zones; none deletes its file.</summary>
-    public StoreResult SaveDanger(string continent, int uiMapId, DangerZones? zones)
+    public ApiResult SaveDanger(string continent, int uiMapId, DangerZones? zones)
     {
         if ((TargetProblem(ref continent, uiMapId) ?? (zones is null ? "a danger zone set is required" : CostZoneMapping.MissingEntry(zones))) is string problem)
         {
-            return StoreResult.Invalid(problem);
+            return ApiResult.Invalid(problem);
         }
 
         if (CostZoneMapping.UnknownMode(zones!) is string mode)
         {
-            return StoreResult.Invalid(mode);
+            return ApiResult.Invalid(mode);
         }
 
         DangerZoneData data = CostZoneMapping.ToModel(zones!);
         if (CostZoneLoader.Problem(data) is string invalid)
         {
-            return StoreResult.Invalid(invalid);
+            return ApiResult.Invalid(invalid);
         }
 
         Write(DangerDir(continent), uiMapId, data, empty: data.Circles.Length == 0 && data.Rectangles.Length == 0);
-        return StoreResult.Done;
+        return ApiResult.Done;
     }
 
     private string DangerDir(string continent)

@@ -4,6 +4,8 @@ using Contracts.Pathing;
 using PathingService.Hosting;
 using PathingService.Paths;
 
+using ServiceHosting;
+
 using SharedLib.Converters;
 using SharedLib.Forever;
 
@@ -32,7 +34,7 @@ public sealed class RecordedPathStoreTests
         using TempDataRoot data = new();
         RecordedPathStore store = new(data.Config());
 
-        Assert.Equal(StoreOutcome.Done, store.Save("10_Gnome.json", Points).Outcome);
+        Assert.Equal(ApiOutcome.Done, store.Save("10_Gnome.json", Points).Outcome);
 
         string expected = JsonSerializer.Serialize(Points.Select(p => new Vector3(p.X, p.Y, p.Z)).ToArray(), ControllerOptions);
         Assert.Equal(expected, File.ReadAllText(Path.Combine(data.Config().Path, "10_Gnome.json")));
@@ -47,9 +49,9 @@ public sealed class RecordedPathStoreTests
         store.Save("Loch.json", Points);
         File.WriteAllText(Path.Combine(data.Config().Path, "Loch.jpg"), "image");
 
-        StoreResult<RecordedPath> read = store.Get("_herb/Elwynn.json");
+        ApiResult<RecordedPath> read = store.Get("_herb/Elwynn.json");
 
-        Assert.Equal(StoreOutcome.Done, read.Outcome);
+        Assert.Equal(ApiOutcome.Done, read.Outcome);
         Assert.Equal(Points, read.Value!.Points);
         string[] names = ["Loch.json", "_herb/Elwynn.json"];
         Assert.Equal(names, store.List(null).Select(p => p.Name).Order(System.StringComparer.Ordinal));
@@ -63,7 +65,7 @@ public sealed class RecordedPathStoreTests
         Directory.CreateDirectory(data.Config().Path);
         File.WriteAllText(Path.Combine(data.Config().Path, "old.json"), """[{"X":48.564,"Y":59.133},{"x":1.5,"y":2.5}]""");
 
-        StoreResult<RecordedPath> read = new RecordedPathStore(data.Config()).Get("old.json");
+        ApiResult<RecordedPath> read = new RecordedPathStore(data.Config()).Get("old.json");
 
         Assert.Equal([new Point3(48.564f, 59.133f, 0), new Point3(1.5f, 2.5f, 0)], read.Value!.Points);
     }
@@ -78,8 +80,8 @@ public sealed class RecordedPathStoreTests
         RecordedPathStore store = new(data.Config());
 
         Assert.Empty(store.List(null));
-        Assert.Equal(StoreOutcome.Invalid, store.Get("_forever/trip.json").Outcome);
-        Assert.Equal(StoreOutcome.Invalid, store.Save("_forever/trip.json", Points).Outcome);
+        Assert.Equal(ApiOutcome.Invalid, store.Get("_forever/trip.json").Outcome);
+        Assert.Equal(ApiOutcome.Invalid, store.Save("_forever/trip.json", Points).Outcome);
     }
 
     [Fact]
@@ -91,15 +93,15 @@ public sealed class RecordedPathStoreTests
         RecordedPathStore store = new(data.Config());
         store.Save("Loch.json", Points);
 
-        StoreResult<RecordedPath> read = store.Get(Group);
-        StoreResult saved = store.Save(Group, Points);
-        StoreResult deleted = store.Delete(Group);
+        ApiResult<RecordedPath> read = store.Get(Group);
+        ApiResult saved = store.Save(Group, Points);
+        ApiResult deleted = store.Delete(Group);
 
         Assert.Equal(["Loch.json"], store.List(null).Select(p => p.Name));
-        Assert.Equal(StoreOutcome.Invalid, read.Outcome);
+        Assert.Equal(ApiOutcome.Invalid, read.Outcome);
         Assert.Contains("\"Requirements\"", read.Error);
-        Assert.Equal(StoreOutcome.Invalid, saved.Outcome);
-        Assert.Equal(StoreOutcome.Invalid, deleted.Outcome);
+        Assert.Equal(ApiOutcome.Invalid, saved.Outcome);
+        Assert.Equal(ApiOutcome.Invalid, deleted.Outcome);
         Assert.Equal(before, File.ReadAllBytes(group));
         Assert.Equal(Points, store.Get("Loch.json").Value!.Points);
     }
@@ -120,8 +122,8 @@ public sealed class RecordedPathStoreTests
         Assert.All(left, name => Assert.Contains("\"Requirements\"", File.ReadAllText(Path.Combine(repo.Path, name))));
         Assert.All(listed, name =>
         {
-            StoreResult<RecordedPath> read = store.Get(name);
-            Assert.Equal(StoreOutcome.Done, read.Outcome);
+            ApiResult<RecordedPath> read = store.Get(name);
+            Assert.Equal(ApiOutcome.Done, read.Outcome);
             Assert.NotEmpty(read.Value!.Points);
         });
     }
@@ -162,9 +164,9 @@ public sealed class RecordedPathStoreTests
         using TempDataRoot data = new();
         RecordedPathStore store = new(data.Config());
 
-        StoreResult saved = store.Save(name, Points);
+        ApiResult saved = store.Save(name, Points);
 
-        Assert.Equal(StoreOutcome.Invalid, saved.Outcome);
+        Assert.Equal(ApiOutcome.Invalid, saved.Outcome);
         Assert.False(string.IsNullOrEmpty(saved.Error));
         Assert.Empty(Directory.EnumerateFiles(data.Root, "*", SearchOption.AllDirectories));
     }
@@ -183,10 +185,10 @@ public sealed class RecordedPathStoreTests
         using TempDataRoot data = new();
         RecordedPathStore store = new(data.Config());
 
-        StoreResult saved = store.Save(name, Points);
+        ApiResult saved = store.Save(name, Points);
 
-        Assert.Equal(StoreOutcome.Invalid, saved.Outcome);
-        Assert.Equal(StoreOutcome.Invalid, store.Delete(name).Outcome);
+        Assert.Equal(ApiOutcome.Invalid, saved.Outcome);
+        Assert.Equal(ApiOutcome.Invalid, store.Delete(name).Outcome);
         Assert.Empty(Directory.EnumerateFiles(data.Root, "*", SearchOption.AllDirectories));
     }
 
@@ -196,7 +198,7 @@ public sealed class RecordedPathStoreTests
         using TempDataRoot data = new();
         RecordedPathStore store = new(data.Config());
 
-        Assert.Equal(StoreOutcome.Done, store.Save("Troll.Orc/c.json", Points).Outcome);
+        Assert.Equal(ApiOutcome.Done, store.Save("Troll.Orc/c.json", Points).Outcome);
         Assert.Equal(Points, store.Get("Troll.Orc/c.json").Value!.Points);
     }
 
@@ -207,16 +209,16 @@ public sealed class RecordedPathStoreTests
         RecordedPathStore store = new(data.Config());
         store.Save("_herb/Elwynn.json", Points);
 
-        StoreResult file = store.Save("_herb/elwynn.json", Points);
-        StoreResult folder = store.Save("_Herb/Westfall.json", Points);
+        ApiResult file = store.Save("_herb/elwynn.json", Points);
+        ApiResult folder = store.Save("_Herb/Westfall.json", Points);
 
         // On Windows each is the stored one: a bot that synced both would walk the one it was not given (known issue 71).
-        Assert.Equal(StoreOutcome.Conflict, file.Outcome);
+        Assert.Equal(ApiOutcome.Conflict, file.Outcome);
         Assert.Contains("save it as '_herb/Elwynn.json'", file.Error);
-        Assert.Equal(StoreOutcome.Conflict, folder.Outcome);
+        Assert.Equal(ApiOutcome.Conflict, folder.Outcome);
         Assert.Contains("save it as '_herb/Westfall.json'", folder.Error);
-        Assert.Equal(StoreOutcome.Done, store.Save("_herb/Elwynn.json", Points).Outcome);
-        Assert.Equal(StoreOutcome.Done, store.Save("_herb/Westfall.json", Points).Outcome);
+        Assert.Equal(ApiOutcome.Done, store.Save("_herb/Elwynn.json", Points).Outcome);
+        Assert.Equal(ApiOutcome.Done, store.Save("_herb/Westfall.json", Points).Outcome);
     }
 
     [Fact]
@@ -225,8 +227,8 @@ public sealed class RecordedPathStoreTests
         using TempDataRoot data = new();
         RecordedPathStore store = new(data.Config());
 
-        Assert.Equal(StoreOutcome.Invalid, store.Save("empty.json", []).Outcome);
-        Assert.Equal(StoreOutcome.Invalid, store.Save("nan.json", [new(float.NaN, 1, 0)]).Outcome);
+        Assert.Equal(ApiOutcome.Invalid, store.Save("empty.json", []).Outcome);
+        Assert.Equal(ApiOutcome.Invalid, store.Save("nan.json", [new(float.NaN, 1, 0)]).Outcome);
     }
 
     [Fact]
@@ -238,9 +240,9 @@ public sealed class RecordedPathStoreTests
         string screenshot = Path.Combine(data.Config().Path, "gone.jpg");
         File.WriteAllText(screenshot, "image");
 
-        Assert.Equal(StoreOutcome.Done, store.Delete("gone.json").Outcome);
-        Assert.Equal(StoreOutcome.NotFound, store.Get("gone.json").Outcome);
-        Assert.Equal(StoreOutcome.NotFound, store.Delete("gone.json").Outcome);
+        Assert.Equal(ApiOutcome.Done, store.Delete("gone.json").Outcome);
+        Assert.Equal(ApiOutcome.NotFound, store.Get("gone.json").Outcome);
+        Assert.Equal(ApiOutcome.NotFound, store.Delete("gone.json").Outcome);
         Assert.True(File.Exists(screenshot));
     }
 }

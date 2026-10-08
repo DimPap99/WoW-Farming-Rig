@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Routing;
 
 using PathingService.Hosting;
 
+using ServiceHosting;
+
 namespace PathingService.Forever;
 
 public static class ForeverRouteEndpoints

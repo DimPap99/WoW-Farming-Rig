@@ -126,17 +126,21 @@ the management side is down.
 - **Direction.** Agents dial out to the manager, so an agent needs no inbound port and a
   restarted manager simply sees agents register again. The Control Center calls the two
   services. Nothing calls the agents except over the connection they opened.
-- **Security.** Everything binds to localhost by default. A request from this machine is always
-  served; one from another machine needs the shared key (`ApiKey`) in the `X-Api-Key` header, on
-  every manager and pathing endpoint and hub, and without a configured key it is refused. A service
-  bound beyond localhost without a key stops right after it starts. A write that a page on another
-  site made a browser send (`Sec-Fetch-Site`, else `Origin`) is refused too: any page can send a
-  body-less POST to a local address. The rules live once, in `ServiceClients/Security/ServiceKeyPolicy`;
+- **Security.** Everything binds to localhost by default. A request from this machine is served when
+  it names this machine (localhost, a loopback address or the machine's name: a page that a DNS
+  rebinding pointed at 127.0.0.1 names another); one from another machine needs the shared key
+  (`ApiKey`) in the `X-Api-Key` header, on every manager and pathing endpoint and hub, and without a
+  configured key it is refused. A service bound beyond localhost without a key stops right after it
+  starts; one behind a proxy or a tunnel on its machine sets `TrustLoopback=false`, and then serves no
+  one without the key. A write, or a WebSocket, that a page on another site made a browser send
+  (`Sec-Fetch-Site`, else `Origin`) is refused too: any page can send a body-less POST to a local
+  address, and open a WebSocket to one. The UIs answer only requests that name this machine. The rules
+  live once, in `ServiceClients/Security/ServiceKeyPolicy`, applied by `ServiceHosting`'s guards;
   clients send the key from `<Service>:ApiKey`, else `ApiKey`.
 - **Forwarders are doors.** The Control Center and BlazorServer forward the browser's calls to the
   Pathing Service and add the key, so the browser never holds it - and the service serves their
   machine and their key whoever stands behind them. Each applies the rules to its own caller first
-  (`ServiceClients/Security/ForwardPolicy`): its machine gets anything; another machine reads, plus
+  (`ServiceClients/Security/ForwardPolicy`, through `ServiceHosting`'s `ForwardGuard`): its machine gets anything; another machine reads, plus
   what that host's pages author (BlazorServer: paths and zones), and anything else only with the key;
   no page on another site writes; a request a forwarder forwarded is refused, which stops a forwarder
   pointed at itself. Hosted centrally, the Control Center needs logins: an admin role for what changes
@@ -247,8 +251,10 @@ Dependency rules:
 - Services never reference `Core`, `Game`, `WinAPI` or `Frontend`.
 - The Control Center never references `PPather` or `Core`. It proxies the API, the world data and
   the watch hub to the Pathing Service with YARP, so the browser keeps same-origin URLs. It
-  references Contracts and ServiceClients only (MapAssets until 2026-10-05, when its pages moved
-  to the world view: `docs/world-view-plan.md`).
+  references Contracts, ServiceClients and ServiceHosting only (MapAssets until 2026-10-05, when its
+  pages moved to the world view: `docs/world-view-plan.md`).
+- `ServiceHosting` holds what the ASP.NET hosts share (the guards, logging, results, a hub's send
+  loop). It references Contracts and ServiceClients; the agent and the bot never reference it.
 
 The heavy lifting lives in reusable classes:
 

@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ServiceHosting\ServiceHosting.csproj" />
     <ProjectReference Include="..\Contracts\Contracts.csproj" />
     <ProjectReference Include="..\DataConfig\DataConfig.csproj" />
     <ProjectReference Include="..\PPather\PPather.csproj" />

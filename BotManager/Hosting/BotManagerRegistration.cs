@@ -13,6 +13,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi;
 
+using ServiceHosting;
+
 using System;
 using System.IO;
 
@@ -50,7 +52,9 @@ public static class BotManagerRegistration
             .AddMessagePackProtocol();
 
         services.ConfigureHttpJsonOptions(options => ContractJson.Apply(options.SerializerOptions));
-        services.AddProblemDetails();
+        // A request the manager cannot read is the caller's mistake: 400 with why, in Development too,
+        // where it answered 500, which its client repeated (known issue 46).
+        services.AddServiceProblems();
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(swagger => swagger.SwaggerDoc("v1", new OpenApiInfo { Title = ApiTitle, Version = "v1" }));
 

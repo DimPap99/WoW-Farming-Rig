@@ -56,7 +56,7 @@ internal sealed class ControlCenterFactory(IBotManagerClient? manager = null, IP
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseSetting(ControlCenterLogging.FileKey, string.Empty);
+        builder.UseSetting(ServiceHosting.ServiceLogging.FileKey, string.Empty);
         builder.UseSetting(PathingServiceOptions.UrlKey, (pathingUrl ?? ClosedPort.NewUrl()).ToString());
         builder.UseSetting(BotManagerOptions.UrlKey, ClosedPort.NewUrl().ToString());
         if (pathingKey is not null)

@@ -7,7 +7,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 
-namespace BotManager.Hosting;
+namespace ServiceHosting;
 
 /// <summary>
 /// Sends on a hub from one loop, in the order the sends were posted, so whoever posts never waits on a

@@ -1,7 +1,7 @@
 using BotManager.Agents;
 using BotManager.Bots;
 using BotManager.Fleet;
-using BotManager.Hosting;
+using ServiceHosting;
 using BotManager.Registry;
 
 using Contracts.Bots;

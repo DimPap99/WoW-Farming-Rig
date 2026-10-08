@@ -21,6 +21,8 @@ using Serilog;
 using ServiceClients.Pathing;
 using ServiceClients.Security;
 
+using ServiceHosting;
+
 using SharedLib.Logging;
 using Serilog.Templates;
 using Serilog.Templates.Themes;
@@ -204,6 +206,9 @@ public static class Program
 
         app.UseAntiforgery();
 
+        // The dashboard drives the bot for whoever reaches it: not a page of another site that a DNS
+        // rebinding pointed at this machine (known issue 75).
+        app.UseHostCheck();
         MapPathingForward(app);
 
         return app;
@@ -232,46 +237,10 @@ public static class Program
             return;
         }
 
-        app.Use(async (context, next) =>
-        {
-            if (context.Request.Path.StartsWithSegments(PathingApi.Root) && ForwardRefusal(context, pathing.ApiKey) is (int status, string refusal))
-            {
-                await Results.Problem(detail: refusal, statusCode: status, title: "Not forwarded").ExecuteAsync(context);
-                return;
-            }
-
-            await next(context);
-        });
-
-        app.MapForwarder($"{PathingApi.Root}/{{**catch-all}}", pathing.Url.GetLeftPart(UriPartial.Authority), transforms =>
-        {
-            transforms.AddRequestHeader(ForwardPolicy.HopHeader, "1", append: false);
-            foreach (string header in ForwardPolicy.BrowserOriginHeaders)
-            {
-                transforms.AddRequestHeaderRemove(header);
-            }
-
-            if (!string.IsNullOrEmpty(pathing.ApiKey))
-            {
-                transforms.AddRequestHeader(ServiceKey.Header, pathing.ApiKey, append: false);
-            }
-        });
-    }
-
-    private static (int Status, string Refusal)? ForwardRefusal(HttpContext context, string? key)
-    {
-        HttpRequest request = context.Request;
-        if (ServiceKeyPolicy.CrossSiteRefusal(request.Method, request.Headers["Sec-Fetch-Site"], request.Headers.Origin,
-                request.Host.Value) is string crossSite)
-        {
-            return (StatusCodes.Status403Forbidden, crossSite);
-        }
-
-        bool forwarded = request.Headers.ContainsKey(ForwardPolicy.HopHeader);
-        return ForwardPolicy.Refusal(request.Method, request.Path.Value ?? string.Empty, context.Connection.RemoteIpAddress, key,
-                request.Headers[ServiceKey.Header], ForwardPolicy.LeafletMapAuthors, forwarded) is string refusal
-            ? (forwarded ? StatusCodes.Status508LoopDetected : StatusCodes.Status403Forbidden, refusal)
-            : null;
+        // Another machine authors what the map authors (paths, roads, danger zones) besides reads.
+        app.UseForwardGuard(path => path.StartsWithSegments(PathingApi.Root), pathing.ApiKey, ForwardPolicy.LeafletMapAuthors);
+        app.MapForwarder($"{PathingApi.Root}/{{**catch-all}}", pathing.Url.GetLeftPart(UriPartial.Authority),
+            transforms => ForwardGuard.Forwarding(transforms, pathing.ApiKey));
     }
 
 }

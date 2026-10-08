@@ -12,6 +12,8 @@ using PathingService.World;
 using PPather.Graph;
 using PPather.Navmesh;
 
+using ServiceHosting;
+
 using SharedLib;
 
 using System;
@@ -42,7 +44,7 @@ public sealed class CostZoneStoreTests
         using TempDataRoot data = new(withMapData: true);
         CostZoneStore store = Store(data);
 
-        Assert.Equal(StoreOutcome.Done, store.SaveRoads("Azeroth", 1429, Roads).Outcome);
+        Assert.Equal(ApiOutcome.Done, store.SaveRoads("Azeroth", 1429, Roads).Outcome);
 
         // Frontend/Controllers/UIMapJsonFiles.Write: Newtonsoft, indented, the engine's RoadData.
         string expected = JsonConvert.SerializeObject(CostZoneMapping.ToModel(Roads), Formatting.Indented);
@@ -72,9 +74,9 @@ public sealed class CostZoneStoreTests
         using TempDataRoot data = new(withMapData: true);
         CostZoneStore store = Store(data);
 
-        StoreResult saved = store.SaveRoads("Azeroth", 1429, new([new RoadLine("wide", 99, [new(0, 0)])]));
+        ApiResult saved = store.SaveRoads("Azeroth", 1429, new([new RoadLine("wide", 99, [new(0, 0)])]));
 
-        Assert.Equal(StoreOutcome.Invalid, saved.Outcome);
+        Assert.Equal(ApiOutcome.Invalid, saved.Outcome);
         Assert.Equal(CostZoneLoader.Problem(new RoadData { Roads = [new RoadSegment("wide", 99, [new(0, 0)])] }), saved.Error);
         Assert.False(Directory.Exists(IOPath.Combine(data.Config().Road, "Azeroth")));
     }
@@ -90,9 +92,9 @@ public sealed class CostZoneStoreTests
             new RoadLine("diagonal", 64, [new(-40000, -40000), new(40000, 40000)]),
         ]);
 
-        StoreResult saved = store.SaveRoads("Azeroth", 1429, diagonal);
+        ApiResult saved = store.SaveRoads("Azeroth", 1429, diagonal);
 
-        Assert.Equal(StoreOutcome.Invalid, saved.Outcome);
+        Assert.Equal(ApiOutcome.Invalid, saved.Outcome);
         Assert.Contains("road 'diagonal'", saved.Error);
         Assert.Contains("add points along it", saved.Error);
         Assert.False(Directory.Exists(IOPath.Combine(data.Config().Road, "Azeroth")));
@@ -106,9 +108,9 @@ public sealed class CostZoneStoreTests
         DangerRectangle[] many = [.. Enumerable.Range(0, 30)
             .Select(i => new DangerRectangle($"r{i}", i * 100, 0, (i * 100) + 5000, 5000, 1))];
 
-        StoreResult saved = Store(data).SaveDanger("Azeroth", 1429, new([], many));
+        ApiResult saved = Store(data).SaveDanger("Azeroth", 1429, new([], many));
 
-        Assert.Equal(StoreOutcome.Invalid, saved.Outcome);
+        Assert.Equal(ApiOutcome.Invalid, saved.Outcome);
         Assert.Contains("danger zones would take", saved.Error);
         Assert.Contains("rectangle 'r0'", saved.Error);
     }
@@ -180,7 +182,7 @@ public sealed class CostZoneStoreTests
         using TempDataRoot data = new(withMapData: true);
         DangerZones odd = new([new DangerCircle("odd", 0, 0, 10, 1, (ZoneMode)7)], []);
 
-        Assert.Equal(StoreOutcome.Invalid, Store(data).SaveDanger("Azeroth", 1429, odd).Outcome);
+        Assert.Equal(ApiOutcome.Invalid, Store(data).SaveDanger("Azeroth", 1429, odd).Outcome);
     }
 
     [Fact]
@@ -190,7 +192,7 @@ public sealed class CostZoneStoreTests
         CostZoneStore store = Store(data);
         store.SaveRoads("Azeroth", 1429, Roads);
 
-        Assert.Equal(StoreOutcome.Done, store.SaveRoads("Azeroth", 1429, new([])).Outcome);
+        Assert.Equal(ApiOutcome.Done, store.SaveRoads("Azeroth", 1429, new([])).Outcome);
         Assert.False(File.Exists(IOPath.Combine(data.Config().Road, "Azeroth", "1429.json")));
     }
 
@@ -213,7 +215,7 @@ public sealed class CostZoneStoreTests
         using TempDataRoot data = new(withMapData: true);
         CostZoneStore store = Store(data);
 
-        Assert.Equal(StoreOutcome.Done, store.SaveRoads("azeroth", 1429, Roads).Outcome);
+        Assert.Equal(ApiOutcome.Done, store.SaveRoads("azeroth", 1429, Roads).Outcome);
 
         Assert.True(File.Exists(IOPath.Combine(data.Config().Road, "Azeroth", "1429.json")));
         Assert.Equal("Azeroth", store.Get("AZEROTH").Value!.Continent);
@@ -231,7 +233,7 @@ public sealed class CostZoneStoreTests
         using TempDataRoot data = new(withMapData: true);
         CostZoneStore store = Store(data);
 
-        Assert.Equal(StoreOutcome.Invalid, store.Get(continent).Outcome);
-        Assert.Equal(StoreOutcome.Invalid, store.SaveRoads(continent, 1429, Roads).Outcome);
+        Assert.Equal(ApiOutcome.Invalid, store.Get(continent).Outcome);
+        Assert.Equal(ApiOutcome.Invalid, store.SaveRoads(continent, 1429, Roads).Outcome);
     }
 }

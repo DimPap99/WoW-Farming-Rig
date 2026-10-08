@@ -19,23 +19,32 @@ public static class ServiceKeyPolicy
     /// <summary>
     /// Why a request from <paramref name="remote"/> carrying <paramref name="presented"/> is refused,
     /// or null to serve it. A request with no remote address came over a local transport (a pipe, a
-    /// socket file, an in-memory test server) and is this machine's.
+    /// socket file, an in-memory test server) and is this machine's. This machine is served without the
+    /// key only when its request names it (<paramref name="host"/>, <see cref="NamesThisMachine"/>): a page
+    /// whose name a DNS rebinding pointed at 127.0.0.1 is another site's; and not at all without
+    /// <paramref name="trustLoopback"/>, for a service a proxy on its machine stands in front of (known issue 75).
     /// </summary>
-    public static string? Refusal(string? configuredKey, string? presented, IPAddress? remote)
+    /// <param name="host">The request's Host header: its name and port.</param>
+    public static string? Refusal(string? configuredKey, string? presented, IPAddress? remote, string? host = null, bool trustLoopback = true)
     {
-        if (remote is null || IsLoopback(remote))
+        bool local = remote is null || IsLoopback(remote);
+        if (local && trustLoopback && NamesThisMachine(host))
         {
             return null;
         }
 
         if (string.IsNullOrEmpty(configuredKey))
         {
-            return $"this service serves only its own machine until it is given a key ({ServiceKey.ConfigKey})";
+            return local && trustLoopback
+                ? $"a request to this machine must name it (localhost, its address or its name), not {host}"
+                : $"this service serves only its own machine until it is given a key ({ServiceKey.ConfigKey})";
         }
 
         if (string.IsNullOrEmpty(presented))
         {
-            return $"a request from another machine needs the service's key in the {ServiceKey.Header} header";
+            return local && trustLoopback
+                ? $"a request to this machine must name it (localhost, its address or its name), not {host}, or carry the service's key"
+                : $"a request from another machine needs the service's key in the {ServiceKey.Header} header";
         }
 
         return CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(configuredKey), Encoding.UTF8.GetBytes(presented))
@@ -55,19 +64,23 @@ public static class ServiceKeyPolicy
     /// <param name="fetchSite">The <c>Sec-Fetch-Site</c> header: same-origin, same-site, cross-site or none.</param>
     /// <param name="origin">The <c>Origin</c> header, for a browser that sends no <c>Sec-Fetch-Site</c>.</param>
     /// <param name="host">The request's own host and port, as the <c>Host</c> header names them.</param>
-    public static string? CrossSiteRefusal(string method, string? fetchSite, string? origin, string? host)
+    /// <param name="webSocket">A WebSocket's opening GET: judged as a write, as it opens a hub to whoever sent it
+    /// (SignalR takes one without its negotiate, and from any origin: known issue 75).</param>
+    public static string? CrossSiteRefusal(string method, string? fetchSite, string? origin, string? host, bool webSocket = false)
     {
-        if (ForwardPolicy.IsRead(method) || method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+        if (!webSocket && (ForwardPolicy.IsRead(method) || method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase)))
         {
             return null;
         }
+
+        string what = webSocket ? "a WebSocket" : $"a {method}";
 
         if (!string.IsNullOrEmpty(fetchSite))
         {
             // "none": typed, bookmarked or opened by the person themselves.
             return fetchSite is "same-origin" or "none"
                 ? null
-                : $"a {method} that a page on another site made the browser send ({fetchSite}) is refused";
+                : $"{what} that a page on another site made the browser send ({fetchSite}) is refused";
         }
 
         if (string.IsNullOrEmpty(origin))
@@ -77,8 +90,35 @@ public static class ServiceKeyPolicy
 
         return Uri.TryCreate(origin, UriKind.Absolute, out Uri? from) && from.Authority.Equals(host, StringComparison.OrdinalIgnoreCase)
             ? null
-            : $"a {method} that a page from {origin} made the browser send is refused";
+            : $"{what} that a page from {origin} made the browser send is refused";
     }
+
+    /// <summary>
+    /// Whether <paramref name="host"/> (a Host header: a name and a port) names this machine: localhost, a
+    /// loopback address or the machine's own name. A request with no Host (HTTP/1.0, an in-memory test
+    /// server) is taken for this machine's: a browser always sends one.
+    /// </summary>
+    public static bool NamesThisMachine(string? host)
+    {
+        if (string.IsNullOrEmpty(host))
+        {
+            return true;
+        }
+
+        int close = host.IndexOf(']', StringComparison.Ordinal);
+        string name = host.StartsWith('[') && close > 0 ? host[1..close] : host.Split(':')[0];
+        if (name.Equals("localhost", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return IPAddress.TryParse(name, out IPAddress? address)
+            ? IsLoopback(address)
+            : name.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase) || name.Equals(HostName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // The machine's own name as its resolver knows it (Ubuntu maps it to 127.0.1.1), read once.
+    private static string HostName { get; } = Dns.GetHostName();
 
     /// <summary>
     /// Why a service listening on <paramref name="addresses"/> must not start, or null: an address

@@ -10,6 +10,8 @@ using PathingService.Hosting;
 using PPather.Navmesh;
 using PPather.Planning;
 
+using ServiceHosting;
+
 using SharedLib;
 
 using System.Globalization;

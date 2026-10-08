@@ -7,6 +7,8 @@ using PathingService.Hosting;
 
 using ServiceClients;
 
+using ServiceHosting;
+
 using SharedLib;
 using SharedLib.Converters;
 
@@ -75,21 +77,21 @@ public sealed class RecordedPathStore(DataConfig dataConfig)
         return result;
     }
 
-    public StoreResult<RecordedPath> Get(string name)
+    public ApiResult<RecordedPath> Get(string name)
     {
         if (!PathName.TryResolve(Root, name, out string canonical, out string file, out string error))
         {
-            return StoreResult<RecordedPath>.Invalid(error);
+            return ApiResult<RecordedPath>.Invalid(error);
         }
 
         if (!File.Exists(file))
         {
-            return StoreResult<RecordedPath>.NotFound;
+            return ApiResult<RecordedPath>.NotFound;
         }
 
         if (RecordedPathFile.Problem(file) is string why)
         {
-            return StoreResult<RecordedPath>.Invalid(LeftAlone(canonical, why));
+            return ApiResult<RecordedPath>.Invalid(LeftAlone(canonical, why));
         }
 
         Vector3[]? points;
@@ -99,7 +101,7 @@ public sealed class RecordedPathStore(DataConfig dataConfig)
         }
         catch (JsonException ex)
         {
-            return StoreResult<RecordedPath>.Unreadable($"{canonical} is not a list of points: {ex.Message}");
+            return ApiResult<RecordedPath>.Unreadable($"{canonical} is not a list of points: {ex.Message}");
         }
 
         Point3[] result = new Point3[points?.Length ?? 0];
@@ -109,35 +111,35 @@ public sealed class RecordedPathStore(DataConfig dataConfig)
             result[i] = new Point3(p.X, p.Y, p.Z);
         }
 
-        return StoreResult<RecordedPath>.Done(new RecordedPath(canonical, result));
+        return ApiResult<RecordedPath>.Done(new RecordedPath(canonical, result));
     }
 
     /// <summary>Creates or replaces <paramref name="name"/> with <paramref name="points"/>, zone map coordinates.</summary>
-    public StoreResult Save(string name, Point3[]? points)
+    public ApiResult Save(string name, Point3[]? points)
     {
         if (!PathName.TryResolve(Root, name, out string canonical, out string file, out string error))
         {
-            return StoreResult.Invalid(error);
+            return ApiResult.Invalid(error);
         }
 
         if (File.Exists(file) && RecordedPathFile.Problem(file) is string why)
         {
-            return StoreResult.Invalid(LeftAlone(canonical, why));
+            return ApiResult.Invalid(LeftAlone(canonical, why));
         }
 
         if (PathName.StoredSpelling(Root, canonical) is string stored)
         {
-            return StoreResult.Conflict(PathName.CaseTwinRefusal(canonical, stored));
+            return ApiResult.Conflict(PathName.CaseTwinRefusal(canonical, stored));
         }
 
         if (points is null || points.Length == 0)
         {
-            return StoreResult.Invalid("a recorded path needs at least one point");
+            return ApiResult.Invalid("a recorded path needs at least one point");
         }
 
         if (points.Length > MaxPoints)
         {
-            return StoreResult.Invalid($"a recorded path holds at most {MaxPoints} points");
+            return ApiResult.Invalid($"a recorded path holds at most {MaxPoints} points");
         }
 
         Vector3[] vectors = new Vector3[points.Length];
@@ -146,35 +148,35 @@ public sealed class RecordedPathStore(DataConfig dataConfig)
             Point3 p = points[i];
             if (!float.IsFinite(p.X) || !float.IsFinite(p.Y) || !float.IsFinite(p.Z))
             {
-                return StoreResult.Invalid($"point {i} is not made of finite numbers");
+                return ApiResult.Invalid($"point {i} is not made of finite numbers");
             }
             vectors[i] = new Vector3(p.X, p.Y, p.Z);
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         AtomicFile.WriteAllText(file, StjSerializer.Serialize(vectors, fileOptions));
-        return StoreResult.Done;
+        return ApiResult.Done;
     }
 
-    public StoreResult Delete(string name)
+    public ApiResult Delete(string name)
     {
         if (!PathName.TryResolve(Root, name, out string canonical, out string file, out string error))
         {
-            return StoreResult.Invalid(error);
+            return ApiResult.Invalid(error);
         }
 
         if (!File.Exists(file))
         {
-            return StoreResult.NotFound;
+            return ApiResult.NotFound;
         }
 
         if (RecordedPathFile.Problem(file) is string why)
         {
-            return StoreResult.Invalid(LeftAlone(canonical, why));
+            return ApiResult.Invalid(LeftAlone(canonical, why));
         }
 
         File.Delete(file);
-        return StoreResult.Done;
+        return ApiResult.Done;
     }
 
     private static string LeftAlone(string name, string why)

@@ -8,6 +8,8 @@ using PathingService.Hosting;
 
 using PPather.Planning;
 
+using ServiceHosting;
+
 namespace PathingService.CostZones;
 
 public static class CostZoneEndpoints
@@ -60,9 +62,9 @@ public static class CostZoneEndpoints
     // A save shapes the very next route, so its continent reloads at once; the file watcher
     // would reload as well, half a second later, which is harmless. A reload is all or nothing,
     // so one bad file elsewhere in the continent keeps this save from applying: say so.
-    private static IResult Saved(StoreResult result, string continent, RoutePlanner planner)
+    private static IResult Saved(ApiResult result, string continent, RoutePlanner planner)
     {
-        if (result.Outcome == StoreOutcome.Done && !planner.ReloadCostZones(continent, out string? failure))
+        if (result.Outcome == ApiOutcome.Done && !planner.ReloadCostZones(continent, out string? failure))
         {
             return Results.Problem(statusCode: StatusCodes.Status409Conflict, title: "Saved, not applied",
                 detail: $"saved, but routes keep {continent}'s previous zones, because a file there does not load: {failure}");
