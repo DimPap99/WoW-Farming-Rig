@@ -95,6 +95,11 @@ A run that has not ended after `Agent:StopGraceMs` (10 s) has its keys released 
 that still does not end is abandoned and the process exits with 75, which `run-agent.ps1` starts
 again. See `Game/CLAUDE.md` for why the order matters.
 
+**The console is written behind a queue.** A click into the Windows 10 console starts a selection
+that blocks every write to it, which held the bot's threads in their log calls (known issue 64), so
+`HeadlessLogging` queues the console's lines (`Queued`) and drops them past 10,000; the file is
+written as before. Keep a new console sink behind it.
+
 **An agent's host is built again; its process is started again.** `ResidentHost` decides after each
 host: a stop (Ctrl+C, a logoff, the task ending) ends the process with the host's code; a failure
 (the host threw before it was asked to stop, or a background service faulted) builds a new host after

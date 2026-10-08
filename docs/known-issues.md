@@ -379,18 +379,6 @@ Items 63 to 77 come from the review of Phase 3 (its eleven commits in 4e65fd27..
 `~/RiderProjects/WoW-Farming-Rig-review/phase3/phase3-review.md` on the machine it ran on; the
 plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fixes-plan.md).
 
-64. **A click into the agent's window freezes the bot with a key held.**
-    - **Where:** `HeadlessServer/Hosting/HeadlessLogging` (the console sink).
-    - **Cause:** Serilog's console sink writes synchronously under one lock. In the Windows 10 console
-      (conhost, QuickEdit on by default) a click starts a selection, and every write to the console
-      waits until it ends.
-    - **Effect:** every thread that logs stops at its next line: the bot mid-action with a movement key
-      down, and a Stop from the Control Center, which logs before it acts (504 after 10 s; the grace,
-      the forced release and the abandon never start). Snapshots still say Running. Windows Terminal,
-      Windows 11's default, does not block.
-    - **Fix:** the console sink behind a bounded queue that drops lines when full
-      (`Serilog.Sinks.Async`), so no bot thread waits on the console.
-
 65. **Only Ctrl+C stops the agent cleanly.**
     - **Where:** `HeadlessServer/Hosting/HeadlessHost`, `run-agent.ps1`, `run.bat`; the promise is in
       `HeadlessHost`, `Program`, `ResidentHost`, `run-agent.ps1`, `uninstall-agent-task.ps1`,
@@ -600,6 +588,14 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+64. **A click into the agent's window froze the bot with a key held** (Phase 3 review, 2026-10-08).
+    Serilog's console sink wrote synchronously, and in the Windows 10 console a click starts a
+    selection that blocks every write until it ends: every thread that logged stopped at its next
+    line, the bot mid-action and a Stop from the Control Center alike. The console sink is now behind
+    a queue of its own (`HeadlessLogging.Queued`, `Serilog.Sinks.Async`, 10,000 lines, dropping when
+    full); the file, the debugger and the agent's stream are written as before
+    (`HeadlessLoggingTests`). Windows checklist: QuickEdit.
 
 63. **A Classic run that failed to start crashed the agent, and nothing logged why** (Phase 3 review,
     2026-10-08). `WowProcess` polled on a foreground thread waiting on the handle of the token source
