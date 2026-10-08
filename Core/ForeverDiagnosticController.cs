@@ -93,7 +93,9 @@ public sealed class ForeverDiagnosticController : IBotController, IDisposable
         ProfileLoaded?.Invoke();
         return false;
     }
-    public void LoadPathProfile(Dictionary<int, string> pathFilenames) { }
+    public bool LoadClassProfile(string classFilename, Dictionary<int, string> pathFilenames) => LoadClassProfile(classFilename);
+    public bool LoadPathProfile(Dictionary<int, string> pathFilenames) => false;
+    public string? LoadError => "Forever class profiles are refused: gameplay data and navigation are not ported";
     public void OverrideClassConfig(ClassConfiguration classConfig) { }
     public void SaveClassConfig() { }
 

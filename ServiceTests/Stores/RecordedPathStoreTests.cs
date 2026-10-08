@@ -143,7 +143,7 @@ public sealed class RecordedPathStoreTests
         string file = Path.Combine(data.Root, "file.json");
         File.WriteAllText(file, text);
 
-        Assert.Equal(isPath, RecordedPathStore.NotARecordedPath(file) is null);
+        Assert.Equal(isPath, SharedLib.RecordedPathFile.Problem(file) is null);
     }
 
     [Theory]

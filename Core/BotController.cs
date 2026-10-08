@@ -69,6 +69,8 @@ public sealed partial class BotController : IBotController, IDisposable
     public event Action? ProfileLoaded;
     public event Action? StatusChanged;
 
+    public string? LoadError { get; private set; }
+
     public double AvgScreenLatency { get; private set; }
     public double AvgNPCLatency { get; private set; }
 
@@ -454,8 +456,11 @@ public sealed partial class BotController : IBotController, IDisposable
         catch (Exception ex)
         {
             logger.LogError(ex, ex.Message);
+            LoadError = ex.Message;
             return false;
         }
+
+        LoadError = null;
 
         if (logger.IsEnabled(LogLevel.Information))
         {
@@ -488,21 +493,34 @@ public sealed partial class BotController : IBotController, IDisposable
                 ValidateScopes = true
             });
 
+        // The new session is built whole before the old one goes: a path that does not load (a
+        // malformed override) threw here after the old one was disposed, and GoapAgent kept pointing
+        // at it, so the bot turned on with no GOAP thread while it said it ran (known issue 68).
+        IServiceScope scope = provider.CreateScope();
+        GoapAgent? goapAgent;
+        RouteInfo? routeInfo;
+        try
+        {
+            goapAgent = scope.ServiceProvider.GetService<GoapAgent>();
+            routeInfo = scope.ServiceProvider.GetService<RouteInfo>();
+            if (config.Mode == Mode.AutoGather)
+            {
+                scope.ServiceProvider.GetRequiredService<FoundNodeListener>();
+            }
+        }
+        catch
+        {
+            scope.Dispose();
+            provider.Dispose();
+            throw;
+        }
+
         sessionScope?.Dispose();
-        sessionScope = provider.CreateScope();
-
-        GoapAgent = sessionScope.
-            ServiceProvider.GetService<GoapAgent>();
-
-        RouteInfo = sessionScope.
-            ServiceProvider.GetService<RouteInfo>();
+        sessionScope = scope;
+        GoapAgent = goapAgent;
+        RouteInfo = routeInfo;
 
         screen.MinimapEnabled = config.GatheringMode;
-
-        if (config.Mode == Mode.AutoGather)
-        {
-            sessionScope.ServiceProvider.GetRequiredService<FoundNodeListener>();
-        }
     }
 
     private static IEnumerable<IRouteProvider> GetPathProviders(IServiceProvider sp)
@@ -571,24 +589,32 @@ public sealed partial class BotController : IBotController, IDisposable
 
     public bool LoadClassProfile(string classFilename)
     {
-        bool success = InitialiseFromFile(classFilename, SelectedPathFilename);
+        return LoadClassProfile(classFilename, SelectedPathFilename);
+    }
+
+    public bool LoadClassProfile(string classFilename, Dictionary<int, string> pathFilenames)
+    {
+        bool success = InitialiseFromFile(classFilename, pathFilenames);
         if (success)
         {
             SelectedClassFilename = classFilename;
+            SelectedPathFilename = pathFilenames;
         }
 
         ProfileLoaded?.Invoke();
         return success;
     }
 
-    public void LoadPathProfile(Dictionary<int, string> pathFilenames)
+    public bool LoadPathProfile(Dictionary<int, string> pathFilenames)
     {
-        if (InitialiseFromFile(SelectedClassFilename, pathFilenames))
+        bool success = InitialiseFromFile(SelectedClassFilename, pathFilenames);
+        if (success)
         {
             SelectedPathFilename = pathFilenames;
         }
 
         ProfileLoaded?.Invoke();
+        return success;
     }
 
     public void OverrideClassConfig(ClassConfiguration classConfig)

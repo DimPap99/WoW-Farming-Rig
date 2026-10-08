@@ -33,7 +33,17 @@ public interface IBotController
 
     bool LoadClassProfile(string classFilename);
 
-    void LoadPathProfile(Dictionary<int, string> pathFilenames);
+    /// <summary>
+    /// Loads <paramref name="classFilename"/> with <paramref name="pathFilenames"/> in place of its paths by
+    /// index, in one go: a path the profile names and one of these replaces need not exist.
+    /// </summary>
+    bool LoadClassProfile(string classFilename, Dictionary<int, string> pathFilenames);
+
+    /// <summary>Loads the selected profile again with <paramref name="pathFilenames"/> in place of its paths; false when it did not load.</summary>
+    bool LoadPathProfile(Dictionary<int, string> pathFilenames);
+
+    /// <summary>Why the last profile or path did not load, or null after one that did.</summary>
+    string? LoadError { get; }
 
     void OverrideClassConfig(ClassConfiguration classConfig);
 

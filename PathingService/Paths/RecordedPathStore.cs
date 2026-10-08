@@ -7,6 +7,7 @@ using PathingService.Hosting;
 
 using ServiceClients;
 
+using SharedLib;
 using SharedLib.Converters;
 
 using System;
@@ -28,7 +29,7 @@ namespace PathingService.Paths;
 /// <para>
 /// The folder also holds files that are not recorded paths: the class profiles' path groups
 /// (<c>PathsFilenames</c>, <c>1-8_*.json</c>), which Newtonsoft would read as points at 0, 0, 0.
-/// The store knows a recorded path by how it starts (<see cref="NotARecordedPath"/>) and leaves
+/// The store knows a recorded path by how it starts (<see cref="RecordedPathFile.Problem"/>, SharedLib's) and leaves
 /// anything else alone: it does not list it, read it as points, overwrite it or delete it.
 /// </para>
 /// </summary>
@@ -58,7 +59,7 @@ public sealed class RecordedPathStore(DataConfig dataConfig)
             string name = PathName.Relative(Root, file);
             if (PathName.IsForeverRoute(name) ||
                 (!string.IsNullOrEmpty(filter) && !name.Contains(filter, StringComparison.OrdinalIgnoreCase)) ||
-                NotARecordedPath(file) is not null)
+                RecordedPathFile.Problem(file) is not null)
             {
                 continue;
             }
@@ -86,7 +87,7 @@ public sealed class RecordedPathStore(DataConfig dataConfig)
             return StoreResult<RecordedPath>.NotFound;
         }
 
-        if (NotARecordedPath(file) is string why)
+        if (RecordedPathFile.Problem(file) is string why)
         {
             return StoreResult<RecordedPath>.Invalid(LeftAlone(canonical, why));
         }
@@ -119,7 +120,7 @@ public sealed class RecordedPathStore(DataConfig dataConfig)
             return StoreResult.Invalid(error);
         }
 
-        if (File.Exists(file) && NotARecordedPath(file) is string why)
+        if (File.Exists(file) && RecordedPathFile.Problem(file) is string why)
         {
             return StoreResult.Invalid(LeftAlone(canonical, why));
         }
@@ -167,78 +168,13 @@ public sealed class RecordedPathStore(DataConfig dataConfig)
             return StoreResult.NotFound;
         }
 
-        if (NotARecordedPath(file) is string why)
+        if (RecordedPathFile.Problem(file) is string why)
         {
             return StoreResult.Invalid(LeftAlone(canonical, why));
         }
 
         File.Delete(file);
         return StoreResult.Done;
-    }
-
-    /// <summary>
-    /// Why <paramref name="file"/> is not a recorded path, or null when it is one: a JSON list
-    /// whose first entry starts with X, Y or Z (any case, as the bot reads them), or an empty
-    /// list. Reads only up to that first name, since <see cref="List"/> looks at every file in
-    /// the folder; comments are skipped, as the path groups have them.
-    /// </summary>
-    public static string? NotARecordedPath(string file)
-    {
-        try
-        {
-            using StreamReader text = new(file);
-            using JsonTextReader json = new(text);
-            if (!NextToken(json))
-            {
-                return "it is empty";
-            }
-
-            if (json.TokenType != JsonToken.StartArray || !NextToken(json))
-            {
-                return "it is not a list of points";
-            }
-
-            if (json.TokenType == JsonToken.EndArray)
-            {
-                return null;
-            }
-
-            if (json.TokenType != JsonToken.StartObject || !NextToken(json) ||
-                json.TokenType != JsonToken.PropertyName || json.Value is not string first)
-            {
-                return "it is not a list of points";
-            }
-
-            return IsAxis(first) ? null : $"its entries start with \"{first}\", not X, Y and Z (a class profile's path group?)";
-        }
-        catch (JsonException ex)
-        {
-            return $"it is not JSON: {ex.Message}";
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return $"it could not be read: {ex.Message}";
-        }
-    }
-
-    private static bool NextToken(JsonTextReader json)
-    {
-        while (json.Read())
-        {
-            if (json.TokenType != JsonToken.Comment)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool IsAxis(string name)
-    {
-        return name.Equals("X", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("Y", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("Z", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string LeftAlone(string name, string why)

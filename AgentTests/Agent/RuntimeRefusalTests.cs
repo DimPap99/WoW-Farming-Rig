@@ -106,6 +106,26 @@ public sealed class RuntimeRefusalTests : IDisposable
         }
     }
 
+    [Theory]
+    // A class profile's path group: Newtonsoft reads it as points at 0, 0, 0.
+    [InlineData("[ { \"PathFilename\": \"x.json\" } ]", "its entries start with \"PathFilename\"")]
+    [InlineData("{ \"UIMapId\": 1411, \"Steps\": [] }", "not a list of points")]
+    [InlineData("[ { \"X\": 1, ", "not JSON")]
+    public void A_path_in_place_of_the_first_that_does_not_load_is_refused_before_anything_attaches(string text, string why)
+    {
+        Directory.CreateDirectory(Path.Combine(root, "class"));
+        File.WriteAllText(Path.Combine(root, "class", "Hunter.json"), "{}");
+        File.WriteAllText(Path.Combine(root, "path", "override.json"), text);
+        AgentGame game = new("som", "precata", 1, "1.15.7.61582");
+        DataConfig data = new() { Root = root, Exp = "som" };
+
+        // Known issue 68: the bot turned on with no GOAP thread, and the run said Running.
+        Assert.False(ClassicRuntime.TryCreate(new ClassicAssignment("Hunter.json", "override.json"), game, data, new RunOptions(),
+            new ConfigurationBuilder().Build(), NullLoggerFactory.Instance, out _, out string refusal));
+        Assert.Contains("the path override.json is not a recorded path", refusal);
+        Assert.Contains(why, refusal);
+    }
+
     [Fact]
     public void The_probe_finds_no_client_where_none_runs()
     {

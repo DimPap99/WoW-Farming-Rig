@@ -190,7 +190,7 @@ the one it was not given (known issue 71).
 **The path folder holds more than recorded paths.** The class profiles' path groups
 (`PathsFilenames`, `1-8_*.json`: `PathSettings` with requirements, commented) live beside the
 paths, and Newtonsoft reads one as points at 0, 0, 0. The store knows a recorded path by how the
-file starts (`RecordedPathStore.NotARecordedPath`: a list whose first entry starts with X, Y or
+file starts (`RecordedPathFile.Problem`, SharedLib's: a list whose first entry starts with X, Y or
 Z) and leaves anything else alone: not listed, and a read, save or delete by its name answers 400.
 It reads only the start of each file, as the library lists the whole folder on every refresh. The
 sync's `paths` set still serves the groups: a Classic run needs them.

@@ -61,21 +61,33 @@ public sealed partial class ClassicRuntime : IBotRuntime
         IConfiguration configuration, ILoggerFactory loggerFactory, out IBotRuntime runtime, out string refusal)
     {
         runtime = null!;
-        if (MissingConfiguration() is string missing)
-        {
-            refusal = missing;
-            return false;
-        }
-
         if (!File.Exists(Path.Join(data.Class, assignment.ClassProfile)))
         {
             refusal = $"the class profile {assignment.ClassProfile} is not in this PC's Json/class";
             return false;
         }
 
-        if (assignment.PathOverride is { } path && !File.Exists(Path.Join(data.Path, path)))
+        if (assignment.PathOverride is { } path)
         {
-            refusal = $"the path {path} is not in this PC's Json/path";
+            string file = Path.Join(data.Path, path);
+            if (!File.Exists(file))
+            {
+                refusal = $"the path {path} is not in this PC's Json/path";
+                return false;
+            }
+
+            // Read now, before anything attaches: a path that does not load left the bot idle under
+            // "Running" (known issue 68).
+            if (RecordedPathFile.LoadProblem(file) is string why)
+            {
+                refusal = $"the path {path} is not a recorded path: {why}";
+                return false;
+            }
+        }
+
+        if (MissingConfiguration() is string missing)
+        {
+            refusal = missing;
             return false;
         }
 
@@ -139,14 +151,12 @@ public sealed partial class ClassicRuntime : IBotRuntime
             }
 
             InitState(composed);
-            if (!controller.LoadClassProfile(assignment.ClassProfile))
+            // In one go, with the path in place of the first: the profile's own first path need not exist.
+            Dictionary<int, string> paths = assignment.PathOverride is { } path ? new() { [0] = path } : [];
+            if (!controller.LoadClassProfile(assignment.ClassProfile, paths))
             {
-                return new BotRunResult(BotRunOutcome.Refused, $"the class profile {assignment.ClassProfile} did not load: see the log");
-            }
-
-            if (assignment.PathOverride is { } path)
-            {
-                controller.LoadPathProfile(new Dictionary<int, string> { [0] = path });
+                return new BotRunResult(BotRunOutcome.Refused,
+                    $"{Summary} did not load: {controller.LoadError ?? "see the log"}");
             }
 
             if (stop.IsCancellationRequested)

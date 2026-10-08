@@ -97,11 +97,19 @@ public sealed class ConfigBotController : IBotController, IDisposable
         throw new NotImplementedException();
     }
 
-    public void LoadPathProfile(Dictionary<int, string> pathFilenames)
+    public bool LoadClassProfile(string classFilename, Dictionary<int, string> pathFilenames)
     {
         ProfileLoaded?.Invoke();
         throw new NotImplementedException();
     }
+
+    public bool LoadPathProfile(Dictionary<int, string> pathFilenames)
+    {
+        ProfileLoaded?.Invoke();
+        throw new NotImplementedException();
+    }
+
+    public string? LoadError => null;
 
     public void OverrideClassConfig(ClassConfiguration classConfiguration)
     {

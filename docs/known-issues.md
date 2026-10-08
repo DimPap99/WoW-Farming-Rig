@@ -364,22 +364,15 @@ Items 63 to 77 come from the review of Phase 3 (its eleven commits in 4e65fd27..
 `~/RiderProjects/WoW-Farming-Rig-review/phase3/phase3-review.md` on the machine it ran on; the
 plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fixes-plan.md).
 
-68. **A path override that does not load leaves the bot idle under "Running".**
-    - **Where:** `HeadlessServer/Runtimes/ClassicRuntime` (`TryCreate`, `Run`), `Core/BotController`
-      (`LoadPathProfile`, `CreateSession`), `ServiceClients/Bots/AssignmentRules`.
-    - **Cause:** `LoadPathProfile` returns nothing, and its failure is only logged. The override is
-      parsed when the session resolves its `GoapAgent`, after `CreateSession` disposed the old session,
-      so `GoapAgent` still points at the disposed one, and turning the bot on sets that one active.
-      `TryCreate` checks only that the override exists, and the profile's own paths not at all: a
-      missing one is found after the run attached and pressed the flush key, though the factory
-      promises that a refusal never touched the game. `AssignmentRules` accepts names the service
-      refuses (`_forever/x.json`, `%`, a segment ending in a dot).
-    - **Effect:** a malformed override (a truncated local copy used while the service is down, a
-      Forever route given as one) gives a run that says Running "profile X on path" while the
-      character stands still until someone stops it.
-    - **Fix:** `TryCreate` reads every path the run needs before it attaches and refuses one that
-      does not load; `LoadPathProfile` answers whether it loaded, and `CreateSession` replaces the
-      session only once the new one is built; one name rule for every name (the plan's step 3).
+68. **The agent takes path names the Pathing Service refuses.** (A path override that does not load
+    is fixed: see "Fixed".)
+    - **Where:** `ServiceClients/Bots/AssignmentRules.IsRelativeName`, which the manager, the Control Center
+      and the agent apply, against `PathingService/Paths/PathName`, which items 43 and 46 tightened alone.
+    - **Effect:** an assignment may name `_forever/x.json` as a Classic path, or a name with `%` or a
+      segment ending in a dot: saved, synced as "used as this PC has them", then refused by the run.
+    - **Also:** a path of a class profile that is missing, other than the one an override replaces, is
+      still found only after the run attached and pressed the flush key (now with the loader's reason).
+    - **Fix (the plan's step 3, with the one name rule):** one rule for every name.
 
 70. **A route named `.JSON` is saved but never listed.** (The malformed file that took the library
     offline is fixed: see "Fixed".)
@@ -429,6 +422,21 @@ plan to fix them, and the design findings, are [phase3-fixes-plan.md](phase3-fix
       manifest's size and hash; a manifest with a null entry threw.
 
 ## Fixed
+
+68. **A path override that did not load left the bot idle under "Running"** (Phase 3 review,
+    2026-10-08; the names half is item 68 above). `LoadPathProfile` returned nothing, and a path that did
+    not load (a truncated local copy, a Forever route given as one) threw in `CreateSession` after the old
+    session was disposed, so `GoapAgent` kept pointing at the disposed one and the bot turned on with no
+    GOAP thread while the run said Running. And the profile loaded without the override first, so its
+    own first path, which the override replaces, had to exist.
+    - `ClassicRuntime.TryCreate` reads the override whole, as the bot does, before anything attaches
+      (`RecordedPathFile.LoadProblem`, SharedLib's, beside `Problem`, the start-only check the Pathing
+      Service's store moved there), and refuses one that would not load, with why.
+    - The profile loads with the override in one go (`IBotController.LoadClassProfile(profile, paths)`);
+      `LoadPathProfile` answers whether it loaded, `LoadError` says why not, and the run's refusal names it.
+    - `BotController.CreateSession` builds the new session whole before the old one goes.
+    - Tests: `RuntimeRefusalTests` (a path group, a route file, a truncated file; each fails with the
+      read taken out). The session swap needs a client: it is reasoned, not tested.
 
 23. **A run waited for the addon without listening to its stop** (Phase 3; the Forever half found by
     the Phase 3 review; fixed 2026-10-08). `BotController`'s constructor waited with `wait.Update(5000)`
