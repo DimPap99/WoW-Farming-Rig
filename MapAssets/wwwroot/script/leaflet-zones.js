@@ -40,6 +40,13 @@ let dangerGroup = null;
 // Every authored shape, with the metadata that is not recoverable from geometry.
 let costZoneShapes = [];
 
+// Whether the continent's zones were read from the service. A save replaces a zone map's whole road
+// and danger lists with what this page holds, so a page that read nothing must never save: it would
+// delete every zone it did not show (docs/known-issues.md, item 48).
+let costZonesLoaded = false;
+// The read under way, shared: two saves that both find nothing read must not read twice and list every zone twice.
+let costZoneLoading = null;
+
 function costZoneWorldToUiMapId(world) {
     // Mirrors WorldMapAreaDB.GetWorldMapArea: WMADB is already filtered to this
     // continent's MapID by filterContientsAndInvalid.
@@ -67,6 +74,7 @@ function dangerColor(mode) {
 async function costZoneInit(continent) {
     costZoneContinent = continent;
     costZoneShapes = [];
+    costZonesLoaded = false;
 
     roadGroup = addGroupLayer(COSTZONE_GROUP, ROAD_LAYER);
     dangerGroup = addGroupLayer(COSTZONE_GROUP, DANGER_LAYER);
@@ -75,21 +83,28 @@ async function costZoneInit(continent) {
     addToggleLayer(COSTZONE_GROUP, DANGER_LAYER, dangerGroup, true);
 
     try {
-        await costZoneLoad();
+        await costZoneLoadOnce();
     } catch (err) {
-        console.error('Failed to load cost zones', err);
+        mapNotice(`Cost zones of ${continent} not loaded, so none can be saved: ${err}`);
     }
 
     scheduleGroupedLayerControlUpdate();
 }
 
 async function costZoneLoad() {
-    const result = await pathingFetch(`/costzones/${encodeURIComponent(costZoneContinent)}`);
+    const continent = costZoneContinent;
+    const result = await pathingFetch(`/costzones/${encodeURIComponent(continent)}`);
+    if (continent !== costZoneContinent) {
+        // The map moved to another continent meanwhile; its own read follows.
+        return false;
+    }
+
     if (!result.ok) {
+        // Offline is said once already; anything else (a file the service cannot read) here.
         if (result.status !== 0 && result.status !== 502 && result.status !== 504) {
-            mapNotice(`Cost zones of ${costZoneContinent} not loaded: ${result.error}`);
+            mapNotice(`Cost zones of ${continent} not loaded, so none can be saved: ${result.error}`);
         }
-        return;
+        return false;
     }
 
     for (const [uiMapId, data] of Object.entries(result.body.roads ?? {})) {
@@ -120,6 +135,17 @@ async function costZoneLoad() {
             });
         }
     }
+
+    // Only once every zone read is on the page: a save sends them all.
+    costZonesLoaded = true;
+    return true;
+}
+
+function costZoneLoadOnce() {
+    if (!costZoneLoading) {
+        costZoneLoading = costZoneLoad().finally(() => { costZoneLoading = null; });
+    }
+    return costZoneLoading;
 }
 
 // The service names the mode (Contracts.Pathing.ZoneMode); the popup works with the numbers.
@@ -319,7 +345,14 @@ function costZoneRemove(shape) {
 /// next route without a rebake.
 async function costZoneSave(uiMapId) {
     if (uiMapId < 0) {
-        console.warn('Shape is outside every known map area - not saved');
+        mapNotice('The shape is outside every known map area: not saved');
+        return;
+    }
+
+    // Read what is there first, once the service answers: the save sends the whole list.
+    if (!costZonesLoaded && !await costZoneLoadOnce()) {
+        mapNotice(`Cost zones of map ${uiMapId} not saved: the zones already there could not be read, `
+            + `and a save replaces them all. Reload the map once the Pathing Service answers.`);
         return;
     }
 
@@ -369,9 +402,9 @@ async function costZoneSave(uiMapId) {
     const okDanger = await costZonePut(`${base}/danger/${uiMapId}`, danger);
 
     if (!okRoad || !okDanger) {
-        console.error(`Cost zones for map ${uiMapId} did NOT fully save `
-            + `(roads ${okRoad ? 'ok' : 'FAILED'}, danger ${okDanger ? 'ok' : 'FAILED'}) `
-            + `- the map and the files are now out of sync, reload to see the truth.`);
+        mapNotice(`Cost zones of map ${uiMapId} did not fully save `
+            + `(roads ${okRoad ? 'saved' : 'not saved'}, danger zones ${okDanger ? 'saved' : 'not saved'}): `
+            + `the map and the files now differ; reload the map to see what is saved.`);
         return;
     }
 
@@ -386,7 +419,7 @@ async function costZoneSave(uiMapId) {
 async function costZonePut(path, body) {
     const result = await pathingFetch(path, pathingJson('PUT', body));
     if (result.status === 409) {
-        mapNotice(`Cost zones saved, not in use yet: ${result.error}`);
+        mapNotice(`Cost zones saved, not in use yet: ${result.error}`, 'warn');
         return true;
     }
 

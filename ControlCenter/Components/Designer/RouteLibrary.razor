@@ -1,5 +1,6 @@
-@* The route designer's path library: a recorded path opens as waypoints, and the waypoints save
-   under a name, as the bot records a path: one zone's map coordinates (RecordedPaths). *@
+@* The route designer's path library: a recorded path opens as nodes, and a design saves under a name
+   as what a bot follows of it - its nodes, and its exact legs' points - as the bot records a path: one
+   zone's map coordinates (RecordedPaths). *@
 
 @inherits ControlCenterComponent
 
@@ -37,12 +38,12 @@
         </div>
         <div class="pa-actions">
             <BusyButton Class="pa-grow" Icon="folder" Busy="@busy" Disabled="@(File is null || zoneId == 0)" OnClick="OpenAsync"
-                        Title="Open the path as waypoints">
+                        Title="Open the path as nodes">
                 Open
             </BusyButton>
             <BusyButton Class="pa-btn--primary pa-grow" Icon="data-transfer-upload" Busy="@busy"
-                        Disabled="@(Waypoints.Count == 0 || zoneId == 0 || fileName.Trim().Length == 0)"
-                        OnClick="SaveAsync" Title="Save the waypoints under this name">
+                        Disabled="@(Design.Nodes.Length == 0 || zoneId == 0 || fileName.Trim().Length == 0)"
+                        OnClick="SaveAsync" Title="Save the route under this name: its nodes, and the points of its exact legs">
                 Save
             </BusyButton>
             <button class="pa-btn pa-btn--ghost pa-btn--icon" type="button" disabled="@(File is null || busy)"
@@ -66,10 +67,10 @@
 
     [Parameter, EditorRequired] public WorldSnapshot World { get; set; } = null!;
 
-    /// <summary>The waypoints Save writes.</summary>
-    [Parameter, EditorRequired] public IReadOnlyList<Point3> Waypoints { get; set; } = [];
+    /// <summary>The route Save writes.</summary>
+    [Parameter, EditorRequired] public RouteDesign Design { get; set; } = RouteDesign.Empty;
 
-    /// <summary>The file the waypoints came from or were last saved to; saving over it asks nothing.</summary>
+    /// <summary>The file the route came from or was last saved to; saving over it asks nothing.</summary>
     [Parameter] public string? Opened { get; set; }
 
     /// <summary>The route shown has changes no file holds: opening another asks first.</summary>
@@ -155,7 +156,7 @@
     private async Task SaveAsync()
     {
         string name = fileName.Trim();
-        if (World.Zone(zoneId) is not ZoneInfo zone || name.Length == 0 || Waypoints.Count == 0)
+        if (World.Zone(zoneId) is not ZoneInfo zone || name.Length == 0 || Design.Nodes.Length == 0)
         {
             return;
         }
@@ -173,7 +174,8 @@
         busy = true;
         try
         {
-            ServiceResult saved = await pathing.SavePathAsync(name, RecordedPaths.ToFile(Waypoints, zone), Token);
+            Point3[] points = RecordedPaths.ToFile(Design, zone);
+            ServiceResult saved = await pathing.SavePathAsync(name, points, Token);
             if (!saved.Ok)
             {
                 Show(saved.Error, ResultKind.Error);
@@ -181,7 +183,7 @@
             }
 
             fileName = name;
-            Show($"Saved {Words.Count(Waypoints.Count, "waypoint")} to {name} on the {zone.Name} map", ResultKind.Ok);
+            Show($"Saved {Words.Count(points.Length, "point")} to {name} on the {zone.Name} map", ResultKind.Ok);
             await OnSaved.InvokeAsync(name);
             await ListAsync();
         }

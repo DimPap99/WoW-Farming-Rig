@@ -8,43 +8,22 @@ using System.Threading.Tasks;
 namespace PathingService.Watch;
 
 /// <summary>
-/// Streams routes and navmesh tiles to the 3D view and the map (<see cref="PathingApi.WatchHub"/>).
-/// <see cref="WatchBroadcaster"/> does the sending; connections are counted so it does nothing
-/// while nobody watches.
+/// Streams the routes the planner answers to route watchers (<see cref="PathingApi.WatchHub"/>), such
+/// as the Control Center's Live view. <see cref="WatchBroadcaster"/> does the sending.
 /// </summary>
 public sealed class WatchHub(WatchBroadcaster broadcaster) : Hub
 {
-    public override Task OnConnectedAsync()
-    {
-        broadcaster.ViewerJoined();
-        return base.OnConnectedAsync();
-    }
-
     public override Task OnDisconnectedAsync(Exception? exception)
     {
-        broadcaster.ViewerLeft(Context.ConnectionId);
+        broadcaster.WatcherLeft(Context.ConnectionId);
         return base.OnDisconnectedAsync(exception);
     }
 
-    /// <summary>Sends this viewer the tiles the planner holds and the last routes.</summary>
-    [HubMethodName(WatchHubMethods.Replay)]
-    public void Replay()
-    {
-        broadcaster.Replay(Context.ConnectionId);
-    }
-
-    /// <summary>Makes this connection a watcher of routes only: each route as it is answered, no scene.</summary>
+    /// <summary>Makes this connection a route watcher: each route as it is answered, the remembered ones first.</summary>
     [HubMethodName(WatchHubMethods.WatchRoutes)]
     public async Task WatchRoutes()
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, WatchBroadcaster.RouteWatchers);
         broadcaster.WatchRoutes(Context.ConnectionId);
-    }
-
-    /// <summary>Starts sending this viewer the game geometry under the tiles; null, or why not.</summary>
-    [HubMethodName(WatchHubMethods.Terrain)]
-    public string? Terrain(string continent, int[] tiles)
-    {
-        return broadcaster.RequestTerrain(Context.ConnectionId, continent, tiles);
     }
 }

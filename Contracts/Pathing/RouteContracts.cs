@@ -65,8 +65,10 @@ public sealed record RouteTuning(float JitterYards = 0f, int? JitterSeed = null,
 /// <param name="To">Destination, with the same height rule.</param>
 /// <param name="Tuning">Optional jitter and edge margin.</param>
 /// <param name="Search">The band around the straight line (the default, as the bot searches) or the whole continent.</param>
+/// <param name="CostZones">Priced by the continent's authored cost zones (the default) or by none, as a Forever run
+/// whose route does not apply them walks.</param>
 public sealed record RouteRequest(string? Client, int UiMapId, CoordinateSpace Space, Point3 From, Point3 To,
-    RouteTuning? Tuning = null, RouteSearch Search = RouteSearch.Band);
+    RouteTuning? Tuning = null, RouteSearch Search = RouteSearch.Band, CostZoneUse CostZones = CostZoneUse.Apply);
 
 /// <summary>What a route request found.</summary>
 /// <param name="Status">How it ended; <see cref="Points"/> is empty unless <see cref="RouteStatus.Found"/> or <see cref="RouteStatus.Partial"/>.</param>

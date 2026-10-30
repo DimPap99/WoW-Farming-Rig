@@ -37,23 +37,17 @@ public sealed class CostZoneWatcher : IDisposable
 
     /// <summary>
     /// Watches <paramref name="root"/> and its subfolders (<c>dangerzone/</c> lives under each
-    /// continent). Null when the folder does not exist or cannot be watched; the reload
-    /// endpoints still work then.
+    /// continent), creating it when it is missing: an era with no zones yet (cata, mop) gets them
+    /// later, from the agent's data sync or a first save, and they must count. Null when the folder
+    /// cannot be created or watched: the Pathing Service's reload endpoint still works then, and a
+    /// bot reads its zones again only when it restarts.
     /// </summary>
     public static CostZoneWatcher? TryStart(ILogger logger, string root, Action onChanged)
     {
-        if (!Directory.Exists(root))
-        {
-            if (logger.IsEnabled(LogLevel.Information))
-            {
-                logger.LogInformation("Cost zone watcher not started: {Root} does not exist.", root);
-            }
-            return null;
-        }
-
         CostZoneWatcher zones = new(logger, onChanged);
         try
         {
+            Directory.CreateDirectory(root);
             zones.Start(root);
             if (logger.IsEnabled(LogLevel.Information))
             {

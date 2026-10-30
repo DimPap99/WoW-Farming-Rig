@@ -34,12 +34,6 @@ public sealed class PPatherService : IDisposable
     public event Action<Path> OnPathCreated;
     public event Action<ChunkEventArgs> OnChunkAdded;
 
-    /// <summary>Baked navmesh tile landed in the mesh. May fire on a baker thread.</summary>
-    public event Action<int, int, DotRecast.Detour.DtMeshData> OnNavmeshTileAdded;
-
-    /// <summary>Navmesh tile evicted (LRU).</summary>
-    public event Action<int, int> OnNavmeshTileRemoved;
-
     public Action<LinesEventArgs> OnLinesAdded;
     public Action<SphereEventArgs> OnSphereAdded;
 
@@ -597,6 +591,7 @@ public sealed class PPatherService : IDisposable
     /// </summary>
     public bool StartBake(string? continent, (int x, int y)? adt)
     {
+        CancellationToken token;
         lock (bakeLock)
         {
             if (bakeStatus.Running)
@@ -612,20 +607,23 @@ public sealed class PPatherService : IDisposable
             bakeStatus.TilesTotal = bakeStatus.TilesDone = bakeStatus.TilesAlreadyOnDisk = 0;
             bakeStatus.ElapsedSeconds = 0;
             bakeStatus.Message = "starting";
+
+            bakeCts = new CancellationTokenSource();
+            token = bakeCts.Token;
         }
 
-        bakeCts = new CancellationTokenSource();
-        CancellationToken token = bakeCts.Token;
-
-        bakeTask = Task.Run(() => BakeWorker(continent, adt, token), token);
+        // The token is checked inside the bake, never handed to Task.Run: a task cancelled before
+        // it starts never runs at all, and the bake would stay Running for good.
+        bakeTask = Task.Run(() => BakeWorker(continent, adt, token));
         return true;
     }
 
     /// <summary>
-    /// Raised on the bake's thread when it ends - done, cancelled or failed - with its final
-    /// status. A host that plans from the same tile cache uses it to look at the disk again.
+    /// The running, or last, bake: completes once it has ended - done, cancelled or failed - and
+    /// <see cref="BakeStatus"/> says how. Its tile workers may still be finishing a tile then;
+    /// <see cref="Reset"/> waits for them.
     /// </summary>
-    public event Action<NavmeshBakeStatus>? BakeEnded;
+    public Task BakeTask => bakeTask ?? Task.CompletedTask;
 
     public bool CancelBake()
     {
@@ -683,15 +681,6 @@ public sealed class PPatherService : IDisposable
             {
                 bakeStatus.Running = false;
                 bakeStatus.ElapsedSeconds = GetElapsedTime(start).TotalSeconds;
-            }
-
-            try
-            {
-                BakeEnded?.Invoke(BakeStatus);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "A bake-ended handler failed");
             }
         }
     }
@@ -805,28 +794,18 @@ public sealed class PPatherService : IDisposable
     }
 
     /// <summary>
-    /// Deletes every cached navmesh tile for a continent, including stale
-    /// settings-hash directories from earlier bake parameters. A null continent
-    /// clears the lot. Returns bytes freed.
+    /// Deletes every cached navmesh tile for a continent, including stale settings-hash directories
+    /// from earlier bake parameters. A null continent clears the lot. Returns bytes freed. Nothing
+    /// may bake or read those tiles meanwhile: an engine that has them open keeps serving them, and a
+    /// tile open for reading cannot be deleted on Windows (the delete then throws, part done).
     /// </summary>
-    public long ClearNavmeshCache(string? continent)
+    public static long ClearNavmeshCache(DataConfig dataConfig, string? continent)
     {
-        if (bakeStatus.Running)
-        {
-            throw new InvalidOperationException("A bake is running; cancel it first.");
-        }
-
         string root = dataConfig.Navmesh;
         if (!System.IO.Directory.Exists(root))
         {
             return 0;
         }
-
-        // Drop the live mesh first so queries cannot serve tiles that are about
-        // to disappear from disk.
-        navmeshPathfinder?.Dispose();
-        navmeshPathfinder = null;
-        navmeshMapId = -1;
 
         long freed = 0;
 
@@ -934,10 +913,6 @@ public sealed class PPatherService : IDisposable
             bakeOptions.ResolveMinWorldZ(continent));
         navmeshPathfinder.Zones = CostZoneLoader.Load(logger, dataConfig.Road, continent,
             roadCoreHalfWidth: queryOptions.RoadCore);
-        navmeshPathfinder.Tiles.NotifyTileAdded =
-            (x, z, data) => OnNavmeshTileAdded?.Invoke(x, z, data);
-        navmeshPathfinder.Tiles.NotifyTileRemoved =
-            (x, z) => OnNavmeshTileRemoved?.Invoke(x, z);
         navmeshMapId = activeMapId;
 
         int bakedTiles = CountBakedTiles(cacheDir);
@@ -1278,7 +1253,7 @@ public sealed class PPatherService : IDisposable
     /// does not know - Pandaria on anything pre-Mists, and equally Northrend on a
     /// vanilla client.
     /// </summary>
-    private static List<string> KnownWorldContinents()
+    public static List<string> KnownWorldContinents()
     {
         List<string> known = new(WorldContinents.Length);
 
@@ -1296,7 +1271,8 @@ public sealed class PPatherService : IDisposable
     /// (<see cref="DataConfig.AreaGrid"/>) queried at runtime without the client,
     /// and the per-area world bounds (<see cref="DataConfig.Subzones"/>, keyed by
     /// map id) consumed by the WorldMapArea generator to disambiguate overlapping
-    /// zones. A null continent bakes all.
+    /// zones. A null continent bakes all. False when a continent was skipped: unknown, or
+    /// without game files to read it from.
     /// </summary>
     public bool BuildAreaGrid(string? continent)
     {
@@ -1304,11 +1280,13 @@ public sealed class PPatherService : IDisposable
             ? KnownWorldContinents()
             : [continent];
 
+        bool all = true;
         foreach (string name in continents)
         {
             if (!ContinentDB.NameToId.TryGetValue(name, out float mapId))
             {
                 logger.LogWarning("Area data bake: unknown continent {Continent}", name);
+                all = false;
                 continue;
             }
 
@@ -1323,6 +1301,7 @@ public sealed class PPatherService : IDisposable
                 logger.LogWarning(
                     "Area data bake skipped for {Continent}: no game archives in {MPQ}.",
                     name, dataConfig.MPQ);
+                all = false;
                 continue;
             }
 
@@ -1349,6 +1328,6 @@ public sealed class PPatherService : IDisposable
             }
         }
 
-        return true;
+        return all;
     }
 }

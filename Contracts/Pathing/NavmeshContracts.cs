@@ -1,8 +1,8 @@
 namespace Contracts.Pathing;
 
 /// <summary>One baked navmesh tile and its world footprint.</summary>
-/// <param name="X">Tile index along world x.</param>
-/// <param name="Z">Tile index along world y.</param>
+/// <param name="X">Tile index along world y (Detour's x: <c>(y - origin) / size</c>).</param>
+/// <param name="Z">Tile index along world x (Detour's z).</param>
 /// <param name="Resident">The planner has it loaded right now.</param>
 public sealed record NavmeshTile(int X, int Z, float MinX, float MinY, float MaxX, float MaxY, bool Resident);
 

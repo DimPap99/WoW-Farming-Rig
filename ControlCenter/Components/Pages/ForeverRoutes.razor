@@ -74,6 +74,13 @@ else
                             <span class="pa-chip pa-chip--warn" title="The text differs from the saved file">unsaved</span>
                         }
                         <span class="pa-spacer"></span>
+                        @if (!isNew)
+                        {
+                            <a class="pa-btn" href="@($"world?mode={WorldWorkspace.Route}&forever={Uri.EscapeDataString(selected)}")"
+                               title="Open the saved file as nodes on the World page's Route mode, to change its way on the map">
+                                <span class="oi oi-signpost" aria-hidden="true"></span> Open as nodes
+                            </a>
+                        }
                         <BusyButton Icon="check" Busy="@busy" OnClick="CheckAsync" Title="What a run would make of this text, without saving it">
                             Check
                         </BusyButton>
@@ -122,14 +129,31 @@ else
                             <p class="pa-faint">
                                 Coordinates are the zone map's, 0 to 100. A step is a <code>Travel</code> (to <code>To</code>, through
                                 <code>Via</code>) or a <code>Roam</code> (inside <code>Area</code> until <code>Until</code> holds:
-                                <code>Kills</code>, <code>Minutes</code> or <code>Level</code>). See <code>docs/forever-routes.md</code>.
+                                <code>Kills</code>, <code>Minutes</code> or <code>Level</code>); a <code>Visit</code> goes to the nearest
+                                <code>Role</code> (<code>vendor</code>, <code>innkeeper</code>, <code>classtrainer</code>...), an
+                                <code>Npc</code>, or where a quest is given (<code>QuestStart</code>) or handed in (<code>QuestEnd</code>); a
+                                <code>Quest</code> roams where quest <code>Id</code> sends until <code>Until</code> holds. A quest's id is in
+                                the map's Layers. See <code>docs/forever-routes.md</code>.
                             </p>
                         </aside>
                         </div>
 
                         @* The route as the text says, drawn as it is written: the travel's legs planned, the roams' areas. *@
                         <div class="pa-route-map">
-                            <WorldView Scene="@scene" Picking="@picking" OnPick="PickedAsync">
+                            <WorldView @ref="view" Scene="@scene" Picking="@picking" OnPick="PickedAsync" OnMarker="MarkerClickedAsync">
+                                <Panel Title="Layers" Icon="layers" Position="top-left" Collapsed="true">
+                                    <WorldLayers @ref="layers" Id="pa-forever-layers" World="@world"
+                                                 Continent="@(scene.Continent.Length == 0 ? null : scene.Continent)" OnChanged="LayersChanged"
+                                                 OnFocus="CenterAsync" OnWaypoint="PickAtAsync"
+                                                 WaypointTitle="Pick it: its coordinates, to insert in the text">
+                                        <QuestActions Context="quest">
+                                            <button class="pa-btn" type="button" @onclick="() => InsertQuestAsync(quest)"
+                                                    title="Put its steps where the cursor is in the text: go where it is given, roam its camp, go where it is handed in">
+                                                <span class="oi oi-code" aria-hidden="true"></span> Insert its steps
+                                            </button>
+                                        </QuestActions>
+                                    </WorldLayers>
+                                </Panel>
                                 <div class="pa-route-pick">
                                     <div class="pa-actions">
                                         <button class="pa-btn @(picking ? "pa-btn--primary" : null)" type="button" @onclick="() => picking = !picking"
@@ -172,7 +196,9 @@ else
           // map's, 0 to 100, as the game shows them; "UIMapId" names the map (1411 is
           // Durotar), and a step may name another with its own "UIMapId". A step is a
           // Travel (walk to "To", through the "Via" points) or a Roam (hunt inside
-          // "Area" until "Until" holds: "Kills", "Minutes" or "Level").
+          // "Area" until "Until" holds: "Kills", "Minutes" or "Level"); a Visit goes
+          // to the nearest "Role" (vendor, innkeeper...), an "Npc", or a quest's
+          // "QuestStart" or "QuestEnd"; a Quest roams where quest "Id" sends.
           "Name": "New route",
           "UIMapId": 1411,
           "Steps": [
@@ -198,12 +224,21 @@ else
     /// <summary>The map is drawn again this long after the typing stops, and while legs are being planned.</summary>
     private const int RedrawMs = 400;
 
+    /// <summary>A quest's steps inserted roam its camp this long: the data has no counts, so the person sets the end.</summary>
+    private const int QuestMinutes = 15;
+
+    /// <summary>How the template indents a step.</summary>
+    private const string StepIndent = "    ";
+
     /// <summary>A point clicked on the map: its zone, and its coordinates on that zone's map as the text writes them.</summary>
     private sealed record Picked(ZoneInfo Zone, string Text);
 
     private ElementReference editor;
+    private WorldView? view;
+    private WorldLayers? layers;
     private WorldSnapshot? world;
     private WorldScene scene = WorldScene.Empty(string.Empty);
+    private WorldMarker[] routeMarkers = [];
     private RouteLegs legs = null!;
     private readonly CancellationTokenSource plans = new();
     private bool redrawQueued;
@@ -270,17 +305,19 @@ else
             return;
         }
 
-        if (!ForeverRouteSketch.TryRead(text, out List<ForeverStepSketch> steps, out string error))
+        if (!ForeverRouteSketch.TryRead(text, out ForeverSketch read, out string error))
         {
             sketch = error;
             return;
         }
 
+        ForeverStepSketch[] steps = read.Steps;
+
         List<Point3> travel = [];
         List<WorldShape> shapes = [];
         string? continent = null;
         int mapId = -1;
-        for (int i = 0; i < steps.Count; i++)
+        for (int i = 0; i < steps.Length; i++)
         {
             if (world.Zone(steps[i].UiMapId) is not ZoneInfo zone)
             {
@@ -310,13 +347,15 @@ else
         sketch = null;
         ContinentInfo? info = world.Continent(continent);
         WorldSnapshot snapshot = world;
-        legs.Plan(travel, RouteSearch.Band, at => snapshot.ZoneAt(info?.MapId ?? mapId, at)?.UiMapId ?? 0, plans.Token);
+        // Planned as the run plans: with the cost zones only when the route applies them.
+        legs.Plan(travel.Zip(travel.Skip(1)), RouteSearch.Band, read.CostZones, at => snapshot.ZoneAt(info?.MapId ?? mapId, at)?.UiMapId ?? 0,
+            plans.Token);
 
         List<WorldRoute> routes = [];
         List<WorldMarker> markers = [];
         for (int i = 0; i + 1 < travel.Count; i++)
         {
-            Leg leg = legs.Get(travel[i], travel[i + 1], RouteSearch.Band);
+            Leg leg = legs.Get(travel[i], travel[i + 1], RouteSearch.Band, read.CostZones);
             routes.AddRange(RouteDrawing.Of($"leg-{i}", $"Leg {i + 1} to {i + 2}", leg.Status, leg.Points, travel[i], travel[i + 1], leg.Detail, markers));
         }
 
@@ -325,7 +364,37 @@ else
             shapes.Add(WorldShape.Of("travel", WorldShapes.Points, WorldKinds.Waypoints, travel));
         }
 
-        scene = new WorldScene(continent, [.. routes], [.. markers], ZoneLabels.Of(world, continent), frame, [.. shapes]);
+        routeMarkers = [.. markers];
+        scene = new WorldScene(continent, [.. routes], [.. layers?.Markers ?? [], .. routeMarkers], ZoneLabels.Of(world, continent), frame,
+            [.. shapes]);
+    }
+
+    // The layers' markers changed: the route's stay over them.
+    private void LayersChanged()
+    {
+        scene = scene with { Markers = [.. layers?.Markers ?? [], .. routeMarkers], Frame = false, FrameOn = null };
+    }
+
+    private async Task MarkerClickedAsync(string id)
+    {
+        if (layers is not null)
+        {
+            await layers.MarkerClickedAsync(id);
+        }
+    }
+
+    private async Task CenterAsync(Point3 at)
+    {
+        if (view is not null)
+        {
+            await view.CenterOnAsync(at);
+        }
+    }
+
+    // A place of the layers' quest, picked as a click on the map would pick it.
+    private async Task PickAtAsync(Point3 at)
+    {
+        await PickedAsync(new WorldPoint(at.X, at.Y, at.Z));
     }
 
     // A point clicked: named on the map of the zone the area grid puts it in.
@@ -360,6 +429,26 @@ else
         if (picked is not null)
         {
             await js.InvokeVoidAsync("pathingUi.insertAtCursor", Token, editor, picked.Text);
+        }
+    }
+
+    // A quest's steps as a route writes them, for the text, ending on a new line at the steps' indent so
+    // a step after the cursor keeps its own; taking and handing the quest in are still the player's.
+    private async Task InsertQuestAsync(QuestDetail quest)
+    {
+        string id = quest.Id.ToString(CultureInfo.InvariantCulture);
+        string steps = $$"""
+            { "Visit": { "QuestStart": {{id}} } },  // {{quest.Name}}
+                { "Quest": { "Id": {{id}}, "Until": { "Minutes": {{QuestMinutes}} } } },
+                { "Visit": { "QuestEnd": {{id}} } },
+
+            """ + StepIndent;
+        try
+        {
+            await js.InvokeVoidAsync("pathingUi.insertAtCursor", Token, editor, steps);
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or OperationCanceledException)
+        {
         }
     }
 

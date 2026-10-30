@@ -7,6 +7,7 @@ using Newtonsoft.Json;
 
 using PathingService.CostZones;
 using PathingService.Hosting;
+using PathingService.World;
 
 using PPather.Graph;
 using PPather.Navmesh;
@@ -159,7 +160,7 @@ public sealed class CostZoneStoreTests
     // The store as the service has it: the client's map data names its continents.
     private static CostZoneStore Store(TempDataRoot data)
     {
-        return new CostZoneStore(data.Config(), new WorldMapAreaDB(data.Config()));
+        return new CostZoneStore(data.Config(), new ClientContinents(data.Config(), new WorldMapAreaDB(data.Config())));
     }
 
     private static (string? Problem, double Cells) Check(RoadData data)

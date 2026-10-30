@@ -43,10 +43,6 @@ const pieces = [
         file: 'leaflet-paths.js', starts: 'function setImage(style, npcType) {',
         about: 'Zone outlines and labels, route files drawn on the map, and the draw and edit tools with their right-click menu.',
     },
-    {
-        file: 'leaflet-signalr.js', starts: '////////////// signalR ///////////////////////////', back: 1,
-        about: 'The live view over the Pathing Service\'s watch hub, proxied by the Control Center; nothing happens where signalR is not loaded.',
-    },
 ];
 
 const BOM = String.fromCharCode(0xFEFF);

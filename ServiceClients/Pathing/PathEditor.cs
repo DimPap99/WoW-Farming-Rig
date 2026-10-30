@@ -150,15 +150,27 @@ public sealed class PathEditor
         Selected = position;
     }
 
-    /// <summary>Keeps every other point, the first included.</summary>
+    /// <summary>
+    /// Keeps every other point, the first included. The selected point, or the one kept before it
+    /// when it went, stays selected at its new place.
+    /// </summary>
     public void Halve()
     {
+        int selected = Selected == default ? -1 : FindSelected();
+
         int kept = 0;
         for (int i = 0; i < points.Count; i += 2)
         {
             points[kept++] = points[i];
         }
         points.RemoveRange(kept, points.Count - kept);
+
+        if (selected >= 0 && points.Count > 0)
+        {
+            // Kept points were at even places: the selected one is at half its place, or was the one after.
+            selectedIndex = Math.Min(selected / 2, points.Count - 1);
+            Selected = points[selectedIndex];
+        }
     }
 
     /// <summary>Puts a point halfway between each pair of neighbours.</summary>
@@ -178,11 +190,12 @@ public sealed class PathEditor
         return Vector2.Distance(new Vector2(a.X, a.Y) * MapDistanceScale, new Vector2(b.X, b.Y) * MapDistanceScale);
     }
 
-    // Halving can leave the last seen place past the end; the search starts over then.
+    // From where it was last seen, so the right one of several equal points is found; from the start
+    // when it is not there or after (points moved back, or the place is past the end).
     private int FindSelected()
     {
         Vector3 selected = Selected;
-        int start = selectedIndex <= points.Count ? selectedIndex : 0;
-        return points.FindIndex(start, p => p == selected);
+        int found = points.FindIndex(Math.Min(selectedIndex, points.Count), p => p == selected);
+        return found >= 0 ? found : points.FindIndex(p => p == selected);
     }
 }

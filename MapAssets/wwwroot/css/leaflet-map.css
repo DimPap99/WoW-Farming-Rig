@@ -61,3 +61,51 @@
 #subZoneName {
     top: 140px;
 }
+
+/* The map's notices (mapNotice in leaflet-watch.js): refusals, failed saves, "offline". */
+.map-notices {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: min(520px, calc(100vw - 40px));
+}
+
+.map-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    border-left: 4px solid #e05555;
+    background-color: #222222e6;
+    color: #fff;
+    font-size: 14px;
+    line-height: 1.35;
+}
+
+.map-notice--warn {
+    border-left-color: #e0a030;
+}
+
+.map-notice--info {
+    border-left-color: #4a9ad8;
+}
+
+.map-notice span {
+    flex: 1;
+    overflow-wrap: anywhere;
+}
+
+.map-notice-close {
+    background: none;
+    border: none;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 2px;
+}
+
+.map-notice-close:hover {
+    color: #fff;
+}

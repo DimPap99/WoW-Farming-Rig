@@ -105,26 +105,30 @@ internal static class TestData
 /// <summary>A data root in a temporary folder, for tests that write; deleted afterwards.</summary>
 internal sealed class TempDataRoot : IDisposable
 {
-    public TempDataRoot(bool withMapData = false)
+    public TempDataRoot(bool withMapData = false, string client = TestData.Client)
     {
+        Client = client;
         Root = Path.Combine(Path.GetTempPath(), "ServiceTests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
 
         if (withMapData)
         {
             // The planner needs the client's map areas to start, even when it plans nothing.
-            string dbc = Path.Combine(Root, "dbc", TestData.Client);
+            string dbc = Path.Combine(Root, "dbc", client);
             Directory.CreateDirectory(dbc);
-            File.Copy(Path.Combine(TestData.RepoJson, "dbc", TestData.Client, "WorldMapArea.json"),
+            File.Copy(Path.Combine(TestData.RepoJson, "dbc", client, "WorldMapArea.json"),
                 Path.Combine(dbc, "WorldMapArea.json"));
         }
     }
 
     public string Root { get; }
 
+    /// <summary>The client whose data this root holds (<c>--exp</c>).</summary>
+    public string Client { get; }
+
     public DataConfig Config()
     {
-        return new DataConfig { Root = Root, Exp = TestData.Client };
+        return new DataConfig { Root = Root, Exp = Client };
     }
 
     /// <summary>Copies the repository's <c>Json/<paramref name="relative"/></c> to the same place here; returns the copy.</summary>

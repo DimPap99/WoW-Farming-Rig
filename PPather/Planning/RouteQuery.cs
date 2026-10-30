@@ -1,5 +1,4 @@
 #nullable enable
-using DotRecast.Detour;
 
 using PPather.Navmesh;
 
@@ -70,8 +69,10 @@ public enum RoutePlanStatus
 /// <param name="To">Destination, with the same height rule.</param>
 /// <param name="Tuning">Jitter and edge margin for this query only.</param>
 /// <param name="Reach">The band around the straight line, or the whole continent.</param>
+/// <param name="Zones">The cost zones this query is priced by: null for the continent's authored ones (the lane's),
+/// <see cref="CostZones.Empty"/> for none, as a run that ignores them walks.</param>
 public readonly record struct RouteQuery(int UiMapId, RouteSpace Space, Vector3 From, Vector3 To,
-    NavmeshQueryTuning Tuning = default, RouteReach Reach = RouteReach.Band);
+    NavmeshQueryTuning Tuning = default, RouteReach Reach = RouteReach.Band, CostZones? Zones = null);
 
 /// <summary>What <see cref="RoutePlanner.Find"/> answered.</summary>
 /// <param name="Status">How the query ended.</param>
@@ -94,6 +95,3 @@ public sealed record RouteOutcome(RoutePlanStatus Status, Vector3[] Points, stri
 /// <param name="Detail">Why nothing, or only part of the way, was found; null when found.</param>
 public sealed record PlannedRoute(string Continent, Vector3 From, Vector3 To, Vector3[] Points, RoutePlanStatus Status,
     double ElapsedMs, string? Detail);
-
-/// <summary>A navmesh tile a planner lane loaded (with its mesh data) or evicted (no data).</summary>
-public readonly record struct LaneTile(string Continent, int X, int Z, DtMeshData? Data);

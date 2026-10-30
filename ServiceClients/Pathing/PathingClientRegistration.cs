@@ -23,8 +23,10 @@ public static class PathingClientRegistration
     public static readonly TimeSpan TotalTimeout = TimeSpan.FromSeconds(45);
 
     /// <summary>
-    /// Every call is safe to repeat (routes are queries, saves replace, deletes are idempotent), but
-    /// only what <see cref="IsWorthRetrying"/> names is repeated.
+    /// How often a call is repeated, and only for what <see cref="IsWorthRetrying"/> names. Routes are
+    /// queries, saves replace and deletes are idempotent, so repeating them is safe; starting a bake or
+    /// an area grid is not quite: when the answer to one the service accepted is lost on the way back,
+    /// the repeat answers 409, a job is running.
     /// </summary>
     public const int Retries = 2;
 

@@ -29,7 +29,8 @@ public sealed class RouteHandler(RoutePlanner planner)
             request.Space == CoordinateSpace.Map ? RouteSpace.Map : RouteSpace.World,
             ToVector(request.From), ToVector(request.To),
             new NavmeshQueryTuning(tuning?.JitterYards ?? 0f, tuning?.JitterSeed, tuning?.EdgeMarginYards),
-            request.Search == RouteSearch.Continent ? RouteReach.Continent : RouteReach.Band);
+            request.Search == RouteSearch.Continent ? RouteReach.Continent : RouteReach.Band,
+            request.CostZones == CostZoneUse.Ignore ? PPather.Navmesh.CostZones.Empty : null);
 
         RouteOutcome outcome = planner.Find(query, token);
 

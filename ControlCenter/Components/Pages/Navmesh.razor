@@ -1,5 +1,3 @@
-@page "/navmesh"
-
 @inherits ControlCenterComponent
 
 @inject IPathingClient pathing
@@ -7,14 +5,12 @@
 @inject PathingStatus status
 @inject IJSRuntime js
 
-<PageTitle>Navmesh · Control Center</PageTitle>
-
 @* Where the navmesh is baked, and baking more: each ADT that has baked tiles is outlined in how
    much of it is baked, the tiles the planner holds now can be shown, an ADT is chosen on the map
    to bake, or the whole continent; a bake's progress shows as it goes and the map fills in. Bakes
    read the game files where the Pathing Service runs, and are refused there without them. *@
 
-<WorldView Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="Chosen" OnSelected="ShapeSelected">
+<WorldModeView Scene="@scene" Tools="@Tools" @bind-Tool="tool" OnDrawn="Chosen" OnSelected="ShapeSelected">
     <Panel Title="Navmesh" Icon="grid-three-up" Position="top-left" Class="pa-panel--tall">
         @if (world is null)
         {
@@ -95,7 +91,7 @@
             </div>
         }
     </Panel>
-</WorldView>
+</WorldModeView>
 
 @if (!status.Online)
 {

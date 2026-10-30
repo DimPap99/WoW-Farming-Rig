@@ -85,7 +85,7 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
                 $"'{type}' is not an NPC type; use one of {string.Join(", ", NpcFlagsExtensions.ToDictionary().Keys.Order())}");
         }
 
-        WorldMapArea hitbox = maps.GetByAreaIdHit(zone.AreaID);
+        WorldMapArea hitbox = maps.HitBoxOf(zone);
         FrozenDictionary<int, Vector3[]> spawns = Spawns(zone.MapID);
 
         List<NpcInfo> found = [];
@@ -141,7 +141,7 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
             return StoreResult<SpawnPoint[]>.Invalid($"uiMap {uiMapId} is not in the {data.Exp} map data");
         }
 
-        WorldMapArea hitbox = maps.GetByAreaIdHit(zone.AreaID);
+        WorldMapArea hitbox = maps.HitBoxOf(zone);
         bool Inside(Vector3 at)
         {
             Vector3 map = WorldMapAreaDB.ToMap_FlipXY(at, hitbox);
@@ -219,14 +219,15 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
 
     private static Point3 Point(Vector3 v) => new(v.X, v.Y, v.Z);
 
+
     // The zone's Wowhead file: its herbs, veins and skinnable creatures; null when the client has none.
     private AreaNodes? AreaFile(int areaId)
     {
         lock (gate)
         {
-            if (!areaFiles.TryGetValue(areaId, out AreaNodes? nodes))
+            if (!areaFiles.TryGetValue(areaId, out AreaNodes? nodes) &&
+                TryRead(Path.Join(data.ExpArea, $"{areaId}.json"), out nodes))
             {
-                nodes = ReadOrEmpty<AreaNodes>(Path.Join(data.ExpArea, $"{areaId}.json"));
                 areaFiles[areaId] = nodes;
             }
 
@@ -238,13 +239,17 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
     {
         lock (gate)
         {
-            if (!mailboxesByMap.TryGetValue(mapId, out Vector3[]? mailboxes))
+            if (mailboxesByMap.TryGetValue(mapId, out Vector3[]? mailboxes))
             {
-                mailboxes = ReadOrEmpty<Vector3[]>(Path.Join(data.MailboxLocations, $"{mapId}.json")) ?? [];
-                mailboxesByMap[mapId] = mailboxes;
+                return mailboxes;
             }
 
-            return mailboxes;
+            if (!TryRead(Path.Join(data.MailboxLocations, $"{mapId}.json"), out mailboxes))
+            {
+                return [];
+            }
+
+            return mailboxesByMap[mapId] = mailboxes ?? [];
         }
     }
 
@@ -279,7 +284,12 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
     {
         lock (gate)
         {
-            return creatures ??= ReadOrEmpty<Creature[]>(Path.Join(data.ExpDbc, CreaturesFile)) ?? [];
+            if (creatures is null && TryRead(Path.Join(data.ExpDbc, CreaturesFile), out Creature[]? read))
+            {
+                creatures = read ?? [];
+            }
+
+            return creatures ?? [];
         }
     }
 
@@ -287,38 +297,44 @@ public sealed class WorldCatalog(DataConfig data, WorldMapAreaDB maps, CoverageC
     {
         lock (gate)
         {
-            if (!spawnsByMap.TryGetValue(mapId, out FrozenDictionary<int, Vector3[]>? spawns))
+            if (spawnsByMap.TryGetValue(mapId, out FrozenDictionary<int, Vector3[]>? spawns))
             {
-                Dictionary<int, Vector3[]>? read = ReadOrEmpty<Dictionary<int, Vector3[]>>(
-                    Path.Join(data.NpcSpawnLocations, $"{mapId}.json"));
-                spawns = (read ?? []).ToFrozenDictionary();
-                spawnsByMap[mapId] = spawns;
+                return spawns;
             }
 
-            return spawns;
+            if (!TryRead(Path.Join(data.NpcSpawnLocations, $"{mapId}.json"), out Dictionary<int, Vector3[]>? read))
+            {
+                return FrozenDictionary<int, Vector3[]>.Empty;
+            }
+
+            return spawnsByMap[mapId] = (read ?? []).ToFrozenDictionary();
         }
     }
 
-    // Both files are optional enrichment generated per client; a client without them has no NPCs here.
-    private T? ReadOrEmpty<T>(string file) where T : class
+    // The files are optional enrichment generated per client: a client without one has nothing from
+    // it, and that is kept (true, null). One that is there but cannot be read - a script rewriting it -
+    // is not kept (false): the next request reads it again.
+    private bool TryRead<T>(string file, out T? value) where T : class
     {
+        value = null;
         if (!File.Exists(file))
         {
             if (logger.IsEnabled(LogLevel.Information))
             {
                 logger.LogInformation("{File} not found; NPC routes have no data for it", file);
             }
-            return null;
+            return true;
         }
 
         try
         {
-            return JsonConvert.DeserializeObject<T>(File.ReadAllText(file));
+            value = JsonConvert.DeserializeObject<T>(File.ReadAllText(file));
+            return true;
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or IOException)
         {
-            logger.LogWarning(ex, "{File} is not readable", file);
-            return null;
+            logger.LogWarning(ex, "{File} could not be read; it is read again on the next request", file);
+            return false;
         }
     }
 }

@@ -155,8 +155,11 @@ public sealed class NavmeshTileGraph
         return null;
     }
 
-    /// <summary>The graph kept in <paramref name="cacheDir"/> when the tiles have not changed since, else null.</summary>
-    public static NavmeshTileGraph? TryLoad(string cacheDir)
+    /// <summary>
+    /// The graph kept in <paramref name="cacheDir"/> when the tiles have not changed since it was built
+    /// (<paramref name="stamp"/>, the tiles as they are now: <see cref="TileSetStamp.Of"/>), else null.
+    /// </summary>
+    public static NavmeshTileGraph? TryLoad(string cacheDir, TileSetStamp stamp)
     {
         string file = Path.Combine(cacheDir, FileName);
         if (!File.Exists(file))
@@ -164,7 +167,6 @@ public sealed class NavmeshTileGraph
             return null;
         }
 
-        TileSetStamp stamp = TileSetStamp.Of(cacheDir);
         using BinaryReader reader = new(File.OpenRead(file));
         if (reader.ReadInt32() != Magic || reader.ReadInt32() != FormatVersion || TileSetStamp.Read(reader) != stamp)
         {
@@ -267,7 +269,7 @@ public sealed class NavmeshTileGraph
     {
         long started = Stopwatch.GetTimestamp();
         SortedDictionary<int, List<int>> rows = [];
-        foreach (string file in Directory.EnumerateFiles(cacheDir, NavmeshTileFiles.Pattern))
+        foreach (string file in TileSetStamp.FilesOf(cacheDir))
         {
             if (NavmeshTileFiles.TryTileOf(file, out int x, out int z))
             {
@@ -546,7 +548,10 @@ public sealed class NavmeshTileGraph
     }
 }
 
-/// <summary>What the tile files of a cache directory were when a graph was built from them: count, bytes and newest write.</summary>
+/// <summary>
+/// What the tile files of a cache directory were when a graph was built from them: count, bytes and
+/// newest write. A directory that does not exist has none: a continent nothing was baked for.
+/// </summary>
 public readonly record struct TileSetStamp(int Count, long Bytes, long NewestTicks)
 {
     public static TileSetStamp Of(string cacheDir)
@@ -554,7 +559,7 @@ public readonly record struct TileSetStamp(int Count, long Bytes, long NewestTic
         int count = 0;
         long bytes = 0;
         long newest = 0;
-        foreach (string file in Directory.EnumerateFiles(cacheDir, NavmeshTileFiles.Pattern))
+        foreach (string file in FilesOf(cacheDir))
         {
             FileInfo info = new(file);
             count++;
@@ -563,6 +568,12 @@ public readonly record struct TileSetStamp(int Count, long Bytes, long NewestTic
         }
 
         return new TileSetStamp(count, bytes, newest);
+    }
+
+    /// <summary>The tile files in <paramref name="cacheDir"/>; none when it does not exist.</summary>
+    public static IEnumerable<string> FilesOf(string cacheDir)
+    {
+        return Directory.Exists(cacheDir) ? Directory.EnumerateFiles(cacheDir, NavmeshTileFiles.Pattern) : [];
     }
 
     public static TileSetStamp Read(BinaryReader reader)

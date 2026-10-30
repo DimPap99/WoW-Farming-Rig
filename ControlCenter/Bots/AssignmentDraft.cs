@@ -1,3 +1,4 @@
+using Contracts;
 using Contracts.Bots;
 
 using ServiceClients.Bots;
@@ -15,7 +16,7 @@ public sealed record AssignmentDraft
     public const int DefaultMinutes = 30;
 
     /// <summary>The data name an agent reports for a WoW: Forever client (<see cref="AgentGame.Client"/>).</summary>
-    public const string ForeverClient = "forever";
+    public const string ForeverClient = GameClients.Forever;
 
     public BotRuntimeKind Kind { get; set; } = BotRuntimeKind.Forever;
 

@@ -53,6 +53,7 @@ public static class PathingServiceRegistration
             sp.GetRequiredService<IOptions<NavmeshBakeOptions>>().Value,
             sp.GetRequiredService<IOptions<NavmeshQueryOptions>>().Value));
 
+        services.AddSingleton<ClientContinents>();
         services.AddSingleton<RouteHandler>();
         services.AddSingleton<RecordedPathStore>();
         services.AddSingleton<ForeverRouteLibrary>();
@@ -60,6 +61,7 @@ public static class PathingServiceRegistration
         services.AddSingleton<SyncLibrary>();
         services.AddSingleton<CoverageCache>();
         services.AddSingleton<WorldCatalog>();
+        services.AddSingleton<QuestCatalog>();
         services.AddSingleton<LocationCatalog>();
         services.AddSingleton<TestRoutes>();
         services.AddSingleton<BakeAdmin>();
@@ -67,8 +69,8 @@ public static class PathingServiceRegistration
         services.AddSingleton<WatchBroadcaster>();
         services.AddHostedService(sp => sp.GetRequiredService<WatchBroadcaster>());
 
-        // No LZ4: the browser's MessagePack reader does not know MessagePack-CSharp's compression
-        // extension, and a compressed stream reaches the 3D view as garbage.
+        // No LZ4: a reader without MessagePack-CSharp's compression extension, a browser's for one,
+        // gets garbage, and routes are small.
         services.AddSignalR().AddMessagePackProtocol();
 
         services.ConfigureHttpJsonOptions(options => ContractJson.Apply(options.SerializerOptions));

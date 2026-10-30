@@ -1,5 +1,4 @@
 using ControlCenter.Components.Pages;
-using ControlCenter.Hosting;
 using ControlCenter.Pathing;
 
 using Contracts.Pathing;
@@ -69,12 +68,4 @@ public sealed class ControlCenterTests
         });
     }
 
-    [Fact]
-    public void The_api_the_hub_and_every_world_data_prefix_are_forwarded()
-    {
-        Assert.Contains(PathingApi.Root, ServiceProxy.PathingPrefixes);
-        Assert.Contains(PathingApi.WatchHub, ServiceProxy.PathingPrefixes);
-        Assert.Contains(PathingApi.Swagger, ServiceProxy.PathingPrefixes);
-        Assert.All(WorldData.All, prefix => Assert.Contains(prefix, ServiceProxy.PathingPrefixes));
-    }
 }

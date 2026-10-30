@@ -103,7 +103,7 @@ internal static partial class LogicTest
         ForeverRestActivity rest = new(NullLogger<ForeverRestActivity>.Instance, null!, chooser);
         ForeverSelector selector = new(NullLogger.Instance,
             new ForeverTaskActivity(NullLogger<ForeverTaskActivity>.Instance,
-                ForeverAgenda.For(new ForeverRunOptions()), engaged, chooser, null!, config, null!, new ForeverMobMemory()),
+                ForeverAgenda.For(new ForeverRunOptions()), engaged, chooser, null!, config, null!, new ForeverMobMemory(), null!),
             rest,
             new ForeverThreatActivity(NullLogger<ForeverThreatActivity>.Instance, engaged, chooser, null!, config, new ForeverCorpses()),
             new ForeverLootActivity(NullLogger<ForeverLootActivity>.Instance, null!, new ForeverCorpses(), chooser, config),
@@ -190,7 +190,7 @@ internal static partial class LogicTest
             lap.Current == first && lap.Laps == 1, lap.Describe());
 
         ForeverTaskActivity tasks = new(NullLogger<ForeverTaskActivity>.Instance, new ForeverAgenda([first, last]),
-            NewEngage(NewNavigator(), config), NewNavigator(), null!, config, null!, new ForeverMobMemory());
+            NewEngage(NewNavigator(), config), NewNavigator(), null!, config, null!, new ForeverMobMemory(), null!);
         string gaveUp = tasks.FallBack("no spot could be reached");
         check("task: a task that fails is given up and the agenda goes on with the next",
             gaveUp.Contains("given up") && gaveUp.EndsWith($"next: {last.Name}"), gaveUp);

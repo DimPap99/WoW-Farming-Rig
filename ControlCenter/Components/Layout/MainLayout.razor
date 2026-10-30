@@ -38,23 +38,32 @@
     private bool collapsed;
     private bool relayout;
 
+    // The layout is under every page: a script call that throws here would end every circuit at its
+    // first render (pathing-ui.js not loaded, say), so each is caught and the rail works without it.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        try
         {
-            collapsed = await js.InvokeAsync<string?>("pathingUi.storageGet", RailKey) == "1";
-            if (collapsed)
+            if (firstRender)
             {
-                StateHasChanged();
+                collapsed = await js.InvokeAsync<string?>("pathingUi.storageGet", RailKey) == "1";
+                if (collapsed)
+                {
+                    StateHasChanged();
+                }
+                return;
             }
-            return;
-        }
 
-        if (relayout)
+            if (relayout)
+            {
+                // The map sizes itself on window resize; the stage changed without one.
+                relayout = false;
+                await js.InvokeVoidAsync("pathingUi.relayout");
+            }
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or OperationCanceledException)
         {
-            // The map sizes itself on window resize; the stage changed without one.
-            relayout = false;
-            await js.InvokeVoidAsync("pathingUi.relayout");
+            // The rail stays as it is; nothing else depends on the script.
         }
     }
 
@@ -62,6 +71,13 @@
     {
         collapsed = !collapsed;
         relayout = true;
-        await js.InvokeVoidAsync("pathingUi.storageSet", RailKey, collapsed ? "1" : "0");
+        try
+        {
+            await js.InvokeVoidAsync("pathingUi.storageSet", RailKey, collapsed ? "1" : "0");
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or OperationCanceledException)
+        {
+            // Not remembered for the next visit, and that is all.
+        }
     }
 }

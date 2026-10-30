@@ -4,8 +4,10 @@ The Control Center from `docs/service-architecture.md`: the place to watch route
 and cost zones, administer bakes, and run the fleet - a console per bot - for every bot. It holds
 no data and plans nothing. It is a client of the Pathing Service and the Bot Manager, and it never
 references `PPather`, `Core`, `Game`, `WinAPI` or `Frontend`: only `Contracts` and
-`ServiceClients`. Every page that shows the world is on one map, the world view (deck.gl); the
-Leaflet map is BlazorServer's alone now (`MapAssets`), and the Babylon 3D view is gone.
+`ServiceClients`. Every page that shows the world is a mode of one page, the World workspace
+(`/world`), over one map, the world view (deck.gl); the Leaflet map is BlazorServer's alone now
+(`MapAssets`), and the Babylon 3D view is gone. How it came to be and what is next:
+`docs/world-workspace-plan.md`.
 
 ## Run
 
@@ -28,12 +30,12 @@ client and would start a real run.
 ```
 Program.cs                         host (a class, so tests can host it beside the service)
 Hosting/ControlCenterRegistration  AddControlCenter / UseControlCenter - the composition root
-Hosting/ServiceProxy.cs            YARP: /api/v1, /watchHub, /swagger and WorldData to the service
+Hosting/ServiceProxy.cs            YARP: /api/v1, /swagger, /tiles and /path to the service, the forward rules first
 Hosting/ServiceStatus.cs           the base of both pollers (2 s): Online, Error, Changed,
                                    Reconnected; ServiceDescription names a service for the pages
 Hosting/ControlCenterLogging.cs    Serilog to console + daily file
-Pathing/PathingStatus.cs           the Pathing Service's poller: + capabilities, health
-Pathing/WorldCache.cs              zones, continents, places, test routes; reloads on reconnect
+Pathing/PathingStatus.cs           the Pathing Service's poller: + capabilities, health; only that service's health counts
+Pathing/WorldCache.cs              zones, continents, places, test routes; read again on Reconnected
 Pathing/WatchFeed.cs               the routes the service plans, as a route watcher of /watchHub,
                                    connected while a page watches; WatchConnectionFactory
 Pathing/ZoneLookup.cs              a point's zone from the service's area grid, kept per cell
@@ -48,23 +50,26 @@ World/WorldScene.cs                what a page shows on the world view: routes, 
 World/RouteDrawing.cs              a route's lines by how it ended (found, partial + gap, none, planning)
 World/ZoneLabels.cs                zone names on a continent; a point as a player reads it
 World/AdtGrid.cs                   the bake API's ADT grid (x down from the world's edge along x)
-Routes/RouteLegs.cs                the route designer's legs: one request per pair of waypoints, kept
-                                   by their ends, four at a time
-Routes/ForeverExport.cs            a designed route as a Forever route file (travel per zone, roams)
-Routes/RecordedPaths.cs            library files as waypoints and back (one zone's map coordinates)
-Routes/ForeverRouteSketch.cs       a Forever route's text read leniently for drawing as it is written
+(ServiceClients/Routes)            the route designer's model, shared with every client: RouteEditor
+                                   (nodes, legs, undo), RouteLegs, RoutePoints, the Forever route writer
+                                   and reader, RecordedPaths, ForeverRouteSketch
 Components/App.razor, Routes.razor the document; InteractiveServer without prerendering
 Components/Layout/                 MainLayout (rail), NavMenu, StatusBar
-Components/Shared/                 ControlCenterComponent (base), WorldView, Panel, BusyButton,
-                                   ResultLine, OfflineNotice, Terminal, Aria, Words (counts and
-                                   yards), Dialogs (confirm), JsTeardown, ...
+Components/Shared/                 ControlCenterComponent (base), WorldView, WorldModeView and
+                                   WorldModeSlot (a page as a mode of the workspace), WorldLayers (what
+                                   is where: NPCs, nodes, quests), Panel, BusyButton, ResultLine,
+                                   OfflineNotice, Terminal, Aria, Words (counts, yards, durations),
+                                   Dialogs (confirm), JsTeardown, ...
 Components/Bots/                   BotCard, BotState, BotLive, BotCommands, AssignmentForm,
                                    RunHistory, BotLog, FeedChip; BotFormat (words and styles)
 Components/Designer/               the route designer's sections: RouteLibrary (open, save, delete
-                                   recorded paths), ForeverSave (the route as a Forever route file);
-                                   not Components/Routes, which would clash with the router
-Components/Pages/                  LiveView (/), WorldMap (/map), RouteMap (/routes, the route
-                                   designer), NpcRoutes, CostZones (/cost-zones), Navmesh (/navmesh),
+                                   recorded paths), ForeverLibrary (open a Forever route file as nodes,
+                                   save the design as one); not Components/Routes, which would clash
+                                   with the router
+Components/Pages/                  WorldWorkspace (/, /world?mode=...: the modes below over one view),
+                                   its modes WorldMap (explore), RouteMap (route, the designer),
+                                   NpcRoutes (npcs), CostZones (costs), Navmesh (navmesh), LiveView
+                                   (live); OldWorldPages (their old addresses, sent to their modes);
                                    ForeverRoutes (/forever-routes), Fleet (/fleet), BotConsole
                                    (/fleet/{agentId}), ApiReference
 wwwroot/css/site.css               the whole theme and its own small reset (no Bootstrap); pa- prefixed
@@ -76,13 +81,21 @@ wwwroot/js/pathing-ui.js           script loader, toast, remembered rail state, 
 ## Things that will bite you
 
 **The browser talks only to the Control Center.** The world view's script fetches
-`/api/v1/navmesh/...` and a path's screenshot comes from the world data (`/path/...`) on its own
-origin; `ServiceProxy` forwards them to the Pathing Service (WebSockets included, for `/watchHub`),
-adding the service's key (`PathingService:ApiKey`, else `ApiKey`) so the browser never holds it.
-Hubs the pages follow (`WatchFeed`, `FleetFeed`) are followed from the server. Whoever reaches the
-Control Center reaches the services: keep it on localhost, or behind your own access control. A
-prefix the browser needs that is not in `ServiceProxy.PathingPrefixes` answers 404 here, not at
-the service.
+`/api/v1/navmesh/...`, `/api/v1/world` and `/api/v1/area`, the map art comes from `/tiles/...` and a
+path's screenshot from `/path/...`, all on its own origin; `ServiceProxy` forwards them to the
+Pathing Service, adding the service's key (`PathingService:ApiKey`, else `ApiKey`) so the browser
+never holds it. Hubs the pages follow (`WatchFeed`, `FleetFeed`) are followed from the server. A
+prefix the browser needs that is not in `ServiceProxy.PathingPrefixes` answers 404 here, not at the
+service.
+
+**The proxy is a door, and checks who knocks.** The service serves this machine and its key whoever
+stands behind the proxy, so the proxy applies the rules to its own caller first
+(`ServiceClients/Security/ForwardPolicy`, known issue 47): this machine is forwarded anything, another
+machine reads only (or anything with the key), no page on another site writes (403), and a request
+it forwarded itself comes back no further (508: `PathingService:Url` names a forwarder). The pages'
+own calls go from the server with the key, though: whoever reaches the Control Center can still bake
+and clear from its pages. Keep it on localhost until it has logins; when it is hosted centrally, the
+admin role is what may delete tiles, bake or stop bots, and users get the rest.
 
 **The Bot Manager is called from the server, never forwarded.** `/api/v1` is the root of both
 services, and here it belongs to the Pathing Service (`ServiceProxy`). Pages call the manager
@@ -92,7 +105,13 @@ so the browser never reaches it; don't add it to `ServiceProxy`.
 **A down service is a state, not an error.** Pages read their service's status (`PathingStatus`,
 `BotManagerStatus`, both a `ServiceStatus`) and show `OfflineNotice` with its `Service` and
 `Error` instead of calling; they come back by themselves when the poller sees the service again
-(`Reconnected`). Calls go through `IPathingClient` and `IBotManagerClient`, which never throw for
+(`Reconnected`). The client reads a member a body lacks as null, so `PathingStatus` takes only the
+Pathing Service's own health: a body without its members (the Bot Manager answers the same route, an
+older build) or of another `PathingApi.Version` is the service offline with why (known issue 50).
+`Reconnected` also comes when the service restarted, however quickly (`PathingHealth.Instance`), when
+the continents with tiles changed under it, and at the next poll after a cache's read failed
+(`ReadAgain`): what the pages pick from is never kept stale (known issue 51). Capabilities (game
+files) are read again every 30 s. Offline, the status bar shows nothing the service said before. Calls go through `IPathingClient` and `IBotManagerClient`, which never throw for
 a service that is down - only for the page's own cancellation (`Token`), which handlers catch. The
 clients retry queries, so a poll of a service that just went down takes a few seconds to say so.
 
@@ -154,7 +173,24 @@ left (`X = -y, Y = x`). Flat is orthographic, so ground at different heights lin
 perspective. The ground is drawn unlit (`material: false`): deck.gl's default lighting turned it
 black once zoomed in. `worldView.describe()` reports each view's continent, ground and layers, for a
 browser check to wait on (with each marker's place on the screen). A click on a marker comes back
-as `OnMarker` (not while `Picking`). How the pages moved here: `docs/world-view-plan.md`.
+as `OnMarker` (not while `Picking`). How the pages moved here: `docs/world-view-plan.md`; where they
+go next - one World workspace with modes, node kinds, cost models: `docs/world-workspace-plan.md`.
+
+**What is where is one component, `WorldLayers`.** The Map page (Explore), the route designer and the Forever
+routes page each hold one: a zone's NPCs by type, elites, herbs, veins, skinnable creatures,
+mailboxes, places and quest givers as layers, and a quest - from the zone's, found by name, or named by
+the page (`QuestId`; the Map page's `/map?quest=7`) - with each part and where it is, drawn in the
+`WorldKinds.Quest*` colours (`world-view.js` and `PartColor` hold them twice). The page puts
+`Markers` in its scene whenever `OnChanged` comes, hands the view's marker clicks to
+`MarkerClickedAsync` (a giver's picks its first quest), may take a place as a waypoint
+(`OnWaypoint`: the designer adds one, the Forever page picks its coordinates), and may add its own
+actions under a quest (`QuestActions`: the Forever page inserts the quest's `Visit` and `Quest` steps). A parent's re-render
+sets every parameter again, so the panel acts on a parameter only when it changed: it keeps its own
+zone unless the page binds `UiMap` (the Map page does, to frame the zone and search its continent),
+and a page that fixes the `Continent` keeps the zones on it; with none, a quest elsewhere takes the
+page to the zone it starts in. Zones are listed on every continent the view knows, "(no tiles)" where
+nothing is baked: the layers are data, and show on a view without ground. Only each part's middle is
+asked of `ZoneLookup` - a request per 16-yard cell, and a kill part has dozens of spawns.
 
 **The Live view watches routes, not a scene.** `WatchFeed` joins the service's watch hub as a route
 watcher (`WatchHubMethods.WatchRoutes`): it gets each route the planner answers as a `WatchRoute`,
@@ -199,11 +235,43 @@ should. deck.gl's `CollisionFilterExtension` did not thin overlapping zone names
 a changed `wwwroot` script is served as it was built until the Control Center is built again:
 rebuild before a browser check.
 
-**The designer plans each leg once.** `RouteLegs` keys a leg by its ends to a tenth of a yard
-(the precision the map sends) and the search, so the whole list of waypoints coming back from an
-edit replans only the legs whose ends moved. A waypoint with height 0 takes the ground's from the
-first leg found through it. Library files are one zone's map coordinates with no height (as the bot
-records them; a file with heights is world yards); the zone is guessed from the file name.
+**The world pages are modes of one page, and a mode once shown stays.** `WorldWorkspace` (`/` and
+`/world?mode=explore|route|npcs|costs|navmesh|live`) owns the one `WorldView` and hosts each page as a
+mode through a cascaded `WorldModeSlot`: the page renders `WorldModeView` where it rendered `WorldView`
+(the same parameters), which binds its scene, tools and events to the slot and renders only the
+page's panels; the workspace shows the bound view of the mode shown and sends it the view's events.
+Every bind of the shown mode re-renders the workspace, whatever changed - a scene, picking, a tool:
+NPC routes' "pick the start" changes picking alone, and the view must hear it.
+Rendered without a slot - a test renders a page by itself - `WorldModeView` shows a world view of its
+own. A mode is made the first time it is shown and then kept, hidden (`hidden` on its container), so
+switching keeps the camera and each mode's work: a route being designed, cost zones not saved, marks.
+A mode's scene that was shown before goes back without its framing; a mode shown for the first time
+frames what it shows, as the page did. The workspace reads `mode` from the address itself and
+switches after the location change is through: as a `[SupplyParameterFromQuery]`, the change re-rendered
+the workspace inside the framework's notice to query readers, the mode it made (Explore reads `quest`)
+subscribed meanwhile, and the circuit ended ("Collection was modified"). The old addresses (`/map`,
+`/routes`, `/npc-routes`, `/cost-zones`, `/navmesh`, `/live`) are `OldWorldPages`, sent to their
+modes with their query (`/map?quest=7` opens Explore on quest 7). The modes keep their own layers
+panel each; sharing the layers between modes is not built (`docs/known-issues.md`).
+
+**The route designer edits a `RouteEditor` and plans each leg once.** The design (`RouteDesign`:
+nodes, loop, cost zones) and every edit with its undo live in `ServiceClients/Routes`, so any client
+can design routes; the page only draws and asks. A node is shape, required, stop or area, and the leg
+from it replanned (the navmesh's way, planned under the design's cost-zone choice, `RouteRequest.CostZones`)
+or exact (the line as drawn); Compare draws each leg's other kind faintly. `RouteLegs` keys a leg by its
+ends to a tenth of a yard (the precision the map sends), the search and the cost zones, so the nodes
+coming back from an edit (`RouteEditor.Reshape`: one moved, inserted or removed) replan only the legs
+whose ends moved; an exact leg asks nothing unless compared. A node with height 0 takes the ground's
+from a way planned through it (`TakeHeights`, which is no edit). Ctrl+Z and Ctrl+Y reach the page
+through `pathingUi.watchUndo` - not in a text box, and not while an element of the page is inside a
+`[hidden]` mode, or a hidden designer would undo edits nobody sees. The Path tool draws freehand (a drag that the tools
+stop before the map pans), made sparse into shape nodes on exact legs (`AddPath`); a point placed on a
+marker says which (`WorldDrawn.Marker`), and the layers say what it stands for (`WorldLayers.PlaceOf`:
+an NPC of a type layer makes a stop by name; a quest giver, which may be an object, one at the quest's
+start). Library files are one zone's map coordinates with no height (as the bot records
+them; a file with heights is world yards); the zone is guessed from the file name. A Forever route file
+opens as nodes (`ForeverRouteReader`), naming what a design cannot hold, and the text page links to it
+("Open as nodes", `/world?mode=route&forever=x.json`).
 
 **A point's zone comes from the service's area grid.** Zone maps overlap a lot - Durotar's covers
 the east of the Barrens, the Barrens' the south of Durotar - so no rule on the map rectangles
@@ -215,8 +283,9 @@ lies furthest inside, continent maps last. The Forever export takes the looked-u
 holds the point (a step's points must be 0 to 100 on its map), else the guess.
 
 **The Babylon 3D view is gone from here.** Its Terrain toggle (the game geometry under 25 tiles,
-needing game files where the service runs) has no new home: whether the world view should draw it
-is open (`docs/world-view-plan.md`); the watch hub still answers `Terrain`.
+needing game files where the service runs) has no new home, and the watch hub no longer answers
+`Terrain` either: its scene went with the views that drew it (known issue 55). Drawing terrain on
+the world view would need a new endpoint (`docs/world-view-plan.md`).
 
 **Bind text a button depends on with `@bind:event="oninput"`.** A plain `@bind` updates on
 `change`, which fires only when the box loses focus, and clicking a disabled button does not take
@@ -228,7 +297,11 @@ focus away: the Forever routes page's Save and New stayed disabled after typing 
 **Tests host it in memory.** `ServiceTests/Api/ControlCenterFactory` points both services at
 ports where nothing listens (`ClosedPort`) unless a test hands it a fake manager client, and
 `RenderAsync` renders a page with `HtmlRenderer` (prerendering is off, so a plain GET returns only
-the shell). `ControlCenterTests` checks the shell, the map assets and a 502 from the forwarding;
+the shell), at an address of the test's (`uri`, for a page that reads its query). `ControlCenterTests` checks the shell, the map assets and a 502 from the forwarding;
+`ControlCenterForwardTests` the forward rules against a listener that echoes the headers it got;
+`PathingStatusTests` the poller's health check and when pages read again; `WorldLayersTests` the
+layers and a quest against a Forever service in memory; `WorldWorkspaceTests` the modes, the old
+addresses and the designer's cost-zone choice per client; `ServiceTests/Routes` the designer's model;
 `ServiceTests/Fleet` the feed against the in-memory manager, the pollers, the log join, the
 assignment draft and the fleet pages. A render there is a first render only: what goes wrong on
 a re-render (a duplicate `@key`) shows in a browser - drive one with Playwright .NET and the

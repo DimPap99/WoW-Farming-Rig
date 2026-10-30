@@ -226,8 +226,11 @@ async function getAreaIdAndZFromService(worldPos) {
 
     const result = await pathingFetch(`/area?mapId=${config.MapID}&x=${worldPos.x}&y=${worldPos.y}`);
     if (!result.ok) {
-        // Not cached: the service may come back.
-        return { areaId: 0, z: 0 };
+        // Not cached: the service may come back. Offline is said once already; anything else here.
+        if (result.status !== 0 && result.status !== 502 && result.status !== 504) {
+            mapNotice(`Area and height lookups failed: ${result.error}`, 'warn', 'area');
+        }
+        return { areaId: 0, z: 0, failed: true };
     }
 
     return getAreaIdFromServiceCache[key] = result.body;

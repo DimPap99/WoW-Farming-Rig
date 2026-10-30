@@ -42,7 +42,7 @@ A `ClientVersion` enum drives version-specific behavior across the entire stack:
 
 - **REST API** — the Pathing Service is a standalone ASP.NET Core service with Swagger documentation: concurrent route planning (one lane per continent), authoring of paths and cost zones, and bakes
 - **Native DLL Interop** — Modern `[LibraryImport]` with `[assembly: DisableRuntimeMarshalling]` for Windows API calls (input simulation, DWM-aware window management, keyboard layout translation) and StormLib MPQ archive access with architecture-aware (x86/x64/arm64) `NativeLibrary.SetDllImportResolver` selection
-- **SignalR + MessagePack** — Binary protocol with LZ4 compression for real-time pathfinding visualization, reducing bandwidth ~70% vs JSON
+- **SignalR + MessagePack** — Binary protocol for the live streams: each agent's telemetry and log to the Bot Manager, the fleet to the Control Center, and every route the Pathing Service plans to the Control Center's Live view (no LZ4: a browser's MessagePack reader does not know MessagePack-CSharp's compression extension)
 </details>
 
 <details>
@@ -62,7 +62,7 @@ The NPC detection system has both GPU and CPU implementations behind a common in
 | **BlazorServer** | Full Blazor Server web UI | Primary interactive application |
 | **HeadlessServer** | Console with CommandLineParser | Automation |
 | **PathingService** | Swagger UI | Route planning and authoring service |
-| **ControlCenter** | Blazor Server | Central UI: live 3D view, map, path editing |
+| **ControlCenter** | Blazor Server | Central UI on one world view: live routes, the map, route design, bakes, the fleet |
 
 Shared `Core` and `Frontend` libraries via dependency injection layering with 5 distinct registration modes (LoadOnly, Base, Normal, Configuration, Frontend).
 </details>
@@ -138,7 +138,7 @@ The BlazorServer frontend provides deep runtime observability beyond basic UI co
 - **Structured log viewer** — Circular buffer (256 entries) with severity color-coding, powered by a custom Serilog sink with `OnLogChanged` event for real-time Blazor updates
 - **Raw debug view** — Direct inspection of all addon data readers: AddonBits, PlayerReader, SpellInRange, CombatLog, ActionBarCost, and individual buff/debuff tracking
 - **Leaflet map** — Multi-expansion, multi-continent tile system with NPC spawn markers, mailbox locations, zone polygons, real-time player position tracking, and route polyline rendering via Pixi.js WebGL overlay
-- **Route visualization** — the Pathing Service streams planned routes and navmesh tiles to the Control Center's 3D view and map over SignalR (MessagePack)
+- **Route visualization** — the Pathing Service streams every route it plans to the Control Center over SignalR (MessagePack), where the Live view draws it on the world view (deck.gl) over the navmesh's relief
 </details>
 
 ---

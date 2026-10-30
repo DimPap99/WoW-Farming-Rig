@@ -11,13 +11,15 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
 
 namespace PathingService.Catalog;
 
 /// <summary>
 /// The route search's places: hand-picked spots from tuning the engine, then every named place in
 /// <see cref="DataConfig.TeleportLocationsFile"/>, on the continents the served client has. Read
-/// once; the file is 1500 lines.
+/// once; the file is 1500 lines. A read that fails (a script rewriting the file) is not kept: the
+/// next request reads it again.
 /// </summary>
 public sealed class LocationCatalog
 {
@@ -28,7 +30,7 @@ public sealed class LocationCatalog
 
     public LocationCatalog(DataConfig data, WorldMapAreaDB maps, ILogger<LocationCatalog> logger)
     {
-        locations = new Lazy<NamedLocation[]>(() => Load(data, maps, logger));
+        locations = new Lazy<NamedLocation[]>(() => Load(data, maps, logger), LazyThreadSafetyMode.PublicationOnly);
     }
 
     public NamedLocation[] All => locations.Value;
@@ -55,6 +57,7 @@ public sealed class LocationCatalog
     {
         List<NamedLocation> read = [];
         int line = 0;
+        Span<Range> fields = stackalloc Range[TeleportFields];
         foreach (string text in File.ReadLines(file))
         {
             line++;
@@ -64,7 +67,6 @@ public sealed class LocationCatalog
                 continue;
             }
 
-            Span<Range> fields = stackalloc Range[TeleportFields];
             if (trim.Split(fields, ' ') < TeleportFields ||
                 !TryFloat(trim[fields[1]], out float x) ||
                 !TryFloat(trim[fields[2]], out float y) ||

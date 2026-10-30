@@ -72,6 +72,9 @@ public readonly record struct StoreResult<T>(StoreOutcome Outcome, T? Value = de
 /// <summary>One mapping from store outcomes to HTTP, so every endpoint answers alike.</summary>
 public static class StoreResultHttp
 {
+    /// <summary>The title of a 400: the request was refused, and the detail says why.</summary>
+    public const string RefusedTitle = "Request refused";
+
     public static IResult ToHttp(this StoreResult result)
     {
         return result.Outcome switch
@@ -96,7 +99,7 @@ public static class StoreResultHttp
     {
         return outcome switch
         {
-            StoreOutcome.Invalid => Results.Problem(detail: error, statusCode: StatusCodes.Status400BadRequest, title: "Request refused"),
+            StoreOutcome.Invalid => Results.Problem(detail: error, statusCode: StatusCodes.Status400BadRequest, title: RefusedTitle),
             StoreOutcome.Conflict => Results.Problem(detail: error, statusCode: StatusCodes.Status409Conflict, title: "Not now"),
             _ => Results.Problem(detail: error, statusCode: StatusCodes.Status500InternalServerError, title: "Stored data unreadable"),
         };

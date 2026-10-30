@@ -21,7 +21,12 @@ StartupConfig/       DI options bound from configuration
   StartupClientVersion.cs    which client is running
 Data/                ContinentDB, WorldMapArea(DB), SubZoneArea, Creature, Item, Spell, NpcFlags
 Forever/             WoW: Forever's route model, data only: route files, task records, ForeverUntil,
-                     map points and areas (the bot runs them; the Pathing Service checks and serves them)
+                     map points and areas (the bot runs them; the Pathing Service checks and serves them);
+                     ForeverDestinations: a visit's or a quest's place, the nearest, in the QuestBook
+Quests/              QuestBook: a client's quests, the objects and items they name, every creature and
+                     every NPC spawn (Json/quests, dbc, npcspawnlocations), and the places a quest sends
+                     a character to - the one answer the Pathing Service and the bot both give;
+                     QuestSides: a race's side, and the creatures that serve a side
 AddonDataProviderType/ClientVersion.cs   the enum everything version-switches on
 NpcFinder/           NPC nameplate detection (colour matching, line segments)
 ImageProvider/, Screen/   capture interfaces only
@@ -52,7 +57,9 @@ throws. `TryAdd` means the first client loaded wins for a given map id.
 
 **`WorldMapAreaDB` reads `dbc/<client>/WorldMapArea.json` and throws if it is absent** —
 that is the failure a new client hits before `ReadDBC_CSV -v <client>` has been run. The
-file is per **client**, not per era, because id spaces differ.
+file is per **client**, not per era, because id spaces differ. A sub-area's zone
+(`TryGetZoneOfArea`) comes from the file's sub-area rows, else from `AreaTable.json` beside it:
+Forever's map file has no sub-area rows at all.
 
 **Casing matters off Windows.** `WorldMapArea.json` is requested by that exact name by
 the frontend; a lowercase file on disk works locally and 404s on Linux/macOS.
